@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from ..auth import get_current_user
+from ..auth import get_current_user, require_admin
 from ..database import get_db
 from ..models import Product, Sale, SaleItem, User
 from ..schemas import SaleCreate, SaleOut
@@ -36,7 +36,7 @@ def get_sale(
 def create_sale(
     payload: SaleCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     if not payload.items:
         raise HTTPException(status_code=400, detail="Ajoutez au moins un article")
@@ -46,6 +46,7 @@ def create_sale(
         customer_id=payload.customer_id,
         status=payload.status,
         payment_method=payload.payment_method,
+        created_by_id=current_user.id,
         total=0,
     )
     total = 0.0
@@ -86,7 +87,7 @@ def create_sale(
 
 @router.delete("/{sale_id}", status_code=204)
 def delete_sale(
-    sale_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)
+    sale_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)
 ):
     sale = db.query(Sale).get(sale_id)
     if not sale:
