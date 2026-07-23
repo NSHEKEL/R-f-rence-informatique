@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import Base, engine
+from .migrate import migrate
 from .routers import (
     auth,
     categories,
@@ -10,10 +11,12 @@ from .routers import (
     products,
     sales,
     suppliers,
+    users,
 )
 from .seed import seed
 
 Base.metadata.create_all(bind=engine)
+migrate()
 
 app = FastAPI(title="Référence Informatique — API Vente & Stock")
 
@@ -32,6 +35,7 @@ app.include_router(categories.router)
 app.include_router(suppliers.router)
 app.include_router(customers.router)
 app.include_router(sales.router)
+app.include_router(users.router)
 
 
 @app.on_event("startup")

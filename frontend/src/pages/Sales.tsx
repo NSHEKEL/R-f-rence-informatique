@@ -5,6 +5,7 @@ import api, { formatDate, formatXOF } from "../api/client";
 import type { Customer, Product, Sale } from "../types";
 import Modal from "../components/Modal";
 import { statusBadge } from "../components/badges";
+import { useAuth } from "../context/AuthContext";
 
 interface Line {
   product_id: number;
@@ -15,6 +16,7 @@ const PAYMENTS = ["Espèces", "Mobile Money", "Carte bancaire", "Virement"];
 const STATUSES = ["Payée", "En attente", "Annulée"];
 
 export default function Sales() {
+  const { isAdmin } = useAuth();
   const [sales, setSales] = useState<Sale[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -179,12 +181,14 @@ export default function Sales() {
                       >
                         <Eye size={16} />
                       </button>
-                      <button
-                        onClick={() => remove(s)}
-                        className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                      {isAdmin && (
+                        <button
+                          onClick={() => remove(s)}
+                          className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -340,6 +344,12 @@ export default function Sales() {
                 <p className="text-slate-400">Client</p>
                 <p className="font-semibold text-slate-800">
                   {detail.customer?.name ?? "Passage"}
+                </p>
+              </div>
+              <div>
+                <p className="text-slate-400">Créée par</p>
+                <p className="font-semibold text-slate-800">
+                  {detail.created_by?.name ?? "—"}
                 </p>
               </div>
               <div>

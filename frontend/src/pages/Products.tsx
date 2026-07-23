@@ -5,6 +5,7 @@ import api, { formatXOF } from "../api/client";
 import type { Category, Product, Supplier } from "../types";
 import Modal from "../components/Modal";
 import { stockBadge } from "../components/badges";
+import { useAuth } from "../context/AuthContext";
 
 const empty = {
   name: "",
@@ -19,6 +20,7 @@ const empty = {
 };
 
 export default function Products() {
+  const { isAdmin } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -134,9 +136,11 @@ export default function Products() {
             }}
           />
         </div>
-        <button className="btn-primary" onClick={openCreate}>
-          <Plus size={18} /> Nouveau produit
-        </button>
+        {isAdmin && (
+          <button className="btn-primary" onClick={openCreate}>
+            <Plus size={18} /> Nouveau produit
+          </button>
+        )}
       </div>
 
       <div className="card overflow-hidden">
@@ -149,7 +153,7 @@ export default function Products() {
                 <th className="px-5 py-3 text-right">Prix vente</th>
                 <th className="px-5 py-3 text-center">Stock</th>
                 <th className="px-5 py-3 text-center">État</th>
-                <th className="px-5 py-3 text-right">Actions</th>
+                {isAdmin && <th className="px-5 py-3 text-right">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -169,27 +173,32 @@ export default function Products() {
                     {p.quantity}
                   </td>
                   <td className="px-5 py-3.5 text-center">{stockBadge(p)}</td>
-                  <td className="px-5 py-3.5">
-                    <div className="flex justify-end gap-1">
-                      <button
-                        onClick={() => openEdit(p)}
-                        className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
-                      >
-                        <Pencil size={16} />
-                      </button>
-                      <button
-                        onClick={() => remove(p)}
-                        className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </td>
+                  {isAdmin && (
+                    <td className="px-5 py-3.5">
+                      <div className="flex justify-end gap-1">
+                        <button
+                          onClick={() => openEdit(p)}
+                          className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
+                        >
+                          <Pencil size={16} />
+                        </button>
+                        <button
+                          onClick={() => remove(p)}
+                          className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  )}
                 </tr>
               ))}
               {paged.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-5 py-10 text-center text-slate-400">
+                  <td
+                    colSpan={isAdmin ? 6 : 5}
+                    className="px-5 py-10 text-center text-slate-400"
+                  >
                     Aucun produit trouvé.
                   </td>
                 </tr>

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from ..auth import get_current_user
+from ..auth import get_current_user, require_admin
 from ..database import get_db
 from ..models import Customer, User
 from ..schemas import CustomerCreate, CustomerOut
@@ -48,7 +48,7 @@ def update_customer(
 def delete_customer(
     customer_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_admin),
 ):
     customer = db.query(Customer).get(customer_id)
     if not customer:

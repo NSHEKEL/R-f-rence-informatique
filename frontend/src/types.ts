@@ -3,6 +3,7 @@ export interface User {
   name: string;
   email: string;
   role: string;
+  is_active: boolean;
 }
 
 export interface Category {
@@ -62,6 +63,7 @@ export interface Sale {
   total: number;
   status: string;
   payment_method: string;
+  created_by?: User | null;
   items: SaleItem[];
 }
 

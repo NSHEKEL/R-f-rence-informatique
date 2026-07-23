@@ -8,6 +8,7 @@ import Sales from "./pages/Sales";
 import Customers from "./pages/Customers";
 import Suppliers from "./pages/Suppliers";
 import Categories from "./pages/Categories";
+import Users from "./pages/Users";
 import Settings from "./pages/Settings";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -20,6 +21,12 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     );
   }
   if (!user) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
+
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const { isAdmin } = useAuth();
+  if (!isAdmin) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
 
@@ -38,9 +45,38 @@ export default function App() {
         <Route path="/produits" element={<Products />} />
         <Route path="/ventes" element={<Sales />} />
         <Route path="/clients" element={<Customers />} />
-        <Route path="/fournisseurs" element={<Suppliers />} />
-        <Route path="/categories" element={<Categories />} />
-        <Route path="/parametres" element={<Settings />} />
+        <Route
+          path="/fournisseurs"
+          element={
+            <AdminRoute>
+              <Suppliers />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/categories"
+          element={
+            <AdminRoute>
+              <Categories />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/utilisateurs"
+          element={
+            <AdminRoute>
+              <Users />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/parametres"
+          element={
+            <AdminRoute>
+              <Settings />
+            </AdminRoute>
+          }
+        />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

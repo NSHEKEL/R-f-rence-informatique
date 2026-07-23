@@ -8,6 +8,7 @@ import {
   Truck,
   Tags,
   Settings,
+  UserCog,
   LogOut,
   Menu,
   X,
@@ -22,10 +23,16 @@ const navItems = [
   { to: "/produits", label: "Produits & Stock", icon: Package },
   { to: "/ventes", label: "Ventes", icon: ShoppingCart },
   { to: "/clients", label: "Clients", icon: Users },
-  { to: "/fournisseurs", label: "Fournisseurs", icon: Truck },
-  { to: "/categories", label: "Catégories", icon: Tags },
-  { to: "/parametres", label: "Paramètres", icon: Settings },
+  { to: "/fournisseurs", label: "Fournisseurs", icon: Truck, adminOnly: true },
+  { to: "/categories", label: "Catégories", icon: Tags, adminOnly: true },
+  { to: "/utilisateurs", label: "Utilisateurs", icon: UserCog, adminOnly: true },
+  { to: "/parametres", label: "Paramètres", icon: Settings, adminOnly: true },
 ];
+
+const roleLabels: Record<string, string> = {
+  admin: "Administrateur",
+  vendeur: "Vendeur",
+};
 
 const pageTitles: Record<string, string> = {
   "/": "Tableau de bord",
@@ -34,14 +41,16 @@ const pageTitles: Record<string, string> = {
   "/clients": "Clients",
   "/fournisseurs": "Fournisseurs",
   "/categories": "Catégories",
+  "/utilisateurs": "Utilisateurs",
   "/parametres": "Paramètres",
 };
 
 export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { user, logout } = useAuth();
+  const { user, isAdmin, logout } = useAuth();
   const location = useLocation();
   const title = pageTitles[location.pathname] ?? "Référence Informatique";
+  const visibleNavItems = navItems.filter((item) => !item.adminOnly || isAdmin);
 
   const initials = (user?.name ?? "AD")
     .split(" ")
@@ -79,7 +88,7 @@ export default function Layout() {
         </div>
 
         <nav className="flex-1 space-y-1 overflow-y-auto px-4 py-2">
-          {navItems.map((item) => (
+          {visibleNavItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -108,8 +117,8 @@ export default function Layout() {
               <p className="truncate text-sm font-semibold text-slate-900">
                 {user?.name ?? "Administrateur"}
               </p>
-              <p className="truncate text-xs capitalize text-slate-500">
-                {user?.role ?? "admin"}
+              <p className="truncate text-xs text-slate-500">
+                {roleLabels[user?.role ?? "admin"] ?? user?.role}
               </p>
             </div>
             <button
