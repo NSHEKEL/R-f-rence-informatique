@@ -6,6 +6,20 @@ export interface User {
   is_active: boolean;
 }
 
+export interface CompanySettings {
+  id: number;
+  name: string;
+  slogan: string;
+  address: string;
+  phone: string;
+  email: string;
+  website: string;
+  tax_id: string;
+  currency: string;
+  receipt_header: string;
+  receipt_footer: string;
+}
+
 export interface Category {
   id: number;
   name: string;
@@ -63,6 +77,8 @@ export interface Sale {
   total: number;
   status: string;
   payment_method: string;
+  note: string;
+  receipt_footer: string;
   created_by?: User | null;
   items: SaleItem[];
 }

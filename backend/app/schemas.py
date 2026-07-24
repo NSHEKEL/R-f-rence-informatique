@@ -39,6 +39,35 @@ class UserUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 
+# ---------- Company settings ----------
+class CompanySettingsOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    name: str
+    slogan: str = ""
+    address: str = ""
+    phone: str = ""
+    email: str = ""
+    website: str = ""
+    tax_id: str = ""
+    currency: str = "FCFA"
+    receipt_header: str = ""
+    receipt_footer: str = ""
+
+
+class CompanySettingsUpdate(BaseModel):
+    name: Optional[str] = None
+    slogan: Optional[str] = None
+    address: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    website: Optional[str] = None
+    tax_id: Optional[str] = None
+    currency: Optional[str] = None
+    receipt_header: Optional[str] = None
+    receipt_footer: Optional[str] = None
+
+
 # ---------- Category ----------
 class CategoryBase(BaseModel):
     name: str
@@ -128,7 +157,15 @@ class SaleCreate(BaseModel):
     customer_id: Optional[int] = None
     payment_method: str = "Espèces"
     status: str = "Payée"
+    note: str = ""
     items: List[SaleItemCreate]
+
+
+class SaleUpdate(BaseModel):
+    customer_id: Optional[int] = None
+    payment_method: Optional[str] = None
+    note: Optional[str] = None
+    receipt_footer: Optional[str] = None
 
 
 class SaleItemOut(BaseModel):
@@ -151,6 +188,8 @@ class SaleOut(BaseModel):
     total: float
     status: str
     payment_method: str
+    note: str = ""
+    receipt_footer: str = ""
     created_by: Optional[UserOut] = None
     items: List[SaleItemOut] = []
 

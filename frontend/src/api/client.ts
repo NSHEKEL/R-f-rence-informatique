@@ -27,11 +27,19 @@ api.interceptors.response.use(
 
 export default api;
 
+export function formatMoney(value: number, currency = "FCFA"): string {
+  return (
+    new Intl.NumberFormat("fr-FR", {
+      style: "decimal",
+      maximumFractionDigits: 0,
+    }).format(value) +
+    " " +
+    currency
+  );
+}
+
 export function formatXOF(value: number): string {
-  return new Intl.NumberFormat("fr-FR", {
-    style: "decimal",
-    maximumFractionDigits: 0,
-  }).format(value) + " FCFA";
+  return formatMoney(value);
 }
 
 export function formatDate(value: string): string {
