@@ -1,10 +1,25 @@
+import sys
 from pathlib import Path
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-DATABASE_URL = f"sqlite:///{BASE_DIR / 'reference.db'}"
+
+def _db_path() -> Path:
+    """Resolve a writable location for the SQLite database.
+
+    When packaged as a standalone executable (PyInstaller), the app runs from a
+    read-only temp directory, so the database is stored in the user's home
+    directory instead. In development it stays next to the backend package.
+    """
+    if getattr(sys, "frozen", False):
+        data_dir = Path.home() / "ReferenceInformatique"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        return data_dir / "reference.db"
+    return Path(__file__).resolve().parent.parent / "reference.db"
+
+
+DATABASE_URL = f"sqlite:///{_db_path()}"
 
 engine = create_engine(
     DATABASE_URL, connect_args={"check_same_thread": False}
