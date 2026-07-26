@@ -6,11 +6,18 @@ Run from the repository root (after building the frontend into frontend/dist):
     pyinstaller packaging/ReferenceInformatique.spec
 """
 
+import os
+
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
-datas = [("frontend/dist", "frontend_dist")]
+# Paths in a .spec are resolved relative to the spec's directory, so anchor
+# everything to the repository root (the parent of packaging/).
+ROOT = os.path.dirname(SPECPATH)
+BACKEND = os.path.join(ROOT, "backend")
+
+datas = [(os.path.join(ROOT, "frontend", "dist"), "frontend_dist")]
 binaries = []
-hiddenimports = collect_submodules("uvicorn") + collect_submodules("app")
+hiddenimports = collect_submodules("uvicorn")
 
 for pkg in ("uvicorn", "bcrypt", "jose", "anyio"):
     try:
@@ -23,8 +30,8 @@ for pkg in ("uvicorn", "bcrypt", "jose", "anyio"):
 
 
 a = Analysis(
-    ["backend/run.py"],
-    pathex=["backend"],
+    [os.path.join(BACKEND, "run.py")],
+    pathex=[BACKEND],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
