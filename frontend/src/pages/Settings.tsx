@@ -25,6 +25,7 @@ const emptyCompany: CompanyForm = {
   currency: "FCFA",
   receipt_header: "",
   receipt_footer: "",
+  receipt_format: "A4",
 };
 
 export default function Settings() {
@@ -189,6 +190,22 @@ export default function Settings() {
                 onChange={(e) => update({ receipt_header: e.target.value })}
                 placeholder="REÇU DE CAISSE"
               />
+            </div>
+            <div>
+              <label className="label">Format d'impression du reçu</label>
+              <select
+                className="input"
+                value={company.receipt_format}
+                onChange={(e) =>
+                  update({
+                    receipt_format:
+                      e.target.value === "80mm" ? "80mm" : "A4",
+                  })
+                }
+              >
+                <option value="A4">Feuille A4 (imprimante classique)</option>
+                <option value="80mm">Ticket 80 mm (imprimante thermique)</option>
+              </select>
             </div>
             <div className="sm:col-span-2">
               <label className="label">Message de pied de reçu</label>

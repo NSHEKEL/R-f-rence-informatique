@@ -5,6 +5,9 @@ import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Products from "./pages/Products";
 import Sales from "./pages/Sales";
+import Caisse from "./pages/Caisse";
+import Inventaire from "./pages/Inventaire";
+import Comptabilite from "./pages/Comptabilite";
 import Customers from "./pages/Customers";
 import Suppliers from "./pages/Suppliers";
 import Categories from "./pages/Categories";
@@ -26,8 +29,14 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 function AdminRoute({ children }: { children: React.ReactNode }) {
   const { isAdmin } = useAuth();
-  if (!isAdmin) return <Navigate to="/" replace />;
+  if (!isAdmin) return <Navigate to="/caisse" replace />;
   return <>{children}</>;
+}
+
+/** Sellers have no dashboard: the till is their home screen. */
+function HomeRoute() {
+  const { isAdmin } = useAuth();
+  return isAdmin ? <Dashboard /> : <Navigate to="/caisse" replace />;
 }
 
 export default function App() {
@@ -41,10 +50,34 @@ export default function App() {
           </ProtectedRoute>
         }
       >
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/produits" element={<Products />} />
+        <Route path="/" element={<HomeRoute />} />
+        <Route path="/caisse" element={<Caisse />} />
         <Route path="/ventes" element={<Sales />} />
         <Route path="/clients" element={<Customers />} />
+        <Route
+          path="/produits"
+          element={
+            <AdminRoute>
+              <Products />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/inventaire"
+          element={
+            <AdminRoute>
+              <Inventaire />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/comptabilite"
+          element={
+            <AdminRoute>
+              <Comptabilite />
+            </AdminRoute>
+          }
+        />
         <Route
           path="/fournisseurs"
           element={

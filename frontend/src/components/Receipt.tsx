@@ -1,13 +1,15 @@
+import { createPortal } from "react-dom";
 import logo from "../assets/logo.jpg";
 import { formatDate, formatMoney } from "../api/client";
-import type { CompanySettings, Sale } from "../types";
+import type { CompanySettings, ReceiptFormat, Sale } from "../types";
 
 interface ReceiptProps {
   sale: Sale;
   company: CompanySettings | null;
+  format: ReceiptFormat;
 }
 
-export default function Receipt({ sale, company }: ReceiptProps) {
+function ReceiptBody({ sale, company }: Omit<ReceiptProps, "format">) {
   const currency = company?.currency || "FCFA";
   const money = (v: number) => formatMoney(v, currency);
   const footer =
@@ -16,25 +18,15 @@ export default function Receipt({ sale, company }: ReceiptProps) {
     "Merci de votre confiance !";
 
   return (
-    <div
-      id="receipt-print"
-      className="mx-auto max-w-md bg-white p-6 text-slate-900"
-    >
-      {/* Header */}
-      <div className="flex items-center gap-3 border-b border-dashed border-slate-300 pb-4">
-        <img
-          src={logo}
-          alt="Logo"
-          className="h-14 w-14 shrink-0 object-contain"
-        />
-        <div className="leading-tight">
-          <p className="text-lg font-extrabold uppercase tracking-tight">
+    <>
+      <div className="receipt-head">
+        <img src={logo} alt="Logo" className="receipt-logo" />
+        <div>
+          <p className="receipt-company">
             {company?.name || "Référence Informatique"}
           </p>
-          {company?.slogan && (
-            <p className="text-xs italic text-slate-500">{company.slogan}</p>
-          )}
-          <div className="mt-1 space-y-0.5 text-[11px] text-slate-600">
+          {company?.slogan && <p className="receipt-slogan">{company.slogan}</p>}
+          <div className="receipt-contact">
             {company?.address && <p>{company.address}</p>}
             {(company?.phone || company?.email) && (
               <p>
@@ -49,75 +41,78 @@ export default function Receipt({ sale, company }: ReceiptProps) {
         </div>
       </div>
 
-      {/* Title */}
-      <div className="py-3 text-center">
-        <p className="text-sm font-bold uppercase tracking-widest text-slate-700">
-          {company?.receipt_header || "Reçu de caisse"}
-        </p>
-      </div>
+      <p className="receipt-title">
+        {company?.receipt_header || "Reçu de caisse"}
+      </p>
 
-      {/* Meta */}
-      <div className="grid grid-cols-2 gap-x-4 gap-y-1 border-y border-dashed border-slate-300 py-3 text-xs">
-        <p className="text-slate-500">Référence</p>
-        <p className="text-right font-semibold">{sale.reference}</p>
-        <p className="text-slate-500">Date</p>
-        <p className="text-right font-semibold">{formatDate(sale.date)}</p>
-        <p className="text-slate-500">Client</p>
-        <p className="text-right font-semibold">
-          {sale.customer?.name ?? "Client de passage"}
-        </p>
-        <p className="text-slate-500">Paiement</p>
-        <p className="text-right font-semibold">{sale.payment_method}</p>
-        <p className="text-slate-500">Statut</p>
-        <p className="text-right font-semibold">{sale.status}</p>
+      <div className="receipt-meta">
+        <span>Référence</span>
+        <span>{sale.reference}</span>
+        <span>Date</span>
+        <span>{formatDate(sale.date)}</span>
+        <span>Client</span>
+        <span>{sale.customer?.name ?? "Client de passage"}</span>
+        <span>Paiement</span>
+        <span>{sale.payment_method}</span>
+        <span>Statut</span>
+        <span>{sale.status}</span>
         {sale.created_by?.name && (
           <>
-            <p className="text-slate-500">Vendeur</p>
-            <p className="text-right font-semibold">{sale.created_by.name}</p>
+            <span>Vendeur</span>
+            <span>{sale.created_by.name}</span>
           </>
         )}
       </div>
 
-      {/* Items */}
-      <table className="mt-3 w-full text-xs">
+      <table className="receipt-items">
         <thead>
-          <tr className="border-b border-slate-300 text-left text-[10px] uppercase text-slate-500">
-            <th className="py-1">Article</th>
-            <th className="py-1 text-center">Qté</th>
-            <th className="py-1 text-right">P.U.</th>
-            <th className="py-1 text-right">Total</th>
+          <tr>
+            <th>Article</th>
+            <th className="qty">Qté</th>
+            <th className="num">P.U.</th>
+            <th className="num">Total</th>
           </tr>
         </thead>
         <tbody>
           {sale.items.map((it) => (
-            <tr key={it.id} className="border-b border-dashed border-slate-200">
-              <td className="py-1.5 pr-2">{it.product_name}</td>
-              <td className="py-1.5 text-center">{it.quantity}</td>
-              <td className="py-1.5 text-right">{money(it.unit_price)}</td>
-              <td className="py-1.5 text-right font-medium">
-                {money(it.subtotal)}
-              </td>
+            <tr key={it.id}>
+              <td>{it.product_name}</td>
+              <td className="qty">{it.quantity}</td>
+              <td className="num">{money(it.unit_price)}</td>
+              <td className="num strong">{money(it.subtotal)}</td>
             </tr>
           ))}
         </tbody>
       </table>
 
-      {/* Total */}
-      <div className="mt-3 flex items-center justify-between border-t-2 border-slate-800 pt-2">
-        <span className="text-sm font-bold uppercase">Total</span>
-        <span className="text-lg font-extrabold">{money(sale.total)}</span>
+      <div className="receipt-total">
+        <span>Total</span>
+        <span>{money(sale.total)}</span>
       </div>
 
-      {sale.note && (
-        <p className="mt-3 whitespace-pre-line rounded-lg bg-slate-50 p-2 text-xs text-slate-600">
-          {sale.note}
-        </p>
-      )}
+      {sale.note && <p className="receipt-note">{sale.note}</p>}
 
-      {/* Footer */}
-      <p className="mt-5 whitespace-pre-line border-t border-dashed border-slate-300 pt-3 text-center text-xs font-medium text-slate-600">
-        {footer}
-      </p>
-    </div>
+      <p className="receipt-footer">{footer}</p>
+    </>
+  );
+}
+
+/**
+ * Renders the receipt twice: an on-screen preview inside the modal, and a
+ * print-only copy portaled to <body> so the printed output escapes the modal's
+ * scroll container (which otherwise clipped it to a single, cut-off page).
+ */
+export default function Receipt({ sale, company, format }: ReceiptProps) {
+  const body = <ReceiptBody sale={sale} company={company} />;
+  return (
+    <>
+      <div className={`receipt receipt-preview receipt-${format}`}>{body}</div>
+      {createPortal(
+        <div id="receipt-print-root" className={`receipt receipt-${format}`}>
+          {body}
+        </div>,
+        document.body
+      )}
+    </>
   );
 }

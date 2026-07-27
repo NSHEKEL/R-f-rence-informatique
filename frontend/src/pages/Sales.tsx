@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import {
   Eye,
@@ -8,12 +9,20 @@ import {
   Receipt as ReceiptIcon,
   Search,
   Trash2,
+  Wallet,
   X,
 } from "lucide-react";
 import api, { formatDate, formatXOF } from "../api/client";
-import type { CompanySettings, Customer, Product, Sale } from "../types";
+import type {
+  CompanySettings,
+  Customer,
+  Product,
+  ReceiptFormat,
+  Sale,
+} from "../types";
 import Modal from "../components/Modal";
 import Receipt from "../components/Receipt";
+import { printReceipt } from "../lib/print";
 import { statusBadge } from "../components/badges";
 import { useAuth } from "../context/AuthContext";
 
@@ -27,6 +36,7 @@ const STATUSES = ["Payée", "En attente", "Annulée"];
 
 export default function Sales() {
   const { isAdmin } = useAuth();
+  const navigate = useNavigate();
   const [sales, setSales] = useState<Sale[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -51,6 +61,7 @@ export default function Sales() {
   const [rNote, setRNote] = useState("");
   const [rFooter, setRFooter] = useState("");
   const [rSaving, setRSaving] = useState(false);
+  const [rFormat, setRFormat] = useState<ReceiptFormat>("A4");
 
   async function load() {
     const [s, p, c] = await Promise.all([
@@ -155,6 +166,7 @@ export default function Sales() {
     setReceiptSale(s);
     setEditingReceipt(false);
     setError("");
+    setRFormat(company?.receipt_format === "80mm" ? "80mm" : "A4");
     setRCustomerId(s.customer_id ? String(s.customer_id) : "");
     setRPayment(s.payment_method);
     setRNote(s.note ?? "");
@@ -201,8 +213,11 @@ export default function Sales() {
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
-        <button className="btn-primary" onClick={openCreate}>
-          <Plus size={18} /> Nouvelle vente
+        <button className="btn-ghost" onClick={openCreate}>
+          <Plus size={18} /> Vente rapide
+        </button>
+        <button className="btn-primary" onClick={() => navigate("/caisse")}>
+          <Wallet size={18} /> Ouvrir la caisse
         </button>
       </div>
 
@@ -506,14 +521,25 @@ export default function Sales() {
         title={receiptSale ? `Reçu — ${receiptSale.reference}` : ""}
         footer={
           receiptSale && (
-            <div className="no-print flex w-full items-center justify-between">
+            <div className="no-print flex w-full flex-wrap items-center justify-between gap-3">
               <button
                 className="btn-ghost"
                 onClick={() => setEditingReceipt((v) => !v)}
               >
                 <Pencil size={16} /> {editingReceipt ? "Fermer" : "Modifier"}
               </button>
-              <div className="flex gap-3">
+              <div className="flex items-center gap-3">
+                <select
+                  className="input w-auto"
+                  value={rFormat}
+                  onChange={(e) =>
+                    setRFormat(e.target.value === "80mm" ? "80mm" : "A4")
+                  }
+                  title="Format d'impression"
+                >
+                  <option value="A4">Feuille A4</option>
+                  <option value="80mm">Ticket 80 mm</option>
+                </select>
                 {editingReceipt && (
                   <button
                     className="btn-primary"
@@ -523,7 +549,10 @@ export default function Sales() {
                     {rSaving ? "Enregistrement..." : "Enregistrer"}
                   </button>
                 )}
-                <button className="btn-primary" onClick={() => window.print()}>
+                <button
+                  className="btn-primary"
+                  onClick={() => printReceipt(rFormat)}
+                >
                   <Printer size={16} /> Imprimer
                 </button>
               </div>
@@ -611,6 +640,7 @@ export default function Sales() {
                   : receiptSale
               }
               company={company}
+              format={rFormat}
             />
           </div>
         )}
