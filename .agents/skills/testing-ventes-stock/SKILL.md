@@ -57,6 +57,24 @@ Gotchas:
 - Editing a receipt must NOT change items/total/stock (backend `PUT /api/sales/{id}` only touches customer/payment/note/footer).
 - The `type` action drops special chars like the em-dash "—"; use plain hyphens in test values to keep assertions exact.
 
+## Caisse / notifications / inventaire / comptabilité test
+1. **Ouverture de caisse** (vendeur, /caisse): "Ouvrir la caisse" + fonds (50000) → bandeau "Caisse ouverte", Solde attendu = fonds.
+2. **Vendeur scope**: sidebar = Caisse/Ventes/Clients only, no bell, no `Stock : N` on the article cards, typing `/produits` redirects to `/caisse`.
+3. **Encaissement**: search an article, click the card once per unit, add a second article, **Encaisser** → receipt modal + cart cleared + "Ventes espèces" and "Solde attendu" updated.
+4. **Admin notification**: login admin → bell badge ≥1 with "Nouvelle vente — VNT-… / <vendeur> a enregistré une vente de N FCFA"; clicking it opens /ventes and decrements the badge.
+5. **Inventaire**: type a counted quantity → Écart column; "Appliquer l'inventaire" → stock updated and a `Inventaire` movement (`before → after`, motif, author) added to "Mouvements de stock".
+6. **Comptabilité**: note Marge brute, add an expense → `Bénéfice net = marge − dépenses` must be recomputed and the expense listed by category.
+7. **Fermeture**: counted amount ≠ expected → "Écart : …" banner, then the closed session appears in "Historique des caisses" with fonds/attendu/compté/écart.
+
+## Print-format verification (A4 / 80 mm)
+Chrome's print preview remembers the last paper size, so it can silently show A4 even when the app asked for a ticket — never conclude from the preview alone. Verify the real page geometry:
+```bash
+python3 .agents/skills/testing-ventes-stock/print_formats.py  # connect_over_cdp, stub window.print, click Imprimer, CDP Page.printToPDF(preferCSSPageSize=True)
+pdftoppm -png -r 100 receipt-80mm.pdf ticket80   # visual check (apt-get install poppler-utils)
+```
+Then read `/MediaBox` (pt ÷ 72 × 25,4 = mm): A4 must be ≈210 × 297 mm, ticket ≈80 mm wide. A Letter-sized (215,9 × 279,4 mm) result means the `@page` rule was dropped.
+Gotcha: `@page { size: 80mm auto; }` is invalid CSS (`auto` can't be combined with a length) — the whole rule is ignored. Use two lengths, e.g. a measured `size: 80mm 121mm`.
+
 ## Tips / gotchas
 - Native `<select>` dropdowns: click to open, click the option; the annotated DOM lists options with `stock : N` so you can confirm the current stock inline.
 - Numeric inputs: click the field, `ctrl+a`, then type — avoids leftover leading zeros.
