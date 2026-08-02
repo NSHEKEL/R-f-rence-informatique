@@ -4,11 +4,13 @@ import api from "../api/client";
 import type { Customer } from "../types";
 import Modal from "../components/Modal";
 import { useAuth } from "../context/AuthContext";
+import { useSyncVersion } from "../context/SyncContext";
 
 const empty = { name: "", email: "", phone: "", address: "" };
 
 export default function Customers() {
   const { isAdmin } = useAuth();
+  const version = useSyncVersion();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -23,7 +25,7 @@ export default function Customers() {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [version]);
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase();

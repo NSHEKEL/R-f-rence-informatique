@@ -45,6 +45,7 @@ class CompanySettingsOut(BaseModel):
     id: int
     name: str
     slogan: str = ""
+    logo: str = ""
     address: str = ""
     phone: str = ""
     email: str = ""
@@ -54,11 +55,14 @@ class CompanySettingsOut(BaseModel):
     receipt_header: str = ""
     receipt_footer: str = ""
     receipt_format: str = "A4"
+    printer_name: str = ""
+    auto_print_cash: bool = True
 
 
 class CompanySettingsUpdate(BaseModel):
     name: Optional[str] = None
     slogan: Optional[str] = None
+    logo: Optional[str] = None
     address: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
@@ -68,6 +72,8 @@ class CompanySettingsUpdate(BaseModel):
     receipt_header: Optional[str] = None
     receipt_footer: Optional[str] = None
     receipt_format: Optional[str] = None
+    printer_name: Optional[str] = None
+    auto_print_cash: Optional[bool] = None
 
 
 # ---------- Category ----------
@@ -131,6 +137,7 @@ class ProductBase(BaseModel):
     sale_price: float = 0
     quantity: int = 0
     min_stock: int = 5
+    qr_code: str = ""
 
 
 class ProductCreate(ProductBase):
@@ -161,6 +168,9 @@ class SaleCreate(BaseModel):
     status: str = "Payée"
     note: str = ""
     items: List[SaleItemCreate]
+    # Idempotency key set by tills recording offline; replaying the same key
+    # returns the existing ticket instead of duplicating it.
+    client_id: Optional[str] = None
 
 
 class SaleUpdate(BaseModel):
@@ -178,6 +188,7 @@ class SaleItemOut(BaseModel):
     quantity: int
     unit_price: float
     subtotal: float
+    returned_quantity: int = 0
 
 
 class SaleOut(BaseModel):
@@ -194,6 +205,43 @@ class SaleOut(BaseModel):
     receipt_footer: str = ""
     created_by: Optional[UserOut] = None
     items: List[SaleItemOut] = []
+    print_count: int = 0
+    returned_total: float = 0
+
+
+# ---------- Returns (avoirs) ----------
+class ReturnLine(BaseModel):
+    product_id: int
+    quantity: int
+
+
+class ReturnCreate(BaseModel):
+    sale_reference: str
+    reason: str = ""
+    lines: List[ReturnLine]
+
+
+class ReturnItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    product_id: Optional[int]
+    product_name: str
+    quantity: int
+    unit_price: float
+    subtotal: float
+
+
+class ReturnOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    reference: str
+    sale_id: int
+    sale_reference: str = ""
+    date: datetime
+    total: float
+    reason: str = ""
+    created_by: Optional[UserOut] = None
+    items: List[ReturnItemOut] = []
 
 
 # ---------- Dashboard ----------
@@ -205,6 +253,12 @@ class MonthlyRevenue(BaseModel):
 class TopProduct(BaseModel):
     name: str
     quantity: int
+    revenue: float
+
+
+class TopSeller(BaseModel):
+    name: str
+    sales_count: int
     revenue: float
 
 
@@ -220,7 +274,16 @@ class DashboardStats(BaseModel):
     monthly_revenue: List[MonthlyRevenue]
     recent_sales: List[SaleOut]
     top_products: List[TopProduct]
+    top_sellers: List[TopSeller] = []
     low_stock_products: List[ProductOut]
+    period_start: Optional[datetime] = None
+    period_end: Optional[datetime] = None
+
+
+# ---------- Sync ----------
+class SyncVersion(BaseModel):
+    version: int
+    entities: str = ""
 
 
 # ---------- Notifications ----------
@@ -251,6 +314,7 @@ class CashSessionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     opened_at: datetime
+    business_day: str = ""
     opened_by: Optional[UserOut] = None
     opening_balance: float
     closed_at: Optional[datetime] = None
@@ -330,6 +394,7 @@ class AccountingSummary(BaseModel):
     expenses_total: float
     net_profit: float
     sales_count: int
+    returns_total: float = 0
     revenue_by_payment: List[AccountingCategory]
     expenses_by_category: List[AccountingCategory]
     daily_revenue: List[AccountingCategory]

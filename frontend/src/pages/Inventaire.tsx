@@ -3,6 +3,7 @@ import axios from "axios";
 import { ClipboardCheck, History, RotateCcw, Search } from "lucide-react";
 import api, { formatDate, formatXOF } from "../api/client";
 import type { Product, StockMovement } from "../types";
+import { useSyncVersion } from "../context/SyncContext";
 
 type Counted = Record<number, string>;
 
@@ -13,6 +14,7 @@ const kindLabels: Record<string, string> = {
 };
 
 export default function Inventaire() {
+  const version = useSyncVersion();
   const [products, setProducts] = useState<Product[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [counted, setCounted] = useState<Counted>({});
@@ -35,7 +37,7 @@ export default function Inventaire() {
 
   useEffect(() => {
     load();
-  }, [load]);
+  }, [load, version]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

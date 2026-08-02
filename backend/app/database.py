@@ -1,12 +1,33 @@
+import os
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
 from sqlalchemy import create_engine, event
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 
-def _db_path() -> Path:
-    """Resolve a writable location for the SQLite database.
+def _load_env() -> None:
+    """Read the deployment settings (DATABASE_URL, SECRET_KEY, ...).
+
+    A workstation configures the shared server by dropping a `.env` file next
+    to the executable; in development it lives in `backend/`.
+    """
+    candidates = [Path(__file__).resolve().parent.parent / ".env"]
+    if getattr(sys, "frozen", False):
+        candidates.insert(0, Path(sys.executable).resolve().parent / ".env")
+        candidates.insert(1, Path.home() / "ReferenceInformatique" / ".env")
+    for candidate in candidates:
+        if candidate.exists():
+            load_dotenv(candidate, override=False)
+
+
+_load_env()
+
+
+def _sqlite_path() -> Path:
+    """Writable location for the single-workstation SQLite database.
 
     When packaged as a standalone executable (PyInstaller), the app runs from a
     read-only temp directory, so the database is stored in the user's home
@@ -19,23 +40,49 @@ def _db_path() -> Path:
     return Path(__file__).resolve().parent.parent / "reference.db"
 
 
-DATABASE_URL = f"sqlite:///{_db_path()}"
+def _normalize(url: str) -> str:
+    """Accept the `postgres://` form handed out by hosting providers."""
+    if url.startswith("postgres://"):
+        return "postgresql+psycopg://" + url[len("postgres://"):]
+    if url.startswith("postgresql://"):
+        return "postgresql+psycopg://" + url[len("postgresql://"):]
+    return url
 
-engine = create_engine(
-    DATABASE_URL, connect_args={"check_same_thread": False, "timeout": 30}
+
+# Central deployments point DATABASE_URL at a shared PostgreSQL server; without
+# it the app keeps its local SQLite file (single workstation / demo).
+DATABASE_URL = _normalize(
+    os.getenv("DATABASE_URL", "").strip() or f"sqlite:///{_sqlite_path()}"
 )
 
+IS_SQLITE = make_url(DATABASE_URL).get_backend_name() == "sqlite"
 
-@event.listens_for(engine, "connect")
-def _sqlite_pragmas(dbapi_connection, _connection_record):
-    """Tune SQLite for several workstations hitting the same database."""
-    cursor = dbapi_connection.cursor()
-    # WAL lets readers work while another post is writing.
-    cursor.execute("PRAGMA journal_mode=WAL")
-    cursor.execute("PRAGMA synchronous=NORMAL")
-    # Wait instead of raising "database is locked" on concurrent writes.
-    cursor.execute("PRAGMA busy_timeout=30000")
-    cursor.close()
+if IS_SQLITE:
+    engine = create_engine(
+        DATABASE_URL, connect_args={"check_same_thread": False, "timeout": 30}
+    )
+
+    @event.listens_for(engine, "connect")
+    def _sqlite_pragmas(dbapi_connection, _connection_record):
+        """Tune SQLite for several workstations hitting the same database."""
+        cursor = dbapi_connection.cursor()
+        # WAL lets readers work while another post is writing.
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        # Wait instead of raising "database is locked" on concurrent writes.
+        cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.close()
+
+else:
+    engine = create_engine(
+        DATABASE_URL,
+        # Sized for a shop: a handful of tills, each with a few parallel calls.
+        pool_size=int(os.getenv("DB_POOL_SIZE", "10")),
+        max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "20")),
+        # Recycle before managed providers drop idle connections.
+        pool_recycle=int(os.getenv("DB_POOL_RECYCLE", "1800")),
+        pool_pre_ping=True,
+    )
 
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

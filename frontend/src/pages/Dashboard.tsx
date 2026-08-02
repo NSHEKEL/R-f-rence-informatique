@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Area,
@@ -18,10 +18,24 @@ import {
   TrendingUp,
   Users,
   AlertTriangle,
+  Award,
+  CalendarRange,
 } from "lucide-react";
 import api, { formatDate, formatXOF } from "../api/client";
 import type { DashboardStats } from "../types";
 import { statusBadge } from "../components/badges";
+import { useSyncVersion } from "../context/SyncContext";
+
+function isoDay(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+const RANGES: { label: string; days: number | "year" }[] = [
+  { label: "7 jours", days: 7 },
+  { label: "30 jours", days: 30 },
+  { label: "90 jours", days: 90 },
+  { label: "Année", days: "year" },
+];
 
 function StatCard({
   title,
@@ -63,15 +77,37 @@ function StatCard({
 }
 
 export default function Dashboard() {
+  const version = useSyncVersion();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [start, setStart] = useState(() =>
+    isoDay(new Date(new Date().getFullYear(), 0, 1))
+  );
+  const [end, setEnd] = useState(() => isoDay(new Date()));
+
+  const load = useCallback(async () => {
+    const res = await api.get<DashboardStats>("/dashboard", {
+      params: { start, end },
+    });
+    setStats(res.data);
+    setLoading(false);
+  }, [start, end]);
 
   useEffect(() => {
-    api
-      .get<DashboardStats>("/dashboard")
-      .then((res) => setStats(res.data))
-      .finally(() => setLoading(false));
-  }, []);
+    load().catch(() => setLoading(false));
+  }, [load, version]);
+
+  function applyRange(days: number | "year") {
+    const today = new Date();
+    setEnd(isoDay(today));
+    if (days === "year") {
+      setStart(isoDay(new Date(today.getFullYear(), 0, 1)));
+      return;
+    }
+    const from = new Date(today);
+    from.setDate(from.getDate() - (days - 1));
+    setStart(isoDay(from));
+  }
 
   if (loading || !stats) {
     return <div className="text-slate-500">Chargement du tableau de bord...</div>;
@@ -79,6 +115,45 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      <div className="card flex flex-col gap-3 p-4 sm:flex-row sm:items-end">
+        <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+          <CalendarRange size={18} className="text-brand-600" /> Période
+        </div>
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label className="label">Du</label>
+            <input
+              type="date"
+              className="input w-auto"
+              value={start}
+              max={end}
+              onChange={(e) => setStart(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="label">Au</label>
+            <input
+              type="date"
+              className="input w-auto"
+              value={end}
+              min={start}
+              onChange={(e) => setEnd(e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2 sm:ml-auto">
+          {RANGES.map((r) => (
+            <button
+              key={r.label}
+              className="btn-ghost px-3 py-1.5 text-xs"
+              onClick={() => applyRange(r.days)}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           title="Chiffre d'affaires"
@@ -198,6 +273,47 @@ export default function Dashboard() {
             >
               Gérer le stock
             </Link>
+          </div>
+
+          <div className="card p-6">
+            <div className="mb-4 flex items-center gap-2">
+              <Award size={18} className="text-amber-500" />
+              <h2 className="text-lg font-bold text-slate-900">
+                Meilleures vendeuses
+              </h2>
+            </div>
+            {stats.top_sellers.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                Aucune vente sur la période.
+              </p>
+            ) : (
+              <ul className="space-y-3">
+                {stats.top_sellers.map((s, i) => (
+                  <li key={s.name} className="flex items-center gap-3">
+                    <span
+                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-bold ${
+                        i === 0
+                          ? "bg-amber-100 text-amber-700"
+                          : "bg-slate-100 text-slate-600"
+                      }`}
+                    >
+                      {i + 1}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-slate-800">
+                        {s.name}
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        {s.sales_count} vente(s)
+                      </p>
+                    </div>
+                    <span className="shrink-0 text-sm font-semibold text-slate-700">
+                      {formatXOF(s.revenue)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
           <div className="card p-6">

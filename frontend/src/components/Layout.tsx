@@ -12,13 +12,15 @@ import {
   LogOut,
   Menu,
   X,
-  Search,
   Calculator,
   ClipboardList,
   Wallet,
+  Undo2,
+  Plus,
 } from "lucide-react";
-import logo from "../assets/logo.jpg";
 import { useAuth } from "../context/AuthContext";
+import { useCompany } from "../context/CompanyContext";
+import NetworkBanner from "./NetworkBanner";
 import NotificationBell from "./NotificationBell";
 
 const navItems = [
@@ -29,8 +31,10 @@ const navItems = [
     end: true,
     adminOnly: true,
   },
-  { to: "/caisse", label: "Caisse", icon: Wallet },
-  { to: "/ventes", label: "Ventes", icon: ShoppingCart },
+  { to: "/caisse", label: "Ma caisse", icon: Wallet },
+  { to: "/ventes/nouvelle", label: "Nouvelle vente", icon: Plus },
+  { to: "/ventes", label: "Ventes", icon: ShoppingCart, end: true },
+  { to: "/retours", label: "Retours & avoirs", icon: Undo2 },
   { to: "/clients", label: "Clients", icon: Users },
   { to: "/produits", label: "Produits & Stock", icon: Package, adminOnly: true },
   {
@@ -58,7 +62,9 @@ const roleLabels: Record<string, string> = {
 
 const pageTitles: Record<string, string> = {
   "/": "Tableau de bord",
-  "/caisse": "Caisse",
+  "/caisse": "Ma caisse",
+  "/ventes/nouvelle": "Nouvelle vente",
+  "/retours": "Retours & avoirs",
   "/produits": "Produits & Stock",
   "/inventaire": "Inventaire",
   "/comptabilite": "Comptabilité",
@@ -73,8 +79,9 @@ const pageTitles: Record<string, string> = {
 export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { user, isAdmin, logout } = useAuth();
+  const { brandName, logoSrc } = useCompany();
   const location = useLocation();
-  const title = pageTitles[location.pathname] ?? "Référence Informatique";
+  const title = pageTitles[location.pathname] ?? brandName;
   const visibleNavItems = navItems.filter((item) => !item.adminOnly || isAdmin);
 
   const initials = (user?.name ?? "AD")
@@ -94,14 +101,18 @@ export default function Layout() {
       >
         <div className="flex items-center gap-3 px-6 py-5">
           <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl bg-white ring-1 ring-slate-100">
-            <img src={logo} alt="Logo" className="h-11 w-11 object-contain" />
+            <img
+              src={logoSrc}
+              alt={brandName}
+              className="h-11 w-11 object-contain"
+            />
           </div>
-          <div className="leading-tight">
-            <p className="text-sm font-extrabold tracking-tight text-brand-700">
-              RÉFÉRENCE
+          <div className="min-w-0 leading-tight">
+            <p className="truncate text-sm font-extrabold uppercase tracking-tight text-brand-700">
+              {brandName}
             </p>
-            <p className="text-xs font-semibold tracking-widest text-slate-500">
-              INFORMATIQUE
+            <p className="text-[11px] font-semibold tracking-widest text-slate-500">
+              VENTE &amp; STOCK
             </p>
           </div>
           <button
@@ -175,18 +186,18 @@ export default function Layout() {
           </button>
           <h1 className="text-xl font-bold text-slate-900">{title}</h1>
           <div className="ml-auto flex items-center gap-2">
-            <div className="hidden items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 md:flex">
-              <Search size={16} className="text-slate-400" />
-              <input
-                placeholder="Rechercher..."
-                className="w-40 bg-transparent text-sm outline-none placeholder:text-slate-400"
-              />
-            </div>
             {isAdmin && <NotificationBell />}
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-5 lg:p-7">
+        <NetworkBanner />
+
+        <main
+          className={`flex-1 overflow-y-auto ${
+            // The POS uses the whole screen: no page padding around it.
+            location.pathname === "/ventes/nouvelle" ? "p-0" : "p-5 lg:p-7"
+          }`}
+        >
           <Outlet />
         </main>
       </div>

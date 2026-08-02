@@ -19,9 +19,11 @@ from .routers import (
     inventory,
     notifications,
     products,
+    returns,
     sales,
     settings,
     suppliers,
+    sync,
     users,
 )
 from .seed import seed
@@ -52,11 +54,14 @@ app.include_router(notifications.router)
 app.include_router(cash.router)
 app.include_router(inventory.router)
 app.include_router(accounting.router)
+app.include_router(returns.router)
+app.include_router(sync.router)
 
 
 @app.on_event("startup")
 def on_startup():
     seed()
+    sync.trim_change_log()
 
 
 @app.get("/api/health")

@@ -37,6 +37,7 @@ class CompanySettings(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, default="Référence Informatique", nullable=False)
     slogan = Column(String, default="")
+    logo = Column(Text, default="")  # data URL, optional
     address = Column(String, default="")
     phone = Column(String, default="")
     email = Column(String, default="")
@@ -46,6 +47,8 @@ class CompanySettings(Base):
     receipt_header = Column(Text, default="")
     receipt_footer = Column(Text, default="Merci de votre confiance !")
     receipt_format = Column(String, default="A4")  # A4, 80mm
+    printer_name = Column(String, default="")  # printer shown in the print help
+    auto_print_cash = Column(Boolean, default=True, nullable=False)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
 
@@ -99,6 +102,7 @@ class Product(Base):
     sale_price = Column(Float, default=0)
     quantity = Column(Integer, default=0)
     min_stock = Column(Integer, default=5)
+    qr_code = Column(String, default="")  # scan code, defaults to the SKU
     created_at = Column(DateTime, default=utcnow)
 
     category = relationship("Category", back_populates="products")
@@ -121,12 +125,22 @@ class Sale(Base):
     cash_session_id = Column(
         Integer, ForeignKey("cash_sessions.id"), nullable=True
     )
+    print_count = Column(Integer, default=0, nullable=False)
+    # Idempotency key of tickets recorded offline, replayed once back online.
+    client_id = Column(String, unique=True, index=True, nullable=True)
 
     customer = relationship("Customer", back_populates="sales")
     created_by = relationship("User")
     items = relationship(
         "SaleItem", back_populates="sale", cascade="all, delete-orphan"
     )
+    returns = relationship(
+        "SaleReturn", back_populates="sale", cascade="all, delete-orphan"
+    )
+
+    @property
+    def returned_total(self) -> float:
+        return sum(r.total for r in self.returns)
 
 
 class SaleItem(Base):
@@ -143,6 +157,57 @@ class SaleItem(Base):
     sale = relationship("Sale", back_populates="items")
     product = relationship("Product")
 
+    @property
+    def returned_quantity(self) -> int:
+        """Units of this line already given back through a credit note."""
+        if not self.sale:
+            return 0
+        return sum(
+            line.quantity
+            for credit in self.sale.returns
+            for line in credit.items
+            if line.product_id == self.product_id
+        )
+
+
+class SaleReturn(Base):
+    """Credit note: goods given back, referencing the original ticket."""
+
+    __tablename__ = "sale_returns"
+
+    id = Column(Integer, primary_key=True, index=True)
+    reference = Column(String, unique=True, index=True, nullable=False)
+    sale_id = Column(Integer, ForeignKey("sales.id"), nullable=False)
+    date = Column(DateTime, default=utcnow)
+    total = Column(Float, default=0)
+    reason = Column(Text, default="")
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    sale = relationship("Sale", back_populates="returns")
+    created_by = relationship("User")
+    items = relationship(
+        "SaleReturnItem", back_populates="sale_return", cascade="all, delete-orphan"
+    )
+
+    @property
+    def sale_reference(self) -> str:
+        return self.sale.reference if self.sale else ""
+
+
+class SaleReturnItem(Base):
+    __tablename__ = "sale_return_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    return_id = Column(Integer, ForeignKey("sale_returns.id"), nullable=False)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
+    product_name = Column(String, default="")
+    quantity = Column(Integer, default=1)
+    unit_price = Column(Float, default=0)
+    subtotal = Column(Float, default=0)
+
+    sale_return = relationship("SaleReturn", back_populates="items")
+    product = relationship("Product")
+
 
 class CashSession(Base):
     """A till session: opened with a starting balance, closed with a count."""
@@ -151,6 +216,8 @@ class CashSession(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     opened_at = Column(DateTime, default=utcnow)
+    # Business day (YYYY-MM-DD): one session per cashier and per day.
+    business_day = Column(String, default="", index=True)
     opened_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     opening_balance = Column(Float, default=0)
     closed_at = Column(DateTime, nullable=True)
@@ -199,6 +266,29 @@ class StockMovement(Base):
 
     product = relationship("Product")
     created_by = relationship("User")
+
+
+class Counter(Base):
+    """Row-locked sequence, so concurrent tills never pick the same number."""
+
+    __tablename__ = "counters"
+
+    name = Column(String, primary_key=True)
+    value = Column(Integer, default=0, nullable=False)
+
+
+class ChangeLog(Base):
+    """Write feed used by the workstations to refresh almost instantly.
+
+    Every flush that touches business data appends a row; clients poll the
+    latest id and reload their screen when it moves.
+    """
+
+    __tablename__ = "change_log"
+
+    id = Column(Integer, primary_key=True, index=True)
+    entities = Column(String, default="")
+    at = Column(DateTime, default=utcnow)
 
 
 class Notification(Base):

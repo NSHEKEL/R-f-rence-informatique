@@ -18,3 +18,5 @@ dist/
 
 # Env
 .env
+backend/.env
+backend/.secret.key

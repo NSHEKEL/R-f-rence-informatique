@@ -88,6 +88,39 @@ leur navigateur.
   simultanées sont gérées (références uniques, stock décrémenté de façon
   atomique).
 
+### Base de données centralisée PostgreSQL (recommandé en entreprise)
+
+Pour un déploiement multi-postes durable, la base SQLite est remplacée par une
+base **PostgreSQL** hébergée sur le poste serveur ou chez un hébergeur (Neon,
+Supabase, VPS…). Seul le backend parle à la base : les postes clients passent
+toujours par l'API, jamais directement par la base.
+
+1. Créer la base et son utilisateur :
+
+   ```sql
+   CREATE USER vente WITH PASSWORD 'motdepasse';
+   CREATE DATABASE reference_informatique OWNER vente;
+   ```
+
+2. Sur le poste serveur, créer un fichier `.env` à côté de l'exécutable (ou
+   dans `backend/`) :
+
+   ```env
+   DATABASE_URL=postgresql://vente:motdepasse@192.168.1.20:5432/reference_informatique
+   SECRET_KEY=une-longue-chaine-aleatoire
+   ```
+
+   Variables facultatives : `ACCESS_TOKEN_EXPIRE_MINUTES`, `DB_POOL_SIZE`,
+   `DB_MAX_OVERFLOW`, `DB_POOL_RECYCLE`.
+
+3. Relancer l'application : les tables sont créées et migrées automatiquement.
+   Sans `DATABASE_URL`, l'application retombe sur SQLite (mono-poste).
+
+Les postes indiquent l'adresse du serveur dans *Paramètres → Serveur central*
+(ou ouvrent directement `http://<ip-serveur>:8000`). Les écrans se
+rafraîchissent automatiquement quand un autre poste enregistre une vente, un
+retour ou une ouverture de caisse.
+
 ## Package Windows (application installable)
 
 Un exécutable Windows autonome (`.exe`) regroupe le backend et le frontend :

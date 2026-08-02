@@ -1,5 +1,4 @@
 import { createPortal } from "react-dom";
-import logo from "../assets/logo.jpg";
 import { formatDate, formatMoney } from "../api/client";
 import type { CompanySettings, ReceiptFormat, Sale } from "../types";
 
@@ -7,9 +6,15 @@ interface ReceiptProps {
   sale: Sale;
   company: CompanySettings | null;
   format: ReceiptFormat;
+  /** Marks a re-print so the customer copy cannot pass for the original. */
+  duplicate?: boolean;
 }
 
-function ReceiptBody({ sale, company }: Omit<ReceiptProps, "format">) {
+function ReceiptBody({
+  sale,
+  company,
+  duplicate,
+}: Omit<ReceiptProps, "format">) {
   const currency = company?.currency || "FCFA";
   const money = (v: number) => formatMoney(v, currency);
   const footer =
@@ -20,7 +25,9 @@ function ReceiptBody({ sale, company }: Omit<ReceiptProps, "format">) {
   return (
     <>
       <div className="receipt-head">
-        <img src={logo} alt="Logo" className="receipt-logo" />
+        {company?.logo && (
+          <img src={company.logo} alt="" className="receipt-logo" />
+        )}
         <div>
           <p className="receipt-company">
             {company?.name || "Référence Informatique"}
@@ -44,6 +51,8 @@ function ReceiptBody({ sale, company }: Omit<ReceiptProps, "format">) {
       <p className="receipt-title">
         {company?.receipt_header || "Reçu de caisse"}
       </p>
+
+      {duplicate && <p className="receipt-duplicate">DUPLICATA</p>}
 
       <div className="receipt-meta">
         <span>Référence</span>
@@ -102,8 +111,15 @@ function ReceiptBody({ sale, company }: Omit<ReceiptProps, "format">) {
  * print-only copy portaled to <body> so the printed output escapes the modal's
  * scroll container (which otherwise clipped it to a single, cut-off page).
  */
-export default function Receipt({ sale, company, format }: ReceiptProps) {
-  const body = <ReceiptBody sale={sale} company={company} />;
+export default function Receipt({
+  sale,
+  company,
+  format,
+  duplicate,
+}: ReceiptProps) {
+  const body = (
+    <ReceiptBody sale={sale} company={company} duplicate={duplicate} />
+  );
   return (
     <>
       <div className={`receipt receipt-preview receipt-${format}`}>{body}</div>

@@ -12,6 +12,7 @@ export interface CompanySettings {
   id: number;
   name: string;
   slogan: string;
+  logo: string;
   address: string;
   phone: string;
   email: string;
@@ -21,6 +22,8 @@ export interface CompanySettings {
   receipt_header: string;
   receipt_footer: string;
   receipt_format: ReceiptFormat;
+  printer_name: string;
+  auto_print_cash: boolean;
 }
 
 export interface Category {
@@ -57,6 +60,7 @@ export interface Product {
   sale_price: number;
   quantity: number;
   min_stock: number;
+  qr_code: string;
   created_at: string;
   category?: Category | null;
   supplier?: Supplier | null;
@@ -69,6 +73,7 @@ export interface SaleItem {
   quantity: number;
   unit_price: number;
   subtotal: number;
+  returned_quantity: number;
 }
 
 export interface Sale {
@@ -84,6 +89,31 @@ export interface Sale {
   receipt_footer: string;
   created_by?: User | null;
   items: SaleItem[];
+  print_count: number;
+  returned_total: number;
+  /** Set on tickets queued offline and not yet pushed to the server. */
+  pending_sync?: boolean;
+}
+
+export interface ReturnItem {
+  id: number;
+  product_id: number | null;
+  product_name: string;
+  quantity: number;
+  unit_price: number;
+  subtotal: number;
+}
+
+export interface SaleReturn {
+  id: number;
+  reference: string;
+  sale_id: number;
+  sale_reference: string;
+  date: string;
+  total: number;
+  reason: string;
+  created_by?: User | null;
+  items: ReturnItem[];
 }
 
 export interface MonthlyRevenue {
@@ -94,6 +124,12 @@ export interface MonthlyRevenue {
 export interface TopProduct {
   name: string;
   quantity: number;
+  revenue: number;
+}
+
+export interface TopSeller {
+  name: string;
+  sales_count: number;
   revenue: number;
 }
 
@@ -109,7 +145,10 @@ export interface DashboardStats {
   monthly_revenue: MonthlyRevenue[];
   recent_sales: Sale[];
   top_products: TopProduct[];
+  top_sellers: TopSeller[];
   low_stock_products: Product[];
+  period_start: string | null;
+  period_end: string | null;
 }
 
 export interface Notification {
@@ -126,6 +165,7 @@ export interface Notification {
 export interface CashSession {
   id: number;
   opened_at: string;
+  business_day: string;
   opened_by?: User | null;
   opening_balance: number;
   closed_at: string | null;
@@ -180,6 +220,7 @@ export interface AccountingSummary {
   expenses_total: number;
   net_profit: number;
   sales_count: number;
+  returns_total: number;
   revenue_by_payment: AccountingCategory[];
   expenses_by_category: AccountingCategory[];
   daily_revenue: AccountingCategory[];

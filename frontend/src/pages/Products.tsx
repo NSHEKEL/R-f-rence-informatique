@@ -1,11 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import { Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { Pencil, Plus, QrCode, Search, Trash2 } from "lucide-react";
 import api, { formatXOF } from "../api/client";
 import type { Category, Product, Supplier } from "../types";
 import Modal from "../components/Modal";
+import ProductQrCode from "../components/ProductQrCode";
+import { scanCode } from "../lib/scan";
 import { stockBadge } from "../components/badges";
 import { useAuth } from "../context/AuthContext";
+import { useSyncVersion } from "../context/SyncContext";
 
 const empty = {
   name: "",
@@ -17,10 +20,12 @@ const empty = {
   sale_price: 0,
   quantity: 0,
   min_stock: 5,
+  qr_code: "",
 };
 
 export default function Products() {
   const { isAdmin } = useAuth();
+  const version = useSyncVersion();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -31,9 +36,10 @@ export default function Products() {
   const [form, setForm] = useState({ ...empty });
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [qrProduct, setQrProduct] = useState<Product | null>(null);
   const pageSize = 8;
 
-  async function load() {
+  const load = useCallback(async () => {
     const [p, c, s] = await Promise.all([
       api.get<Product[]>("/products"),
       api.get<Category[]>("/categories"),
@@ -42,17 +48,19 @@ export default function Products() {
     setProducts(p.data);
     setCategories(c.data);
     setSuppliers(s.data);
-  }
+  }, []);
 
   useEffect(() => {
     load();
-  }, []);
+  }, [load, version]);
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
     return products.filter(
       (p) =>
-        p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)
+        p.name.toLowerCase().includes(q) ||
+        p.sku.toLowerCase().includes(q) ||
+        (p.qr_code || "").toLowerCase().includes(q)
     );
   }, [products, query]);
 
@@ -78,6 +86,7 @@ export default function Products() {
       sale_price: p.sale_price,
       quantity: p.quantity,
       min_stock: p.min_stock,
+      qr_code: p.qr_code ?? "",
     });
     setError("");
     setModalOpen(true);
@@ -153,6 +162,7 @@ export default function Products() {
                 <th className="px-5 py-3 text-right">Prix vente</th>
                 <th className="px-5 py-3 text-center">Stock</th>
                 <th className="px-5 py-3 text-center">État</th>
+                <th className="px-5 py-3 text-center">QR</th>
                 {isAdmin && <th className="px-5 py-3 text-right">Actions</th>}
               </tr>
             </thead>
@@ -173,6 +183,15 @@ export default function Products() {
                     {p.quantity}
                   </td>
                   <td className="px-5 py-3.5 text-center">{stockBadge(p)}</td>
+                  <td className="px-5 py-3.5 text-center">
+                    <button
+                      onClick={() => setQrProduct(p)}
+                      title="Code QR de l'article"
+                      className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
+                    >
+                      <QrCode size={16} />
+                    </button>
+                  </td>
                   {isAdmin && (
                     <td className="px-5 py-3.5">
                       <div className="flex justify-end gap-1">
@@ -196,7 +215,7 @@ export default function Products() {
               {paged.length === 0 && (
                 <tr>
                   <td
-                    colSpan={isAdmin ? 6 : 5}
+                    colSpan={isAdmin ? 7 : 6}
                     className="px-5 py-10 text-center text-slate-400"
                   >
                     Aucun produit trouvé.
@@ -337,6 +356,17 @@ export default function Products() {
             />
           </div>
           <div className="sm:col-span-2">
+            <label className="label">
+              Code QR / code-barres (laisser vide pour utiliser le SKU)
+            </label>
+            <input
+              className="input"
+              value={form.qr_code}
+              onChange={(e) => setForm({ ...form, qr_code: e.target.value })}
+              placeholder="Collez ici le code déjà imprimé sur l'article"
+            />
+          </div>
+          <div className="sm:col-span-2">
             <label className="label">Description</label>
             <textarea
               className="input min-h-[80px]"
@@ -345,6 +375,22 @@ export default function Products() {
             />
           </div>
         </div>
+      </Modal>
+
+      <Modal
+        open={qrProduct !== null}
+        onClose={() => setQrProduct(null)}
+        title="Code QR de l'article"
+      >
+        {qrProduct && (
+          <div className="space-y-4">
+            <ProductQrCode product={qrProduct} />
+            <p className="rounded-xl bg-slate-50 px-4 py-3 text-center text-xs text-slate-500">
+              Scannez ce code sur l'écran de vente pour ajouter l'article au
+              panier (code : {scanCode(qrProduct)}).
+            </p>
+          </div>
+        )}
       </Modal>
     </div>
   );

@@ -5,6 +5,8 @@ import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Products from "./pages/Products";
 import Sales from "./pages/Sales";
+import NouvelleVente from "./pages/NouvelleVente";
+import Returns from "./pages/Returns";
 import Caisse from "./pages/Caisse";
 import Inventaire from "./pages/Inventaire";
 import Comptabilite from "./pages/Comptabilite";
@@ -53,6 +55,8 @@ export default function App() {
         <Route path="/" element={<HomeRoute />} />
         <Route path="/caisse" element={<Caisse />} />
         <Route path="/ventes" element={<Sales />} />
+        <Route path="/ventes/nouvelle" element={<NouvelleVente />} />
+        <Route path="/retours" element={<Returns />} />
         <Route path="/clients" element={<Customers />} />
         <Route
           path="/produits"

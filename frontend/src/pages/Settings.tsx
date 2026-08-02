@@ -1,22 +1,29 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import axios from "axios";
 import {
   Building2,
   Check,
+  ImagePlus,
   Mail,
+  Printer,
+  Server,
   ShieldCheck,
+  Trash2,
   User,
 } from "lucide-react";
-import logo from "../assets/logo.jpg";
-import api from "../api/client";
+import api, { API_BASE, setServerUrl } from "../api/client";
 import type { CompanySettings } from "../types";
 import { useAuth } from "../context/AuthContext";
+import { useCompany } from "../context/CompanyContext";
 
 type CompanyForm = Omit<CompanySettings, "id">;
+
+const LOGO_MAX_BYTES = 400_000;
 
 const emptyCompany: CompanyForm = {
   name: "",
   slogan: "",
+  logo: "",
   address: "",
   phone: "",
   email: "",
@@ -26,15 +33,22 @@ const emptyCompany: CompanyForm = {
   receipt_header: "",
   receipt_footer: "",
   receipt_format: "A4",
+  printer_name: "",
+  auto_print_cash: true,
 };
 
 export default function Settings() {
   const { user } = useAuth();
+  const { setCompany: setBranding } = useCompany();
   const [company, setCompany] = useState<CompanyForm>(emptyCompany);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+  const logoInput = useRef<HTMLInputElement>(null);
+
+  const [serverUrl, setServerUrlValue] = useState(API_BASE);
+  const [serverStatus, setServerStatus] = useState("");
 
   useEffect(() => {
     api
@@ -47,6 +61,34 @@ export default function Settings() {
       .catch(() => setError("Impossible de charger la configuration."))
       .finally(() => setLoading(false));
   }, []);
+
+  function pickLogo(file: File) {
+    if (file.size > LOGO_MAX_BYTES) {
+      setError("Logo trop lourd : choisissez une image de moins de 400 Ko.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setError("");
+      update({ logo: String(reader.result) });
+    };
+    reader.readAsDataURL(file);
+  }
+
+  /** Points this workstation at the central server hosting the database. */
+  async function testServer() {
+    setServerStatus("Test en cours...");
+    const base = serverUrl.trim().replace(/\/+$/, "");
+    try {
+      const res = await axios.get<{ status: string; app: string }>(
+        `${base}/api/health`,
+        { timeout: 5000 }
+      );
+      setServerStatus(`Connexion réussie : ${res.data.app}`);
+    } catch {
+      setServerStatus("Serveur injoignable à cette adresse.");
+    }
+  }
 
   function update(patch: Partial<CompanyForm>) {
     setCompany((c) => ({ ...c, ...patch }));
@@ -61,6 +103,7 @@ export default function Settings() {
       const { id: _id, ...rest } = res.data;
       void _id;
       setCompany(rest);
+      setBranding(res.data);
       setSaved(true);
     } catch (err) {
       if (axios.isAxiosError(err)) {
@@ -75,8 +118,16 @@ export default function Settings() {
     <div className="max-w-3xl space-y-6">
       <div className="card p-6">
         <div className="flex items-center gap-4">
-          <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-white ring-1 ring-slate-100">
-            <img src={logo} alt="Logo" className="h-16 w-16 object-contain" />
+          <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-slate-50 text-xs text-slate-400 ring-1 ring-slate-100">
+            {company.logo ? (
+              <img
+                src={company.logo}
+                alt="Logo"
+                className="h-16 w-16 object-contain"
+              />
+            ) : (
+              "Sans logo"
+            )}
           </div>
           <div>
             <h2 className="text-lg font-bold text-slate-900">
@@ -127,6 +178,39 @@ export default function Settings() {
                 onChange={(e) => update({ slogan: e.target.value })}
                 placeholder="Votre partenaire informatique"
               />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="label">Logo de l'entreprise (facultatif)</label>
+              <div className="flex flex-wrap items-center gap-3">
+                <input
+                  ref={logoInput}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) pickLogo(file);
+                    e.target.value = "";
+                  }}
+                />
+                <button
+                  className="btn-ghost"
+                  onClick={() => logoInput.current?.click()}
+                >
+                  <ImagePlus size={16} /> Choisir une image
+                </button>
+                {company.logo && (
+                  <button
+                    className="btn-ghost text-red-600"
+                    onClick={() => update({ logo: "" })}
+                  >
+                    <Trash2 size={16} /> Retirer le logo
+                  </button>
+                )}
+                <span className="text-xs text-slate-400">
+                  Sans logo, cette zone reste vide sur le reçu.
+                </span>
+              </div>
             </div>
             <div className="sm:col-span-2">
               <label className="label">Adresse</label>
@@ -207,6 +291,32 @@ export default function Settings() {
                 <option value="80mm">Ticket 80 mm (imprimante thermique)</option>
               </select>
             </div>
+            <div>
+              <label className="label">Imprimante à utiliser</label>
+              <input
+                className="input"
+                value={company.printer_name}
+                onChange={(e) => update({ printer_name: e.target.value })}
+                placeholder="Ex. EPSON TM-T20 (nom Windows)"
+              />
+              <p className="mt-1 text-xs text-slate-400">
+                Nom rappelé sur l'écran d'impression ; sélectionnez la même
+                imprimante dans la boîte de dialogue Windows.
+              </p>
+            </div>
+            <div className="sm:col-span-2">
+              <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={company.auto_print_cash}
+                  onChange={(e) =>
+                    update({ auto_print_cash: e.target.checked })
+                  }
+                />
+                Imprimer automatiquement les tickets d'ouverture et de fermeture
+                de caisse
+              </label>
+            </div>
             <div className="sm:col-span-2">
               <label className="label">Message de pied de reçu</label>
               <textarea
@@ -230,8 +340,51 @@ export default function Settings() {
         )}
       </div>
 
+      {/* Central server */}
       <div className="card p-6">
-        <h3 className="mb-4 text-base font-bold text-slate-900">Mon compte</h3>
+        <div className="mb-4 flex items-center gap-2">
+          <Server size={18} className="text-brand-600" />
+          <h3 className="text-base font-bold text-slate-900">
+            Serveur central (base de données partagée)
+          </h3>
+        </div>
+        <p className="mb-4 text-sm text-slate-500">
+          Adresse du poste serveur sur lequel tourne l'application. Tous les
+          ordinateurs qui pointent vers la même adresse partagent les mêmes
+          données. Laissez vide sur le poste serveur lui-même.
+        </p>
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <input
+            className="input"
+            value={serverUrl}
+            onChange={(e) => setServerUrlValue(e.target.value)}
+            placeholder="http://192.168.1.20:8000"
+          />
+          <button className="btn-ghost shrink-0" onClick={testServer}>
+            Tester
+          </button>
+          <button
+            className="btn-primary shrink-0"
+            onClick={() => {
+              setServerUrl(serverUrl);
+              window.location.reload();
+            }}
+          >
+            Enregistrer et recharger
+          </button>
+        </div>
+        {serverStatus && (
+          <p className="mt-3 text-sm font-medium text-slate-600">
+            {serverStatus}
+          </p>
+        )}
+      </div>
+
+      <div className="card p-6">
+        <div className="mb-4 flex items-center gap-2">
+          <Printer size={18} className="text-slate-400" />
+          <h3 className="text-base font-bold text-slate-900">Mon compte</h3>
+        </div>
         <div className="space-y-4">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-600">

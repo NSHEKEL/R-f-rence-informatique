@@ -118,6 +118,16 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.12em;
 }
+.receipt-duplicate {
+  margin: 0 0 0.5rem;
+  padding: 0.2rem;
+  border: 1px solid #b91c1c;
+  color: #b91c1c;
+  text-align: center;
+  font-size: 0.85em;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+}
 .receipt-meta {
   display: grid;
   grid-template-columns: auto 1fr;

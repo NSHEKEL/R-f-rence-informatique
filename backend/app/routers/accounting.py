@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import require_admin
 from ..database import get_db
-from ..models import Expense, Product, Sale, User
+from ..models import Expense, Product, Sale, SaleReturn, User
 from ..schemas import (
     AccountingCategory,
     AccountingSummary,
@@ -71,6 +71,20 @@ def summary(
         for item in sale.items:
             cost += purchase_prices.get(item.product_id, 0) * item.quantity
 
+    # Credit notes reduce both the revenue and the cost of goods sold.
+    credits = (
+        db.query(SaleReturn)
+        .filter(SaleReturn.date >= period_start, SaleReturn.date <= period_end)
+        .all()
+    )
+    returns_total = sum(c.total for c in credits)
+    for credit in credits:
+        revenue -= credit.total
+        by_payment["Retours"] -= credit.total
+        by_day[credit.date.strftime("%d/%m")] -= credit.total
+        for item in credit.items:
+            cost -= purchase_prices.get(item.product_id, 0) * item.quantity
+
     expenses = (
         db.query(Expense)
         .filter(Expense.date >= period_start, Expense.date <= period_end)
@@ -98,6 +112,7 @@ def summary(
         expenses_total=expenses_total,
         net_profit=gross_margin - expenses_total,
         sales_count=len(sales),
+        returns_total=returns_total,
         revenue_by_payment=[
             AccountingCategory(name=k, amount=v) for k, v in by_payment.items()
         ],
