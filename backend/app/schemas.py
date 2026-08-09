@@ -57,6 +57,12 @@ class CompanySettingsOut(BaseModel):
     receipt_format: str = "A4"
     printer_name: str = ""
     auto_print_cash: bool = True
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_from: str = ""
+    smtp_tls: bool = True
+    smtp_configured: bool = False
 
 
 class CompanySettingsUpdate(BaseModel):
@@ -74,6 +80,12 @@ class CompanySettingsUpdate(BaseModel):
     receipt_format: Optional[str] = None
     printer_name: Optional[str] = None
     auto_print_cash: Optional[bool] = None
+    smtp_host: Optional[str] = None
+    smtp_port: Optional[int] = None
+    smtp_user: Optional[str] = None
+    smtp_password: Optional[str] = None
+    smtp_from: Optional[str] = None
+    smtp_tls: Optional[bool] = None
 
 
 # ---------- Category ----------
@@ -135,9 +147,12 @@ class ProductBase(BaseModel):
     supplier_id: Optional[int] = None
     purchase_price: float = 0
     sale_price: float = 0
+    wholesale_price: float = 0
     quantity: int = 0
     min_stock: int = 5
     qr_code: str = ""
+    barcode: str = ""
+    image: str = ""
 
 
 class ProductCreate(ProductBase):
@@ -167,6 +182,7 @@ class SaleCreate(BaseModel):
     payment_method: str = "Espèces"
     status: str = "Payée"
     note: str = ""
+    price_mode: str = "detail"  # detail, gros
     items: List[SaleItemCreate]
     # Idempotency key set by tills recording offline; replaying the same key
     # returns the existing ticket instead of duplicating it.
@@ -203,6 +219,7 @@ class SaleOut(BaseModel):
     payment_method: str
     note: str = ""
     receipt_footer: str = ""
+    price_mode: str = "detail"
     created_by: Optional[UserOut] = None
     items: List[SaleItemOut] = []
     print_count: int = 0
@@ -242,6 +259,84 @@ class ReturnOut(BaseModel):
     reason: str = ""
     created_by: Optional[UserOut] = None
     items: List[ReturnItemOut] = []
+
+
+# ---------- Proforma ----------
+class ProformaItemCreate(BaseModel):
+    product_id: Optional[int] = None
+    product_name: str = ""
+    quantity: int = 1
+    unit_price: float = 0
+
+
+class ProformaCreate(BaseModel):
+    customer_id: Optional[int] = None
+    customer_name: str = ""
+    valid_until: Optional[datetime] = None
+    note: str = ""
+    items: List[ProformaItemCreate]
+
+
+class ProformaItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    product_id: Optional[int]
+    product_name: str
+    quantity: int
+    unit_price: float
+    subtotal: float
+
+
+class ProformaOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    reference: str
+    customer_id: Optional[int]
+    customer: Optional[CustomerOut] = None
+    customer_name: str = ""
+    date: datetime
+    valid_until: Optional[datetime] = None
+    total: float
+    note: str = ""
+    created_by: Optional[UserOut] = None
+    items: List[ProformaItemOut] = []
+
+
+# ---------- Password reset ----------
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    password: str
+
+
+class ForgotPasswordResult(BaseModel):
+    sent: bool
+    message: str
+
+
+# ---------- Reports ----------
+class ReportRow(BaseModel):
+    label: str
+    quantity: float = 0
+    amount: float = 0
+
+
+class SalesReport(BaseModel):
+    period_start: datetime
+    period_end: datetime
+    sales_count: int
+    revenue: float
+    returns_total: float
+    net_revenue: float
+    average_ticket: float
+    by_day: List[ReportRow]
+    by_payment: List[ReportRow]
+    by_seller: List[ReportRow]
+    by_category: List[ReportRow]
+    by_product: List[ReportRow]
 
 
 # ---------- Dashboard ----------

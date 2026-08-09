@@ -1,3 +1,5 @@
+import secrets
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -94,6 +96,22 @@ def update_user(
     db.commit()
     db.refresh(user)
     return user
+
+
+@router.post("/{user_id}/reset-password")
+def reset_user_password(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Give a user a temporary password, shown once to the administrator."""
+    user = db.query(User).get(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    temporary = secrets.token_urlsafe(6)
+    user.hashed_password = hash_password(temporary)
+    db.commit()
+    return {"password": temporary}
 
 
 @router.delete("/{user_id}", status_code=204)

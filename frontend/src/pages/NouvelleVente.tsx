@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import { Link } from "react-router-dom";
 import {
+  Flame,
+  Image as ImageIcon,
   Minus,
   Plus,
   Printer,
@@ -15,6 +17,7 @@ import {
 import api, { formatXOF } from "../api/client";
 import type {
   CashSessionDetail,
+  Category,
   Customer,
   Product,
   ReceiptFormat,
@@ -24,6 +27,7 @@ import Modal from "../components/Modal";
 import PrinterHint from "../components/PrinterHint";
 import Receipt from "../components/Receipt";
 import { printReceipt } from "../lib/print";
+import { scanCodes } from "../lib/scan";
 import {
   fetchCached,
   newClientId,
@@ -37,6 +41,15 @@ import { useSyncVersion } from "../context/SyncContext";
 
 const PAYMENTS = ["Espèces", "Mobile Money", "Carte bancaire", "Virement"];
 
+type PriceMode = "detail" | "gros";
+
+/** Wholesale price when the till is in "gros" mode and the article has one. */
+function unitPrice(product: Product, mode: PriceMode): number {
+  return mode === "gros" && (product.wholesale_price || 0) > 0
+    ? product.wholesale_price
+    : product.sale_price;
+}
+
 interface CartLine {
   product: Product;
   quantity: number;
@@ -49,7 +62,8 @@ function offlineSale(
   customer: Customer | null,
   payment: string,
   note: string,
-  sellerName: string
+  sellerName: string,
+  priceMode: PriceMode
 ): Sale {
   return {
     id: -Date.now(),
@@ -57,19 +71,23 @@ function offlineSale(
     customer_id: customer?.id ?? null,
     customer,
     date: new Date().toISOString(),
-    total: cart.reduce((s, l) => s + l.product.sale_price * l.quantity, 0),
+    total: cart.reduce(
+      (s, l) => s + unitPrice(l.product, priceMode) * l.quantity,
+      0
+    ),
     status: "Payée",
     payment_method: payment,
     note,
     receipt_footer: "",
+    price_mode: priceMode,
     created_by: { id: 0, name: sellerName, email: "", role: "", is_active: true },
     items: cart.map((l, index) => ({
       id: index,
       product_id: l.product.id,
       product_name: l.product.name,
       quantity: l.quantity,
-      unit_price: l.product.sale_price,
-      subtotal: l.product.sale_price * l.quantity,
+      unit_price: unitPrice(l.product, priceMode),
+      subtotal: unitPrice(l.product, priceMode) * l.quantity,
       returned_quantity: 0,
     })),
     print_count: 0,
@@ -85,6 +103,10 @@ export default function NouvelleVente() {
   const version = useSyncVersion();
 
   const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [bestSellerIds, setBestSellerIds] = useState<number[]>([]);
+  const [activeCategory, setActiveCategory] = useState<number | "top">("top");
+  const [priceMode, setPriceMode] = useState<PriceMode>("detail");
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [session, setSession] = useState<CashSessionDetail | null>(null);
   const [tillLoaded, setTillLoaded] = useState(false);
@@ -92,7 +114,8 @@ export default function NouvelleVente() {
 
   const [query, setQuery] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
-  const [customerId, setCustomerId] = useState("");
+  const [customerQuery, setCustomerQuery] = useState("");
+  const [customer, setCustomer] = useState<Customer | null>(null);
   const [payment, setPayment] = useState(PAYMENTS[0]);
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
@@ -114,12 +137,16 @@ export default function NouvelleVente() {
   const loadProducts = useCallback(async () => {
     const { data } = await fetchCached<Product[]>("/products", "products");
     setProducts(data);
+    const cats = await fetchCached<Category[]>("/categories", "categories");
+    setCategories(cats.data);
+    try {
+      const top = await api.get<Product[]>("/products/best-sellers");
+      setBestSellerIds(top.data.map((p) => p.id));
+    } catch {
+      /* offline: fall back to every article */
+    }
   }, []);
 
-  const loadCustomers = useCallback(async () => {
-    const { data } = await fetchCached<Customer[]>("/customers", "customers");
-    setCustomers(data);
-  }, []);
 
   const loadSession = useCallback(async () => {
     try {
@@ -138,9 +165,24 @@ export default function NouvelleVente() {
 
   useEffect(() => {
     loadProducts().catch(() => setProducts([]));
-    loadCustomers().catch(() => setCustomers([]));
     loadSession();
-  }, [loadProducts, loadCustomers, loadSession, version]);
+  }, [loadProducts, loadSession, version]);
+
+  // Customers are looked up on demand: the till never lists the whole file.
+  useEffect(() => {
+    const term = customerQuery.trim();
+    if (term.length < 2) {
+      setCustomers([]);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      api
+        .get<Customer[]>("/customers/search", { params: { q: term } })
+        .then((res) => setCustomers(res.data))
+        .catch(() => setCustomers([]));
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [customerQuery]);
 
   useEffect(() => {
     if (company) {
@@ -151,20 +193,31 @@ export default function NouvelleVente() {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const available = products.filter((p) => p.quantity > 0);
-    if (!q) return available.slice(0, 40);
-    return available
-      .filter(
-        (p) =>
-          p.name.toLowerCase().includes(q) ||
-          p.sku.toLowerCase().includes(q) ||
-          (p.qr_code || "").toLowerCase().includes(q)
-      )
-      .slice(0, 40);
-  }, [products, query]);
+    if (q) {
+      return available
+        .filter(
+          (p) =>
+            p.name.toLowerCase().includes(q) ||
+            scanCodes(p).some((code) => code.includes(q))
+        )
+        .slice(0, 60);
+    }
+    if (activeCategory === "top") {
+      const ranked = bestSellerIds
+        .map((id) => available.find((p) => p.id === id))
+        .filter((p): p is Product => Boolean(p));
+      return ranked.length > 0 ? ranked : available.slice(0, 40);
+    }
+    return available.filter((p) => p.category_id === activeCategory);
+  }, [products, query, activeCategory, bestSellerIds]);
 
   const total = useMemo(
-    () => cart.reduce((sum, l) => sum + l.product.sale_price * l.quantity, 0),
-    [cart]
+    () =>
+      cart.reduce(
+        (sum, l) => sum + unitPrice(l.product, priceMode) * l.quantity,
+        0
+      ),
+    [cart, priceMode]
   );
 
   const addToCart = useCallback((product: Product) => {
@@ -184,10 +237,7 @@ export default function NouvelleVente() {
     const q = query.trim().toLowerCase();
     if (!q) return;
     const exact = products.find(
-      (p) =>
-        p.sku.toLowerCase() === q ||
-        (p.qr_code || "").toLowerCase() === q ||
-        p.name.toLowerCase() === q
+      (p) => scanCodes(p).includes(q) || p.name.toLowerCase() === q
     );
     const target = exact ?? filtered[0];
     if (!target) {
@@ -221,8 +271,9 @@ export default function NouvelleVente() {
     }
     try {
       const res = await api.post<Customer>("/customers", customerForm);
-      setCustomers((prev) => [...prev, res.data]);
-      setCustomerId(String(res.data.id));
+      setCustomer(res.data);
+      setCustomerQuery("");
+      setCustomers([]);
       setNewCustomer(false);
       setCustomerForm({ name: "", phone: "", email: "", address: "" });
     } catch (err) {
@@ -239,12 +290,12 @@ export default function NouvelleVente() {
     }
     setSaving(true);
     setError("");
-    const customer = customers.find((c) => String(c.id) === customerId) ?? null;
     const payload: SalePayload = {
       client_id: newClientId(),
       customer_id: customer?.id ?? null,
       payment_method: payment,
       status: "Payée",
+      price_mode: priceMode,
       note,
       items: cart.map((l) => ({
         product_id: l.product.id,
@@ -274,7 +325,8 @@ export default function NouvelleVente() {
         customer,
         payment,
         note,
-        user?.name ?? ""
+        user?.name ?? "",
+        priceMode
       );
       queueSale({ payload, snapshot });
       setLastSale(snapshot);
@@ -287,7 +339,9 @@ export default function NouvelleVente() {
   function resetCart() {
     setCart([]);
     setNote("");
-    setCustomerId("");
+    setCustomer(null);
+    setCustomerQuery("");
+    setCustomers([]);
     setQuery("");
     searchRef.current?.focus();
   }
@@ -366,6 +420,33 @@ export default function NouvelleVente() {
               {flash}
             </p>
           )}
+          {!query && (
+            <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
+              <button
+                onClick={() => setActiveCategory("top")}
+                className={`flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
+                  activeCategory === "top"
+                    ? "bg-brand-600 text-white"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                <Flame size={13} /> Meilleures ventes
+              </button>
+              {categories.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => setActiveCategory(c.id)}
+                  className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
+                    activeCategory === c.id
+                      ? "bg-brand-600 text-white"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
+                >
+                  {c.name}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="grid min-h-0 flex-1 grid-cols-2 gap-3 overflow-y-auto sm:grid-cols-3 xl:grid-cols-4">
             {filtered.map((p) => (
               <button
@@ -373,11 +454,22 @@ export default function NouvelleVente() {
                 onClick={() => addToCart(p)}
                 className="flex flex-col rounded-xl border border-slate-200 p-3 text-left transition hover:border-brand-400 hover:bg-brand-50"
               >
+                {p.image ? (
+                  <img
+                    src={p.image}
+                    alt=""
+                    className="mb-2 h-20 w-full rounded-lg object-cover"
+                  />
+                ) : (
+                  <span className="mb-2 flex h-20 w-full items-center justify-center rounded-lg bg-slate-100 text-slate-300">
+                    <ImageIcon size={20} />
+                  </span>
+                )}
                 <p className="line-clamp-2 text-sm font-semibold text-slate-800">
                   {p.name}
                 </p>
                 <p className="mt-auto pt-2 text-sm font-extrabold text-brand-700">
-                  {formatXOF(p.sale_price)}
+                  {formatXOF(unitPrice(p, priceMode))}
                 </p>
                 {isAdmin && (
                   <p className="text-xs text-slate-400">Stock : {p.quantity}</p>
@@ -402,6 +494,22 @@ export default function NouvelleVente() {
             </span>
           </div>
 
+          <div className="mb-3 flex rounded-xl bg-slate-100 p-1 text-xs font-semibold">
+            {(["detail", "gros"] as PriceMode[]).map((mode) => (
+              <button
+                key={mode}
+                onClick={() => setPriceMode(mode)}
+                className={`flex-1 rounded-lg py-1.5 transition ${
+                  priceMode === mode
+                    ? "bg-white text-brand-700 shadow-sm"
+                    : "text-slate-500"
+                }`}
+              >
+                {mode === "detail" ? "Prix détail" : "Prix gros"}
+              </button>
+            ))}
+          </div>
+
           <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
             {cart.length === 0 && (
               <p className="rounded-xl bg-slate-50 px-4 py-10 text-center text-sm text-slate-400">
@@ -418,9 +526,9 @@ export default function NouvelleVente() {
                     {l.product.name}
                   </p>
                   <p className="text-xs text-slate-500">
-                    {formatXOF(l.product.sale_price)} ×{l.quantity} ={" "}
+                    {formatXOF(unitPrice(l.product, priceMode))} ×{l.quantity} ={" "}
                     <span className="font-semibold text-slate-700">
-                      {formatXOF(l.product.sale_price * l.quantity)}
+                      {formatXOF(unitPrice(l.product, priceMode) * l.quantity)}
                     </span>
                   </p>
                 </div>
@@ -473,18 +581,47 @@ export default function NouvelleVente() {
                     <UserPlus size={13} /> Nouveau
                   </button>
                 </div>
-                <select
-                  className="input"
-                  value={customerId}
-                  onChange={(e) => setCustomerId(e.target.value)}
-                >
-                  <option value="">Client de passage</option>
-                  {customers.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
+                {customer ? (
+                  <div className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm">
+                    <span className="truncate font-semibold text-slate-700">
+                      {customer.name}
+                    </span>
+                    <button
+                      className="ml-auto text-slate-400 hover:text-slate-600"
+                      onClick={() => setCustomer(null)}
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <input
+                      className="input"
+                      placeholder="Client de passage — tapez un nom"
+                      value={customerQuery}
+                      onChange={(e) => setCustomerQuery(e.target.value)}
+                    />
+                    {customers.length > 0 && (
+                      <ul className="absolute z-10 mt-1 max-h-44 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg">
+                        {customers.map((c) => (
+                          <li key={c.id}>
+                            <button
+                              className="w-full px-3 py-2 text-left text-sm hover:bg-slate-50"
+                              onClick={() => {
+                                setCustomer(c);
+                                setCustomerQuery("");
+                                setCustomers([]);
+                              }}
+                            >
+                              {c.name}
+                              {c.phone ? ` · ${c.phone}` : ""}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
               </div>
               <div>
                 <label className="label">Paiement</label>

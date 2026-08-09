@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import { Pencil, Plus, Search, ShieldCheck, ToggleLeft, ToggleRight } from "lucide-react";
+import {
+  KeyRound,
+  Pencil,
+  Plus,
+  Search,
+  ShieldCheck,
+  ToggleLeft,
+  ToggleRight,
+} from "lucide-react";
 import api from "../api/client";
 import type { User } from "../types";
 import Modal from "../components/Modal";
@@ -88,6 +96,30 @@ export default function Users() {
       }
     } finally {
       setSaving(false);
+    }
+  }
+
+  /** Fallback when no mail server is configured: the admin hands over a
+   *  temporary password shown once. */
+  async function resetPassword(u: User) {
+    if (
+      !window.confirm(
+        `Générer un nouveau mot de passe temporaire pour ${u.name} ?`
+      )
+    )
+      return;
+    try {
+      const { data } = await api.post<{ password: string }>(
+        `/users/${u.id}/reset-password`
+      );
+      window.alert(
+        `Mot de passe temporaire de ${u.name} : ${data.password}\n\n` +
+          "Notez-le maintenant : il ne sera plus affiché."
+      );
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        alert(err.response?.data?.detail ?? "Action impossible");
+      }
     }
   }
 
@@ -183,6 +215,13 @@ export default function Users() {
                   </td>
                   <td className="px-5 py-3.5">
                     <div className="flex justify-end gap-1">
+                      <button
+                        onClick={() => resetPassword(u)}
+                        title="Réinitialiser le mot de passe"
+                        className="rounded-lg p-2 text-slate-400 hover:bg-amber-50 hover:text-amber-600"
+                      >
+                        <KeyRound size={16} />
+                      </button>
                       <button
                         onClick={() => openEdit(u)}
                         title="Modifier"

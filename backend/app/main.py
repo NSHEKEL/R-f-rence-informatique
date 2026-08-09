@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -19,6 +20,8 @@ from .routers import (
     inventory,
     notifications,
     products,
+    proformas,
+    reports,
     returns,
     sales,
     settings,
@@ -33,10 +36,23 @@ migrate()
 
 app = FastAPI(title="Référence Informatique — API Vente & Stock")
 
+# Workstations open the app from the server's own address, so private LAN
+# origins are allowed by default; ALLOWED_ORIGINS narrows this in production.
+_configured_origins = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+]
+LAN_ORIGIN_RE = (
+    r"^https?://(localhost|127\.0\.0\.1|10\.[0-9.]+|192\.168\.[0-9.]+|"
+    r"172\.(1[6-9]|2[0-9]|3[01])\.[0-9.]+)(:\d+)?$"
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_configured_origins,
+    allow_origin_regex=None if _configured_origins else LAN_ORIGIN_RE,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -55,6 +71,8 @@ app.include_router(cash.router)
 app.include_router(inventory.router)
 app.include_router(accounting.router)
 app.include_router(returns.router)
+app.include_router(proformas.router)
+app.include_router(reports.router)
 app.include_router(sync.router)
 
 

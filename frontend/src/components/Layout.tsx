@@ -17,6 +17,8 @@ import {
   Wallet,
   Undo2,
   Plus,
+  BarChart3,
+  FileText,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
@@ -50,6 +52,18 @@ const navItems = [
     adminOnly: true,
   },
   {
+    to: "/rapports",
+    label: "Rapports",
+    icon: BarChart3,
+    adminOnly: true,
+  },
+  {
+    to: "/proformas",
+    label: "Factures proforma",
+    icon: FileText,
+    adminOnly: true,
+  },
+  {
     to: "/comptabilite",
     label: "Comptabilité",
     icon: Calculator,
@@ -73,6 +87,8 @@ const pageTitles: Record<string, string> = {
   "/retours": "Retours & avoirs",
   "/produits": "Produits & Stock",
   "/inventaire": "Inventaire",
+  "/rapports": "Rapports",
+  "/proformas": "Factures proforma",
   "/comptabilite": "Comptabilité",
   "/ventes": "Ventes",
   "/clients": "Clients",

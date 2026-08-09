@@ -31,6 +31,35 @@ function pageRule(format: ReceiptFormat): string {
   return "@page { size: A4 portrait; margin: 12mm; }";
 }
 
+const SHEET_STYLE = `
+  body { font-family: Arial, Helvetica, sans-serif; color: #0f172a; margin: 16px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  p.meta { font-size: 12px; color: #64748b; margin: 0 0 16px; }
+  h2 { font-size: 13px; margin: 18px 0 6px; text-transform: uppercase;
+       letter-spacing: .04em; color: #334155; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { border: 1px solid #cbd5e1; padding: 5px 7px; text-align: left; }
+  th { background: #f1f5f9; }
+  td.num, th.num { text-align: right; }
+  @page { size: A4 portrait; margin: 12mm; }
+`;
+
+/**
+ * Prints a standalone A4 sheet (report, inventory count sheet) in its own
+ * window so the application chrome never reaches the paper.
+ */
+export function printSheet(title: string, bodyHtml: string): void {
+  const win = window.open("", "_blank", "width=900,height=700");
+  if (!win) return;
+  win.document.write(
+    `<html><head><title>${title}</title><style>${SHEET_STYLE}</style></head>` +
+      `<body>${bodyHtml}</body></html>`
+  );
+  win.document.close();
+  win.focus();
+  win.print();
+}
+
 /** Applies the page geometry matching the receipt format, then prints. */
 export function printReceipt(format: ReceiptFormat): void {
   let style = document.getElementById(PAGE_STYLE_ID);

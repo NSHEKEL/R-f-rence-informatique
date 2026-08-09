@@ -7,23 +7,47 @@ const SERVER_URL_KEY = "ri_server_url";
  * the desktop package and workstations that simply open the server's address.
  * A poste can also point at a central server (e.g. http://192.168.1.20:8000).
  */
-export const API_BASE = (
-  localStorage.getItem(SERVER_URL_KEY) ??
-  (import.meta.env.VITE_API_URL as string | undefined) ??
-  ""
-).replace(/\/+$/, "");
+const DEFAULT_PORT = "8000";
+
+/**
+ * Accepts what a shop actually types: "192.168.1.20", "192.168.1.20:8000"
+ * or a full URL, and turns it into "http://192.168.1.20:8000".
+ */
+export function normalizeServerUrl(url: string): string {
+  let value = url.trim().replace(/\/+$/, "");
+  if (!value) return "";
+  if (!/^https?:\/\//i.test(value)) value = `http://${value}`;
+  try {
+    const parsed = new URL(value);
+    if (!parsed.port && parsed.protocol === "http:") parsed.port = DEFAULT_PORT;
+    return `${parsed.protocol}//${parsed.host}`;
+  } catch {
+    return "";
+  }
+}
+
+export function getServerUrl(): string {
+  return (
+    localStorage.getItem(SERVER_URL_KEY) ??
+    (import.meta.env.VITE_API_URL as string | undefined) ??
+    ""
+  ).replace(/\/+$/, "");
+}
+
+/** Kept for call sites that only display the configured address. */
+export const API_BASE = getServerUrl();
 
 export function setServerUrl(url: string): void {
-  const clean = url.trim().replace(/\/+$/, "");
+  const clean = normalizeServerUrl(url);
   if (clean) localStorage.setItem(SERVER_URL_KEY, clean);
   else localStorage.removeItem(SERVER_URL_KEY);
 }
 
-const api = axios.create({
-  baseURL: `${API_BASE}/api`,
-});
+const api = axios.create();
 
+// Resolved per request so a new server address applies without a reload.
 api.interceptors.request.use((config) => {
+  config.baseURL = `${getServerUrl()}/api`;
   const token = localStorage.getItem("ri_token");
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;

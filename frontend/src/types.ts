@@ -24,6 +24,12 @@ export interface CompanySettings {
   receipt_format: ReceiptFormat;
   printer_name: string;
   auto_print_cash: boolean;
+  smtp_host: string;
+  smtp_port: number;
+  smtp_user: string;
+  smtp_from: string;
+  smtp_tls: boolean;
+  smtp_configured: boolean;
 }
 
 export interface Category {
@@ -58,9 +64,12 @@ export interface Product {
   supplier_id: number | null;
   purchase_price: number;
   sale_price: number;
+  wholesale_price: number;
   quantity: number;
   min_stock: number;
   qr_code: string;
+  barcode: string;
+  image: string;
   created_at: string;
   category?: Category | null;
   supplier?: Supplier | null;
@@ -87,6 +96,7 @@ export interface Sale {
   payment_method: string;
   note: string;
   receipt_footer: string;
+  price_mode: string;
   created_by?: User | null;
   items: SaleItem[];
   print_count: number;
@@ -114,6 +124,50 @@ export interface SaleReturn {
   reason: string;
   created_by?: User | null;
   items: ReturnItem[];
+}
+
+export interface ProformaItem {
+  id: number;
+  product_id: number | null;
+  product_name: string;
+  quantity: number;
+  unit_price: number;
+  subtotal: number;
+}
+
+export interface Proforma {
+  id: number;
+  reference: string;
+  customer_id: number | null;
+  customer?: Customer | null;
+  customer_name: string;
+  date: string;
+  valid_until: string | null;
+  total: number;
+  note: string;
+  created_by?: User | null;
+  items: ProformaItem[];
+}
+
+export interface ReportRow {
+  label: string;
+  quantity: number;
+  amount: number;
+}
+
+export interface SalesReport {
+  period_start: string;
+  period_end: string;
+  sales_count: number;
+  revenue: number;
+  returns_total: number;
+  net_revenue: number;
+  average_ticket: number;
+  by_day: ReportRow[];
+  by_payment: ReportRow[];
+  by_seller: ReportRow[];
+  by_category: ReportRow[];
+  by_product: ReportRow[];
 }
 
 export interface MonthlyRevenue {

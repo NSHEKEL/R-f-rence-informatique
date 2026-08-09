@@ -105,6 +105,7 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
         status=payload.status,
         payment_method=payload.payment_method,
         note=payload.note,
+        price_mode="gros" if payload.price_mode == "gros" else "detail",
         created_by_id=current_user.id,
         cash_session_id=session.id,
         total=0,
@@ -125,14 +126,17 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
                 detail=f"Stock insuffisant pour {product.name} "
                 f"(disponible : {product.quantity})",
             )
-        subtotal = product.sale_price * item.quantity
+        unit_price = product.sale_price
+        if sale.price_mode == "gros" and (product.wholesale_price or 0) > 0:
+            unit_price = product.wholesale_price
+        subtotal = unit_price * item.quantity
         total += subtotal
         sale.items.append(
             SaleItem(
                 product_id=product.id,
                 product_name=product.name,
                 quantity=item.quantity,
-                unit_price=product.sale_price,
+                unit_price=unit_price,
                 subtotal=subtotal,
             )
         )

@@ -9,6 +9,7 @@ export interface SalePayload {
   customer_id: number | null;
   payment_method: string;
   status: string;
+  price_mode: string;
   note: string;
   items: { product_id: number; quantity: number }[];
 }

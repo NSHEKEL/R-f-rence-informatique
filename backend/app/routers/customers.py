@@ -10,8 +10,28 @@ router = APIRouter(prefix="/api/customers", tags=["customers"])
 
 
 @router.get("", response_model=list[CustomerOut])
-def list_customers(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def list_customers(db: Session = Depends(get_db), _: User = Depends(require_admin)):
     return db.query(Customer).order_by(Customer.name).all()
+
+
+@router.get("/search", response_model=list[CustomerOut])
+def search_customers(
+    q: str = "",
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Attach a customer to a ticket without exposing the whole file."""
+    term = q.strip()
+    if len(term) < 2:
+        return []
+    like = f"%{term}%"
+    return (
+        db.query(Customer)
+        .filter((Customer.name.ilike(like)) | (Customer.phone.ilike(like)))
+        .order_by(Customer.name)
+        .limit(10)
+        .all()
+    )
 
 
 @router.post("", response_model=CustomerOut, status_code=201)

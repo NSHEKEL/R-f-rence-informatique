@@ -11,12 +11,16 @@ import {
   Trash2,
   User,
 } from "lucide-react";
-import api, { API_BASE, setServerUrl } from "../api/client";
+import api, {
+  API_BASE,
+  normalizeServerUrl,
+  setServerUrl,
+} from "../api/client";
 import type { CompanySettings } from "../types";
 import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
 
-type CompanyForm = Omit<CompanySettings, "id">;
+type CompanyForm = Omit<CompanySettings, "id"> & { smtp_password?: string };
 
 const LOGO_MAX_BYTES = 400_000;
 
@@ -35,6 +39,13 @@ const emptyCompany: CompanyForm = {
   receipt_format: "A4",
   printer_name: "",
   auto_print_cash: true,
+  smtp_host: "",
+  smtp_port: 587,
+  smtp_user: "",
+  smtp_from: "",
+  smtp_tls: true,
+  smtp_configured: false,
+  smtp_password: "",
 };
 
 export default function Settings() {
@@ -49,6 +60,7 @@ export default function Settings() {
 
   const [serverUrl, setServerUrlValue] = useState(API_BASE);
   const [serverStatus, setServerStatus] = useState("");
+  const [mailStatus, setMailStatus] = useState("");
 
   useEffect(() => {
     api
@@ -56,7 +68,7 @@ export default function Settings() {
       .then((res) => {
         const { id: _id, ...rest } = res.data;
         void _id;
-        setCompany(rest);
+        setCompany({ ...rest, smtp_password: "" });
       })
       .catch(() => setError("Impossible de charger la configuration."))
       .finally(() => setLoading(false));
@@ -75,10 +87,26 @@ export default function Settings() {
     reader.readAsDataURL(file);
   }
 
+  async function testMail() {
+    setMailStatus("Envoi du message de test...");
+    try {
+      const { data } = await api.post<{ message: string }>(
+        "/settings/company/test-mail"
+      );
+      setMailStatus(data.message);
+    } catch (err) {
+      setMailStatus(
+        axios.isAxiosError(err)
+          ? err.response?.data?.detail ?? "Échec de l'envoi"
+          : "Échec de l'envoi"
+      );
+    }
+  }
+
   /** Points this workstation at the central server hosting the database. */
   async function testServer() {
     setServerStatus("Test en cours...");
-    const base = serverUrl.trim().replace(/\/+$/, "");
+    const base = normalizeServerUrl(serverUrl);
     try {
       const res = await axios.get<{ status: string; app: string }>(
         `${base}/api/health`,
@@ -102,7 +130,7 @@ export default function Settings() {
       const res = await api.put<CompanySettings>("/settings/company", company);
       const { id: _id, ...rest } = res.data;
       void _id;
-      setCompany(rest);
+      setCompany({ ...rest, smtp_password: "" });
       setBranding(res.data);
       setSaved(true);
     } catch (err) {
@@ -338,6 +366,90 @@ export default function Settings() {
             </div>
           </div>
         )}
+      </div>
+
+      {/* Outgoing mail */}
+      <div className="card p-6">
+        <div className="mb-4 flex items-center gap-2">
+          <Mail size={18} className="text-brand-600" />
+          <h3 className="text-base font-bold text-slate-900">
+            Envoi d'e-mails (mot de passe oublié)
+          </h3>
+        </div>
+        <p className="mb-4 text-sm text-slate-500">
+          Sans ces paramètres, la réinitialisation se fait par l'administrateur
+          depuis la page Utilisateurs.
+        </p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label className="label">Serveur SMTP</label>
+            <input
+              className="input"
+              value={company.smtp_host}
+              onChange={(e) => update({ smtp_host: e.target.value })}
+              placeholder="smtp.gmail.com"
+            />
+          </div>
+          <div>
+            <label className="label">Port</label>
+            <input
+              className="input"
+              type="number"
+              value={company.smtp_port}
+              onChange={(e) => update({ smtp_port: Number(e.target.value) })}
+            />
+          </div>
+          <div>
+            <label className="label">Identifiant</label>
+            <input
+              className="input"
+              value={company.smtp_user}
+              onChange={(e) => update({ smtp_user: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className="label">Mot de passe</label>
+            <input
+              className="input"
+              type="password"
+              value={company.smtp_password ?? ""}
+              onChange={(e) => update({ smtp_password: e.target.value })}
+              placeholder={
+                company.smtp_configured ? "•••••• (inchangé)" : ""
+              }
+            />
+          </div>
+          <div>
+            <label className="label">Adresse d'expédition</label>
+            <input
+              className="input"
+              value={company.smtp_from}
+              onChange={(e) => update({ smtp_from: e.target.value })}
+              placeholder="contact@reference.ci"
+            />
+          </div>
+          <div className="flex items-end">
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+              <input
+                type="checkbox"
+                checked={company.smtp_tls}
+                onChange={(e) => update({ smtp_tls: e.target.checked })}
+              />
+              Connexion sécurisée (TLS)
+            </label>
+          </div>
+          <div className="flex items-center gap-3 sm:col-span-2">
+            <button className="btn-primary" onClick={save} disabled={saving}>
+              Enregistrer
+            </button>
+            <button className="btn-ghost" onClick={testMail}>
+              Envoyer un test
+            </button>
+            {mailStatus && (
+              <span className="text-sm text-slate-600">{mailStatus}</span>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Central server */}

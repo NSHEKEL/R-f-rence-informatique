@@ -10,6 +10,8 @@ import Returns from "./pages/Returns";
 import Caisse from "./pages/Caisse";
 import Inventaire from "./pages/Inventaire";
 import Comptabilite from "./pages/Comptabilite";
+import Rapports from "./pages/Rapports";
+import Proformas from "./pages/Proformas";
 import Customers from "./pages/Customers";
 import Suppliers from "./pages/Suppliers";
 import Categories from "./pages/Categories";
@@ -92,6 +94,22 @@ export default function App() {
           element={
             <AdminRoute>
               <Inventaire />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/rapports"
+          element={
+            <AdminRoute>
+              <Rapports />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/proformas"
+          element={
+            <AdminRoute>
+              <Proformas />
             </AdminRoute>
           }
         />

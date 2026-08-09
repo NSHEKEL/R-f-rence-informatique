@@ -1,6 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
-import { Pencil, Plus, QrCode, Search, Trash2 } from "lucide-react";
+import {
+  Image as ImageIcon,
+  Pencil,
+  Plus,
+  QrCode,
+  Search,
+  Trash2,
+} from "lucide-react";
 import api, { formatXOF } from "../api/client";
 import type { Category, Product, Supplier } from "../types";
 import Modal from "../components/Modal";
@@ -18,10 +25,15 @@ const empty = {
   supplier_id: "" as number | "" | null,
   purchase_price: 0,
   sale_price: 0,
+  wholesale_price: 0,
   quantity: 0,
   min_stock: 5,
   qr_code: "",
+  barcode: "",
+  image: "",
 };
+
+const MAX_IMAGE_BYTES = 700_000;
 
 export default function Products() {
   const { isAdmin } = useAuth();
@@ -37,6 +49,7 @@ export default function Products() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [qrProduct, setQrProduct] = useState<Product | null>(null);
+  const imageInput = useRef<HTMLInputElement>(null);
   const pageSize = 8;
 
   const load = useCallback(async () => {
@@ -60,7 +73,8 @@ export default function Products() {
       (p) =>
         p.name.toLowerCase().includes(q) ||
         p.sku.toLowerCase().includes(q) ||
-        (p.qr_code || "").toLowerCase().includes(q)
+        (p.qr_code || "").toLowerCase().includes(q) ||
+        (p.barcode || "").toLowerCase().includes(q)
     );
   }, [products, query]);
 
@@ -84,9 +98,12 @@ export default function Products() {
       supplier_id: p.supplier_id ?? "",
       purchase_price: p.purchase_price,
       sale_price: p.sale_price,
+      wholesale_price: p.wholesale_price ?? 0,
       quantity: p.quantity,
       min_stock: p.min_stock,
       qr_code: p.qr_code ?? "",
+      barcode: p.barcode ?? "",
+      image: p.image ?? "",
     });
     setError("");
     setModalOpen(true);
@@ -101,6 +118,7 @@ export default function Products() {
       supplier_id: form.supplier_id === "" ? null : Number(form.supplier_id),
       purchase_price: Number(form.purchase_price),
       sale_price: Number(form.sale_price),
+      wholesale_price: Number(form.wholesale_price),
       quantity: Number(form.quantity),
       min_stock: Number(form.min_stock),
     };
@@ -119,6 +137,29 @@ export default function Products() {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function generateBarcode() {
+    try {
+      const { data } = await api.get<{ barcode: string }>(
+        "/products/barcode/next"
+      );
+      setForm((prev) => ({ ...prev, barcode: data.barcode }));
+    } catch {
+      setError("Impossible de générer un code-barres");
+    }
+  }
+
+  function pickImage(file: File | undefined) {
+    if (!file) return;
+    if (file.size > MAX_IMAGE_BYTES) {
+      setError("Photo trop lourde (700 Ko maximum)");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () =>
+      setForm((prev) => ({ ...prev, image: String(reader.result) }));
+    reader.readAsDataURL(file);
   }
 
   async function remove(p: Product) {
@@ -170,8 +211,26 @@ export default function Products() {
               {paged.map((p) => (
                 <tr key={p.id} className="hover:bg-slate-50/60">
                   <td className="px-5 py-3.5">
-                    <p className="font-semibold text-slate-800">{p.name}</p>
-                    <p className="text-xs text-slate-400">{p.sku}</p>
+                    <div className="flex items-center gap-3">
+                      {p.image ? (
+                        <img
+                          src={p.image}
+                          alt=""
+                          className="h-10 w-10 rounded-lg object-cover"
+                        />
+                      ) : (
+                        <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-300">
+                          <ImageIcon size={16} />
+                        </span>
+                      )}
+                      <div>
+                        <p className="font-semibold text-slate-800">{p.name}</p>
+                        <p className="text-xs text-slate-400">
+                          {p.sku}
+                          {p.barcode ? ` · ${p.barcode}` : ""}
+                        </p>
+                      </div>
+                    </div>
                   </td>
                   <td className="px-5 py-3.5 text-slate-600">
                     {p.category?.name ?? "—"}
@@ -338,6 +397,17 @@ export default function Products() {
             />
           </div>
           <div>
+            <label className="label">Prix de gros (FCFA, 0 = aucun)</label>
+            <input
+              type="number"
+              className="input"
+              value={form.wholesale_price}
+              onChange={(e) =>
+                setForm({ ...form, wholesale_price: Number(e.target.value) })
+              }
+            />
+          </div>
+          <div>
             <label className="label">Quantité en stock</label>
             <input
               type="number"
@@ -357,7 +427,33 @@ export default function Products() {
           </div>
           <div className="sm:col-span-2">
             <label className="label">
-              Code QR / code-barres (laisser vide pour utiliser le SKU)
+              Code-barres de l'article (chiffres imprimés sur l'emballage)
+            </label>
+            <div className="flex gap-2">
+              <input
+                className="input"
+                inputMode="numeric"
+                value={form.barcode}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    barcode: e.target.value.replace(/\D/g, ""),
+                  })
+                }
+                placeholder="Scannez le code ou tapez les chiffres"
+              />
+              <button className="btn-ghost shrink-0" onClick={generateBarcode}>
+                Générer
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-slate-400">
+              L'article n'a pas de code-barres ? Cliquez sur Générer pour en
+              créer un et l'imprimer depuis la colonne QR.
+            </p>
+          </div>
+          <div className="sm:col-span-2">
+            <label className="label">
+              Code QR (laisser vide pour utiliser le SKU)
             </label>
             <input
               className="input"
@@ -365,6 +461,45 @@ export default function Products() {
               onChange={(e) => setForm({ ...form, qr_code: e.target.value })}
               placeholder="Collez ici le code déjà imprimé sur l'article"
             />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="label">Photo de l'article</label>
+            <div className="flex items-center gap-4">
+              {form.image ? (
+                <img
+                  src={form.image}
+                  alt=""
+                  className="h-20 w-20 rounded-xl object-cover"
+                />
+              ) : (
+                <span className="flex h-20 w-20 items-center justify-center rounded-xl bg-slate-100 text-slate-300">
+                  <ImageIcon size={22} />
+                </span>
+              )}
+              <div className="flex gap-2">
+                <button
+                  className="btn-ghost"
+                  onClick={() => imageInput.current?.click()}
+                >
+                  Choisir une photo
+                </button>
+                {form.image && (
+                  <button
+                    className="btn-ghost"
+                    onClick={() => setForm({ ...form, image: "" })}
+                  >
+                    Retirer
+                  </button>
+                )}
+              </div>
+              <input
+                ref={imageInput}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => pickImage(e.target.files?.[0])}
+              />
+            </div>
           </div>
           <div className="sm:col-span-2">
             <label className="label">Description</label>

@@ -17,8 +17,15 @@ Application web de gestion des ventes et du suivi de stock pour l'entreprise
 - Inventaire physique (comptage, écarts, ajustements et historique des mouvements)
 - Comptabilité (chiffre d'affaires, coût des marchandises, marge, dépenses, bénéfice net)
 - Notifications administrateur (vente d'un vendeur, stock faible, ouverture/fermeture de caisse)
+- Articles : photo, code-barres saisi ou généré (EAN-13), prix détail et prix de gros
+- POS : catégories horizontales, meilleures ventes par défaut, scan code-barres/QR/SKU,
+  bascule détail / gros (les photos n'apparaissent jamais sur le reçu)
+- Rapports (CA, ventes, retours, revenu net, ticket moyen, par jour/paiement/vendeuse/catégorie/article)
+- Factures proforma imprimables (aucun mouvement de stock)
+- Fiches d'inventaire imprimables (feuille de comptage et relevé d'écarts)
+- Mot de passe oublié par e-mail (SMTP configurable) avec repli « réinitialisation admin »
 - Clients, Fournisseurs, Catégories (CRUD)
-- Rôles : Administrateur (tout) et Vendeur (caisse, ventes, clients uniquement)
+- Rôles : Administrateur (tout) et Vendeur (**Ma caisse** et **Nouvelle vente** uniquement)
 
 ## Démarrage
 
@@ -73,9 +80,20 @@ leur navigateur.
      -Protocol TCP -LocalPort 8000 -Action Allow -Profile Private
    ```
 
-3. Sur les **autres postes** (même réseau / même Wi-Fi), ouvrir l'adresse
-   réseau affichée par le serveur, par exemple `http://192.168.1.20:8000`.
-   Aucune installation n'est nécessaire sur ces postes.
+3. Sur les **autres postes** (même réseau / même Wi-Fi), deux possibilités :
+
+   - **Le plus simple** : ouvrir dans le navigateur l'adresse réseau affichée
+     par le serveur, par exemple `http://192.168.1.20:8000`. Aucune
+     installation n'est nécessaire.
+   - **Avec l'exe installé sur le poste** : sur l'écran de connexion, cliquer
+     sur **Poste serveur**, saisir `192.168.1.20` (le port `8000` est ajouté
+     automatiquement), cliquer sur **Tester** puis **Enregistrer**. Le poste
+     utilise immédiatement le serveur, sans redémarrage.
+
+   Si le test échoue, vérifier dans l'ordre : l'application est lancée sur le
+   serveur, les deux PC sont sur le même réseau (`ping 192.168.1.20`), la
+   règle de pare-feu de l'étape 2 existe, et l'adresse IP du serveur n'a pas
+   changé (lui réserver une IP fixe dans la box évite ce problème).
 
 À savoir :
 
@@ -116,10 +134,26 @@ toujours par l'API, jamais directement par la base.
 3. Relancer l'application : les tables sont créées et migrées automatiquement.
    Sans `DATABASE_URL`, l'application retombe sur SQLite (mono-poste).
 
-Les postes indiquent l'adresse du serveur dans *Paramètres → Serveur central*
-(ou ouvrent directement `http://<ip-serveur>:8000`). Les écrans se
+Les postes indiquent l'adresse du serveur sur l'écran de connexion
+(**Poste serveur**) ou dans *Paramètres → Serveur central*. Les écrans se
 rafraîchissent automatiquement quand un autre poste enregistre une vente, un
 retour ou une ouverture de caisse.
+
+## Sécurité
+
+- Mots de passe hachés (bcrypt), jamais stockés en clair.
+- Clé de signature JWT via `SECRET_KEY` ; à défaut, une clé aléatoire est
+  générée et conservée sur le poste serveur.
+- Tentatives de connexion limitées (8 essais par 5 minutes et par compte).
+- Jetons de réinitialisation hachés en base, à usage unique et expirant en
+  60 minutes ; la réponse ne révèle jamais si une adresse existe.
+- Mot de passe SMTP jamais renvoyé par l'API.
+- CORS limité aux adresses du réseau local ; en production, restreindre avec
+  `ALLOWED_ORIGINS=https://mon-domaine` dans le `.env`.
+- PostgreSQL n'est joignable que par le serveur : les postes passent par l'API.
+- Permissions appliquées côté API (source de vérité), pas seulement dans le menu :
+  un vendeur reçoit `403` sur les ventes, retours, clients, rapports et proformas.
+- Ne jamais versionner le fichier `.env` ni la base de données.
 
 ## Package Windows (application installable)
 
