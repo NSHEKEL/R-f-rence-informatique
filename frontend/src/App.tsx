@@ -54,10 +54,31 @@ export default function App() {
       >
         <Route path="/" element={<HomeRoute />} />
         <Route path="/caisse" element={<Caisse />} />
-        <Route path="/ventes" element={<Sales />} />
+        <Route
+          path="/ventes"
+          element={
+            <AdminRoute>
+              <Sales />
+            </AdminRoute>
+          }
+        />
         <Route path="/ventes/nouvelle" element={<NouvelleVente />} />
-        <Route path="/retours" element={<Returns />} />
-        <Route path="/clients" element={<Customers />} />
+        <Route
+          path="/retours"
+          element={
+            <AdminRoute>
+              <Returns />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/clients"
+          element={
+            <AdminRoute>
+              <Customers />
+            </AdminRoute>
+          }
+        />
         <Route
           path="/produits"
           element={

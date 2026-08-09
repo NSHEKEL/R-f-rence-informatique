@@ -88,6 +88,7 @@ export default function NouvelleVente() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [session, setSession] = useState<CashSessionDetail | null>(null);
   const [tillLoaded, setTillLoaded] = useState(false);
+  const [dayClosed, setDayClosed] = useState(false);
 
   const [query, setQuery] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
@@ -122,10 +123,12 @@ export default function NouvelleVente() {
 
   const loadSession = useCallback(async () => {
     try {
-      const res = await api.get<CashSessionDetail | null>(
-        "/cash-sessions/current"
-      );
-      setSession(res.data);
+      const [current, today] = await Promise.all([
+        api.get<CashSessionDetail | null>("/cash-sessions/current"),
+        api.get<CashSessionDetail | null>("/cash-sessions/today"),
+      ]);
+      setSession(current.data);
+      setDayClosed(Boolean(today.data?.closed_at));
     } catch {
       /* offline: keep selling with the last known state */
     } finally {
@@ -294,14 +297,17 @@ export default function NouvelleVente() {
       <div className="flex h-full items-center justify-center p-8">
         <div className="card max-w-md space-y-3 p-8 text-center">
           <h2 className="text-lg font-bold text-slate-900">
-            Votre caisse n'est pas ouverte
+            {dayClosed
+              ? "Votre caisse est fermée pour aujourd'hui"
+              : "Votre caisse n'est pas ouverte"}
           </h2>
           <p className="text-sm text-slate-500">
-            Ouvrez votre caisse pour enregistrer des ventes. L'ouverture se fait
-            une seule fois par jour.
+            {dayClosed
+              ? "La caisse ne se rouvre pas le même jour : les ventes reprendront à la prochaine ouverture."
+              : "Ouvrez votre caisse pour enregistrer des ventes. L'ouverture se fait une seule fois par jour."}
           </p>
           <Link className="btn-primary inline-flex" to="/caisse">
-            Ouvrir ma caisse
+            {dayClosed ? "Voir ma caisse" : "Ouvrir ma caisse"}
           </Link>
         </div>
       </div>

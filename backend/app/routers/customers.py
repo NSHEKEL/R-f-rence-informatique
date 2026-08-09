@@ -32,7 +32,7 @@ def update_customer(
     customer_id: int,
     payload: CustomerCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_admin),
 ):
     customer = db.query(Customer).get(customer_id)
     if not customer:

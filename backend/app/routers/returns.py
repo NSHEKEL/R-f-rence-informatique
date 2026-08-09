@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from ..auth import get_current_user
+from ..auth import require_admin
 from ..database import get_db
 from ..models import (
     Notification,
@@ -28,7 +28,7 @@ def _generate_reference(db: Session) -> str:
 
 @router.get("", response_model=list[ReturnOut])
 def list_returns(
-    db: Session = Depends(get_db), _: User = Depends(get_current_user)
+    db: Session = Depends(get_db), _: User = Depends(require_admin)
 ):
     return db.query(SaleReturn).order_by(SaleReturn.date.desc()).all()
 
@@ -37,7 +37,7 @@ def list_returns(
 def create_return(
     payload: ReturnCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
 ):
     """Credit note for goods given back, based on the original ticket."""
     reference = payload.sale_reference.strip()

@@ -1,6 +1,6 @@
 ---
 name: testing-ventes-stock
-description: End-to-end test the sales/inventory (Ventes & Stock) flow of the Référence Informatique app. Use when verifying product creation, sale creation, stock decrement, stock-guard validation, or dashboard metrics.
+description: End-to-end test the sales/inventory (Ventes & Stock) flow of the Référence Informatique app. Use when verifying product creation, sale creation, stock decrement, stock-guard validation, dashboard metrics, daily till open/close, returns and credit notes, duplicate receipts, printer/logo settings, or the centralised PostgreSQL multi-workstation setup.
 ---
 
 # Testing — Référence Informatique (Ventes & Stock)
@@ -65,6 +65,31 @@ Gotchas:
 5. **Inventaire**: type a counted quantity → Écart column; "Appliquer l'inventaire" → stock updated and a `Inventaire` movement (`before → after`, motif, author) added to "Mouvements de stock".
 6. **Comptabilité**: note Marge brute, add an expense → `Bénéfice net = marge − dépenses` must be recomputed and the expense listed by category.
 7. **Fermeture**: counted amount ≠ expected → "Écart : …" banner, then the closed session appears in "Historique des caisses" with fonds/attendu/compté/écart.
+
+## Centralised PostgreSQL / multi-workstation test
+The app falls back to SQLite when `DATABASE_URL` is unset, so a "central DB" claim is only proven when the backend actually runs on PostgreSQL:
+```bash
+DATABASE_URL="postgresql://<user>:<pwd>@localhost:5432/reference_informatique" SECRET_KEY=... \
+  ./venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+Recreate the DB empty before a campaign so references/counters start clean, and never print the password.
+
+Simulating **two workstations in one browser**: a second tab shares `localStorage`, hence the same JWT and role — it does NOT prove multi-user. Use a **second window in private/incognito mode** for the other account (e.g. caissière in the normal window, admin in incognito). Sync assertion: create a sale in window A and, *without touching window B*, watch the new row + notification counter appear there within the polling interval (~4 s via `GET /api/sync/version`).
+
+## Daily till (caisse) / returns / duplicate-receipt test
+Order matters: `/caisse` only opens the till, `/ventes/nouvelle` sells, `/ventes` closes the till, `/retours` issues credit notes.
+1. **Open till** (cashier): fonds → the opening ticket auto-prints. Adversarial: no second "Ouvrir ma caisse" the same day.
+2. **Sell**: type a product name *or the SKU/QR code* then **Enter** (keyboard/scanner path), create the customer inline, Valider → receipt preview appears immediately.
+3. **Duplicate**: the "Reçu" column must go from `—` to `Imprimé ×1` then `×2` after a second print, and the reopened modal is titled "Duplicata — VNT-…" with a DUPLICATA banner. Check the counter *increments* — a frozen counter is the real bug.
+4. **Return**: `/retours` → ticket reference → quantity → the credit note `AVR-<year>-NNNN` and restocking. Verify the stock from an **admin** window (a cashier has no access to Produits) and compute it end-to-end (`initial − sold + returned`); capture the intermediate value too if you want a direct proof of the decrement.
+5. **Close till** from `/ventes`: the closing ticket auto-prints (fonds, ventes espèces, attendu, compté, écart). Adversarial: the button becomes "Caisse déjà fermée aujourd'hui", `/caisse` offers no reopening, and `/ventes/nouvelle` blocks selling.
+6. **Dashboard range**: apply "7 jours" (figures + "Meilleures vendeuses"), then a past range with no sales — revenue must fall to 0 and the ranking empty, otherwise the `start`/`end` filter is ignored.
+7. **Printer / logo**: set "Imprimante à utiliser", reload (F5) to prove persistence, and check the reminder "Imprimante : …" in the receipt modal footer; with no logo uploaded the receipt shows the company name only, never a broken image.
+
+Gotchas:
+- `<input type="date">` segments **append** typed digits (`2026` after an existing value gives `22026`). Press `Delete` on the focused segment first, or use `Up`/`Down`, and move between segments with `Left`/`Right`.
+- The computer-tool action is `type` (not `type_text`) and `scroll` needs `scroll_direction`/`scroll_amount`.
+- After the till is closed, `/ventes/nouvelle` may still show an "Ouvrir ma caisse" button; it only routes back to `/caisse` — cosmetic, not a reopening.
 
 ## Print-format verification (A4 / 80 mm)
 Chrome's print preview remembers the last paper size, so it can silently show A4 even when the app asked for a ticket — never conclude from the preview alone. Verify the real page geometry:

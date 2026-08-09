@@ -13,8 +13,8 @@ import { useCompany } from "../context/CompanyContext";
 import { useSyncVersion } from "../context/SyncContext";
 
 /**
- * Till screen: one opening per cashier and per day. Selling happens on the
- * sales side, and the closing is done from there at the end of the day.
+ * Till screen: one opening and one closing per cashier and per day. Selling
+ * happens on the dedicated POS screen.
  */
 export default function Caisse() {
   const { user, isAdmin } = useAuth();
@@ -27,6 +27,10 @@ export default function Caisse() {
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+
+  const [closeOpen, setCloseOpen] = useState(false);
+  const [countedBalance, setCountedBalance] = useState("0");
+  const [closeNote, setCloseNote] = useState("");
 
   const [ticket, setTicket] = useState<{
     session: CashSessionDetail;
@@ -79,7 +83,30 @@ export default function Caisse() {
     }
   }
 
+  async function closeTill() {
+    setSaving(true);
+    setError("");
+    try {
+      const res = await api.post<CashSessionDetail>("/cash-sessions/close", {
+        closing_balance: Number(countedBalance) || 0,
+        note: closeNote,
+      });
+      setCloseOpen(false);
+      setCloseNote("");
+      await load();
+      showTicket(res.data, "close", true);
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        setError(err.response?.data?.detail ?? "Impossible de fermer la caisse");
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const closed = Boolean(today?.closed_at);
+  const countedDifference =
+    (Number(countedBalance) || 0) - (today?.expected_cash ?? 0);
 
   return (
     <div className="mx-auto max-w-5xl space-y-5">
@@ -182,9 +209,21 @@ export default function Caisse() {
                 </button>
               )}
               {!closed && (
-                <Link className="btn-primary" to="/ventes/nouvelle">
-                  <ShoppingCart size={16} /> Aller à la vente
-                </Link>
+                <>
+                  <button
+                    className="btn-ghost"
+                    onClick={() => {
+                      setCountedBalance(String(today.expected_cash));
+                      setCloseNote("");
+                      setCloseOpen(true);
+                    }}
+                  >
+                    <Lock size={16} /> Fermer ma caisse
+                  </button>
+                  <Link className="btn-primary" to="/ventes/nouvelle">
+                    <ShoppingCart size={16} /> Aller à la vente
+                  </Link>
+                </>
               )}
             </div>
           </div>
@@ -226,8 +265,7 @@ export default function Caisse() {
 
           {!closed && (
             <p className="rounded-xl bg-slate-50 px-4 py-3 text-xs text-slate-500">
-              La fermeture se fait depuis la page Ventes, une seule fois par
-              jour.
+              La fermeture se fait une seule fois par jour, en fin de journée.
             </p>
           )}
         </div>
@@ -290,6 +328,72 @@ export default function Caisse() {
           </table>
         </div>
       </div>
+
+      <Modal
+        open={closeOpen}
+        onClose={() => setCloseOpen(false)}
+        title="Fermeture de caisse"
+        footer={
+          <div className="flex w-full justify-end gap-3">
+            <button className="btn-ghost" onClick={() => setCloseOpen(false)}>
+              Annuler
+            </button>
+            <button
+              className="btn-primary"
+              onClick={closeTill}
+              disabled={saving}
+            >
+              <Lock size={16} /> Fermer ma caisse
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              ["Fonds d'ouverture", formatXOF(today?.opening_balance ?? 0)],
+              ["Ventes espèces", formatXOF(today?.cash_sales ?? 0)],
+              ["Solde attendu", formatXOF(today?.expected_cash ?? 0)],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-xl bg-slate-50 p-3">
+                <p className="text-xs text-slate-400">{label}</p>
+                <p className="text-sm font-bold text-slate-800">{value}</p>
+              </div>
+            ))}
+          </div>
+          <div>
+            <label className="label">Montant compté en caisse (FCFA)</label>
+            <input
+              autoFocus
+              className="input"
+              type="number"
+              min="0"
+              value={countedBalance}
+              onChange={(e) => setCountedBalance(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="label">Note (facultatif)</label>
+            <input
+              className="input"
+              value={closeNote}
+              onChange={(e) => setCloseNote(e.target.value)}
+              placeholder="Ex. fonds remis par le gérant"
+            />
+          </div>
+          <p
+            className={`rounded-xl px-4 py-3 text-sm font-semibold ${
+              Math.abs(countedDifference) < 1
+                ? "bg-emerald-50 text-emerald-700"
+                : "bg-amber-50 text-amber-700"
+            }`}
+          >
+            {Math.abs(countedDifference) < 1
+              ? "Caisse conforme"
+              : `Écart : ${formatXOF(countedDifference)}`}
+          </p>
+        </div>
+      </Modal>
 
       <Modal
         open={ticket !== null}

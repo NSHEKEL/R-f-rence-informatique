@@ -32,7 +32,7 @@ def _generate_reference(db: Session) -> str:
 
 
 @router.get("", response_model=list[SaleOut])
-def list_sales(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def list_sales(db: Session = Depends(get_db), _: User = Depends(require_admin)):
     return db.query(Sale).order_by(Sale.date.desc()).all()
 
 
@@ -40,7 +40,7 @@ def list_sales(db: Session = Depends(get_db), _: User = Depends(get_current_user
 def get_sale_by_reference(
     reference: str,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_admin),
 ):
     """Ticket lookup used by the returns screen."""
     sale = db.query(Sale).filter(Sale.reference == reference.strip()).first()
@@ -51,7 +51,7 @@ def get_sale_by_reference(
 
 @router.get("/{sale_id}", response_model=SaleOut)
 def get_sale(
-    sale_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)
+    sale_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)
 ):
     sale = db.query(Sale).get(sale_id)
     if not sale:
@@ -211,7 +211,7 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
 def register_print(
     sale_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_admin),
 ):
     """Count receipt prints so reprints can be flagged as duplicates."""
     sale = db.query(Sale).get(sale_id)
@@ -228,7 +228,7 @@ def update_sale(
     sale_id: int,
     payload: SaleUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_admin),
 ):
     """Update editable receipt metadata (customer, payment, note, footer).
 

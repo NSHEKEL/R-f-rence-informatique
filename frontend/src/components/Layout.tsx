@@ -33,9 +33,15 @@ const navItems = [
   },
   { to: "/caisse", label: "Ma caisse", icon: Wallet },
   { to: "/ventes/nouvelle", label: "Nouvelle vente", icon: Plus },
-  { to: "/ventes", label: "Ventes", icon: ShoppingCart, end: true },
-  { to: "/retours", label: "Retours & avoirs", icon: Undo2 },
-  { to: "/clients", label: "Clients", icon: Users },
+  {
+    to: "/ventes",
+    label: "Ventes",
+    icon: ShoppingCart,
+    end: true,
+    adminOnly: true,
+  },
+  { to: "/retours", label: "Retours & avoirs", icon: Undo2, adminOnly: true },
+  { to: "/clients", label: "Clients", icon: Users, adminOnly: true },
   { to: "/produits", label: "Produits & Stock", icon: Package, adminOnly: true },
   {
     to: "/inventaire",
