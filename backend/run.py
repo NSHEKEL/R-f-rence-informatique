@@ -16,6 +16,7 @@ import webbrowser
 import uvicorn
 
 from app.main import app
+from app.version import APP_VERSION
 
 HOST = "0.0.0.0"
 PORT = 8000
@@ -45,7 +46,7 @@ def _open_browser() -> None:
 def main() -> None:
     ip = _lan_ip()
     print("=" * 60)
-    print(" RÉFÉRENCE INFORMATIQUE — Vente & Stock")
+    print(f" RÉFÉRENCE INFORMATIQUE — Vente & Stock  (version {APP_VERSION})")
     print("=" * 60)
     print(f" Ce poste (serveur)   : {LOCAL_URL}")
     print(f" Autres postes (réseau) : http://{ip}:{PORT}")

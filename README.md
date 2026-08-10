@@ -25,6 +25,9 @@ Application web de gestion des ventes et du suivi de stock pour l'entreprise
 - Fiches d'inventaire imprimables (feuille de comptage et relevé d'écarts)
 - Mot de passe oublié par e-mail (SMTP configurable) avec repli « réinitialisation admin »
 - Clients, Fournisseurs, Catégories (CRUD)
+- Menu latéral pliable/dépliable (l'état est mémorisé par poste)
+- Page « À propos de nous » alimentée par la configuration de l'entreprise
+- Mise à jour à distance de l'application installée chez les clients
 - Rôles : Administrateur (tout) et Vendeur (**Ma caisse** et **Nouvelle vente** uniquement)
 
 ## Démarrage
@@ -138,6 +141,44 @@ Les postes indiquent l'adresse du serveur sur l'écran de connexion
 (**Poste serveur**) ou dans *Paramètres → Serveur central*. Les écrans se
 rafraîchissent automatiquement quand un autre poste enregistre une vente, un
 retour ou une ouverture de caisse.
+
+## Mise à jour à distance des postes clients
+
+Chaque installation interroge les *releases* GitHub du dépôt et peut se mettre
+à jour toute seule, sans intervention sur place.
+
+1. Publier une nouvelle version : incrémenter `APP_VERSION` dans
+   `backend/app/version.py`, committer, puis pousser un tag identique
+   (`git tag v1.3.1 && git push origin v1.3.1`). GitHub Actions compile le
+   `.exe` et crée la release.
+2. Sur le poste serveur du client : **Paramètres → Mise à jour de
+   l'application → Rechercher une mise à jour**, puis **Installer**.
+   L'application télécharge le nouvel exécutable, se ferme, se remplace et
+   redémarre ; la base de données et la configuration sont conservées.
+
+Le dépôt consulté est celui de `UPDATE_REPO` ; les variables d'environnement
+`UPDATE_REPO` et `UPDATE_ASSET` permettent de le changer sans recompiler.
+La vérification et l'installation sont réservées à un administrateur.
+
+## Envoi d'e-mails (mot de passe oublié)
+
+Dans **Paramètres → Envoi d'e-mails**, renseigner le compte SMTP. Avec Gmail,
+utiliser un **mot de passe d'application**
+(https://myaccount.google.com/apppasswords) et non le mot de passe du compte :
+
+| Champ | Valeur |
+| --- | --- |
+| Serveur SMTP | `smtp.gmail.com` |
+| Port | `587` |
+| Identifiant | l'adresse Gmail complète |
+| Mot de passe | le mot de passe d'application (16 caractères) |
+| Adresse d'expédition | l'adresse Gmail complète |
+| Connexion sécurisée (TLS) | cochée |
+
+Le bouton **Envoyer un test** envoie un message à l'administrateur connecté.
+Le mot de passe SMTP n'est jamais renvoyé par l'API : l'interface indique
+seulement si l'envoi est configuré. Sans SMTP, la réinitialisation reste
+possible depuis **Utilisateurs**.
 
 ## Sécurité
 
