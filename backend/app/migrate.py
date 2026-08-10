@@ -44,6 +44,7 @@ COLUMNS: dict[str, dict[str, str]] = {
         "smtp_password": "VARCHAR DEFAULT ''",
         "smtp_from": "VARCHAR DEFAULT ''",
         "smtp_tls": f"BOOLEAN DEFAULT {TRUE_LITERAL}",
+        "about": "TEXT DEFAULT ''",
     },
     "cash_sessions": {
         "business_day": "VARCHAR DEFAULT ''",

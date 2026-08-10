@@ -17,6 +17,7 @@ import Suppliers from "./pages/Suppliers";
 import Categories from "./pages/Categories";
 import Users from "./pages/Users";
 import Settings from "./pages/Settings";
+import APropos from "./pages/APropos";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -153,6 +154,7 @@ export default function App() {
             </AdminRoute>
           }
         />
+        <Route path="/a-propos" element={<APropos />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

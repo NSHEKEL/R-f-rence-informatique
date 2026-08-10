@@ -3,6 +3,7 @@ import axios from "axios";
 import {
   Building2,
   Check,
+  DownloadCloud,
   ImagePlus,
   Mail,
   Printer,
@@ -16,7 +17,7 @@ import api, {
   normalizeServerUrl,
   setServerUrl,
 } from "../api/client";
-import type { CompanySettings } from "../types";
+import type { CompanySettings, UpdateStatus } from "../types";
 import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
 
@@ -34,6 +35,7 @@ const emptyCompany: CompanyForm = {
   website: "",
   tax_id: "",
   currency: "FCFA",
+  about: "",
   receipt_header: "",
   receipt_footer: "",
   receipt_format: "A4",
@@ -61,6 +63,8 @@ export default function Settings() {
   const [serverUrl, setServerUrlValue] = useState(API_BASE);
   const [serverStatus, setServerStatus] = useState("");
   const [mailStatus, setMailStatus] = useState("");
+  const [update_, setUpdateStatus] = useState<UpdateStatus | null>(null);
+  const [updateMessage, setUpdateMessage] = useState("");
 
   useEffect(() => {
     api
@@ -90,15 +94,55 @@ export default function Settings() {
   async function testMail() {
     setMailStatus("Envoi du message de test...");
     try {
-      const { data } = await api.post<{ message: string }>(
+      const { data } = await api.post<{ sent: boolean; to: string }>(
         "/settings/company/test-mail"
       );
-      setMailStatus(data.message);
+      setMailStatus(`Message de test envoyé à ${data.to}.`);
     } catch (err) {
       setMailStatus(
         axios.isAxiosError(err)
           ? err.response?.data?.detail ?? "Échec de l'envoi"
           : "Échec de l'envoi"
+      );
+    }
+  }
+
+  async function checkUpdate() {
+    setUpdateMessage("Recherche d'une mise à jour...");
+    try {
+      const { data } = await api.get<UpdateStatus>("/updates");
+      setUpdateStatus(data);
+      setUpdateMessage(
+        data.error ||
+          (data.available
+            ? `Version ${data.latest_version} disponible.`
+            : "L'application est à jour.")
+      );
+    } catch {
+      setUpdateMessage("Impossible de contacter le serveur de mise à jour.");
+    }
+  }
+
+  async function installUpdate() {
+    if (
+      !window.confirm(
+        "L'application va se fermer, se mettre à jour puis redémarrer. " +
+          "Assurez-vous qu'aucune vente n'est en cours. Continuer ?"
+      )
+    )
+      return;
+    setUpdateMessage("Téléchargement et installation en cours...");
+    try {
+      await api.post("/updates/install");
+      setUpdateMessage(
+        "Mise à jour lancée : l'application redémarre dans quelques " +
+          "secondes. Rechargez cette page ensuite."
+      );
+    } catch (err) {
+      setUpdateMessage(
+        axios.isAxiosError(err)
+          ? err.response?.data?.detail ?? "Échec de la mise à jour"
+          : "Échec de la mise à jour"
       );
     }
   }
@@ -295,6 +339,20 @@ export default function Settings() {
               />
             </div>
             <div className="sm:col-span-2">
+              <label className="label">
+                Texte « À propos de nous »
+              </label>
+              <textarea
+                className="input min-h-[90px]"
+                value={company.about}
+                onChange={(e) => update({ about: e.target.value })}
+                placeholder="Présentez votre entreprise, vos activités et vos services."
+              />
+              <p className="mt-1 text-xs text-slate-400">
+                Affiché sur la page « À propos de nous » du menu.
+              </p>
+            </div>
+            <div className="sm:col-span-2">
               <label className="label">En-tête du reçu (optionnel)</label>
               <input
                 className="input"
@@ -378,8 +436,22 @@ export default function Settings() {
         </div>
         <p className="mb-4 text-sm text-slate-500">
           Sans ces paramètres, la réinitialisation se fait par l'administrateur
-          depuis la page Utilisateurs.
+          depuis la page Utilisateurs. Avec Gmail, utilisez un
+          <strong> mot de passe d'application </strong>
+          (et non le mot de passe du compte).
         </p>
+        <button
+          className="btn-ghost mb-4"
+          onClick={() =>
+            update({
+              smtp_host: "smtp.gmail.com",
+              smtp_port: 587,
+              smtp_tls: true,
+            })
+          }
+        >
+          Pré-remplir pour Gmail
+        </button>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <label className="label">Serveur SMTP</label>
@@ -488,6 +560,47 @@ export default function Settings() {
         {serverStatus && (
           <p className="mt-3 text-sm font-medium text-slate-600">
             {serverStatus}
+          </p>
+        )}
+      </div>
+
+      {/* Remote update */}
+      <div className="card p-6">
+        <div className="mb-4 flex items-center gap-2">
+          <DownloadCloud size={18} className="text-brand-600" />
+          <h3 className="text-base font-bold text-slate-900">
+            Mise à jour de l'application
+          </h3>
+        </div>
+        <p className="mb-4 text-sm text-slate-500">
+          L'application vérifie la dernière version publiée, la télécharge et
+          redémarre toute seule. À lancer sur le poste serveur.
+        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <button className="btn-ghost" onClick={checkUpdate}>
+            Rechercher une mise à jour
+          </button>
+          {update_?.available && update_.packaged && (
+            <button className="btn-primary" onClick={installUpdate}>
+              <DownloadCloud size={16} /> Installer la version{" "}
+              {update_.latest_version}
+            </button>
+          )}
+          {update_ && (
+            <span className="text-sm text-slate-500">
+              Version installée : {update_.current_version}
+            </span>
+          )}
+        </div>
+        {updateMessage && (
+          <p className="mt-3 text-sm font-medium text-slate-600">
+            {updateMessage}
+          </p>
+        )}
+        {update_ && update_.available && !update_.packaged && (
+          <p className="mt-2 text-sm text-amber-600">
+            Mise à jour automatique disponible uniquement depuis
+            ReferenceInformatique.exe.
           </p>
         )}
       </div>

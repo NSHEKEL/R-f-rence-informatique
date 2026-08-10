@@ -15,6 +15,8 @@ from PyInstaller.utils.hooks import collect_all, collect_submodules
 ROOT = os.path.dirname(SPECPATH)
 BACKEND = os.path.join(ROOT, "backend")
 
+ICON = os.path.join(SPECPATH, "ReferenceInformatique.ico")
+
 datas = [(os.path.join(ROOT, "frontend", "dist"), "frontend_dist")]
 binaries = []
 hiddenimports = collect_submodules("uvicorn")
@@ -63,4 +65,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=ICON,
 )

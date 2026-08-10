@@ -27,9 +27,11 @@ from .routers import (
     settings,
     suppliers,
     sync,
+    updates,
     users,
 )
 from .seed import seed
+from .version import APP_VERSION
 
 Base.metadata.create_all(bind=engine)
 migrate()
@@ -74,6 +76,7 @@ app.include_router(returns.router)
 app.include_router(proformas.router)
 app.include_router(reports.router)
 app.include_router(sync.router)
+app.include_router(updates.router)
 
 
 @app.on_event("startup")
@@ -84,7 +87,11 @@ def on_startup():
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "app": "Référence Informatique"}
+    return {
+        "status": "ok",
+        "app": "Référence Informatique",
+        "version": APP_VERSION,
+    }
 
 
 def _frontend_dir() -> Optional[Path]:

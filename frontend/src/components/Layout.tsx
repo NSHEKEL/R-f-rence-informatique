@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -19,6 +19,9 @@ import {
   Plus,
   BarChart3,
   FileText,
+  Info,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
@@ -73,7 +76,10 @@ const navItems = [
   { to: "/categories", label: "Catégories", icon: Tags, adminOnly: true },
   { to: "/utilisateurs", label: "Utilisateurs", icon: UserCog, adminOnly: true },
   { to: "/parametres", label: "Paramètres", icon: Settings, adminOnly: true },
+  { to: "/a-propos", label: "À propos de nous", icon: Info },
 ];
+
+const COLLAPSED_KEY = "ri_sidebar_collapsed";
 
 const roleLabels: Record<string, string> = {
   admin: "Administrateur",
@@ -96,15 +102,23 @@ const pageTitles: Record<string, string> = {
   "/categories": "Catégories",
   "/utilisateurs": "Utilisateurs",
   "/parametres": "Paramètres",
+  "/a-propos": "À propos de nous",
 };
 
 export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem(COLLAPSED_KEY) === "1"
+  );
   const { user, isAdmin, logout } = useAuth();
   const { brandName, logoSrc } = useCompany();
   const location = useLocation();
   const title = pageTitles[location.pathname] ?? brandName;
   const visibleNavItems = navItems.filter((item) => !item.adminOnly || isAdmin);
+
+  useEffect(() => {
+    localStorage.setItem(COLLAPSED_KEY, collapsed ? "1" : "0");
+  }, [collapsed]);
 
   const initials = (user?.name ?? "AD")
     .split(" ")
@@ -117,19 +131,25 @@ export default function Layout() {
     <div className="flex h-screen overflow-hidden bg-slate-50">
       {/* Sidebar */}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r border-slate-200 bg-white transition-transform duration-200 lg:static lg:translate-x-0 ${
-          mobileOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
+        className={`fixed inset-y-0 left-0 z-40 flex flex-col border-r border-slate-200 bg-white transition-all duration-200 lg:static lg:translate-x-0 ${
+          collapsed ? "w-72 lg:w-[76px]" : "w-72"
+        } ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}
       >
-        <div className="flex items-center gap-3 px-6 py-5">
-          <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl bg-white ring-1 ring-slate-100">
+        <div
+          className={`flex items-center gap-3 py-5 ${
+            collapsed ? "px-6 lg:justify-center lg:px-3" : "px-6"
+          }`}
+        >
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white ring-1 ring-slate-100">
             <img
               src={logoSrc}
               alt={brandName}
               className="h-11 w-11 object-contain"
             />
           </div>
-          <div className="min-w-0 leading-tight">
+          <div
+            className={`min-w-0 leading-tight ${collapsed ? "lg:hidden" : ""}`}
+          >
             <p className="truncate text-sm font-extrabold uppercase tracking-tight text-brand-700">
               {brandName}
             </p>
@@ -152,26 +172,33 @@ export default function Layout() {
               to={item.to}
               end={item.end}
               onClick={() => setMobileOpen(false)}
+              title={collapsed ? item.label : undefined}
               className={({ isActive }) =>
                 `flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors ${
+                  collapsed ? "lg:justify-center lg:px-2" : ""
+                } ${
                   isActive
                     ? "bg-brand-50 text-brand-700"
                     : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                 }`
               }
             >
-              <item.icon size={20} />
-              {item.label}
+              <item.icon size={20} className="shrink-0" />
+              <span className={collapsed ? "lg:hidden" : ""}>{item.label}</span>
             </NavLink>
           ))}
         </nav>
 
         <div className="border-t border-slate-100 p-4">
-          <div className="flex items-center gap-3 rounded-xl px-2 py-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-600 text-sm font-bold text-white">
+          <div
+            className={`flex items-center gap-3 rounded-xl px-2 py-2 ${
+              collapsed ? "lg:flex-col lg:gap-2 lg:px-0" : ""
+            }`}
+          >
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-600 text-sm font-bold text-white">
               {initials}
             </div>
-            <div className="min-w-0 flex-1">
+            <div className={`min-w-0 flex-1 ${collapsed ? "lg:hidden" : ""}`}>
               <p className="truncate text-sm font-semibold text-slate-900">
                 {user?.name ?? "Administrateur"}
               </p>
@@ -205,6 +232,17 @@ export default function Layout() {
             onClick={() => setMobileOpen(true)}
           >
             <Menu size={22} />
+          </button>
+          <button
+            className="hidden rounded-lg p-2 text-slate-500 hover:bg-slate-100 lg:block"
+            onClick={() => setCollapsed((v) => !v)}
+            title={collapsed ? "Déplier le menu" : "Replier le menu"}
+          >
+            {collapsed ? (
+              <PanelLeftOpen size={22} />
+            ) : (
+              <PanelLeftClose size={22} />
+            )}
           </button>
           <h1 className="text-xl font-bold text-slate-900">{title}</h1>
           <div className="ml-auto flex items-center gap-2">

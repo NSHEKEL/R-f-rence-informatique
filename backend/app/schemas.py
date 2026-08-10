@@ -52,6 +52,7 @@ class CompanySettingsOut(BaseModel):
     website: str = ""
     tax_id: str = ""
     currency: str = "FCFA"
+    about: str = ""
     receipt_header: str = ""
     receipt_footer: str = ""
     receipt_format: str = "A4"
@@ -75,6 +76,7 @@ class CompanySettingsUpdate(BaseModel):
     website: Optional[str] = None
     tax_id: Optional[str] = None
     currency: Optional[str] = None
+    about: Optional[str] = None
     receipt_header: Optional[str] = None
     receipt_footer: Optional[str] = None
     receipt_format: Optional[str] = None
@@ -493,3 +495,19 @@ class AccountingSummary(BaseModel):
     revenue_by_payment: List[AccountingCategory]
     expenses_by_category: List[AccountingCategory]
     daily_revenue: List[AccountingCategory]
+
+
+# ---------- Remote update ----------
+class UpdateStatus(BaseModel):
+    current_version: str
+    latest_version: str = ""
+    available: bool = False
+    packaged: bool = False
+    notes: str = ""
+    published_at: str = ""
+    error: str = ""
+
+
+class UpdateInstallResult(BaseModel):
+    started: bool = True
+    version: str

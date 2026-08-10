@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import axios from "axios";
 import {
   Bar,
@@ -91,23 +91,29 @@ export default function Rapports() {
   const [end, setEnd] = useState(today());
   const [report, setReport] = useState<SalesReport | null>(null);
   const [error, setError] = useState("");
+  const requestId = useRef(0);
 
   const load = useCallback(async () => {
+    const current = ++requestId.current;
     try {
       const { data } = await api.get<SalesReport>("/reports/sales", {
         params: { start, end },
       });
+      if (current !== requestId.current) return;
       setReport(data);
       setError("");
     } catch (err) {
+      if (current !== requestId.current) return;
       if (axios.isAxiosError(err)) {
+        setReport(null);
         setError(err.response?.data?.detail ?? "Erreur de chargement");
       }
     }
   }, [start, end]);
 
   useEffect(() => {
-    load();
+    const timer = setTimeout(load, 350);
+    return () => clearTimeout(timer);
   }, [load, version]);
 
   function print() {

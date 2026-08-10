@@ -19,7 +19,11 @@ def send_mail(
     settings: CompanySettings, to: str, subject: str, body: str
 ) -> None:
     message = EmailMessage()
-    message["From"] = settings.smtp_from
+    message["From"] = (
+        f"{settings.name} <{settings.smtp_from}>"
+        if settings.name
+        else settings.smtp_from
+    )
     message["To"] = to
     message["Subject"] = subject
     message.set_content(body)

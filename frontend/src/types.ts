@@ -19,6 +19,7 @@ export interface CompanySettings {
   website: string;
   tax_id: string;
   currency: string;
+  about: string;
   receipt_header: string;
   receipt_footer: string;
   receipt_format: ReceiptFormat;
@@ -30,6 +31,16 @@ export interface CompanySettings {
   smtp_from: string;
   smtp_tls: boolean;
   smtp_configured: boolean;
+}
+
+export interface UpdateStatus {
+  current_version: string;
+  latest_version: string;
+  available: boolean;
+  packaged: boolean;
+  notes: string;
+  published_at: string;
+  error: string;
 }
 
 export interface Category {

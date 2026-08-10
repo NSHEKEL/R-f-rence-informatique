@@ -44,6 +44,7 @@ class CompanySettings(Base):
     website = Column(String, default="")
     tax_id = Column(String, default="")  # NCC / RCCM
     currency = Column(String, default="FCFA")
+    about = Column(Text, default="")  # free text shown on the "À propos" page
     receipt_header = Column(Text, default="")
     receipt_footer = Column(Text, default="Merci de votre confiance !")
     receipt_format = Column(String, default="A4")  # A4, 80mm
