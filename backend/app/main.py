@@ -3,22 +3,28 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from jose import JWTError, jwt
 
-from .database import Base, engine
+from . import backup, history
+from .auth import ALGORITHM, SECRET_KEY
+from .database import Base, SessionLocal, engine
 from .migrate import migrate
 from .routers import (
     accounting,
     auth,
+    backups,
     cash,
     categories,
     customers,
     dashboard,
+    history as history_router,
     inventory,
     notifications,
+    orders,
     products,
     proformas,
     reports,
@@ -31,12 +37,12 @@ from .routers import (
     users,
 )
 from .seed import seed
-from .version import APP_VERSION
+from .version import APP_NAME, APP_VERSION
 
 Base.metadata.create_all(bind=engine)
 migrate()
 
-app = FastAPI(title="Référence Informatique — API Vente & Stock")
+app = FastAPI(title=f"{APP_NAME} — API Vente & Stock")
 
 # Workstations open the app from the server's own address, so private LAN
 # origins are allowed by default; ALLOWED_ORIGINS narrows this in production.
@@ -77,19 +83,65 @@ app.include_router(proformas.router)
 app.include_router(reports.router)
 app.include_router(sync.router)
 app.include_router(updates.router)
+app.include_router(orders.router)
+app.include_router(history_router.router)
+app.include_router(backups.router)
+
+WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+def _user_id(request: Request) -> Optional[int]:
+    header = request.headers.get("authorization", "")
+    if not header.lower().startswith("bearer "):
+        return None
+    try:
+        payload = jwt.decode(
+            header.split(" ", 1)[1], SECRET_KEY, algorithms=[ALGORITHM]
+        )
+    except JWTError:
+        return None
+    subject = payload.get("sub")
+    return int(subject) if subject else None
+
+
+@app.middleware("http")
+async def record_undoable_action(request: Request, call_next):
+    """Snapshot the rows a write touches, so it can be undone afterwards."""
+    label = (
+        history.label_for(request.method, request.url.path)
+        if request.method in WRITE_METHODS
+        else ""
+    )
+    if not label:
+        return await call_next(request)
+    recorder = history.start(label, _user_id(request))
+    try:
+        response = await call_next(request)
+    finally:
+        history.stop()
+    if response.status_code < 400:
+        history.persist(recorder)
+    return response
 
 
 @app.on_event("startup")
 def on_startup():
     seed()
     sync.trim_change_log()
+    db = SessionLocal()
+    try:
+        backup.auto_backup_if_due(db)
+    except Exception as exc:  # a failed backup must never block the app
+        print(f"Sauvegarde automatique impossible : {exc}")
+    finally:
+        db.close()
 
 
 @app.get("/api/health")
 def health():
     return {
         "status": "ok",
-        "app": "Référence Informatique",
+        "app": APP_NAME,
         "version": APP_VERSION,
     }
 

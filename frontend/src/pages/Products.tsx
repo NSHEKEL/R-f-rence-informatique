@@ -1,20 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
+import QRCode from "qrcode";
 import {
   Image as ImageIcon,
   Pencil,
   Plus,
+  Printer,
   QrCode,
   Search,
+  Tag,
   Trash2,
 } from "lucide-react";
-import api, { formatXOF } from "../api/client";
+import api, { formatDateTime, formatXOF } from "../api/client";
 import type { Category, Product, Supplier } from "../types";
 import Modal from "../components/Modal";
 import ProductQrCode from "../components/ProductQrCode";
 import { scanCode } from "../lib/scan";
+import { printLabels } from "../lib/print";
 import { stockBadge } from "../components/badges";
 import { useAuth } from "../context/AuthContext";
+import { useCompany } from "../context/CompanyContext";
 import { useSyncVersion } from "../context/SyncContext";
 
 const empty = {
@@ -35,9 +40,14 @@ const empty = {
 
 const MAX_IMAGE_BYTES = 700_000;
 
+/** Sales filter applied server-side: all, never sold, best sellers. */
+type SoldFilter = "" | "jamais" | "top";
+
 export default function Products() {
-  const { isAdmin } = useAuth();
+  const { isStockManager } = useAuth();
+  const { company } = useCompany();
   const version = useSyncVersion();
+  const [sold, setSold] = useState<SoldFilter>("");
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -54,14 +64,14 @@ export default function Products() {
 
   const load = useCallback(async () => {
     const [p, c, s] = await Promise.all([
-      api.get<Product[]>("/products"),
+      api.get<Product[]>("/products", { params: sold ? { sold } : {} }),
       api.get<Category[]>("/categories"),
       api.get<Supplier[]>("/suppliers"),
     ]);
     setProducts(p.data);
     setCategories(c.data);
     setSuppliers(s.data);
-  }, []);
+  }, [sold]);
 
   useEffect(() => {
     load();
@@ -168,6 +178,40 @@ export default function Products() {
     await load();
   }
 
+  /** Price labels to stick on the shelves, one per article. */
+  async function printPrices(items: Product[]) {
+    if (items.length === 0) return;
+    const shop = company?.name || "EasyGest";
+    const labels = await Promise.all(
+      items.map(async (p) => {
+        const code = scanCode(p);
+        const qr = await QRCode.toDataURL(code, {
+          width: 160,
+          margin: 0,
+        }).catch(() => "");
+        return (
+          `<div class="label"><p class="shop">${shop}</p>` +
+          `<p class="name">${p.name}</p>` +
+          `<p class="price">${formatXOF(p.sale_price)}</p>` +
+          (p.wholesale_price > 0
+            ? `<p class="wholesale">Gros : ${formatXOF(
+                p.wholesale_price
+              )}</p>`
+            : "") +
+          `<p class="code">${p.sku}${
+            p.barcode ? ` · ${p.barcode}` : ""
+          }</p>` +
+          (qr ? `<img class="qr" src="${qr}" alt="" />` : "") +
+          `</div>`
+        );
+      })
+    );
+    printLabels(
+      items.length === 1 ? `Étiquette ${items[0].sku}` : "Étiquettes de prix",
+      labels.join("")
+    );
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -186,11 +230,29 @@ export default function Products() {
             }}
           />
         </div>
-        {isAdmin && (
-          <button className="btn-primary" onClick={openCreate}>
-            <Plus size={18} /> Nouveau produit
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            className="input sm:w-56"
+            value={sold}
+            onChange={(e) => {
+              setSold(e.target.value as SoldFilter);
+              setPage(1);
+            }}
+            aria-label="Filtrer selon les ventes"
+          >
+            <option value="">Tout le catalogue</option>
+            <option value="jamais">Jamais vendus</option>
+            <option value="top">Les plus vendus</option>
+          </select>
+          <button className="btn-ghost" onClick={() => printPrices(filtered)}>
+            <Printer size={16} /> Imprimer les prix
           </button>
-        )}
+          {isStockManager && (
+            <button className="btn-primary" onClick={openCreate}>
+              <Plus size={18} /> Nouveau produit
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="card overflow-hidden">
@@ -203,8 +265,9 @@ export default function Products() {
                 <th className="px-5 py-3 text-right">Prix vente</th>
                 <th className="px-5 py-3 text-center">Stock</th>
                 <th className="px-5 py-3 text-center">État</th>
+                <th className="px-5 py-3">Ventes</th>
                 <th className="px-5 py-3 text-center">QR</th>
-                {isAdmin && <th className="px-5 py-3 text-right">Actions</th>}
+                <th className="px-5 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -242,39 +305,67 @@ export default function Products() {
                     {p.quantity}
                   </td>
                   <td className="px-5 py-3.5 text-center">{stockBadge(p)}</td>
+                  <td className="px-5 py-3.5 text-xs text-slate-500">
+                    {p.sold_quantity > 0 ? (
+                      <>
+                        <span className="font-semibold text-slate-700">
+                          {p.sold_quantity} vendu
+                          {p.sold_quantity > 1 ? "s" : ""}
+                        </span>
+                        {p.last_sold_at && (
+                          <span className="block">
+                            {formatDateTime(p.last_sold_at)}
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-amber-600">Jamais vendu</span>
+                    )}
+                  </td>
                   <td className="px-5 py-3.5 text-center">
                     <button
                       onClick={() => setQrProduct(p)}
-                      title="Code QR de l'article"
+                      aria-label="Code QR de l'article"
                       className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
                     >
                       <QrCode size={16} />
                     </button>
                   </td>
-                  {isAdmin && (
-                    <td className="px-5 py-3.5">
-                      <div className="flex justify-end gap-1">
-                        <button
-                          onClick={() => openEdit(p)}
-                          className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
-                        >
-                          <Pencil size={16} />
-                        </button>
-                        <button
-                          onClick={() => remove(p)}
-                          className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  )}
+                  <td className="px-5 py-3.5">
+                    <div className="flex justify-end gap-1">
+                      <button
+                        onClick={() => printPrices([p])}
+                        aria-label="Imprimer l'étiquette de prix"
+                        className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
+                      >
+                        <Tag size={16} />
+                      </button>
+                      {isStockManager && (
+                        <>
+                          <button
+                            onClick={() => openEdit(p)}
+                            aria-label="Modifier l'article"
+                            className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
+                          >
+                            <Pencil size={16} />
+                          </button>
+                          <button
+                            onClick={() => remove(p)}
+                            aria-label="Supprimer l'article"
+                            className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </td>
                 </tr>
               ))}
               {paged.length === 0 && (
                 <tr>
                   <td
-                    colSpan={isAdmin ? 7 : 6}
+                    colSpan={8}
                     className="px-5 py-10 text-center text-slate-400"
                   >
                     Aucun produit trouvé.

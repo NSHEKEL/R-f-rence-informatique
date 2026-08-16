@@ -7,3 +7,6 @@ bcrypt==5.0.0
 python-jose[cryptography]==3.5.0
 python-dotenv==1.2.2
 psycopg[binary]==3.3.3
+# Native desktop window (WebView2 on Windows); the launcher falls back to the
+# browser where it is not available.
+pywebview==5.4; sys_platform == "win32"

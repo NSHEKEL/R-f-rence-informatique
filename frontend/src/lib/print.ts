@@ -60,6 +60,36 @@ export function printSheet(title: string, bodyHtml: string): void {
   win.print();
 }
 
+const LABEL_STYLE = `
+  body { font-family: Arial, Helvetica, sans-serif; color: #0f172a; margin: 0;
+         padding: 6mm; }
+  .grid { display: flex; flex-wrap: wrap; gap: 4mm; }
+  .label { width: 60mm; box-sizing: border-box; border: 1px dashed #94a3b8;
+           border-radius: 3mm; padding: 3mm; text-align: center;
+           page-break-inside: avoid; }
+  .shop { font-size: 9px; text-transform: uppercase; letter-spacing: .08em;
+          color: #64748b; margin: 0; }
+  .name { font-size: 12px; font-weight: 700; margin: 1mm 0; min-height: 9mm; }
+  .price { font-size: 20px; font-weight: 800; margin: 0; }
+  .wholesale { font-size: 10px; color: #334155; margin: 1mm 0 0; }
+  .code { font-size: 9px; color: #64748b; margin: 1mm 0 0; }
+  .qr { width: 18mm; height: 18mm; margin: 1mm auto 0; display: block; }
+  @page { size: A4 portrait; margin: 6mm; }
+`;
+
+/** Price labels, laid out as a cuttable grid on A4. */
+export function printLabels(title: string, labelsHtml: string): void {
+  const win = window.open("", "_blank", "width=900,height=700");
+  if (!win) return;
+  win.document.write(
+    `<html><head><title>${title}</title><style>${LABEL_STYLE}</style></head>` +
+      `<body><div class="grid">${labelsHtml}</div></body></html>`
+  );
+  win.document.close();
+  win.focus();
+  win.print();
+}
+
 /** Applies the page geometry matching the receipt format, then prints. */
 export function printReceipt(format: ReceiptFormat): void {
   let style = document.getElementById(PAGE_STYLE_ID);

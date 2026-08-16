@@ -64,6 +64,10 @@ class CompanySettingsOut(BaseModel):
     smtp_from: str = ""
     smtp_tls: bool = True
     smtp_configured: bool = False
+    backup_dir: str = ""
+    backup_auto: bool = True
+    backup_keep: int = 30
+    last_backup_at: Optional[datetime] = None
 
 
 class CompanySettingsUpdate(BaseModel):
@@ -76,7 +80,7 @@ class CompanySettingsUpdate(BaseModel):
     website: Optional[str] = None
     tax_id: Optional[str] = None
     currency: Optional[str] = None
-    about: Optional[str] = None
+    # "about" is intentionally absent: the page is read-only.
     receipt_header: Optional[str] = None
     receipt_footer: Optional[str] = None
     receipt_format: Optional[str] = None
@@ -88,6 +92,9 @@ class CompanySettingsUpdate(BaseModel):
     smtp_password: Optional[str] = None
     smtp_from: Optional[str] = None
     smtp_tls: Optional[bool] = None
+    backup_dir: Optional[str] = None
+    backup_auto: Optional[bool] = None
+    backup_keep: Optional[int] = None
 
 
 # ---------- Category ----------
@@ -171,6 +178,9 @@ class ProductOut(ProductBase):
     created_at: datetime
     category: Optional[CategoryOut] = None
     supplier: Optional[SupplierOut] = None
+    # Filled by the "jamais vendu / plus vendus" filters.
+    sold_quantity: int = 0
+    last_sold_at: Optional[datetime] = None
 
 
 # ---------- Sales ----------
@@ -511,3 +521,113 @@ class UpdateStatus(BaseModel):
 class UpdateInstallResult(BaseModel):
     started: bool = True
     version: str
+
+
+# ---------- Orders and deliveries ----------
+class OrderItemCreate(BaseModel):
+    product_id: int
+    quantity: int
+    unit_price: Optional[float] = None
+
+
+class OrderCreate(BaseModel):
+    customer_id: Optional[int] = None
+    customer_name: str = ""
+    expected_date: Optional[datetime] = None
+    deposit: float = 0
+    price_mode: str = "detail"
+    delivery_address: str = ""
+    note: str = ""
+    items: List[OrderItemCreate] = []
+
+
+class OrderUpdate(BaseModel):
+    customer_id: Optional[int] = None
+    customer_name: Optional[str] = None
+    expected_date: Optional[datetime] = None
+    deposit: Optional[float] = None
+    price_mode: Optional[str] = None
+    delivery_address: Optional[str] = None
+    note: Optional[str] = None
+    status: Optional[str] = None
+    items: Optional[List[OrderItemCreate]] = None
+
+
+class OrderItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    product_id: Optional[int] = None
+    product_name: str
+    quantity: int
+    unit_price: float
+    subtotal: float
+
+
+class DeliveryCreate(BaseModel):
+    address: str = ""
+    carrier: str = ""
+    recipient: str = ""
+    note: str = ""
+    paid: bool = True
+    payment_method: str = "Espèces"
+
+
+class DeliveryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    reference: str
+    order_id: int
+    order_reference: str = ""
+    sale_id: Optional[int] = None
+    date: datetime
+    address: str = ""
+    carrier: str = ""
+    recipient: str = ""
+    note: str = ""
+    created_by: Optional[UserOut] = None
+
+
+class OrderOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    reference: str
+    customer_id: Optional[int] = None
+    customer_name: str = ""
+    date: datetime
+    expected_date: Optional[datetime] = None
+    status: str
+    total: float
+    deposit: float = 0
+    balance: float = 0
+    price_mode: str = "detail"
+    delivery_address: str = ""
+    note: str = ""
+    items: List[OrderItemOut] = []
+    deliveries: List[DeliveryOut] = []
+    created_by: Optional[UserOut] = None
+
+
+# ---------- Undo / redo ----------
+class ActionLogOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    label: str
+    at: datetime
+    user: Optional[UserOut] = None
+
+
+class HistoryState(BaseModel):
+    undo: Optional[ActionLogOut] = None
+    redo: Optional[ActionLogOut] = None
+
+
+# ---------- Backups ----------
+class BackupFile(BaseModel):
+    name: str
+    size: int
+    created_at: datetime
+
+
+class BackupResult(BaseModel):
+    name: str
+    size: int

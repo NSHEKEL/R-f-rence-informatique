@@ -26,7 +26,7 @@ class User(Base):
     name = Column(String, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
-    role = Column(String, default="admin")  # admin, vendeur
+    role = Column(String, default="admin")  # admin, vendeur, gestionnaire
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=utcnow)
 
@@ -57,6 +57,11 @@ class CompanySettings(Base):
     smtp_password = Column(String, default="")
     smtp_from = Column(String, default="")
     smtp_tls = Column(Boolean, default=True, nullable=False)
+    # Copy of the database dropped on a USB key or a synced cloud folder.
+    backup_dir = Column(String, default="")
+    backup_auto = Column(Boolean, default=True, nullable=False)
+    backup_keep = Column(Integer, default=30, nullable=False)
+    last_backup_at = Column(DateTime, nullable=True)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
 
@@ -353,6 +358,100 @@ class ChangeLog(Base):
     id = Column(Integer, primary_key=True, index=True)
     entities = Column(String, default="")
     at = Column(DateTime, default=utcnow)
+
+
+class Order(Base):
+    """Customer order: goods promised now, handed over on delivery."""
+
+    __tablename__ = "orders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    reference = Column(String, unique=True, index=True, nullable=False)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True)
+    customer_name = Column(String, default="")
+    date = Column(DateTime, default=utcnow)
+    expected_date = Column(DateTime, nullable=True)
+    # En attente, Confirmée, Livrée, Annulée
+    status = Column(String, default="En attente", index=True)
+    total = Column(Float, default=0)
+    deposit = Column(Float, default=0)  # advance already paid
+    price_mode = Column(String, default="detail")
+    delivery_address = Column(String, default="")
+    note = Column(Text, default="")
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    customer = relationship("Customer")
+    created_by = relationship("User")
+    items = relationship(
+        "OrderItem", back_populates="order", cascade="all, delete-orphan"
+    )
+    deliveries = relationship(
+        "Delivery", back_populates="order", cascade="all, delete-orphan"
+    )
+
+    @property
+    def balance(self) -> float:
+        return max(self.total - (self.deposit or 0), 0)
+
+
+class OrderItem(Base):
+    __tablename__ = "order_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=False)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
+    product_name = Column(String, default="")
+    quantity = Column(Integer, default=1)
+    unit_price = Column(Float, default=0)
+    subtotal = Column(Float, default=0)
+
+    order = relationship("Order", back_populates="items")
+    product = relationship("Product")
+
+
+class Delivery(Base):
+    """Delivery note issued when an order leaves the shop."""
+
+    __tablename__ = "deliveries"
+
+    id = Column(Integer, primary_key=True, index=True)
+    reference = Column(String, unique=True, index=True, nullable=False)
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=False)
+    sale_id = Column(Integer, ForeignKey("sales.id"), nullable=True)
+    date = Column(DateTime, default=utcnow)
+    address = Column(String, default="")
+    carrier = Column(String, default="")  # person or company delivering
+    recipient = Column(String, default="")  # who signed for the goods
+    note = Column(Text, default="")
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    order = relationship("Order", back_populates="deliveries")
+    sale = relationship("Sale")
+    created_by = relationship("User")
+
+    @property
+    def order_reference(self) -> str:
+        return self.order.reference if self.order else ""
+
+
+class ActionLog(Base):
+    """Undo/redo history of the administrator's edits.
+
+    ``entries`` is a JSON list of row snapshots ({table, pk, before, after});
+    undoing writes ``before`` back, redoing writes ``after`` again.
+    """
+
+    __tablename__ = "action_log"
+
+    id = Column(Integer, primary_key=True, index=True)
+    label = Column(String, default="")
+    entries = Column(Text, default="[]")
+    at = Column(DateTime, default=utcnow)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    # False once undone; a redo sets it back to True.
+    is_applied = Column(Boolean, default=True, nullable=False)
+
+    user = relationship("User")
 
 
 class Notification(Base):

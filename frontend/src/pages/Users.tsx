@@ -16,7 +16,8 @@ import { useAuth } from "../context/AuthContext";
 
 const ROLES = [
   { value: "admin", label: "Administrateur" },
-  { value: "vendeur", label: "Vendeur" },
+  { value: "vendeur", label: "Vendeur / caissier" },
+  { value: "gestionnaire", label: "Gestionnaire de stock" },
 ];
 
 const roleLabel = (role: string) =>
@@ -217,14 +218,14 @@ export default function Users() {
                     <div className="flex justify-end gap-1">
                       <button
                         onClick={() => resetPassword(u)}
-                        title="Réinitialiser le mot de passe"
+                        aria-label="Réinitialiser le mot de passe"
                         className="rounded-lg p-2 text-slate-400 hover:bg-amber-50 hover:text-amber-600"
                       >
                         <KeyRound size={16} />
                       </button>
                       <button
                         onClick={() => openEdit(u)}
-                        title="Modifier"
+                        aria-label="Modifier"
                         className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
                       >
                         <Pencil size={16} />

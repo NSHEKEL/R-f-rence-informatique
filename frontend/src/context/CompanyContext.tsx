@@ -7,12 +7,12 @@ import {
   type ReactNode,
 } from "react";
 import api from "../api/client";
-import defaultLogo from "../assets/logo.jpg";
+import defaultLogo from "../assets/logo-easygest.png";
 import { cacheRead, cacheWrite } from "../lib/offline";
 import type { CompanySettings } from "../types";
 
 export const COMPANY_CACHE_KEY = "company";
-export const DEFAULT_BRAND = "Référence Informatique";
+export const DEFAULT_BRAND = "EasyGest";
 
 interface CompanyContextValue {
   company: CompanySettings | null;

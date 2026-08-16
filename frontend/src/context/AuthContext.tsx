@@ -12,6 +12,9 @@ interface AuthContextValue {
   user: User | null;
   loading: boolean;
   isAdmin: boolean;
+  /** Administrators and stock managers: catalogue, stock and purchases. */
+  isStockManager: boolean;
+  isSeller: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
 }
@@ -52,7 +55,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, loading, isAdmin: user?.role === "admin", login, logout }}
+      value={{
+        user,
+        loading,
+        isAdmin: user?.role === "admin",
+        isStockManager: user?.role === "admin" || user?.role === "gestionnaire",
+        isSeller: user?.role === "vendeur",
+        login,
+        logout,
+      }}
     >
       {children}
     </AuthContext.Provider>

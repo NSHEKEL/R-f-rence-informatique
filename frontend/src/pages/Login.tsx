@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { Lock, Mail, Server } from "lucide-react";
-import logo from "../assets/logo.jpg";
+import logo from "../assets/logo-easygest.png";
 import api, {
   getServerUrl,
   normalizeServerUrl,
@@ -121,7 +121,7 @@ export default function Login() {
       <div className="w-full max-w-md">
         <div className="mb-6 flex flex-col items-center">
           <div className="mb-4 flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl bg-white shadow-card">
-            <img src={logo} alt="Référence Informatique" className="h-20 w-20 object-contain" />
+            <img src={logo} alt="EasyGest" className="h-20 w-20 object-contain" />
           </div>
           <h1 className="text-2xl font-extrabold tracking-tight text-brand-700">
             RÉFÉRENCE <span className="text-slate-800">INFORMATIQUE</span>

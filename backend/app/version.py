@@ -4,11 +4,15 @@ Bump APP_VERSION and tag the repository with the same value ("vX.Y.Z"): the
 update checker compares the tag of the latest GitHub release with this number.
 """
 
-APP_VERSION = "1.3.0"
+APP_NAME = "EasyGest"
+APP_VERSION = "2.0.0"
 
 # Repository publishing the Windows releases consumed by the update checker.
 UPDATE_REPO = "NSHEKEL/R-f-rence-informatique"
-UPDATE_ASSET = "ReferenceInformatique.exe"
+# Portable executable replaced in place by the built-in updater.
+UPDATE_ASSET = "EasyGest.exe"
+# Installer downloaded when the app was installed with EasyGest_Setup.exe.
+UPDATE_INSTALLER_ASSET = "EasyGest_Setup.exe"
 
 
 def parse(version: str) -> tuple[int, ...]:

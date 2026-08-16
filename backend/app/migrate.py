@@ -45,6 +45,10 @@ COLUMNS: dict[str, dict[str, str]] = {
         "smtp_from": "VARCHAR DEFAULT ''",
         "smtp_tls": f"BOOLEAN DEFAULT {TRUE_LITERAL}",
         "about": "TEXT DEFAULT ''",
+        "backup_dir": "VARCHAR DEFAULT ''",
+        "backup_auto": f"BOOLEAN DEFAULT {TRUE_LITERAL}",
+        "backup_keep": "INTEGER DEFAULT 30",
+        "last_backup_at": "TIMESTAMP",
     },
     "cash_sessions": {
         "business_day": "VARCHAR DEFAULT ''",

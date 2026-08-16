@@ -92,3 +92,12 @@ export function formatDate(value: string): string {
     year: "numeric",
   });
 }
+
+/** "23/07/2026 à 10:53" — used wherever the hour matters (receipts, sales). */
+export function formatDateTime(value: string): string {
+  const date = new Date(value);
+  return `${formatDate(value)} à ${date.toLocaleTimeString("fr-FR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  })}`;
+}

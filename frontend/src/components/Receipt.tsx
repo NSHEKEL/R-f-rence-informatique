@@ -1,5 +1,5 @@
 import { createPortal } from "react-dom";
-import { formatDate, formatMoney } from "../api/client";
+import { formatDateTime, formatMoney } from "../api/client";
 import type { CompanySettings, ReceiptFormat, Sale } from "../types";
 
 interface ReceiptProps {
@@ -30,7 +30,7 @@ function ReceiptBody({
         )}
         <div>
           <p className="receipt-company">
-            {company?.name || "Référence Informatique"}
+            {company?.name || "EasyGest"}
           </p>
           {company?.slogan && <p className="receipt-slogan">{company.slogan}</p>}
           <div className="receipt-contact">
@@ -58,7 +58,7 @@ function ReceiptBody({
         <span>Référence</span>
         <span>{sale.reference}</span>
         <span>Date</span>
-        <span>{formatDate(sale.date)}</span>
+        <span>{formatDateTime(sale.date)}</span>
         <span>Client</span>
         <span>{sale.customer?.name ?? "Client de passage"}</span>
         <span>Paiement</span>

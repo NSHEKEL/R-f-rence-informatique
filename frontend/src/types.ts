@@ -31,6 +31,70 @@ export interface CompanySettings {
   smtp_from: string;
   smtp_tls: boolean;
   smtp_configured: boolean;
+  backup_dir: string;
+  backup_auto: boolean;
+  backup_keep: number;
+  last_backup_at: string | null;
+}
+
+export interface BackupFile {
+  name: string;
+  size: number;
+  created_at: string;
+}
+
+export interface ActionLog {
+  id: number;
+  label: string;
+  at: string;
+  user?: User | null;
+}
+
+export interface HistoryState {
+  undo: ActionLog | null;
+  redo: ActionLog | null;
+}
+
+export interface OrderItem {
+  id: number;
+  product_id: number | null;
+  product_name: string;
+  quantity: number;
+  unit_price: number;
+  subtotal: number;
+}
+
+export interface Delivery {
+  id: number;
+  reference: string;
+  order_id: number;
+  order_reference: string;
+  sale_id: number | null;
+  date: string;
+  address: string;
+  carrier: string;
+  recipient: string;
+  note: string;
+  created_by?: User | null;
+}
+
+export interface Order {
+  id: number;
+  reference: string;
+  customer_id: number | null;
+  customer_name: string;
+  date: string;
+  expected_date: string | null;
+  status: string;
+  total: number;
+  deposit: number;
+  balance: number;
+  price_mode: string;
+  delivery_address: string;
+  note: string;
+  items: OrderItem[];
+  deliveries: Delivery[];
+  created_by?: User | null;
 }
 
 export interface UpdateStatus {
@@ -84,6 +148,9 @@ export interface Product {
   created_at: string;
   category?: Category | null;
   supplier?: Supplier | null;
+  /** Filled by the "jamais vendu / plus vendus" filters. */
+  sold_quantity: number;
+  last_sold_at: string | null;
 }
 
 export interface SaleItem {

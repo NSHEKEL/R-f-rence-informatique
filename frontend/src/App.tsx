@@ -18,6 +18,8 @@ import Categories from "./pages/Categories";
 import Users from "./pages/Users";
 import Settings from "./pages/Settings";
 import APropos from "./pages/APropos";
+import Commandes from "./pages/Commandes";
+import Livraisons from "./pages/Livraisons";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -38,10 +40,18 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/** Catalogue, stock and purchases: administrators and stock managers. */
+function StockRoute({ children }: { children: React.ReactNode }) {
+  const { isStockManager } = useAuth();
+  if (!isStockManager) return <Navigate to="/caisse" replace />;
+  return <>{children}</>;
+}
+
 /** Sellers have no dashboard: the till is their home screen. */
 function HomeRoute() {
-  const { isAdmin } = useAuth();
-  return isAdmin ? <Dashboard /> : <Navigate to="/caisse" replace />;
+  const { isAdmin, isStockManager } = useAuth();
+  if (isAdmin) return <Dashboard />;
+  return <Navigate to={isStockManager ? "/produits" : "/caisse"} replace />;
 }
 
 export default function App() {
@@ -83,19 +93,35 @@ export default function App() {
           }
         />
         <Route
-          path="/produits"
+          path="/commandes"
           element={
             <AdminRoute>
-              <Products />
+              <Commandes />
             </AdminRoute>
+          }
+        />
+        <Route
+          path="/livraisons"
+          element={
+            <AdminRoute>
+              <Livraisons />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/produits"
+          element={
+            <StockRoute>
+              <Products />
+            </StockRoute>
           }
         />
         <Route
           path="/inventaire"
           element={
-            <AdminRoute>
+            <StockRoute>
               <Inventaire />
-            </AdminRoute>
+            </StockRoute>
           }
         />
         <Route
@@ -125,17 +151,17 @@ export default function App() {
         <Route
           path="/fournisseurs"
           element={
-            <AdminRoute>
+            <StockRoute>
               <Suppliers />
-            </AdminRoute>
+            </StockRoute>
           }
         />
         <Route
           path="/categories"
           element={
-            <AdminRoute>
+            <StockRoute>
               <Categories />
-            </AdminRoute>
+            </StockRoute>
           }
         />
         <Route
@@ -154,7 +180,15 @@ export default function App() {
             </AdminRoute>
           }
         />
-        <Route path="/a-propos" element={<APropos />} />
+        {/* Cashiers have no "À propos" page. */}
+        <Route
+          path="/a-propos"
+          element={
+            <StockRoute>
+              <APropos />
+            </StockRoute>
+          }
+        />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

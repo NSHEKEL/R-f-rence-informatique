@@ -38,7 +38,7 @@ function TicketBody({
         )}
         <div>
           <p className="receipt-company">
-            {company?.name || "Référence Informatique"}
+            {company?.name || "EasyGest"}
           </p>
           <div className="receipt-contact">
             {company?.address && <p>{company.address}</p>}

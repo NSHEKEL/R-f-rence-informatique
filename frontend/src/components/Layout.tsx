@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   Package,
@@ -22,61 +22,86 @@ import {
   Info,
   PanelLeftClose,
   PanelLeftOpen,
+  ClipboardCheck,
+  PackageCheck,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
 import NetworkBanner from "./NetworkBanner";
 import NotificationBell from "./NotificationBell";
+import UndoRedo from "./UndoRedo";
 
-const navItems = [
+/** Who sees the entry: everyone, stock managers (and admins), or admins. */
+type Access = "all" | "stock" | "admin";
+
+const navItems: {
+  to: string;
+  label: string;
+  icon: typeof Wallet;
+  end?: boolean;
+  access: Access;
+}[] = [
   {
     to: "/",
     label: "Tableau de bord",
     icon: LayoutDashboard,
     end: true,
-    adminOnly: true,
+    access: "admin",
   },
-  { to: "/caisse", label: "Ma caisse", icon: Wallet },
-  { to: "/ventes/nouvelle", label: "Nouvelle vente", icon: Plus },
+  { to: "/caisse", label: "Ma caisse", icon: Wallet, access: "all" },
+  {
+    to: "/ventes/nouvelle",
+    label: "Nouvelle vente",
+    icon: Plus,
+    access: "all",
+  },
   {
     to: "/ventes",
     label: "Ventes",
     icon: ShoppingCart,
     end: true,
-    adminOnly: true,
+    access: "admin",
   },
-  { to: "/retours", label: "Retours & avoirs", icon: Undo2, adminOnly: true },
-  { to: "/clients", label: "Clients", icon: Users, adminOnly: true },
-  { to: "/produits", label: "Produits & Stock", icon: Package, adminOnly: true },
+  { to: "/commandes", label: "Commandes", icon: ClipboardCheck, access: "admin" },
+  {
+    to: "/livraisons",
+    label: "Livraisons",
+    icon: PackageCheck,
+    access: "admin",
+  },
+  { to: "/retours", label: "Retours & avoirs", icon: Undo2, access: "admin" },
+  { to: "/clients", label: "Clients", icon: Users, access: "admin" },
+  { to: "/produits", label: "Produits & Stock", icon: Package, access: "stock" },
   {
     to: "/inventaire",
     label: "Inventaire",
     icon: ClipboardList,
-    adminOnly: true,
+    access: "stock",
   },
   {
     to: "/rapports",
     label: "Rapports",
     icon: BarChart3,
-    adminOnly: true,
+    access: "admin",
   },
   {
     to: "/proformas",
     label: "Factures proforma",
     icon: FileText,
-    adminOnly: true,
+    access: "admin",
   },
   {
     to: "/comptabilite",
     label: "Comptabilité",
     icon: Calculator,
-    adminOnly: true,
+    access: "admin",
   },
-  { to: "/fournisseurs", label: "Fournisseurs", icon: Truck, adminOnly: true },
-  { to: "/categories", label: "Catégories", icon: Tags, adminOnly: true },
-  { to: "/utilisateurs", label: "Utilisateurs", icon: UserCog, adminOnly: true },
-  { to: "/parametres", label: "Paramètres", icon: Settings, adminOnly: true },
-  { to: "/a-propos", label: "À propos de nous", icon: Info },
+  { to: "/fournisseurs", label: "Fournisseurs", icon: Truck, access: "stock" },
+  { to: "/categories", label: "Catégories", icon: Tags, access: "stock" },
+  { to: "/utilisateurs", label: "Utilisateurs", icon: UserCog, access: "admin" },
+  { to: "/parametres", label: "Paramètres", icon: Settings, access: "admin" },
+  // Cashiers do not see "À propos".
+  { to: "/a-propos", label: "À propos de nous", icon: Info, access: "stock" },
 ];
 
 const COLLAPSED_KEY = "ri_sidebar_collapsed";
@@ -84,6 +109,7 @@ const COLLAPSED_KEY = "ri_sidebar_collapsed";
 const roleLabels: Record<string, string> = {
   admin: "Administrateur",
   vendeur: "Vendeur",
+  gestionnaire: "Gestionnaire de stock",
 };
 
 const pageTitles: Record<string, string> = {
@@ -97,6 +123,8 @@ const pageTitles: Record<string, string> = {
   "/proformas": "Factures proforma",
   "/comptabilite": "Comptabilité",
   "/ventes": "Ventes",
+  "/commandes": "Commandes",
+  "/livraisons": "Livraisons",
   "/clients": "Clients",
   "/fournisseurs": "Fournisseurs",
   "/categories": "Catégories",
@@ -110,11 +138,17 @@ export default function Layout() {
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem(COLLAPSED_KEY) === "1"
   );
-  const { user, isAdmin, logout } = useAuth();
+  const { user, isAdmin, isStockManager, logout } = useAuth();
   const { brandName, logoSrc } = useCompany();
   const location = useLocation();
+  const navigate = useNavigate();
   const title = pageTitles[location.pathname] ?? brandName;
-  const visibleNavItems = navItems.filter((item) => !item.adminOnly || isAdmin);
+  const visibleNavItems = navItems.filter(
+    (item) =>
+      item.access === "all" ||
+      (item.access === "stock" && isStockManager) ||
+      (item.access === "admin" && isAdmin)
+  );
 
   useEffect(() => {
     localStorage.setItem(COLLAPSED_KEY, collapsed ? "1" : "0");
@@ -166,27 +200,37 @@ export default function Layout() {
         </div>
 
         <nav className="flex-1 space-y-1 overflow-y-auto px-4 py-2">
-          {visibleNavItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.end}
-              onClick={() => setMobileOpen(false)}
-              title={collapsed ? item.label : undefined}
-              className={({ isActive }) =>
-                `flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors ${
+          {/* Buttons, not links: an <a href> would make the browser print the
+              target address in the status bar while hovering. */}
+          {visibleNavItems.map((item) => {
+            const isActive = item.end
+              ? location.pathname === item.to
+              : location.pathname.startsWith(item.to);
+            return (
+              <button
+                key={item.to}
+                type="button"
+                aria-current={isActive ? "page" : undefined}
+                aria-label={item.label}
+                onClick={() => {
+                  setMobileOpen(false);
+                  navigate(item.to);
+                }}
+                className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-left text-sm font-medium transition-colors ${
                   collapsed ? "lg:justify-center lg:px-2" : ""
                 } ${
                   isActive
                     ? "bg-brand-50 text-brand-700"
                     : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                }`
-              }
-            >
-              <item.icon size={20} className="shrink-0" />
-              <span className={collapsed ? "lg:hidden" : ""}>{item.label}</span>
-            </NavLink>
-          ))}
+                }`}
+              >
+                <item.icon size={20} className="shrink-0" />
+                <span className={collapsed ? "lg:hidden" : ""}>
+                  {item.label}
+                </span>
+              </button>
+            );
+          })}
         </nav>
 
         <div className="border-t border-slate-100 p-4">
@@ -208,7 +252,7 @@ export default function Layout() {
             </div>
             <button
               onClick={logout}
-              title="Se déconnecter"
+              aria-label="Se déconnecter"
               className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
             >
               <LogOut size={18} />
@@ -236,7 +280,7 @@ export default function Layout() {
           <button
             className="hidden rounded-lg p-2 text-slate-500 hover:bg-slate-100 lg:block"
             onClick={() => setCollapsed((v) => !v)}
-            title={collapsed ? "Déplier le menu" : "Replier le menu"}
+            aria-label={collapsed ? "Déplier le menu" : "Replier le menu"}
           >
             {collapsed ? (
               <PanelLeftOpen size={22} />
@@ -246,6 +290,7 @@ export default function Layout() {
           </button>
           <h1 className="text-xl font-bold text-slate-900">{title}</h1>
           <div className="ml-auto flex items-center gap-2">
+            {isAdmin && <UndoRedo />}
             {isAdmin && <NotificationBell />}
           </div>
         </header>

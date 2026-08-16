@@ -32,6 +32,7 @@ jobs:
             echo "Tag ${{ github.ref_name }} != APP_VERSION v$declared" >&2
             exit 1
           fi
+          echo "APP_VERSION=$declared" >> "$GITHUB_ENV"
 
       - name: Build frontend
         working-directory: frontend
@@ -50,30 +51,55 @@ jobs:
           pip install -r backend/requirements.txt
           pip install pyinstaller==6.11.1
 
-      - name: Build executable
-        run: pyinstaller packaging/ReferenceInformatique.spec
+      - name: Build the application
+        run: |
+          python packaging/make_version_info.py
+          pyinstaller packaging/EasyGest.spec
 
-      - name: Upload build artifact
+      - name: Download the WebView2 bootstrapper
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=2124703" `
+            -OutFile "packaging/MicrosoftEdgeWebview2Setup.exe"
+
+      - name: Build the Windows installer
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path backend/app/version.py `
+            -Pattern 'APP_VERSION = "(.+)"').Matches[0].Groups[1].Value
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
+            "/DAppVersion=$version" packaging\EasyGest.iss
+
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ReferenceInformatique-windows
-          path: dist/ReferenceInformatique.exe
+          name: EasyGest-windows
+          path: |
+            dist/EasyGest.exe
+            dist/EasyGest_Setup.exe
 
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/ReferenceInformatique.exe
-          name: Référence Informatique ${{ github.ref_name }}
+          files: |
+            dist/EasyGest_Setup.exe
+            dist/EasyGest.exe
+          name: EasyGest ${{ github.ref_name }}
           body: |
-            Application Référence Informatique (Vente & Stock) pour Windows.
+            **EasyGest — gestion de vente et de stock.**
 
-            **Installation :** téléchargez `ReferenceInformatique.exe` ci-dessous et double-cliquez dessus. Le navigateur s'ouvre automatiquement sur l'application.
+            - `EasyGest_Setup.exe` : installateur Windows (recommandé).
+              Raccourci Bureau et menu Démarrer, l'application s'ouvre dans sa
+              propre fenêtre, sans navigateur ni fenêtre noire.
+            - `EasyGest.exe` : version portable, à lancer sans installation.
 
-            Comptes de démonstration :
+            Comptes de démonstration (base vierge) :
             - Administrateur : admin@reference.ci / admin123
             - Vendeur : vendeur@reference.ci / vendeur123
 
-            Les données sont enregistrées dans le dossier `ReferenceInformatique` de votre profil utilisateur.
+            Les données restent dans `%APPDATA%\EasyGest` : elles survivent aux
+            mises à jour, désinstallations et réinstallations.
 
-            **Mise à jour d'une installation existante :** Paramètres → Mise à jour de l'application → Rechercher une mise à jour → Installer. L'application se remplace et redémarre en conservant vos données.
+            **Mise à jour d'un poste existant :** Paramètres → Mise à jour de
+            l'application → Rechercher → Installer.

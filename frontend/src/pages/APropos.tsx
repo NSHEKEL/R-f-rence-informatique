@@ -14,10 +14,20 @@ interface HealthInfo {
   version: string;
 }
 
-const FALLBACK = {
+/**
+ * Fixed presentation of the publisher. This page is deliberately read-only:
+ * nothing here can be edited from the application.
+ */
+const PUBLISHER = {
   address: "Bondoukou, Côte d'Ivoire — quartier Église Sainte Odile",
   phone: "07 10 06 90 59",
   email: "ankouame022@gmail.com",
+  about:
+    "EasyGest est un logiciel ivoirien de gestion des ventes et des " +
+    "stocks : caisse, articles, clients, commandes, livraisons, " +
+    "comptabilité, inventaire et rapports.\n\n" +
+    "Il accompagne les commerces, les entreprises et les administrations " +
+    "avec un suivi fiable au quotidien et un conseil de proximité.",
 };
 
 export default function APropos() {
@@ -32,19 +42,11 @@ export default function APropos() {
   }, []);
 
   const contacts = [
-    {
-      icon: MapPin,
-      label: "Adresse",
-      value: company?.address || FALLBACK.address,
-    },
-    { icon: Phone, label: "Téléphone", value: company?.phone || FALLBACK.phone },
-    { icon: Mail, label: "E-mail", value: company?.email || FALLBACK.email },
+    { icon: MapPin, label: "Adresse", value: PUBLISHER.address },
+    { icon: Phone, label: "Téléphone", value: PUBLISHER.phone },
+    { icon: Mail, label: "E-mail", value: PUBLISHER.email },
     { icon: Globe, label: "Site web", value: company?.website || "—" },
-    {
-      icon: ShieldCheck,
-      label: "RCCM / NCC",
-      value: company?.tax_id || "—",
-    },
+    { icon: ShieldCheck, label: "RCCM / NCC", value: company?.tax_id || "—" },
   ];
 
   return (
@@ -56,12 +58,8 @@ export default function APropos() {
           className="h-20 w-20 rounded-2xl object-contain ring-1 ring-slate-100"
         />
         <div>
-          <h2 className="text-2xl font-extrabold text-slate-900">
-            {brandName}
-          </h2>
-          <p className="text-sm text-slate-500">
-            {company?.slogan || "Vente & suivi de stock"}
-          </p>
+          <h2 className="text-2xl font-extrabold text-slate-900">EasyGest</h2>
+          <p className="text-sm text-slate-500">Vente &amp; suivi de stock</p>
           {version && (
             <p className="mt-1 text-xs font-semibold text-brand-700">
               Version {version}
@@ -75,13 +73,13 @@ export default function APropos() {
           <Building2 size={18} /> Qui sommes-nous ?
         </h3>
         <p className="whitespace-pre-line text-sm leading-relaxed text-slate-600">
-          {company?.about ||
-            `${brandName} est une entreprise ivoirienne spécialisée dans la vente ` +
-              "de matériel informatique, d'accessoires et de consommables, ainsi " +
-              "que dans les services d'installation et de maintenance.\n\n" +
-              "Notre équipe accompagne les particuliers, les entreprises et les " +
-              "administrations avec des produits fiables et un conseil de proximité."}
+          {PUBLISHER.about}
         </p>
+        {company?.name && (
+          <p className="mt-4 text-xs text-slate-400">
+            Licence utilisée par : {company.name}
+          </p>
+        )}
       </div>
 
       <div className="card p-6">

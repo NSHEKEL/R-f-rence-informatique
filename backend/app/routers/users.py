@@ -10,7 +10,7 @@ from ..schemas import UserCreate, UserOut, UserUpdate
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
-ROLES = {"admin", "vendeur"}
+ROLES = {"admin", "vendeur", "gestionnaire"}
 
 
 @router.get("", response_model=list[UserOut])

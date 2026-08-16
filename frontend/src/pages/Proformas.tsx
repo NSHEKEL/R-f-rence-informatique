@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { FileText, Plus, Printer, Trash2, X } from "lucide-react";
-import api, { formatDate, formatXOF } from "../api/client";
+import api, { formatDate, formatDateTime, formatXOF } from "../api/client";
 import type { Customer, Proforma, Product } from "../types";
 import Modal from "../components/Modal";
 import { printSheet } from "../lib/print";
@@ -130,12 +130,12 @@ export default function Proformas() {
       .join("");
     printSheet(
       `Proforma ${proforma.reference}`,
-      `<h1>${company?.name ?? "Référence Informatique"}</h1>` +
+      `<h1>${company?.name ?? "EasyGest"}</h1>` +
         `<p class="meta">${[company?.address, company?.phone, company?.email]
           .filter(Boolean)
           .join(" · ")}</p>` +
         `<h2>Facture proforma ${proforma.reference}</h2>` +
-        `<p class="meta">Date : ${formatDate(proforma.date)}` +
+        `<p class="meta">Date : ${formatDateTime(proforma.date)}` +
         (proforma.valid_until
           ? ` · Valable jusqu'au ${formatDate(proforma.valid_until)}`
           : "") +
@@ -188,7 +188,7 @@ export default function Proformas() {
                   </span>
                 </td>
                 <td className="px-5 py-3.5 text-slate-500">
-                  {formatDate(p.date)}
+                  {formatDateTime(p.date)}
                 </td>
                 <td className="px-5 py-3.5 text-slate-600">
                   {p.customer?.name || p.customer_name || "—"}
@@ -201,14 +201,14 @@ export default function Proformas() {
                     <button
                       className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
                       onClick={() => print(p)}
-                      title="Imprimer"
+                      aria-label="Imprimer la proforma"
                     >
                       <Printer size={16} />
                     </button>
                     <button
                       className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
                       onClick={() => remove(p)}
-                      title="Supprimer"
+                      aria-label="Supprimer la proforma"
                     >
                       <Trash2 size={16} />
                     </button>

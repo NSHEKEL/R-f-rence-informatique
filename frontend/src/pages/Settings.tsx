@@ -1,9 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import axios from "axios";
 import {
   Building2,
   Check,
+  Database,
+  Download,
   DownloadCloud,
+  HardDriveUpload,
   ImagePlus,
   Mail,
   Printer,
@@ -14,10 +17,11 @@ import {
 } from "lucide-react";
 import api, {
   API_BASE,
+  formatDateTime,
   normalizeServerUrl,
   setServerUrl,
 } from "../api/client";
-import type { CompanySettings, UpdateStatus } from "../types";
+import type { BackupFile, CompanySettings, UpdateStatus } from "../types";
 import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
 
@@ -48,6 +52,10 @@ const emptyCompany: CompanyForm = {
   smtp_tls: true,
   smtp_configured: false,
   smtp_password: "",
+  backup_dir: "",
+  backup_auto: true,
+  backup_keep: 30,
+  last_backup_at: null,
 };
 
 export default function Settings() {
@@ -65,6 +73,9 @@ export default function Settings() {
   const [mailStatus, setMailStatus] = useState("");
   const [update_, setUpdateStatus] = useState<UpdateStatus | null>(null);
   const [updateMessage, setUpdateMessage] = useState("");
+  const [backups, setBackups] = useState<BackupFile[]>([]);
+  const [backupMessage, setBackupMessage] = useState("");
+  const restoreInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     api
@@ -77,6 +88,78 @@ export default function Settings() {
       .catch(() => setError("Impossible de charger la configuration."))
       .finally(() => setLoading(false));
   }, []);
+
+  const loadBackups = useCallback(async () => {
+    try {
+      const { data } = await api.get<BackupFile[]>("/backups");
+      setBackups(data);
+    } catch {
+      /* the list is optional: keep the page usable */
+    }
+  }, []);
+
+  useEffect(() => {
+    loadBackups();
+  }, [loadBackups]);
+
+  async function createBackup() {
+    setBackupMessage("Sauvegarde en cours...");
+    try {
+      const { data } = await api.post<{ name: string; size: number }>(
+        "/backups"
+      );
+      setBackupMessage(
+        `Sauvegarde ${data.name} créée (${Math.round(data.size / 1024)} Ko).`
+      );
+      await loadBackups();
+    } catch (err) {
+      setBackupMessage(
+        axios.isAxiosError(err)
+          ? err.response?.data?.detail ?? "Sauvegarde impossible"
+          : "Sauvegarde impossible"
+      );
+    }
+  }
+
+  /** Downloads a backup so it can be copied to a USB key or the cloud. */
+  async function downloadBackup(name: string) {
+    const { data } = await api.get<Blob>(`/backups/${name}/download`, {
+      responseType: "blob",
+    });
+    const url = URL.createObjectURL(data);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = name;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function restoreBackup(file: File | undefined) {
+    if (!file) return;
+    if (
+      !window.confirm(
+        `Restaurer « ${file.name} » ? Les données actuelles seront ` +
+          "remplacées au prochain démarrage."
+      )
+    ) {
+      return;
+    }
+    const body = new FormData();
+    body.append("file", file);
+    try {
+      const { data } = await api.post<{ detail: string }>(
+        "/backups/restore",
+        body
+      );
+      setBackupMessage(data.detail);
+    } catch (err) {
+      setBackupMessage(
+        axios.isAxiosError(err)
+          ? err.response?.data?.detail ?? "Restauration impossible"
+          : "Restauration impossible"
+      );
+    }
+  }
 
   function pickLogo(file: File) {
     if (file.size > LOGO_MAX_BYTES) {
@@ -203,7 +286,7 @@ export default function Settings() {
           </div>
           <div>
             <h2 className="text-lg font-bold text-slate-900">
-              {company.name || "Référence Informatique"}
+              {company.name || "EasyGest"}
             </h2>
             <p className="text-sm text-slate-500">
               {company.slogan || "Application de gestion des ventes & du stock"}
@@ -337,20 +420,6 @@ export default function Settings() {
                 onChange={(e) => update({ currency: e.target.value })}
                 placeholder="FCFA"
               />
-            </div>
-            <div className="sm:col-span-2">
-              <label className="label">
-                Texte « À propos de nous »
-              </label>
-              <textarea
-                className="input min-h-[90px]"
-                value={company.about}
-                onChange={(e) => update({ about: e.target.value })}
-                placeholder="Présentez votre entreprise, vos activités et vos services."
-              />
-              <p className="mt-1 text-xs text-slate-400">
-                Affiché sur la page « À propos de nous » du menu.
-              </p>
             </div>
             <div className="sm:col-span-2">
               <label className="label">En-tête du reçu (optionnel)</label>
@@ -564,6 +633,104 @@ export default function Settings() {
         )}
       </div>
 
+      {/* Backups */}
+      <div className="card p-6">
+        <div className="mb-4 flex items-center gap-2">
+          <Database size={18} className="text-brand-600" />
+          <h3 className="text-base font-bold text-slate-900">
+            Sauvegarde et restauration des données
+          </h3>
+        </div>
+        <p className="mb-4 text-sm text-slate-500">
+          Une copie complète est enregistrée automatiquement chaque jour. Pour
+          ne rien perdre en cas de panne du poste, indiquez un second dossier
+          (clé USB, disque externe, dossier Google&nbsp;Drive / OneDrive ou
+          partage réseau) : chaque sauvegarde y est recopiée.
+        </p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="sm:col-span-2">
+            <label className="label">Second dossier de sauvegarde</label>
+            <input
+              className="input"
+              value={company.backup_dir}
+              onChange={(e) => update({ backup_dir: e.target.value })}
+              placeholder="E:\Sauvegardes EasyGest"
+            />
+          </div>
+          <div>
+            <label className="label">Copies conservées</label>
+            <input
+              type="number"
+              min={1}
+              className="input"
+              value={company.backup_keep}
+              onChange={(e) => update({ backup_keep: Number(e.target.value) })}
+            />
+          </div>
+        </div>
+        <label className="mt-3 flex items-center gap-2 text-sm text-slate-600">
+          <input
+            type="checkbox"
+            checked={company.backup_auto}
+            onChange={(e) => update({ backup_auto: e.target.checked })}
+          />
+          Sauvegarde automatique quotidienne
+        </label>
+        {company.last_backup_at && (
+          <p className="mt-2 text-xs text-slate-400">
+            Dernière sauvegarde : {formatDateTime(company.last_backup_at)}
+          </p>
+        )}
+
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <button className="btn-primary" onClick={createBackup}>
+            <Database size={16} /> Sauvegarder maintenant
+          </button>
+          <button
+            className="btn-ghost"
+            onClick={() => restoreInput.current?.click()}
+          >
+            <HardDriveUpload size={16} /> Restaurer un fichier
+          </button>
+          <input
+            ref={restoreInput}
+            type="file"
+            className="hidden"
+            onChange={(e) => restoreBackup(e.target.files?.[0])}
+          />
+          {backupMessage && (
+            <span className="text-sm text-slate-600">{backupMessage}</span>
+          )}
+        </div>
+
+        {backups.length > 0 && (
+          <ul className="mt-4 divide-y divide-slate-100 rounded-xl border border-slate-100">
+            {backups.slice(0, 8).map((b) => (
+              <li
+                key={b.name}
+                className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate font-medium text-slate-700">
+                    {b.name}
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    {formatDateTime(b.created_at)} ·{" "}
+                    {Math.round(b.size / 1024)} Ko
+                  </span>
+                </span>
+                <button
+                  className="btn-ghost px-3 py-1.5 text-xs"
+                  onClick={() => downloadBackup(b.name)}
+                >
+                  <Download size={14} /> Télécharger
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
       {/* Remote update */}
       <div className="card p-6">
         <div className="mb-4 flex items-center gap-2">
@@ -600,7 +767,7 @@ export default function Settings() {
         {update_ && update_.available && !update_.packaged && (
           <p className="mt-2 text-sm text-amber-600">
             Mise à jour automatique disponible uniquement depuis
-            ReferenceInformatique.exe.
+            l'application installée (EasyGest).
           </p>
         )}
       </div>

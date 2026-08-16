@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from .database import get_db
 from .models import User
+from .paths import data_dir
 
 
 def _secret_key() -> str:
@@ -25,7 +26,7 @@ def _secret_key() -> str:
     if from_env:
         return from_env
     key_file = (
-        Path.home() / "ReferenceInformatique" / "secret.key"
+        data_dir() / "secret.key"
         if getattr(sys, "frozen", False)
         else Path(__file__).resolve().parent.parent / ".secret.key"
     )
@@ -91,5 +92,17 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
         raise HTTPException(
             status_code=403,
             detail="Accès réservé aux administrateurs",
+        )
+    return current_user
+
+
+def require_stock_manager(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """Administrators and stock managers: catalogue, stock and purchases."""
+    if current_user.role not in ("admin", "gestionnaire"):
+        raise HTTPException(
+            status_code=403,
+            detail="Accès réservé à la gestion de stock",
         )
     return current_user

@@ -7,17 +7,20 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import declarative_base, sessionmaker
 
+from .paths import apply_pending_restore, data_dir, database_file
+
 
 def _load_env() -> None:
     """Read the deployment settings (DATABASE_URL, SECRET_KEY, ...).
 
-    A workstation configures the shared server by dropping a `.env` file next
-    to the executable; in development it lives in `backend/`.
+    A workstation configures the shared server by editing the `.env` file of
+    the data directory (or dropping one next to the executable); in
+    development it lives in `backend/`.
     """
     candidates = [Path(__file__).resolve().parent.parent / ".env"]
     if getattr(sys, "frozen", False):
         candidates.insert(0, Path(sys.executable).resolve().parent / ".env")
-        candidates.insert(1, Path.home() / "ReferenceInformatique" / ".env")
+        candidates.insert(1, data_dir() / ".env")
     for candidate in candidates:
         if candidate.exists():
             load_dotenv(candidate, override=False)
@@ -29,15 +32,15 @@ _load_env()
 def _sqlite_path() -> Path:
     """Writable location for the single-workstation SQLite database.
 
-    When packaged as a standalone executable (PyInstaller), the app runs from a
-    read-only temp directory, so the database is stored in the user's home
-    directory instead. In development it stays next to the backend package.
+    The installed application runs from a read-only directory, so the database
+    lives in the per-user data directory (%APPDATA%\\EasyGest on Windows). In
+    development it stays next to the backend package.
     """
     if getattr(sys, "frozen", False):
-        data_dir = Path.home() / "ReferenceInformatique"
-        data_dir.mkdir(parents=True, exist_ok=True)
-        return data_dir / "reference.db"
-    return Path(__file__).resolve().parent.parent / "reference.db"
+        return database_file()
+    development = Path(__file__).resolve().parent.parent / "reference.db"
+    apply_pending_restore(development)
+    return development
 
 
 def _normalize(url: str) -> str:

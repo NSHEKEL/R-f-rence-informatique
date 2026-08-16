@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ..auth import get_current_user, require_admin
+from ..auth import get_current_user, require_stock_manager
 from ..database import get_db
 from ..models import Product, Sale, SaleItem, User
 from ..schemas import ProductCreate, ProductOut, ProductUpdate
@@ -55,7 +55,7 @@ def _check_barcode(db: Session, payload, product_id: int | None) -> None:
 
 @router.get("/barcode/next")
 def next_barcode(
-    db: Session = Depends(get_db), _: User = Depends(require_admin)
+    db: Session = Depends(get_db), _: User = Depends(require_stock_manager)
 ):
     """A free EAN-13 for an article that has no printed barcode."""
     return {"barcode": _generate_barcode(db)}
@@ -83,9 +83,48 @@ def get_product_by_code(
     return product
 
 
+def _sales_stats(db: Session) -> dict[int, tuple[int, object]]:
+    """Units sold and last sale date per product, cancelled tickets aside."""
+    rows = (
+        db.query(
+            SaleItem.product_id,
+            func.sum(SaleItem.quantity).label("sold"),
+            func.max(Sale.date).label("last_sold"),
+        )
+        .join(Sale, Sale.id == SaleItem.sale_id)
+        .filter(Sale.status != "Annulée", SaleItem.product_id.isnot(None))
+        .group_by(SaleItem.product_id)
+        .all()
+    )
+    return {row.product_id: (int(row.sold or 0), row.last_sold) for row in rows}
+
+
 @router.get("", response_model=list[ProductOut])
-def list_products(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    return db.query(Product).order_by(Product.name).all()
+def list_products(
+    sold: str = "",
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Catalogue, optionally filtered on sales history.
+
+    ``sold=jamais`` keeps the articles never sold, ``sold=top`` the ones sold
+    the most (best first); anything else returns the whole catalogue.
+    """
+    stats = _sales_stats(db)
+    products = db.query(Product).order_by(Product.name).all()
+    for product in products:
+        quantity, last = stats.get(product.id, (0, None))
+        product.sold_quantity = quantity
+        product.last_sold_at = last
+    if sold == "jamais":
+        return [p for p in products if p.sold_quantity == 0]
+    if sold == "top":
+        return sorted(
+            (p for p in products if p.sold_quantity > 0),
+            key=lambda p: p.sold_quantity,
+            reverse=True,
+        )
+    return products
 
 
 @router.get("/best-sellers", response_model=list[ProductOut])
@@ -132,7 +171,7 @@ def get_product(
 def create_product(
     payload: ProductCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_stock_manager),
 ):
     if db.query(Product).filter(Product.sku == payload.sku).first():
         raise HTTPException(status_code=400, detail="Cette référence (SKU) existe déjà")
@@ -149,7 +188,7 @@ def update_product(
     product_id: int,
     payload: ProductUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_stock_manager),
 ):
     product = db.query(Product).get(product_id)
     if not product:
@@ -169,7 +208,7 @@ def update_product(
 def delete_product(
     product_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_stock_manager),
 ):
     product = db.query(Product).get(product_id)
     if not product:

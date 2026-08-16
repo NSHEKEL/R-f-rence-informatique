@@ -11,7 +11,7 @@ import {
   Search,
   Trash2,
 } from "lucide-react";
-import api, { formatDate, formatXOF } from "../api/client";
+import api, { formatDateTime, formatXOF } from "../api/client";
 import type {
   CashSessionDetail,
   Customer,
@@ -247,7 +247,7 @@ export default function Sales() {
                     {s.customer?.name ?? "Client de passage"}
                   </td>
                   <td className="px-5 py-3.5 text-slate-500">
-                    {formatDate(s.date)}
+                    {formatDateTime(s.date)}
                   </td>
                   <td className="px-5 py-3.5 text-slate-500">
                     {s.payment_method}
@@ -276,7 +276,7 @@ export default function Sales() {
                     <div className="flex justify-end gap-1">
                       <button
                         onClick={() => setDetail(s)}
-                        title="Détails"
+                        aria-label="Détails de la vente"
                         className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
                       >
                         <Eye size={16} />
@@ -358,7 +358,7 @@ export default function Sales() {
               <div>
                 <p className="text-slate-400">Date</p>
                 <p className="font-semibold text-slate-800">
-                  {formatDate(detail.date)}
+                  {formatDateTime(detail.date)}
                 </p>
               </div>
               <div>
