@@ -35,7 +35,7 @@ class CompanySettings(Base):
     __tablename__ = "company_settings"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, default="Référence Informatique", nullable=False)
+    name = Column(String, default="EasyGest", nullable=False)
     slogan = Column(String, default="")
     logo = Column(Text, default="")  # data URL, optional
     address = Column(String, default="")

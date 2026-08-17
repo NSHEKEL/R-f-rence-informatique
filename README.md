@@ -1,7 +1,6 @@
-# Référence Informatique — Gestion des ventes & du stock
+# EasyGest — Gestion des ventes & du stock
 
-Application web de gestion des ventes et du suivi de stock pour l'entreprise
-**Référence Informatique**.
+Application Windows de gestion des ventes et du suivi de stock : **EasyGest**.
 
 - **Frontend** : React + TypeScript + Vite + Tailwind CSS
 - **Backend** : FastAPI + SQLAlchemy + SQLite

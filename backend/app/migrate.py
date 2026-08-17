@@ -59,6 +59,11 @@ INDEXES = [
     "CREATE UNIQUE INDEX IF NOT EXISTS ix_sales_client_id ON sales (client_id)",
 ]
 
+# The product was renamed: bases created before EasyGest still carry the old
+# default company name, which the user never chose.
+OLD_COMPANY_NAME = "Référence Informatique"
+NEW_COMPANY_NAME = "EasyGest"
+
 
 def _columns(insp, table: str) -> set[str]:
     return {c["name"] for c in insp.get_columns(table)}
@@ -82,3 +87,11 @@ def migrate() -> None:
         if "sales" in tables:
             for statement in INDEXES:
                 conn.execute(text(statement))
+        if "company_settings" in tables:
+            conn.execute(
+                text(
+                    "UPDATE company_settings SET name = :new "
+                    "WHERE name = :old"
+                ),
+                {"new": NEW_COMPANY_NAME, "old": OLD_COMPANY_NAME},
+            )
