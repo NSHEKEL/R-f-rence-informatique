@@ -106,3 +106,13 @@ def require_stock_manager(
             detail="Accès réservé à la gestion de stock",
         )
     return current_user
+
+
+def require_cashier(current_user: User = Depends(get_current_user)) -> User:
+    """Administrators and cashiers: till sessions and sales."""
+    if current_user.role not in ("admin", "vendeur"):
+        raise HTTPException(
+            status_code=403,
+            detail="Accès réservé à la caisse",
+        )
+    return current_user

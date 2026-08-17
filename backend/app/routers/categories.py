@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from ..auth import get_current_user, require_stock_manager
+from ..auth import get_current_user, require_admin, require_stock_manager
 from ..database import get_db
 from ..models import Category, Product, User
 from ..schemas import CategoryCreate, CategoryOut
@@ -32,7 +32,7 @@ def update_category(
     category_id: int,
     payload: CategoryCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_stock_manager),
+    _: User = Depends(require_admin),
 ):
     category = db.query(Category).get(category_id)
     if not category:
@@ -48,7 +48,7 @@ def update_category(
 def delete_category(
     category_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_stock_manager),
+    _: User = Depends(require_admin),
 ):
     category = db.query(Category).get(category_id)
     if not category:

@@ -110,22 +110,24 @@ export default function Inventaire() {
 
   /** Blank count sheet the team fills in by hand during the physical count. */
   function printCountSheet() {
+    // Only the identity of the article is printed: the counting team must not
+    // see the expected quantity, otherwise the count is biased.
     const rows = filtered
       .map(
         (p) =>
           `<tr><td>${p.name}</td><td>${p.sku}</td>` +
           `<td>${p.barcode || ""}</td>` +
-          `<td class="num">${p.quantity}</td><td></td><td></td></tr>`
+          `<td class="blank"></td><td class="blank"></td></tr>`
       )
       .join("");
     printSheet(
       "Fiche d'inventaire",
-      `<h1>${company?.name ?? "EasyGest"}</h1>` +
+      `<h1>${company?.name ?? ""}</h1>` +
         `<p class="meta">Fiche d'inventaire — ${new Date().toLocaleDateString("fr-FR")}` +
         ` · ${filtered.length} article(s)<br/>Compté par : ______________________` +
         ` · Signature : ______________________</p>` +
         `<table><thead><tr><th>Article</th><th>SKU</th><th>Code-barres</th>` +
-        `<th class="num">Stock théorique</th><th>Compté</th><th>Écart</th>` +
+        `<th>Quantité comptée</th><th>Observation</th>` +
         `</tr></thead><tbody>${rows}</tbody></table>`
     );
   }
@@ -144,7 +146,7 @@ export default function Inventaire() {
       .join("");
     printSheet(
       "Écarts d'inventaire",
-      `<h1>${company?.name ?? "EasyGest"}</h1>` +
+      `<h1>${company?.name ?? ""}</h1>` +
         `<p class="meta">Écarts d'inventaire — ${new Date().toLocaleDateString("fr-FR")}` +
         (note ? `<br/>Motif : ${note}` : "") +
         `</p><table><thead><tr><th>Article</th><th>SKU</th>` +

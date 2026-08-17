@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from ..auth import get_current_user, require_stock_manager
+from ..auth import get_current_user, require_admin, require_stock_manager
 from ..database import get_db
 from ..models import Product, Supplier, User
 from ..schemas import SupplierCreate, SupplierOut
@@ -32,7 +32,7 @@ def update_supplier(
     supplier_id: int,
     payload: SupplierCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_stock_manager),
+    _: User = Depends(require_admin),
 ):
     supplier = db.query(Supplier).get(supplier_id)
     if not supplier:
@@ -48,7 +48,7 @@ def update_supplier(
 def delete_supplier(
     supplier_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_stock_manager),
+    _: User = Depends(require_admin),
 ):
     supplier = db.query(Supplier).get(supplier_id)
     if not supplier:

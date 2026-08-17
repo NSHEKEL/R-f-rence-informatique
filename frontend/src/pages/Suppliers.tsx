@@ -3,10 +3,12 @@ import { Pencil, Plus, Search, Trash2 } from "lucide-react";
 import api from "../api/client";
 import type { Supplier } from "../types";
 import Modal from "../components/Modal";
+import { useAuth } from "../context/AuthContext";
 
 const empty = { name: "", contact: "", email: "", phone: "", address: "" };
 
 export default function Suppliers() {
+  const { isAdmin } = useAuth();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -111,18 +113,26 @@ export default function Suppliers() {
                   <td className="px-5 py-3.5 text-slate-600">{s.phone || "—"}</td>
                   <td className="px-5 py-3.5">
                     <div className="flex justify-end gap-1">
-                      <button
-                        onClick={() => openEdit(s)}
-                        className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
-                      >
-                        <Pencil size={16} />
-                      </button>
-                      <button
-                        onClick={() => remove(s)}
-                        className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                      {isAdmin ? (
+                        <>
+                          <button
+                            onClick={() => openEdit(s)}
+                            aria-label="Modifier le fournisseur"
+                            className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
+                          >
+                            <Pencil size={16} />
+                          </button>
+                          <button
+                            onClick={() => remove(s)}
+                            aria-label="Supprimer le fournisseur"
+                            className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </>
+                      ) : (
+                        <span className="text-xs text-slate-400">—</span>
+                      )}
                     </div>
                   </td>
                 </tr>

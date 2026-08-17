@@ -41,6 +41,7 @@ const SHEET_STYLE = `
   th, td { border: 1px solid #cbd5e1; padding: 5px 7px; text-align: left; }
   th { background: #f1f5f9; }
   td.num, th.num { text-align: right; }
+  td.blank { width: 22%; height: 22px; }
   @page { size: A4 portrait; margin: 12mm; }
 `;
 

@@ -34,9 +34,16 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/** Where a user without access lands: their own home screen. */
+function useFallbackPath(): string {
+  const { isStockManager } = useAuth();
+  return isStockManager ? "/produits" : "/caisse";
+}
+
 function AdminRoute({ children }: { children: React.ReactNode }) {
   const { isAdmin } = useAuth();
-  if (!isAdmin) return <Navigate to="/caisse" replace />;
+  const fallback = useFallbackPath();
+  if (!isAdmin) return <Navigate to={fallback} replace />;
   return <>{children}</>;
 }
 
@@ -44,6 +51,13 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
 function StockRoute({ children }: { children: React.ReactNode }) {
   const { isStockManager } = useAuth();
   if (!isStockManager) return <Navigate to="/caisse" replace />;
+  return <>{children}</>;
+}
+
+/** Till and sales: administrators and cashiers, never stock managers. */
+function SalesRoute({ children }: { children: React.ReactNode }) {
+  const { isAdmin, isSeller } = useAuth();
+  if (!isAdmin && !isSeller) return <Navigate to="/produits" replace />;
   return <>{children}</>;
 }
 
@@ -66,7 +80,14 @@ export default function App() {
         }
       >
         <Route path="/" element={<HomeRoute />} />
-        <Route path="/caisse" element={<Caisse />} />
+        <Route
+          path="/caisse"
+          element={
+            <SalesRoute>
+              <Caisse />
+            </SalesRoute>
+          }
+        />
         <Route
           path="/ventes"
           element={
@@ -75,7 +96,14 @@ export default function App() {
             </AdminRoute>
           }
         />
-        <Route path="/ventes/nouvelle" element={<NouvelleVente />} />
+        <Route
+          path="/ventes/nouvelle"
+          element={
+            <SalesRoute>
+              <NouvelleVente />
+            </SalesRoute>
+          }
+        />
         <Route
           path="/retours"
           element={
@@ -180,13 +208,13 @@ export default function App() {
             </AdminRoute>
           }
         />
-        {/* Cashiers have no "À propos" page. */}
+        {/* "À propos" is reserved for administrators. */}
         <Route
           path="/a-propos"
           element={
-            <StockRoute>
+            <AdminRoute>
               <APropos />
-            </StockRoute>
+            </AdminRoute>
           }
         />
       </Route>

@@ -30,7 +30,7 @@ function ReceiptBody({
         )}
         <div>
           <p className="receipt-company">
-            {company?.name || "EasyGest"}
+            {company?.name}
           </p>
           {company?.slogan && <p className="receipt-slogan">{company.slogan}</p>}
           <div className="receipt-contact">

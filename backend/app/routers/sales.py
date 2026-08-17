@@ -5,7 +5,7 @@ from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ..auth import get_current_user, require_admin
+from ..auth import get_current_user, require_admin, require_cashier
 from ..database import get_db
 from ..models import (
     Notification,
@@ -63,7 +63,7 @@ def get_sale(
 def create_sale(
     payload: SaleCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_cashier),
 ):
     if not payload.items:
         raise HTTPException(status_code=400, detail="Ajoutez au moins un article")

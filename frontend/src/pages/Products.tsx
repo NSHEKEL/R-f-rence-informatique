@@ -44,7 +44,7 @@ const MAX_IMAGE_BYTES = 700_000;
 type SoldFilter = "" | "jamais" | "top";
 
 export default function Products() {
-  const { isStockManager } = useAuth();
+  const { isAdmin, isStockManager } = useAuth();
   const { company } = useCompany();
   const version = useSyncVersion();
   const [sold, setSold] = useState<SoldFilter>("");
@@ -181,7 +181,7 @@ export default function Products() {
   /** Price labels to stick on the shelves, one per article. */
   async function printPrices(items: Product[]) {
     if (items.length === 0) return;
-    const shop = company?.name || "EasyGest";
+    const shop = company?.name ?? "";
     const labels = await Promise.all(
       items.map(async (p) => {
         const code = scanCode(p);
@@ -340,7 +340,7 @@ export default function Products() {
                       >
                         <Tag size={16} />
                       </button>
-                      {isStockManager && (
+                      {isAdmin && (
                         <>
                           <button
                             onClick={() => openEdit(p)}

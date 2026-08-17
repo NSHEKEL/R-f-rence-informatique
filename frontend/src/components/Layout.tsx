@@ -31,8 +31,11 @@ import NetworkBanner from "./NetworkBanner";
 import NotificationBell from "./NotificationBell";
 import UndoRedo from "./UndoRedo";
 
-/** Who sees the entry: everyone, stock managers (and admins), or admins. */
-type Access = "all" | "stock" | "admin";
+/**
+ * Who sees the entry: the till side (admins and cashiers), the catalogue side
+ * (admins and stock managers), or administrators only.
+ */
+type Access = "sales" | "stock" | "admin";
 
 const navItems: {
   to: string;
@@ -48,12 +51,12 @@ const navItems: {
     end: true,
     access: "admin",
   },
-  { to: "/caisse", label: "Ma caisse", icon: Wallet, access: "all" },
+  { to: "/caisse", label: "Ma caisse", icon: Wallet, access: "sales" },
   {
     to: "/ventes/nouvelle",
     label: "Nouvelle vente",
     icon: Plus,
-    access: "all",
+    access: "sales",
   },
   {
     to: "/ventes",
@@ -100,8 +103,8 @@ const navItems: {
   { to: "/categories", label: "Catégories", icon: Tags, access: "stock" },
   { to: "/utilisateurs", label: "Utilisateurs", icon: UserCog, access: "admin" },
   { to: "/parametres", label: "Paramètres", icon: Settings, access: "admin" },
-  // Cashiers do not see "À propos".
-  { to: "/a-propos", label: "À propos de nous", icon: Info, access: "stock" },
+  // Only administrators see "À propos".
+  { to: "/a-propos", label: "À propos de nous", icon: Info, access: "admin" },
 ];
 
 const COLLAPSED_KEY = "ri_sidebar_collapsed";
@@ -138,14 +141,14 @@ export default function Layout() {
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem(COLLAPSED_KEY) === "1"
   );
-  const { user, isAdmin, isStockManager, logout } = useAuth();
+  const { user, isAdmin, isStockManager, isSeller, logout } = useAuth();
   const { brandName, logoSrc } = useCompany();
   const location = useLocation();
   const navigate = useNavigate();
   const title = pageTitles[location.pathname] ?? brandName;
   const visibleNavItems = navItems.filter(
     (item) =>
-      item.access === "all" ||
+      (item.access === "sales" && (isAdmin || isSeller)) ||
       (item.access === "stock" && isStockManager) ||
       (item.access === "admin" && isAdmin)
   );

@@ -45,7 +45,7 @@ export default function Livraisons() {
       .join("");
     printSheet(
       `Bon de livraison ${delivery.reference}`,
-      `<h1>${company?.name ?? "EasyGest"}</h1>` +
+      `<h1>${company?.name ?? ""}</h1>` +
         `<p class="meta">${[company?.address, company?.phone, company?.email]
           .filter(Boolean)
           .join(" · ")}</p>` +

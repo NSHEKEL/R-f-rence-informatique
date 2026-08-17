@@ -3,10 +3,12 @@ import { Pencil, Plus, Tags, Trash2 } from "lucide-react";
 import api from "../api/client";
 import type { Category } from "../types";
 import Modal from "../components/Modal";
+import { useAuth } from "../context/AuthContext";
 
 const empty = { name: "", description: "" };
 
 export default function Categories() {
+  const { isAdmin } = useAuth();
   const [categories, setCategories] = useState<Category[]>([]);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Category | null>(null);
@@ -67,20 +69,24 @@ export default function Categories() {
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
                 <Tags size={20} />
               </div>
-              <div className="flex gap-1">
-                <button
-                  onClick={() => openEdit(c)}
-                  className="rounded-lg p-1.5 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
-                >
-                  <Pencil size={15} />
-                </button>
-                <button
-                  onClick={() => remove(c)}
-                  className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                >
-                  <Trash2 size={15} />
-                </button>
-              </div>
+              {isAdmin && (
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => openEdit(c)}
+                    aria-label="Modifier la catégorie"
+                    className="rounded-lg p-1.5 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
+                  >
+                    <Pencil size={15} />
+                  </button>
+                  <button
+                    onClick={() => remove(c)}
+                    aria-label="Supprimer la catégorie"
+                    className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              )}
             </div>
             <p className="mt-4 font-semibold text-slate-900">{c.name}</p>
             <p className="mt-1 text-sm text-slate-500">{c.description || "—"}</p>

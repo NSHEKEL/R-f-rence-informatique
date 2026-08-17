@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ..auth import get_current_user, require_stock_manager
+from ..auth import get_current_user, require_admin, require_stock_manager
 from ..database import get_db
 from ..models import Product, Sale, SaleItem, User
 from ..schemas import ProductCreate, ProductOut, ProductUpdate
@@ -188,7 +188,7 @@ def update_product(
     product_id: int,
     payload: ProductUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_stock_manager),
+    _: User = Depends(require_admin),
 ):
     product = db.query(Product).get(product_id)
     if not product:
@@ -208,7 +208,7 @@ def update_product(
 def delete_product(
     product_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_stock_manager),
+    _: User = Depends(require_admin),
 ):
     product = db.query(Product).get(product_id)
     if not product:
