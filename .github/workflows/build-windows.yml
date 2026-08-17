@@ -56,6 +56,22 @@ jobs:
           python packaging/make_version_info.py
           pyinstaller packaging/EasyGest.spec
 
+      - name: Check the executable really starts
+        shell: pwsh
+        run: |
+          # Runs the packaged application: the server must answer and the
+          # native window backend (pywebview + pythonnet + WinForms) must load,
+          # otherwise the .exe would silently do nothing on the user's PC.
+          $log = "$env:APPDATA\EasyGest\easygest.log"
+          if (Test-Path $log) { Remove-Item $log }
+          # A windowed executable detaches immediately: wait for it explicitly.
+          $run = Start-Process -FilePath dist\EasyGest.exe `
+            -ArgumentList '--selftest' -PassThru -Wait
+          if (Test-Path $log) { Get-Content $log }
+          if ($run.ExitCode -ne 0) {
+            throw "EasyGest.exe ne démarre pas (code $($run.ExitCode))"
+          }
+
       - name: Download the WebView2 bootstrapper
         shell: pwsh
         run: |

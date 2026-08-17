@@ -24,8 +24,20 @@ ICON = os.path.join(SPECPATH, "EasyGest.ico")
 datas = [(os.path.join(ROOT, "frontend", "dist"), "frontend_dist")]
 binaries = []
 hiddenimports = collect_submodules("uvicorn")
+# The native window is drawn by pywebview on top of WinForms/WebView2, which
+# goes through pythonnet: without Python.Runtime.dll and the "clr" module the
+# packaged application starts, finds no backend and closes without a window.
+hiddenimports += collect_submodules("webview") + ["clr", "pythonnet"]
 
-for pkg in ("uvicorn", "bcrypt", "jose", "anyio", "webview", "clr_loader"):
+for pkg in (
+    "uvicorn",
+    "bcrypt",
+    "jose",
+    "anyio",
+    "webview",
+    "clr_loader",
+    "pythonnet",
+):
     try:
         pkg_datas, pkg_binaries, pkg_hidden = collect_all(pkg)
         datas += pkg_datas
@@ -60,7 +72,8 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    # UPX corrupts the WebView2/pythonnet DLLs the window relies on.
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,
