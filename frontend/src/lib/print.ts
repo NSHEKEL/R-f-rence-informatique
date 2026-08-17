@@ -46,19 +46,37 @@ const SHEET_STYLE = `
 `;
 
 /**
- * Prints a standalone A4 sheet (report, inventory count sheet) in its own
- * window so the application chrome never reaches the paper.
+ * Prints a standalone document without opening a second window: the desktop
+ * application has no browser to pop up, so the page is rendered in a hidden
+ * frame and only that frame reaches the paper.
  */
+export function printDocument(
+  title: string,
+  style: string,
+  bodyHtml: string
+): void {
+  const frame = document.createElement("iframe");
+  frame.setAttribute("aria-hidden", "true");
+  frame.style.cssText =
+    "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden";
+  frame.srcdoc =
+    `<html><head><title>${title}</title><style>${style}</style></head>` +
+    `<body>${bodyHtml}</body></html>`;
+  frame.onload = () => {
+    const view = frame.contentWindow;
+    if (view) {
+      view.focus();
+      view.print();
+    }
+    // The dialog is modal, so the frame is only dropped afterwards.
+    window.setTimeout(() => frame.remove(), 1000);
+  };
+  document.body.appendChild(frame);
+}
+
+/** Prints an A4 sheet (report, inventory count sheet, delivery note). */
 export function printSheet(title: string, bodyHtml: string): void {
-  const win = window.open("", "_blank", "width=900,height=700");
-  if (!win) return;
-  win.document.write(
-    `<html><head><title>${title}</title><style>${SHEET_STYLE}</style></head>` +
-      `<body>${bodyHtml}</body></html>`
-  );
-  win.document.close();
-  win.focus();
-  win.print();
+  printDocument(title, SHEET_STYLE, bodyHtml);
 }
 
 const LABEL_STYLE = `
@@ -80,15 +98,7 @@ const LABEL_STYLE = `
 
 /** Price labels, laid out as a cuttable grid on A4. */
 export function printLabels(title: string, labelsHtml: string): void {
-  const win = window.open("", "_blank", "width=900,height=700");
-  if (!win) return;
-  win.document.write(
-    `<html><head><title>${title}</title><style>${LABEL_STYLE}</style></head>` +
-      `<body><div class="grid">${labelsHtml}</div></body></html>`
-  );
-  win.document.close();
-  win.focus();
-  win.print();
+  printDocument(title, LABEL_STYLE, `<div class="grid">${labelsHtml}</div>`);
 }
 
 /** Applies the page geometry matching the receipt format, then prints. */

@@ -3,6 +3,7 @@ import QRCode from "qrcode";
 import { Download, Printer } from "lucide-react";
 import type { Product } from "../types";
 import { scanCode } from "../lib/scan";
+import { printDocument } from "../lib/print";
 
 interface ProductQrCodeProps {
   product: Product;
@@ -36,19 +37,16 @@ export default function ProductQrCode({
   }
 
   function print() {
-    const win = window.open("", "_blank", "width=420,height=520");
-    if (!win) return;
-    win.document.write(
-      `<html><head><title>QR ${value}</title></head>` +
-        `<body style="font-family:sans-serif;text-align:center;padding:24px">` +
-        `<img src="${dataUrl}" style="width:220px;height:220px" />` +
-        `<p style="font-weight:700;margin:8px 0 0">${product.name}</p>` +
-        `<p style="margin:2px 0 0">${value}</p>` +
-        `</body></html>`
+    printDocument(
+      `QR ${value}`,
+      "body { font-family: sans-serif; text-align: center; padding: 24px; }" +
+        ".qr { width: 220px; height: 220px; }" +
+        ".name { font-weight: 700; margin: 8px 0 0; }" +
+        ".code { margin: 2px 0 0; }",
+      `<img class="qr" src="${dataUrl}" alt="" />` +
+        `<p class="name">${product.name}</p>` +
+        `<p class="code">${value}</p>`
     );
-    win.document.close();
-    win.focus();
-    win.print();
   }
 
   return (
