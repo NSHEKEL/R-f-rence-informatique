@@ -20,3 +20,9 @@ dist/
 .env
 backend/.env
 backend/.secret.key
+
+# Android
+mobile/.gradle/
+mobile/build/
+mobile/app/build/
+mobile/local.properties
