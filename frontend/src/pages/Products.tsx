@@ -190,7 +190,11 @@ export default function Products() {
           margin: 0,
         }).catch(() => "");
         return (
-          `<div class="label"><p class="shop">${shop}</p>` +
+          `<div class="label">` +
+          (company?.logo
+            ? `<img class="shop-logo" src="${company.logo}" alt="" />`
+            : "") +
+          `<p class="shop">${shop}</p>` +
           `<p class="name">${p.name}</p>` +
           `<p class="price">${formatXOF(p.sale_price)}</p>` +
           (p.wholesale_price > 0

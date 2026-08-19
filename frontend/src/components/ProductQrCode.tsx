@@ -3,7 +3,8 @@ import QRCode from "qrcode";
 import { Download, Printer } from "lucide-react";
 import type { Product } from "../types";
 import { scanCode } from "../lib/scan";
-import { printDocument } from "../lib/print";
+import { documentHeader, printDocument } from "../lib/print";
+import { useCompany } from "../context/CompanyContext";
 
 interface ProductQrCodeProps {
   product: Product;
@@ -14,6 +15,7 @@ export default function ProductQrCode({
   product,
   size = 180,
 }: ProductQrCodeProps) {
+  const { company } = useCompany();
   const [dataUrl, setDataUrl] = useState("");
   const value = scanCode(product);
 
@@ -42,8 +44,15 @@ export default function ProductQrCode({
       "body { font-family: sans-serif; text-align: center; padding: 24px; }" +
         ".qr { width: 220px; height: 220px; }" +
         ".name { font-weight: 700; margin: 8px 0 0; }" +
-        ".code { margin: 2px 0 0; }",
-      `<img class="qr" src="${dataUrl}" alt="" />` +
+        ".code { margin: 2px 0 0; }" +
+        ".doc-head { display: flex; align-items: center; gap: 12px;" +
+        " text-align: left; border-bottom: 2px solid #0f172a;" +
+        " padding-bottom: 8px; margin-bottom: 16px; }" +
+        ".doc-head img { width: 56px; height: 56px; object-fit: contain; }" +
+        ".doc-head h1 { font-size: 16px; margin: 0; }" +
+        ".doc-head .meta { margin: 0; font-size: 12px; color: #475569; }",
+      documentHeader(company) +
+        `<img class="qr" src="${dataUrl}" alt="" />` +
         `<p class="name">${product.name}</p>` +
         `<p class="code">${value}</p>`
     );

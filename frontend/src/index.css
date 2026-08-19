@@ -65,6 +65,14 @@ body {
   width: 100%;
   max-width: 28rem;
   font-size: 12px;
+  line-height: 1.45;
+}
+/* The A4 sheet has room to breathe: keep the table off the text blocks. */
+.receipt-A4 .receipt-items {
+  margin: 1.15rem 0;
+}
+.receipt-A4 .receipt-title {
+  margin: 0.9rem 0;
 }
 .receipt-80mm {
   width: 74mm;
@@ -146,12 +154,12 @@ body {
 }
 .receipt-items {
   width: 100%;
-  margin-top: 0.6rem;
+  margin: 0.9rem 0;
   border-collapse: collapse;
   font-size: 0.88em;
 }
 .receipt-items th {
-  padding: 0.2rem 0;
+  padding: 0.35rem 0.35rem 0.35rem 0;
   border-bottom: 1px solid #475569;
   text-align: left;
   font-size: 0.85em;
@@ -159,7 +167,7 @@ body {
   color: #475569;
 }
 .receipt-items td {
-  padding: 0.3rem 0.35rem 0.3rem 0;
+  padding: 0.45rem 0.35rem 0.45rem 0;
   border-bottom: 1px dashed #cbd5e1;
   vertical-align: top;
   word-break: break-word;
@@ -175,12 +183,18 @@ body {
 .receipt-items .strong {
   font-weight: 600;
 }
+/* Tax breakdown sits between the table and the grand total: no top border,
+   otherwise it doubles the line already drawn by the last table row. */
+.receipt-taxes {
+  border-top: none;
+  padding-top: 0;
+}
 .receipt-total {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 0.6rem;
-  padding-top: 0.4rem;
+  margin-top: 0.9rem;
+  padding-top: 0.55rem;
   border-top: 2px solid #0f172a;
   font-weight: 800;
   text-transform: uppercase;
@@ -189,7 +203,7 @@ body {
   font-size: 1.25em;
 }
 .receipt-note {
-  margin-top: 0.6rem;
+  margin-top: 0.9rem;
   padding: 0.4rem;
   border: 1px dashed #cbd5e1;
   font-size: 0.85em;

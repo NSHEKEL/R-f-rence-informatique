@@ -109,6 +109,8 @@ const LABEL_STYLE = `
   .label { width: 60mm; box-sizing: border-box; border: 1px dashed #94a3b8;
            border-radius: 3mm; padding: 3mm; text-align: center;
            page-break-inside: avoid; }
+  .shop-logo { height: 8mm; max-width: 30mm; object-fit: contain;
+               display: block; margin: 0 auto 1mm; }
   .shop { font-size: 9px; text-transform: uppercase; letter-spacing: .08em;
           color: #64748b; margin: 0; }
   .name { font-size: 12px; font-weight: 700; margin: 1mm 0; min-height: 9mm; }

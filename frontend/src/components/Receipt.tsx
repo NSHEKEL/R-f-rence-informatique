@@ -97,7 +97,7 @@ function ReceiptBody({
       </table>
 
       {vat && (
-        <div className="receipt-meta">
+        <div className="receipt-meta receipt-taxes">
           <span>Total HT</span>
           <span>{money(vat.excluded)}</span>
           <span>TVA ({vat.rate} %)</span>
