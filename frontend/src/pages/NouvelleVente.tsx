@@ -220,6 +220,11 @@ export default function NouvelleVente() {
     [cart, priceMode]
   );
 
+  const itemCount = useMemo(
+    () => cart.reduce((sum, l) => sum + l.quantity, 0),
+    [cart]
+  );
+
   const addToCart = useCallback((product: Product) => {
     setError("");
     setCart((prev) => {
@@ -387,16 +392,15 @@ export default function NouvelleVente() {
         </Link>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 p-4 lg:grid-cols-[1.6fr_1fr]">
-        {/* Article picker */}
-        <div className="card flex min-h-0 flex-col p-4">
-          <div className="mb-3 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3">
-            <Search size={18} className="text-slate-400" />
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 p-4 lg:grid-cols-[380px_1fr]">
+        {/* Ticket in progress */}
+        <div className="card flex min-h-0 flex-col overflow-hidden p-0">
+          <div className="flex items-center gap-2 border-b border-slate-200 px-3 py-2.5">
             <input
               ref={searchRef}
               autoFocus
               className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
-              placeholder="Nom, code article ou scan du QR code, puis Entrée..."
+              placeholder="Scanner ou taper un article"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
@@ -414,149 +418,89 @@ export default function NouvelleVente() {
                 <X size={16} />
               </button>
             )}
+            <button className="btn-primary shrink-0 py-1.5" onClick={submitSearch}>
+              <Search size={15} /> Scan
+            </button>
           </div>
-          {flash && (
-            <p className="mb-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
-              {flash}
-            </p>
-          )}
-          {!query && (
-            <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
-              <button
-                onClick={() => setActiveCategory("top")}
-                className={`flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
-                  activeCategory === "top"
-                    ? "bg-brand-600 text-white"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                }`}
-              >
-                <Flame size={13} /> Meilleures ventes
-              </button>
-              {categories.map((c) => (
+
+          <div className="flex items-center gap-2 bg-slate-100 px-4 py-2">
+            <ShoppingCart size={15} className="text-slate-500" />
+            <span className="text-xs font-bold uppercase tracking-wide text-slate-500">
+              Ticket · {cart.length} ligne(s)
+            </span>
+            <div className="ml-auto flex rounded-lg bg-white p-0.5 text-[11px] font-semibold">
+              {(["detail", "gros"] as PriceMode[]).map((mode) => (
                 <button
-                  key={c.id}
-                  onClick={() => setActiveCategory(c.id)}
-                  className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
-                    activeCategory === c.id
+                  key={mode}
+                  onClick={() => setPriceMode(mode)}
+                  className={`rounded-md px-2 py-1 transition ${
+                    priceMode === mode
                       ? "bg-brand-600 text-white"
-                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                      : "text-slate-500"
                   }`}
                 >
-                  {c.name}
+                  {mode === "detail" ? "Détail" : "Gros"}
                 </button>
               ))}
             </div>
+          </div>
+
+          {flash && (
+            <p className="bg-emerald-50 px-4 py-1.5 text-xs font-semibold text-emerald-700">
+              {flash}
+            </p>
           )}
-          <div className="grid min-h-0 flex-1 grid-cols-2 gap-3 overflow-y-auto sm:grid-cols-3 xl:grid-cols-4">
-            {filtered.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => addToCart(p)}
-                className="flex flex-col rounded-xl border border-slate-200 p-3 text-left transition hover:border-brand-400 hover:bg-brand-50"
-              >
-                {p.image ? (
-                  <img
-                    src={p.image}
-                    alt=""
-                    className="mb-2 h-20 w-full rounded-lg object-cover"
-                  />
-                ) : (
-                  <span className="mb-2 flex h-20 w-full items-center justify-center rounded-lg bg-slate-100 text-slate-300">
-                    <ImageIcon size={20} />
-                  </span>
-                )}
-                <p className="line-clamp-2 text-sm font-semibold text-slate-800">
-                  {p.name}
-                </p>
-                <p className="mt-auto pt-2 text-sm font-extrabold text-brand-700">
-                  {formatXOF(unitPrice(p, priceMode))}
-                </p>
-                {isAdmin && (
-                  <p className="text-xs text-slate-400">Stock : {p.quantity}</p>
-                )}
-              </button>
-            ))}
-            {filtered.length === 0 && (
-              <p className="col-span-full py-10 text-center text-sm text-slate-400">
-                Aucun article disponible.
-              </p>
-            )}
-          </div>
-        </div>
 
-        {/* Cart */}
-        <div className="card flex min-h-0 flex-col p-4">
-          <div className="mb-3 flex items-center gap-2">
-            <ShoppingCart size={18} className="text-brand-600" />
-            <h2 className="text-base font-bold text-slate-900">Panier</h2>
-            <span className="ml-auto text-sm text-slate-400">
-              {cart.length} ligne(s)
-            </span>
-          </div>
-
-          <div className="mb-3 flex rounded-xl bg-slate-100 p-1 text-xs font-semibold">
-            {(["detail", "gros"] as PriceMode[]).map((mode) => (
-              <button
-                key={mode}
-                onClick={() => setPriceMode(mode)}
-                className={`flex-1 rounded-lg py-1.5 transition ${
-                  priceMode === mode
-                    ? "bg-white text-brand-700 shadow-sm"
-                    : "text-slate-500"
-                }`}
-              >
-                {mode === "detail" ? "Prix détail" : "Prix gros"}
-              </button>
-            ))}
-          </div>
-
-          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-y-auto">
             {cart.length === 0 && (
-              <p className="rounded-xl bg-slate-50 px-4 py-10 text-center text-sm text-slate-400">
+              <p className="px-4 py-10 text-center text-sm text-slate-400">
                 Scannez un code ou cliquez sur un article.
               </p>
             )}
             {cart.map((l) => (
               <div
                 key={l.product.id}
-                className="flex items-center gap-2 rounded-xl border border-slate-100 p-2.5"
+                className="border-b border-slate-100 px-4 py-2.5"
               >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-slate-800">
+                <div className="flex items-start gap-2">
+                  <p className="min-w-0 flex-1 truncate text-sm font-bold text-slate-800">
                     {l.product.name}
                   </p>
-                  <p className="text-xs text-slate-500">
-                    {formatXOF(unitPrice(l.product, priceMode))} ×{l.quantity} ={" "}
-                    <span className="font-semibold text-slate-700">
-                      {formatXOF(unitPrice(l.product, priceMode) * l.quantity)}
-                    </span>
-                  </p>
+                  <span className="w-8 text-center text-sm text-slate-600">
+                    {l.quantity}
+                  </span>
+                  <span className="shrink-0 whitespace-nowrap text-right text-sm font-bold text-slate-900">
+                    {formatXOF(unitPrice(l.product, priceMode) * l.quantity)}
+                  </span>
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="mt-1.5 flex items-center gap-1">
+                  <span className="mr-auto text-xs text-slate-400">
+                    {formatXOF(unitPrice(l.product, priceMode))} l'unité
+                  </span>
                   <button
-                    className="rounded-lg bg-slate-100 p-1.5 text-slate-600 hover:bg-slate-200"
+                    className="rounded-lg bg-slate-100 p-1 text-slate-600 hover:bg-slate-200"
                     onClick={() => setQuantity(l.product.id, l.quantity - 1)}
                   >
-                    <Minus size={14} />
+                    <Minus size={13} />
                   </button>
                   <input
-                    className="w-12 rounded-lg border border-slate-200 py-1 text-center text-sm"
+                    className="w-11 rounded-lg border border-slate-200 py-0.5 text-center text-sm"
                     value={l.quantity}
                     onChange={(e) =>
                       setQuantity(l.product.id, Number(e.target.value) || 0)
                     }
                   />
                   <button
-                    className="rounded-lg bg-slate-100 p-1.5 text-slate-600 hover:bg-slate-200"
+                    className="rounded-lg bg-slate-100 p-1 text-slate-600 hover:bg-slate-200"
                     onClick={() => setQuantity(l.product.id, l.quantity + 1)}
                   >
-                    <Plus size={14} />
+                    <Plus size={13} />
                   </button>
                   <button
-                    className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                    className="rounded-lg p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"
                     onClick={() => setQuantity(l.product.id, 0)}
                   >
-                    <Trash2 size={14} />
+                    <Trash2 size={13} />
                   </button>
                 </div>
               </div>
@@ -564,13 +508,13 @@ export default function NouvelleVente() {
           </div>
 
           {error && (
-            <p className="mt-3 rounded-xl bg-red-50 px-4 py-2.5 text-sm font-medium text-red-600">
+            <p className="bg-red-50 px-4 py-2.5 text-sm font-medium text-red-600">
               {error}
             </p>
           )}
 
-          <div className="mt-3 space-y-3 border-t border-slate-100 pt-3">
-            <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-2 border-t border-slate-100 px-4 py-3">
+            <div className="grid grid-cols-2 gap-2">
               <div>
                 <div className="flex items-center justify-between">
                   <label className="label">Client</label>
@@ -642,19 +586,106 @@ export default function NouvelleVente() {
               value={note}
               onChange={(e) => setNote(e.target.value)}
             />
-            <div className="flex items-center justify-between rounded-xl bg-slate-900 px-4 py-3 text-white">
-              <span className="text-sm font-medium uppercase">Total</span>
+          </div>
+
+          <div className="bg-slate-800 px-4 py-3 text-white">
+            <div className="flex items-center justify-between text-sm text-slate-300">
+              <span>Articles</span>
+              <span>{itemCount}</span>
+            </div>
+            <div className="mt-1 flex items-center justify-between text-sm text-slate-300">
+              <span>Sous-total</span>
+              <span>{formatXOF(total)}</span>
+            </div>
+            <div className="mt-2 flex items-center justify-between border-t border-slate-600 pt-2">
+              <span className="text-base font-bold uppercase">Total</span>
               <span className="text-2xl font-extrabold">
                 {formatXOF(total)}
               </span>
             </div>
+          </div>
+
+          <div className="flex gap-2 p-3">
             <button
-              className="btn-primary w-full py-3 text-base"
+              className="btn-ghost flex-1 justify-center py-3"
+              onClick={resetCart}
+              disabled={cart.length === 0}
+            >
+              Vider
+            </button>
+            <button
+              className="btn-primary flex-[2] justify-center py-3 text-base"
               onClick={checkout}
               disabled={saving || cart.length === 0}
             >
-              {saving ? "Encaissement..." : "Valider la vente"}
+              {saving ? "Encaissement..." : `Payer ${formatXOF(total)}`}
             </button>
+          </div>
+        </div>
+
+        {/* Article picker */}
+        <div className="card flex min-h-0 flex-col p-4">
+          {!query && (
+            <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
+              <button
+                onClick={() => setActiveCategory("top")}
+                className={`flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
+                  activeCategory === "top"
+                    ? "bg-brand-600 text-white"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                <Flame size={13} /> Meilleures ventes
+              </button>
+              {categories.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => setActiveCategory(c.id)}
+                  className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
+                    activeCategory === c.id
+                      ? "bg-brand-600 text-white"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
+                >
+                  {c.name}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="grid min-h-0 flex-1 grid-cols-2 gap-3 overflow-y-auto sm:grid-cols-3 xl:grid-cols-4">
+            {filtered.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => addToCart(p)}
+                className="flex flex-col items-center rounded-2xl border-2 border-brand-500 bg-white p-3 text-center transition hover:bg-brand-50"
+              >
+                {p.image ? (
+                  <img
+                    src={p.image}
+                    alt=""
+                    className="mb-2 h-24 w-full rounded-xl object-contain"
+                  />
+                ) : (
+                  <span className="mb-2 flex h-24 w-full items-center justify-center rounded-xl bg-slate-100 text-slate-300">
+                    <ImageIcon size={22} />
+                  </span>
+                )}
+                <p className="line-clamp-2 text-sm font-bold text-slate-800">
+                  {p.name}
+                </p>
+                <p className="mt-auto pt-1 text-sm font-extrabold text-brand-700">
+                  {formatXOF(unitPrice(p, priceMode))}
+                </p>
+                {isAdmin && (
+                  <p className="text-xs text-slate-400">Stock : {p.quantity}</p>
+                )}
+              </button>
+            ))}
+            {filtered.length === 0 && (
+              <p className="col-span-full py-10 text-center text-sm text-slate-400">
+                Aucun article disponible.
+              </p>
+            )}
           </div>
         </div>
       </div>
