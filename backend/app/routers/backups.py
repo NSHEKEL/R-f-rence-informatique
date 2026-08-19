@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from .. import backup
@@ -9,6 +10,11 @@ from ..auth import require_admin
 from ..database import get_db
 from ..models import User
 from ..schemas import BackupFile, BackupResult
+
+
+class ExportRequest(BaseModel):
+    folder: str = ""
+
 
 router = APIRouter(prefix="/api/backups", tags=["backups"])
 
@@ -38,6 +44,22 @@ def download_backup(name: str, _: User = Depends(require_admin)):
     return FileResponse(
         str(path), filename=path.name, media_type="application/octet-stream"
     )
+
+
+@router.post("/{name}/export")
+def export_backup(
+    name: str,
+    payload: ExportRequest,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Write a copy of a backup outside the application, without a browser
+    download: the desktop window cannot save files by itself."""
+    try:
+        target = backup.export(db, name, payload.folder)
+    except backup.BackupError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"path": str(target)}
 
 
 @router.post("/restore")

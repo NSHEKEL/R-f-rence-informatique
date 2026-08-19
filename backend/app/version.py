@@ -5,7 +5,7 @@ update checker compares the tag of the latest GitHub release with this number.
 """
 
 APP_NAME = "EasyGest"
-APP_VERSION = "2.0.4"
+APP_VERSION = "2.0.5"
 
 # Repository publishing the Windows releases consumed by the update checker.
 UPDATE_REPO = "NSHEKEL/R-f-rence-informatique"

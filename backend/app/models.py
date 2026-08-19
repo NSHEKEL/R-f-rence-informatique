@@ -61,6 +61,8 @@ class CompanySettings(Base):
     backup_dir = Column(String, default="")
     backup_auto = Column(Boolean, default=True, nullable=False)
     backup_keep = Column(Integer, default=30, nullable=False)
+    # Mirror the database into that folder after every sale.
+    backup_on_sale = Column(Boolean, default=False, nullable=False)
     last_backup_at = Column(DateTime, nullable=True)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 

@@ -11,7 +11,7 @@ import {
 import api, { formatDate, formatDateTime, formatXOF } from "../api/client";
 import type { Customer, Order, Product } from "../types";
 import Modal from "../components/Modal";
-import { printSheet } from "../lib/print";
+import { documentHeader, printSheet } from "../lib/print";
 import { useCompany } from "../context/CompanyContext";
 import { useSyncVersion } from "../context/SyncContext";
 
@@ -197,10 +197,7 @@ export default function Commandes() {
       .join("");
     printSheet(
       `Commande ${order.reference}`,
-      `<h1>${company?.name ?? ""}</h1>` +
-        `<p class="meta">${[company?.address, company?.phone, company?.email]
-          .filter(Boolean)
-          .join(" · ")}</p>` +
+      documentHeader(company) +
         `<h2>Bon de commande ${order.reference}</h2>` +
         `<p class="meta">Date : ${formatDateTime(order.date)}` +
         (order.expected_date

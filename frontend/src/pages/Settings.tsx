@@ -6,6 +6,7 @@ import {
   Database,
   Download,
   DownloadCloud,
+  FolderOpen,
   HardDriveUpload,
   ImagePlus,
   Mail,
@@ -55,8 +56,18 @@ const emptyCompany: CompanyForm = {
   backup_dir: "",
   backup_auto: true,
   backup_keep: 30,
+  backup_on_sale: false,
   last_backup_at: null,
 };
+
+/** Native folder picker, only available inside the desktop window. */
+function nativeApi(): { choose_folder?: () => Promise<string> } | undefined {
+  return (
+    window as unknown as {
+      pywebview?: { api?: { choose_folder?: () => Promise<string> } };
+    }
+  ).pywebview?.api;
+}
 
 export default function Settings() {
   const { user } = useAuth();
@@ -121,17 +132,54 @@ export default function Settings() {
     }
   }
 
-  /** Downloads a backup so it can be copied to a USB key or the cloud. */
-  async function downloadBackup(name: string) {
-    const { data } = await api.get<Blob>(`/backups/${name}/download`, {
-      responseType: "blob",
-    });
-    const url = URL.createObjectURL(data);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = name;
-    link.click();
-    URL.revokeObjectURL(url);
+  /**
+   * Saves a copy where the user can pick it up. The desktop window has no
+   * browser download, so the application writes the file itself into the
+   * backup folder (USB key, cloud folder) or the Downloads folder.
+   */
+  async function exportBackup(name: string) {
+    setBackupMessage("Copie en cours...");
+    try {
+      const { data } = await api.post<{ path: string }>(
+        `/backups/${name}/export`,
+        { folder: company.backup_dir }
+      );
+      setBackupMessage(`Copie enregistrée : ${data.path}`);
+    } catch (err) {
+      setBackupMessage(
+        axios.isAxiosError(err)
+          ? err.response?.data?.detail ?? "Copie impossible"
+          : "Copie impossible"
+      );
+    }
+  }
+
+  /** Chooses the backup folder in a real Windows dialog, then stores it. */
+  async function chooseBackupFolder() {
+    const chooser = nativeApi()?.choose_folder;
+    if (!chooser) return;
+    const folder = await chooser();
+    if (!folder) return;
+    setCompany((c) => ({ ...c, backup_dir: folder }));
+    await saveBackupFolder(folder);
+  }
+
+  /** The folder must survive a reload even if the page is not saved. */
+  async function saveBackupFolder(folder: string) {
+    try {
+      await api.put("/settings/company", { backup_dir: folder });
+      setBackupMessage(
+        folder
+          ? `Dossier de sauvegarde enregistré : ${folder}`
+          : "Dossier de sauvegarde retiré."
+      );
+    } catch (err) {
+      setBackupMessage(
+        axios.isAxiosError(err)
+          ? err.response?.data?.detail ?? "Enregistrement impossible"
+          : "Enregistrement impossible"
+      );
+    }
   }
 
   async function restoreBackup(file: File | undefined) {
@@ -650,12 +698,26 @@ export default function Settings() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div className="sm:col-span-2">
             <label className="label">Second dossier de sauvegarde</label>
-            <input
-              className="input"
-              value={company.backup_dir}
-              onChange={(e) => update({ backup_dir: e.target.value })}
-              placeholder="E:\Sauvegardes EasyGest"
-            />
+            <div className="flex gap-2">
+              <input
+                className="input"
+                value={company.backup_dir}
+                onChange={(e) => update({ backup_dir: e.target.value })}
+                onBlur={(e) => saveBackupFolder(e.target.value)}
+                placeholder="E:\Sauvegardes EasyGest"
+              />
+              {nativeApi()?.choose_folder && (
+                <button
+                  className="btn-ghost whitespace-nowrap"
+                  onClick={chooseBackupFolder}
+                >
+                  <FolderOpen size={16} /> Parcourir
+                </button>
+              )}
+            </div>
+            <p className="mt-1 text-xs text-slate-400">
+              Le dossier est enregistré dès que vous quittez le champ.
+            </p>
           </div>
           <div>
             <label className="label">Copies conservées</label>
@@ -675,6 +737,15 @@ export default function Settings() {
             onChange={(e) => update({ backup_auto: e.target.checked })}
           />
           Sauvegarde automatique quotidienne
+        </label>
+        <label className="mt-2 flex items-center gap-2 text-sm text-slate-600">
+          <input
+            type="checkbox"
+            checked={company.backup_on_sale}
+            onChange={(e) => update({ backup_on_sale: e.target.checked })}
+          />
+          Sauvegarder aussi après chaque vente (copie immédiate dans le
+          dossier ci-dessus)
         </label>
         {company.last_backup_at && (
           <p className="mt-2 text-xs text-slate-400">
@@ -721,9 +792,9 @@ export default function Settings() {
                 </span>
                 <button
                   className="btn-ghost px-3 py-1.5 text-xs"
-                  onClick={() => downloadBackup(b.name)}
+                  onClick={() => exportBackup(b.name)}
                 >
-                  <Download size={14} /> Télécharger
+                  <Download size={14} /> Enregistrer une copie
                 </button>
               </li>
             ))}

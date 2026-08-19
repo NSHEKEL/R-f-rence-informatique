@@ -34,6 +34,7 @@ export interface CompanySettings {
   backup_dir: string;
   backup_auto: boolean;
   backup_keep: number;
+  backup_on_sale: boolean;
   last_backup_at: string | null;
 }
 

@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import api, { formatDate, formatXOF } from "../api/client";
 import type { Product, StockMovement } from "../types";
-import { printSheet } from "../lib/print";
+import { documentHeader, printSheet } from "../lib/print";
 import { useCompany } from "../context/CompanyContext";
 import { useSyncVersion } from "../context/SyncContext";
 
@@ -122,7 +122,7 @@ export default function Inventaire() {
       .join("");
     printSheet(
       "Fiche d'inventaire",
-      `<h1>${company?.name ?? ""}</h1>` +
+      documentHeader(company) +
         `<p class="meta">Fiche d'inventaire — ${new Date().toLocaleDateString("fr-FR")}` +
         ` · ${filtered.length} article(s)<br/>Compté par : ______________________` +
         ` · Signature : ______________________</p>` +
@@ -146,7 +146,7 @@ export default function Inventaire() {
       .join("");
     printSheet(
       "Écarts d'inventaire",
-      `<h1>${company?.name ?? ""}</h1>` +
+      documentHeader(company) +
         `<p class="meta">Écarts d'inventaire — ${new Date().toLocaleDateString("fr-FR")}` +
         (note ? `<br/>Motif : ${note}` : "") +
         `</p><table><thead><tr><th>Article</th><th>SKU</th>` +

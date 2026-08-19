@@ -13,10 +13,15 @@ import { useAuth } from "../context/AuthContext";
 
 type ForgotStep = "email" | "code";
 
+/** The cashier logs in many times a day: only the password is retyped. */
+const LAST_EMAIL_KEY = "easygest.last-email";
+
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(
+    () => localStorage.getItem(LAST_EMAIL_KEY) ?? ""
+  );
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -39,6 +44,8 @@ export default function Login() {
     setLoading(true);
     try {
       await login(email, password);
+      localStorage.setItem(LAST_EMAIL_KEY, email);
+      setPassword("");
       navigate("/");
     } catch (err) {
       if (axios.isAxiosError(err)) {
@@ -124,7 +131,7 @@ export default function Login() {
             <img src={logo} alt="EasyGest" className="h-20 w-20 object-contain" />
           </div>
           <h1 className="text-2xl font-extrabold tracking-tight text-brand-700">
-            RÉFÉRENCE <span className="text-slate-800">INFORMATIQUE</span>
+            Easy<span className="text-slate-800">Gest</span>
           </h1>
           <p className="mt-1 text-sm text-slate-500">
             Gestion des ventes &amp; du stock
@@ -155,6 +162,7 @@ export default function Login() {
                 className="input pl-11"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                autoComplete="username"
                 required
               />
             </div>
@@ -172,6 +180,8 @@ export default function Login() {
                 className="input pl-11"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                autoComplete="off"
+                autoFocus={Boolean(email)}
                 required
               />
             </div>

@@ -3,7 +3,7 @@ import axios from "axios";
 import { PackageCheck, Printer } from "lucide-react";
 import api, { formatDateTime, formatXOF } from "../api/client";
 import type { Delivery, Order } from "../types";
-import { printSheet } from "../lib/print";
+import { documentHeader, printSheet } from "../lib/print";
 import { useCompany } from "../context/CompanyContext";
 import { useSyncVersion } from "../context/SyncContext";
 
@@ -45,10 +45,7 @@ export default function Livraisons() {
       .join("");
     printSheet(
       `Bon de livraison ${delivery.reference}`,
-      `<h1>${company?.name ?? ""}</h1>` +
-        `<p class="meta">${[company?.address, company?.phone, company?.email]
-          .filter(Boolean)
-          .join(" · ")}</p>` +
+      documentHeader(company) +
         `<h2>Bon de livraison ${delivery.reference}</h2>` +
         `<p class="meta">Date : ${formatDateTime(delivery.date)}` +
         `<br/>Commande : ${delivery.order_reference}` +

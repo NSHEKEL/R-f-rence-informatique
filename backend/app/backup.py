@@ -87,6 +87,46 @@ def _mirror(source: Path, folder: str) -> None:
         )
 
 
+def default_export_dir() -> Path:
+    """Where a copy goes when no backup folder is configured."""
+    downloads = Path.home() / "Downloads"
+    return downloads if downloads.is_dir() else Path.home()
+
+
+def export(db: Session, name: str, folder: str = "") -> Path:
+    """Save a copy of a backup where the user can pick it up.
+
+    The desktop window cannot download files the way a browser does, so the
+    copy is written by the application itself: into the configured backup
+    folder (USB key, cloud folder) or, failing that, the Downloads folder.
+    """
+    source = path_of(name)
+    chosen = folder.strip()
+    if not chosen:
+        settings = db.query(CompanySettings).first()
+        chosen = (settings.backup_dir or "").strip() if settings else ""
+    destination = Path(chosen).expanduser() if chosen else default_export_dir()
+    try:
+        destination.mkdir(parents=True, exist_ok=True)
+        target = destination / source.name
+        shutil.copy2(source, target)
+    except OSError as exc:
+        raise BackupError(f"Copie vers « {destination} » impossible : {exc}")
+    return target
+
+
+def after_sale(db: Session) -> Optional[Path]:
+    """Copy of the data made right after a sale, when the shop asked for it.
+
+    Losing the workstation must not lose the day's takings, so the copy is
+    mirrored to the configured folder as soon as the ticket is recorded.
+    """
+    settings = db.query(CompanySettings).first()
+    if settings is None or not settings.backup_on_sale:
+        return None
+    return create(db, reason="vente")
+
+
 def prune(keep: int) -> None:
     files = sorted(
         backups_dir().glob(f"easygest-*{SUFFIX}"),

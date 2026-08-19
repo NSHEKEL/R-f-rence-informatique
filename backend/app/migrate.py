@@ -11,6 +11,7 @@ from sqlalchemy import inspect, text
 from .database import engine
 
 TRUE_LITERAL = "1" if engine.dialect.name == "sqlite" else "TRUE"
+FALSE_LITERAL = "0" if engine.dialect.name == "sqlite" else "FALSE"
 
 # table -> column -> SQL type/default appended to "ALTER TABLE ... ADD COLUMN".
 COLUMNS: dict[str, dict[str, str]] = {
@@ -48,6 +49,7 @@ COLUMNS: dict[str, dict[str, str]] = {
         "backup_dir": "VARCHAR DEFAULT ''",
         "backup_auto": f"BOOLEAN DEFAULT {TRUE_LITERAL}",
         "backup_keep": "INTEGER DEFAULT 30",
+        "backup_on_sale": f"BOOLEAN DEFAULT {FALSE_LITERAL}",
         "last_backup_at": "TIMESTAMP",
     },
     "cash_sessions": {

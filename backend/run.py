@@ -117,6 +117,28 @@ def _serve(port: int) -> None:
         traceback.print_exc()
 
 
+class DesktopApi:
+    """Bridge exposed to the page as ``window.pywebview.api``.
+
+    The application runs without a browser, so file dialogs have to be
+    provided by the window itself.
+    """
+
+    def __init__(self) -> None:
+        self.window = None
+
+    def choose_folder(self) -> str:
+        """Real Windows folder picker used to select the backup folder."""
+        import webview
+
+        if self.window is None:
+            return ""
+        chosen = self.window.create_file_dialog(webview.FOLDER_DIALOG)
+        if not chosen:
+            return ""
+        return chosen[0] if isinstance(chosen, (list, tuple)) else str(chosen)
+
+
 def _open_window(url: str) -> bool:
     """Show the application in a native window. False if unavailable."""
     try:
@@ -125,6 +147,7 @@ def _open_window(url: str) -> bool:
         traceback.print_exc()
         return False
     try:
+        api = DesktopApi()
         window = webview.create_window(
             APP_NAME,
             url,
@@ -132,7 +155,9 @@ def _open_window(url: str) -> bool:
             height=900,
             min_size=(1024, 700),
             confirm_close=True,
+            js_api=api,
         )
+        api.window = window
         window.events.closed += lambda: os._exit(0)
         webview.start()
     except Exception:  # noqa: BLE001 - no WebView2 runtime, no .NET...

@@ -12,7 +12,7 @@ import {
 import { Printer, Receipt, TrendingUp, Undo2, Wallet } from "lucide-react";
 import api, { formatXOF } from "../api/client";
 import type { ReportRow, SalesReport } from "../types";
-import { printSheet } from "../lib/print";
+import { documentHeader, printSheet } from "../lib/print";
 import { useCompany } from "../context/CompanyContext";
 import { useSyncVersion } from "../context/SyncContext";
 
@@ -121,7 +121,7 @@ export default function Rapports() {
     const period = `${new Date(report.period_start).toLocaleDateString("fr-FR")} au ${new Date(report.period_end).toLocaleDateString("fr-FR")}`;
     printSheet(
       "Rapport des ventes",
-      `<h1>${company?.name ?? "Rapport des ventes"}</h1>` +
+      documentHeader(company) +
         `<p class="meta">Rapport des ventes — du ${period}</p>` +
         `<table><tbody>` +
         `<tr><td>Chiffre d'affaires</td><td class="num">${formatXOF(report.revenue)}</td></tr>` +

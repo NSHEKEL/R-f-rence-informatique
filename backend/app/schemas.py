@@ -67,6 +67,7 @@ class CompanySettingsOut(BaseModel):
     backup_dir: str = ""
     backup_auto: bool = True
     backup_keep: int = 30
+    backup_on_sale: bool = False
     last_backup_at: Optional[datetime] = None
 
 
@@ -95,6 +96,7 @@ class CompanySettingsUpdate(BaseModel):
     backup_dir: Optional[str] = None
     backup_auto: Optional[bool] = None
     backup_keep: Optional[int] = None
+    backup_on_sale: Optional[bool] = None
 
 
 # ---------- Category ----------

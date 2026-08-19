@@ -5,6 +5,7 @@ from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from .. import backup
 from ..auth import get_current_user, require_admin, require_cashier
 from ..database import get_db
 from ..models import (
@@ -208,7 +209,16 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
 
     db.commit()
     db.refresh(sale)
+    _backup_after_sale(db)
     return sale
+
+
+def _backup_after_sale(db: Session) -> None:
+    """A failed copy must never cancel a sale already recorded."""
+    try:
+        backup.after_sale(db)
+    except Exception:  # noqa: BLE001 - unreachable USB key, full disk...
+        db.rollback()
 
 
 @router.post("/{sale_id}/print", response_model=SaleOut)

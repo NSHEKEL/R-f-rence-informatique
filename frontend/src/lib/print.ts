@@ -1,4 +1,4 @@
-import type { ReceiptFormat } from "../types";
+import type { CompanySettings, ReceiptFormat } from "../types";
 
 const PAGE_STYLE_ID = "receipt-page-style";
 const PRINT_ROOT_ID = "receipt-print-root";
@@ -34,6 +34,11 @@ function pageRule(format: ReceiptFormat): string {
 const SHEET_STYLE = `
   body { font-family: Arial, Helvetica, sans-serif; color: #0f172a; margin: 16px; }
   h1 { font-size: 18px; margin: 0 0 4px; }
+  .doc-head { display: flex; align-items: center; gap: 12px;
+              border-bottom: 2px solid #0f172a; padding-bottom: 8px;
+              margin-bottom: 12px; }
+  .doc-head img { width: 68px; height: 68px; object-fit: contain; }
+  .doc-head .meta { margin: 0; }
   p.meta { font-size: 12px; color: #64748b; margin: 0 0 16px; }
   h2 { font-size: 13px; margin: 18px 0 6px; text-transform: uppercase;
        letter-spacing: .04em; color: #334155; }
@@ -72,6 +77,24 @@ export function printDocument(
     window.setTimeout(() => frame.remove(), 1000);
   };
   document.body.appendChild(frame);
+}
+
+/**
+ * Letterhead of every printed document: the company logo next to its name
+ * and contact details, so orders, delivery notes, proformas and inventory
+ * sheets look like the shop's own stationery.
+ */
+export function documentHeader(company: CompanySettings | null): string {
+  const contact = [company?.address, company?.phone, company?.email]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    `<div class="doc-head">` +
+    (company?.logo ? `<img src="${company.logo}" alt="" />` : "") +
+    `<div><h1>${company?.name ?? ""}</h1>` +
+    (contact ? `<p class="meta">${contact}</p>` : "") +
+    `</div></div>`
+  );
 }
 
 /** Prints an A4 sheet (report, inventory count sheet, delivery note). */

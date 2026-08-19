@@ -4,7 +4,7 @@ import { FileText, Plus, Printer, Trash2, X } from "lucide-react";
 import api, { formatDate, formatDateTime, formatXOF } from "../api/client";
 import type { Customer, Proforma, Product } from "../types";
 import Modal from "../components/Modal";
-import { printSheet } from "../lib/print";
+import { documentHeader, printSheet } from "../lib/print";
 import { useCompany } from "../context/CompanyContext";
 import { useSyncVersion } from "../context/SyncContext";
 
@@ -130,10 +130,7 @@ export default function Proformas() {
       .join("");
     printSheet(
       `Proforma ${proforma.reference}`,
-      `<h1>${company?.name ?? ""}</h1>` +
-        `<p class="meta">${[company?.address, company?.phone, company?.email]
-          .filter(Boolean)
-          .join(" · ")}</p>` +
+      documentHeader(company) +
         `<h2>Facture proforma ${proforma.reference}</h2>` +
         `<p class="meta">Date : ${formatDateTime(proforma.date)}` +
         (proforma.valid_until
