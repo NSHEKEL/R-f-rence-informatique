@@ -26,13 +26,22 @@ function pageRule(format: ReceiptFormat): string {
   if (format === "80mm") {
     // Thermal roll: `auto` is invalid next to a length, so the exact ticket
     // length is measured to avoid both blank feed and a truncated ticket.
-    return `@page { size: ${TICKET_WIDTH_MM}mm ${ticketHeightMm()}mm; margin: ${TICKET_MARGIN_MM}mm; }`;
+    // Zero page margin keeps the printer from adding the URL, the date and the
+    // page number around the ticket; the padding is applied to the copy itself.
+    return (
+      `@page { size: ${TICKET_WIDTH_MM}mm ${ticketHeightMm()}mm; margin: 0; }` +
+      `#${PRINT_ROOT_ID} { padding: ${TICKET_MARGIN_MM}mm; }`
+    );
   }
-  return "@page { size: A4 portrait; margin: 12mm; }";
+  return (
+    "@page { size: A4 portrait; margin: 0; }" +
+    `#${PRINT_ROOT_ID} { padding: 12mm; }`
+  );
 }
 
 const SHEET_STYLE = `
-  body { font-family: Arial, Helvetica, sans-serif; color: #0f172a; margin: 16px; }
+  body { font-family: Arial, Helvetica, sans-serif; color: #0f172a;
+         margin: 0; padding: 12mm; }
   h1 { font-size: 18px; margin: 0 0 4px; }
   .doc-head { display: flex; align-items: center; gap: 12px;
               border-bottom: 2px solid #0f172a; padding-bottom: 8px;
@@ -47,7 +56,9 @@ const SHEET_STYLE = `
   th { background: #f1f5f9; }
   td.num, th.num { text-align: right; }
   td.blank { width: 22%; height: 22px; }
-  @page { size: A4 portrait; margin: 12mm; }
+  /* No page margin: the printer would otherwise stamp the address, the date
+     and the page number in the header and the footer of the sheet. */
+  @page { size: A4 portrait; margin: 0; }
 `;
 
 /**
@@ -105,6 +116,7 @@ export function printSheet(title: string, bodyHtml: string): void {
 const LABEL_STYLE = `
   body { font-family: Arial, Helvetica, sans-serif; color: #0f172a; margin: 0;
          padding: 6mm; }
+  @page { size: A4 portrait; margin: 0; }
   .grid { display: flex; flex-wrap: wrap; gap: 4mm; }
   .label { width: 60mm; box-sizing: border-box; border: 1px dashed #94a3b8;
            border-radius: 3mm; padding: 3mm; text-align: center;
@@ -118,7 +130,6 @@ const LABEL_STYLE = `
   .wholesale { font-size: 10px; color: #334155; margin: 1mm 0 0; }
   .code { font-size: 9px; color: #64748b; margin: 1mm 0 0; }
   .qr { width: 18mm; height: 18mm; margin: 1mm auto 0; display: block; }
-  @page { size: A4 portrait; margin: 6mm; }
 `;
 
 /** Price labels, laid out as a cuttable grid on A4. */

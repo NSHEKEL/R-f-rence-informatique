@@ -232,10 +232,11 @@ body {
   body > *:not(#receipt-print-root) {
     display: none !important;
   }
+  /* Padding comes from the page rule injected at print time, which also sets
+     a zero page margin so the printer stops stamping the URL and the date. */
   #receipt-print-root {
     display: block !important;
     margin: 0 auto;
-    padding: 0;
     border: 0;
     box-shadow: none;
   }

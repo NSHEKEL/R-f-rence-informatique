@@ -41,7 +41,9 @@ export default function ProductQrCode({
   function print() {
     printDocument(
       `QR ${value}`,
-      "body { font-family: sans-serif; text-align: center; padding: 24px; }" +
+      "@page { size: A4 portrait; margin: 0; }" +
+        "body { font-family: sans-serif; text-align: center; margin: 0;" +
+        " padding: 12mm; }" +
         ".qr { width: 220px; height: 220px; }" +
         ".name { font-weight: 700; margin: 8px 0 0; }" +
         ".code { margin: 2px 0 0; }" +
