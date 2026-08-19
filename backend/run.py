@@ -6,10 +6,11 @@ except that window: no console, no external browser, no manual command.
 
 Modes:
 
-* default            -> desktop window on this machine only (127.0.0.1);
-* ``EASYGEST_HOST``  -> address the server listens on; set it to ``0.0.0.0``
-                        on the shop's main computer so the other workstations
-                        can use the same database;
+* default            -> desktop window, server reachable from the local
+                        network so the other workstations and the Android
+                        application can use the same database;
+* ``EASYGEST_HOST``  -> address the server listens on; set it to ``127.0.0.1``
+                        to keep the data on this machine only;
 * ``--server``       -> no window, useful to keep the shared server running;
 * ``--selftest``     -> start the server, check it answers, exit (used by the
                         build to prove the packaged executable really runs).
@@ -34,7 +35,7 @@ from app.paths import data_dir
 from app.version import APP_NAME, APP_VERSION
 
 DEFAULT_PORT = int(os.getenv("EASYGEST_PORT", "8000"))
-HOST = os.getenv("EASYGEST_HOST", "127.0.0.1").strip() or "127.0.0.1"
+HOST = os.getenv("EASYGEST_HOST", "0.0.0.0").strip() or "0.0.0.0"
 HEADLESS = "--server" in sys.argv or os.getenv("EASYGEST_HEADLESS") == "1"
 SELFTEST = "--selftest" in sys.argv
 
@@ -200,7 +201,7 @@ def main() -> None:
     if HEADLESS:
         print(f"{APP_NAME} {APP_VERSION} — serveur partagé")
         print(f" Ce poste          : {url}")
-        if HOST == "0.0.0.0":
+        if HOST != "127.0.0.1":
             print(f" Autres postes     : http://{_lan_ip()}:{port}")
         print(f" Données           : {data_dir()}")
         print(" Fermez cette fenêtre pour arrêter le serveur.")

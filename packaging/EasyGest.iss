@@ -43,9 +43,6 @@ Name: "french"; MessagesFile: "compiler:Languages\French.isl"
 [Tasks]
 Name: "desktopicon"; Description: "Créer un raccourci sur le Bureau"; \
   GroupDescription: "Raccourcis :"
-Name: "serveur"; Description: \
-  "Poste serveur : partager la base avec les autres ordinateurs du réseau"; \
-  GroupDescription: "Réseau :"; Flags: unchecked
 
 [Files]
 Source: "..\dist\{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
@@ -64,10 +61,11 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; \
 Filename: "{tmp}\MicrosoftEdgeWebview2Setup.exe"; Parameters: "/silent /install"; \
   StatusMsg: "Installation du composant d'affichage..."; \
   Check: NeedsWebView2; Flags: waituntilterminated skipifdoesntexist
-; Server workstation: listen on the network and open the Windows firewall.
+; The other workstations and the Android application reach this computer on
+; port 8000, so the private-network firewall is opened once at install time.
 Filename: "{cmd}"; Parameters: "/c netsh advfirewall firewall add rule \
   name=""EasyGest"" dir=in action=allow protocol=TCP localport=8000 \
-  profile=private"; Tasks: serveur; Flags: runhidden waituntilterminated
+  profile=private"; Flags: runhidden waituntilterminated
 Filename: "{app}\{#AppExe}"; Description: "Lancer {#AppName}"; \
   Flags: nowait postinstall skipifsilent
 
@@ -89,21 +87,7 @@ begin
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
-var
-  DataDir: String;
-  Lines: TArrayOfString;
 begin
   if CurStep = ssPostInstall then
-  begin
-    DataDir := ExpandConstant('{userappdata}\EasyGest');
-    ForceDirectories(DataDir);
-    if WizardIsTaskSelected('serveur') then
-    begin
-      SetArrayLength(Lines, 2);
-      Lines[0] := '# Poste serveur : les autres ordinateurs se connectent ' +
-        'a http://<adresse-ip-de-ce-poste>:8000';
-      Lines[1] := 'EASYGEST_HOST=0.0.0.0';
-      SaveStringsToFile(DataDir + '\.env', Lines, True);
-    end;
-  end;
+    ForceDirectories(ExpandConstant('{userappdata}\EasyGest'));
 end;

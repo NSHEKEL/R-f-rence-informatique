@@ -1,4 +1,5 @@
 import os
+import socket
 import sys
 from pathlib import Path
 from typing import Optional
@@ -144,6 +145,26 @@ def health():
         "app": APP_NAME,
         "version": APP_VERSION,
     }
+
+
+def _lan_ip() -> str:
+    """Address of this computer on the shop's network."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.connect(("8.8.8.8", 80))
+        return str(sock.getsockname()[0])
+    except OSError:
+        return "127.0.0.1"
+    finally:
+        sock.close()
+
+
+@app.get("/api/network")
+def network(request: Request):
+    """Address to type on the phone or on the other workstations."""
+    port = request.url.port or (443 if request.url.scheme == "https" else 80)
+    address = f"{_lan_ip()}:{port}"
+    return {"address": address, "url": f"http://{address}"}
 
 
 def _frontend_dir() -> Optional[Path]:

@@ -86,6 +86,7 @@ export default function Settings() {
   const [updateMessage, setUpdateMessage] = useState("");
   const [backups, setBackups] = useState<BackupFile[]>([]);
   const [backupMessage, setBackupMessage] = useState("");
+  const [lanAddress, setLanAddress] = useState("");
   const restoreInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -98,6 +99,13 @@ export default function Settings() {
       })
       .catch(() => setError("Impossible de charger la configuration."))
       .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    api
+      .get<{ address: string }>("/network")
+      .then((res) => setLanAddress(res.data.address))
+      .catch(() => setLanAddress(""));
   }, []);
 
   const loadBackups = useCallback(async () => {
@@ -654,6 +662,15 @@ export default function Settings() {
           ordinateurs qui pointent vers la même adresse partagent les mêmes
           données. Laissez vide sur le poste serveur lui-même.
         </p>
+        {lanAddress && (
+          <div className="mb-4 rounded-lg bg-slate-50 p-3 text-sm text-slate-700">
+            Adresse de ce poste sur le réseau :{" "}
+            <span className="font-mono font-semibold">{lanAddress}</span>
+            <br />
+            À saisir sur les autres ordinateurs et dans l'application Android
+            (même réseau Wi-Fi, EasyGest ouvert sur ce poste).
+          </div>
+        )}
         <div className="flex flex-col gap-3 sm:flex-row">
           <input
             className="input"
