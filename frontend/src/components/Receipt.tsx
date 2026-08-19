@@ -1,6 +1,7 @@
 import { createPortal } from "react-dom";
 import { formatDateTime, formatMoney } from "../api/client";
 import type { CompanySettings, ReceiptFormat, Sale } from "../types";
+import { vatBreakdown } from "../lib/vat";
 
 interface ReceiptProps {
   sale: Sale;
@@ -17,6 +18,7 @@ function ReceiptBody({
 }: Omit<ReceiptProps, "format">) {
   const currency = company?.currency || "FCFA";
   const money = (v: number) => formatMoney(v, currency);
+  const vat = vatBreakdown(sale.total, company);
   const footer =
     sale.receipt_footer ||
     company?.receipt_footer ||
@@ -94,8 +96,17 @@ function ReceiptBody({
         </tbody>
       </table>
 
+      {vat && (
+        <div className="receipt-meta">
+          <span>Total HT</span>
+          <span>{money(vat.excluded)}</span>
+          <span>TVA ({vat.rate} %)</span>
+          <span>{money(vat.vat)}</span>
+        </div>
+      )}
+
       <div className="receipt-total">
-        <span>Total</span>
+        <span>{vat ? "Total TTC" : "Total"}</span>
         <span>{money(sale.total)}</span>
       </div>
 

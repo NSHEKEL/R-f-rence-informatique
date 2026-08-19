@@ -45,6 +45,7 @@ const emptyCompany: CompanyForm = {
   website: "",
   tax_id: "",
   currency: "FCFA",
+  vat_rate: 0,
   about: "",
   receipt_header: "",
   receipt_footer: "",
@@ -495,6 +496,25 @@ export default function Settings() {
                 onChange={(e) => update({ currency: e.target.value })}
                 placeholder="FCFA"
               />
+            </div>
+            <div>
+              <label className="label">TVA appliquée (%)</label>
+              <input
+                className="input"
+                type="number"
+                min={0}
+                max={100}
+                step={0.1}
+                value={company.vat_rate}
+                onChange={(e) =>
+                  update({ vat_rate: Number(e.target.value) || 0 })
+                }
+                placeholder="18"
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                0 = aucune TVA. Les prix du catalogue sont TTC : le reçu
+                affiche le total HT, la TVA et le total TTC.
+              </p>
             </div>
             <div className="sm:col-span-2">
               <label className="label">En-tête du reçu (optionnel)</label>

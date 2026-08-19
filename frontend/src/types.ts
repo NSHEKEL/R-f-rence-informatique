@@ -19,6 +19,8 @@ export interface CompanySettings {
   website: string;
   tax_id: string;
   currency: string;
+  /** VAT rate shown on receipts, in percent (0 = none). */
+  vat_rate: number;
   about: string;
   receipt_header: string;
   receipt_footer: string;

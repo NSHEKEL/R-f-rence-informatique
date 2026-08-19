@@ -52,6 +52,7 @@ class CompanySettingsOut(BaseModel):
     website: str = ""
     tax_id: str = ""
     currency: str = "FCFA"
+    vat_rate: float = 0.0
     about: str = ""
     receipt_header: str = ""
     receipt_footer: str = ""
@@ -81,6 +82,7 @@ class CompanySettingsUpdate(BaseModel):
     website: Optional[str] = None
     tax_id: Optional[str] = None
     currency: Optional[str] = None
+    vat_rate: Optional[float] = None
     # "about" is intentionally absent: the page is read-only.
     receipt_header: Optional[str] = None
     receipt_footer: Optional[str] = None

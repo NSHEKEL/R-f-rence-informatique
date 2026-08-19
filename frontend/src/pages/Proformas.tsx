@@ -5,6 +5,7 @@ import api, { formatDate, formatDateTime, formatXOF } from "../api/client";
 import type { Customer, Proforma, Product } from "../types";
 import Modal from "../components/Modal";
 import { documentHeader, printSheet } from "../lib/print";
+import { vatBreakdown } from "../lib/vat";
 import { useCompany } from "../context/CompanyContext";
 import { useSyncVersion } from "../context/SyncContext";
 
@@ -128,6 +129,13 @@ export default function Proformas() {
           `<td class="num">${formatXOF(it.subtotal)}</td></tr>`
       )
       .join("");
+    const vat = vatBreakdown(proforma.total, company);
+    const vatRows = vat
+      ? `<tr><th colspan="3">Total HT</th>` +
+        `<th class="num">${formatXOF(vat.excluded)}</th></tr>` +
+        `<tr><th colspan="3">TVA (${vat.rate} %)</th>` +
+        `<th class="num">${formatXOF(vat.vat)}</th></tr>`
+      : "";
     printSheet(
       `Proforma ${proforma.reference}`,
       documentHeader(company) +
@@ -139,7 +147,8 @@ export default function Proformas() {
         `<br/>Client : ${client}</p>` +
         `<table><thead><tr><th>Désignation</th><th class="num">Qté</th>` +
         `<th class="num">P.U.</th><th class="num">Total</th></tr></thead>` +
-        `<tbody>${rows}<tr><th colspan="3">Total</th>` +
+        `<tbody>${rows}${vatRows}` +
+        `<tr><th colspan="3">${vat ? "Total TTC" : "Total"}</th>` +
         `<th class="num">${formatXOF(proforma.total)}</th></tr></tbody></table>` +
         (proforma.note ? `<p class="meta">${proforma.note}</p>` : "") +
         `<p class="meta">Document non contractuel : cette proforma ne vaut ` +

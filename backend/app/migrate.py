@@ -51,6 +51,7 @@ COLUMNS: dict[str, dict[str, str]] = {
         "backup_keep": "INTEGER DEFAULT 30",
         "backup_on_sale": f"BOOLEAN DEFAULT {FALSE_LITERAL}",
         "last_backup_at": "TIMESTAMP",
+        "vat_rate": "FLOAT DEFAULT 0",
     },
     "cash_sessions": {
         "business_day": "VARCHAR DEFAULT ''",

@@ -28,6 +28,7 @@ import PrinterHint from "../components/PrinterHint";
 import Receipt from "../components/Receipt";
 import { printReceipt } from "../lib/print";
 import { scanCodes } from "../lib/scan";
+import { vatBreakdown } from "../lib/vat";
 import {
   fetchCached,
   newClientId,
@@ -219,6 +220,8 @@ export default function NouvelleVente() {
       ),
     [cart, priceMode]
   );
+
+  const vat = vatBreakdown(total, company);
 
   const itemCount = useMemo(
     () => cart.reduce((sum, l) => sum + l.quantity, 0),
@@ -594,11 +597,19 @@ export default function NouvelleVente() {
               <span>{itemCount}</span>
             </div>
             <div className="mt-1 flex items-center justify-between text-sm text-slate-300">
-              <span>Sous-total</span>
-              <span>{formatXOF(total)}</span>
+              <span>{vat ? "Total HT" : "Sous-total"}</span>
+              <span>{formatXOF(vat ? vat.excluded : total)}</span>
             </div>
+            {vat && (
+              <div className="mt-1 flex items-center justify-between text-sm text-slate-300">
+                <span>TVA ({vat.rate} %)</span>
+                <span>{formatXOF(vat.vat)}</span>
+              </div>
+            )}
             <div className="mt-2 flex items-center justify-between border-t border-slate-600 pt-2">
-              <span className="text-base font-bold uppercase">Total</span>
+              <span className="text-base font-bold uppercase">
+                {vat ? "Total TTC" : "Total"}
+              </span>
               <span className="text-2xl font-extrabold">
                 {formatXOF(total)}
               </span>
