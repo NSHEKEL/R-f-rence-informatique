@@ -171,8 +171,9 @@ def get_product(
 def create_product(
     payload: ProductCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_stock_manager),
+    _: User = Depends(require_admin),
 ):
+    """The catalogue is the administrator's: the stock manager only reads it."""
     if db.query(Product).filter(Product.sku == payload.sku).first():
         raise HTTPException(status_code=400, detail="Cette référence (SKU) existe déjà")
     _check_barcode(db, payload, None)

@@ -44,7 +44,7 @@ const MAX_IMAGE_BYTES = 700_000;
 type SoldFilter = "" | "jamais" | "top";
 
 export default function Products() {
-  const { isAdmin, isStockManager } = useAuth();
+  const { isAdmin } = useAuth();
   const { company } = useCompany();
   const version = useSyncVersion();
   const [sold, setSold] = useState<SoldFilter>("");
@@ -247,7 +247,7 @@ export default function Products() {
           <button className="btn-ghost" onClick={() => printPrices(filtered)}>
             <Printer size={16} /> Imprimer les prix
           </button>
-          {isStockManager && (
+          {isAdmin && (
             <button className="btn-primary" onClick={openCreate}>
               <Plus size={18} /> Nouveau produit
             </button>

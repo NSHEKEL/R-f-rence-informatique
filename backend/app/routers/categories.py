@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from ..auth import get_current_user, require_admin, require_stock_manager
+from ..auth import get_current_user, require_admin
 from ..database import get_db
 from ..models import Category, Product, User
 from ..schemas import CategoryCreate, CategoryOut
@@ -18,8 +18,9 @@ def list_categories(db: Session = Depends(get_db), _: User = Depends(get_current
 def create_category(
     payload: CategoryCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_stock_manager),
+    _: User = Depends(require_admin),
 ):
+    """Only the administrator organises the catalogue."""
     category = Category(**payload.model_dump())
     db.add(category)
     db.commit()

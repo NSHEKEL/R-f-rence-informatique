@@ -44,6 +44,14 @@ export interface BackupFile {
   created_at: string;
 }
 
+/** Workstation or phone using the shared server. */
+export interface Workstation {
+  address: string;
+  user: string | null;
+  last_seen: string;
+  active: boolean;
+}
+
 export interface ActionLog {
   id: number;
   label: string;

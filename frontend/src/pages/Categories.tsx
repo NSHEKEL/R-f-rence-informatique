@@ -57,9 +57,11 @@ export default function Categories() {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-end">
-        <button className="btn-primary" onClick={openCreate}>
-          <Plus size={18} /> Nouvelle catégorie
-        </button>
+        {isAdmin && (
+          <button className="btn-primary" onClick={openCreate}>
+            <Plus size={18} /> Nouvelle catégorie
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">

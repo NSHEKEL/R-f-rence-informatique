@@ -4,16 +4,18 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from jose import JWTError, jwt
+from sqlalchemy.orm import Session
 
-from . import backup, history
-from .auth import ALGORITHM, SECRET_KEY
-from .database import Base, SessionLocal, engine
+from . import backup, clients, history
+from .auth import ALGORITHM, SECRET_KEY, require_admin
+from .database import Base, SessionLocal, engine, get_db
 from .migrate import migrate
+from .models import User
 from .routers import (
     accounting,
     auth,
@@ -106,6 +108,16 @@ def _user_id(request: Request) -> Optional[int]:
 
 
 @app.middleware("http")
+async def record_workstation(request: Request, call_next):
+    """Remember which machines use this server, to list them in the settings."""
+    if request.url.path.startswith("/api/"):
+        clients.record(
+            request.client.host if request.client else "", _user_id(request)
+        )
+    return await call_next(request)
+
+
+@app.middleware("http")
 async def record_undoable_action(request: Request, call_next):
     """Snapshot the rows a write touches, so it can be undone afterwards."""
     label = (
@@ -165,6 +177,28 @@ def network(request: Request):
     port = request.url.port or (443 if request.url.scheme == "https" else 80)
     address = f"{_lan_ip()}:{port}"
     return {"address": address, "url": f"http://{address}"}
+
+
+@app.get("/api/network/clients")
+def network_clients(
+    db: Session = Depends(get_db), _: User = Depends(require_admin)
+):
+    """Workstations and phones that used this server, with their address."""
+    seen = clients.connected()
+    identifiers = [entry["user_id"] for entry in seen if entry["user_id"]]
+    names = {
+        user.id: user.name
+        for user in db.query(User).filter(User.id.in_(identifiers)).all()
+    }
+    return [
+        {
+            "address": entry["address"],
+            "user": names.get(entry["user_id"]) if entry["user_id"] else None,
+            "last_seen": entry["last_seen"],
+            "active": entry["active"],
+        }
+        for entry in seen
+    ]
 
 
 def _frontend_dir() -> Optional[Path]:

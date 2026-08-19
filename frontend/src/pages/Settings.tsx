@@ -22,7 +22,12 @@ import api, {
   normalizeServerUrl,
   setServerUrl,
 } from "../api/client";
-import type { BackupFile, CompanySettings, UpdateStatus } from "../types";
+import type {
+  BackupFile,
+  CompanySettings,
+  UpdateStatus,
+  Workstation,
+} from "../types";
 import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
 
@@ -87,6 +92,7 @@ export default function Settings() {
   const [backups, setBackups] = useState<BackupFile[]>([]);
   const [backupMessage, setBackupMessage] = useState("");
   const [lanAddress, setLanAddress] = useState("");
+  const [workstations, setWorkstations] = useState<Workstation[]>([]);
   const restoreInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -107,6 +113,19 @@ export default function Settings() {
       .then((res) => setLanAddress(res.data.address))
       .catch(() => setLanAddress(""));
   }, []);
+
+  const loadWorkstations = useCallback(async () => {
+    try {
+      const { data } = await api.get<Workstation[]>("/network/clients");
+      setWorkstations(data);
+    } catch {
+      /* only the administrator sees the list: keep the page usable */
+    }
+  }, []);
+
+  useEffect(() => {
+    loadWorkstations();
+  }, [loadWorkstations]);
 
   const loadBackups = useCallback(async () => {
     try {
@@ -696,6 +715,47 @@ export default function Settings() {
             {serverStatus}
           </p>
         )}
+
+        <div className="mt-6">
+          <div className="mb-2 flex items-center justify-between">
+            <h4 className="text-sm font-bold text-slate-900">
+              Postes connectés à ce serveur
+            </h4>
+            <button className="btn-ghost" onClick={loadWorkstations}>
+              Actualiser
+            </button>
+          </div>
+          {workstations.length === 0 ? (
+            <p className="text-sm text-slate-500">
+              Aucun autre poste n'a encore utilisé ce serveur.
+            </p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-slate-500">
+                  <th className="py-1">Adresse</th>
+                  <th className="py-1">Utilisateur</th>
+                  <th className="py-1">Dernière activité</th>
+                  <th className="py-1">État</th>
+                </tr>
+              </thead>
+              <tbody>
+                {workstations.map((poste) => (
+                  <tr key={poste.address} className="border-t border-slate-100">
+                    <td className="py-1 font-mono">{poste.address}</td>
+                    <td className="py-1">{poste.user ?? "—"}</td>
+                    <td className="py-1">
+                      {new Date(poste.last_seen).toLocaleString("fr-FR")}
+                    </td>
+                    <td className="py-1">
+                      {poste.active ? "En ligne" : "Hors ligne"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
       </div>
 
       {/* Backups */}
