@@ -62,7 +62,7 @@ jobs:
           # Runs the packaged application: the server must answer and the
           # native window backend (pywebview + pythonnet + WinForms) must load,
           # otherwise the .exe would silently do nothing on the user's PC.
-          $log = "$env:APPDATA\EasyGest\easygest.log"
+          $log = "$env:ProgramData\EasyGest\easygest.log"
           if (Test-Path $log) { Remove-Item $log }
           # A windowed executable detaches immediately: wait for it explicitly.
           $run = Start-Process -FilePath dist\EasyGest.exe `
@@ -114,8 +114,11 @@ jobs:
             - Administrateur : admin@reference.ci / admin123
             - Vendeur : vendeur@reference.ci / vendeur123
 
-            Les données restent dans `%APPDATA%\EasyGest` : elles survivent aux
-            mises à jour, désinstallations et réinstallations.
+            Les données restent dans `%PROGRAMDATA%\EasyGest`, partagé par
+            toutes les sessions Windows du poste : elles survivent aux mises à
+            jour, désinstallations et réinstallations. Une base créée par une
+            version précédente dans `%APPDATA%\EasyGest` est reprise
+            automatiquement au premier démarrage.
 
             **Mise à jour d'un poste existant :** Paramètres → Mise à jour de
             l'application → Rechercher → Installer.

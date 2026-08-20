@@ -5,9 +5,10 @@
 ;
 ;   iscc /DAppVersion=2.0.0 packaging\EasyGest.iss
 ;
-; The user data (database, backups, settings) lives in %APPDATA%\EasyGest and
-; is never touched by the installer or the uninstaller, so updating or
-; reinstalling keeps every sale.
+; The user data (database, backups, settings) lives in %PROGRAMDATA%\EasyGest,
+; shared by every Windows account of the computer, and is never touched by the
+; installer or the uninstaller, so updating or reinstalling keeps every sale
+; and the company settings.
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"
@@ -44,6 +45,11 @@ Name: "french"; MessagesFile: "compiler:Languages\French.isl"
 Name: "desktopicon"; Description: "Créer un raccourci sur le Bureau"; \
   GroupDescription: "Raccourcis :"
 
+[Dirs]
+; Shared data folder: every account (and the program started without
+; administrator rights) must be able to write the database into it.
+Name: "{commonappdata}\{#AppName}"; Permissions: users-modify
+
 [Files]
 Source: "..\dist\{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "MicrosoftEdgeWebview2Setup.exe"; DestDir: "{tmp}"; \
@@ -66,8 +72,10 @@ Filename: "{tmp}\MicrosoftEdgeWebview2Setup.exe"; Parameters: "/silent /install"
 Filename: "{cmd}"; Parameters: "/c netsh advfirewall firewall add rule \
   name=""EasyGest"" dir=in action=allow protocol=TCP localport=8000 \
   profile=private"; Flags: runhidden waituntilterminated
+; runasoriginaluser: started as the shop's account, not as the administrator
+; who ran the installer, so the application keeps using the same data folder.
 Filename: "{app}\{#AppExe}"; Description: "Lancer {#AppName}"; \
-  Flags: nowait postinstall skipifsilent
+  Flags: nowait postinstall skipifsilent runasoriginaluser
 
 [Code]
 function NeedsWebView2: Boolean;
@@ -89,5 +97,5 @@ end;
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
-    ForceDirectories(ExpandConstant('{userappdata}\EasyGest'));
+    ForceDirectories(ExpandConstant('{commonappdata}\EasyGest'));
 end;

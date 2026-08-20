@@ -128,7 +128,7 @@ def install(release: Release) -> Path:
     """Fetch the new version and schedule it; the caller then exits.
 
     An installed copy runs the new EasyGest_Setup.exe silently (it upgrades in
-    place and keeps the data, which lives in %APPDATA%); a portable copy has
+    place and keeps the data, which lives in %PROGRAMDATA%); a portable copy has
     its own file swapped by a small script once the process has exited.
     """
     if not is_packaged():

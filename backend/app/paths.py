@@ -2,16 +2,24 @@
 
 Application files live in Program Files (read-only once installed), so the
 database, the signing key, the backups and the deployment settings are stored
-in the per-user data directory instead:
+in a shared data directory instead:
 
-    Windows : %APPDATA%\\EasyGest
+    Windows : %PROGRAMDATA%\\EasyGest
     Linux   : ~/.local/share/EasyGest
 
-Installations made before the rename kept their files in
-``~/ReferenceInformatique``; that folder is adopted as-is so no data is lost.
+The Windows folder is shared by every account of the computer on purpose: a
+per-user folder made the shop lose its company settings whenever the program
+was started from another session or with administrator rights (an update run
+as administrator wrote into the administrator's own profile).
+
+Older installations kept their files in ``%APPDATA%\\EasyGest`` — or, before
+the rename, in ``~/ReferenceInformatique``; both are adopted as-is, and the
+per-user folder is copied into the shared one on first start so no data is
+lost.
 """
 
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -21,10 +29,57 @@ LEGACY_DB_NAME = "reference.db"
 DB_NAME = "easygest.db"
 
 
+def _user_data_dir() -> Path:
+    base = os.getenv("APPDATA") or str(Path.home() / "AppData" / "Roaming")
+    return Path(base) / APP_DIR_NAME
+
+
+def _shared_data_dir() -> Path:
+    base = os.getenv("PROGRAMDATA") or "C:\\ProgramData"
+    return Path(base) / APP_DIR_NAME
+
+
+def _holds_database(directory: Path) -> bool:
+    return (directory / DB_NAME).exists() or (directory / LEGACY_DB_NAME).exists()
+
+
+def _adopt_user_folder(shared: Path) -> None:
+    """Move a database created by an earlier, per-user installation.
+
+    Copies rather than moves: the old folder stays as a safety net in case the
+    shared folder cannot be written to.
+    """
+    previous = _user_data_dir()
+    if not _holds_database(previous):
+        return
+    try:
+        shared.mkdir(parents=True, exist_ok=True)
+        for item in previous.iterdir():
+            target = shared / item.name
+            if target.exists():
+                continue
+            if item.is_dir():
+                shutil.copytree(item, target)
+            else:
+                shutil.copy2(item, target)
+    except OSError:
+        pass
+
+
 def _default_data_dir() -> Path:
     if sys.platform == "win32":
-        base = os.getenv("APPDATA") or str(Path.home() / "AppData" / "Roaming")
-        return Path(base) / APP_DIR_NAME
+        shared = _shared_data_dir()
+        if not _holds_database(shared):
+            _adopt_user_folder(shared)
+        try:
+            shared.mkdir(parents=True, exist_ok=True)
+            probe = shared / ".write-test"
+            probe.touch()
+            probe.unlink()
+            return shared
+        except OSError:
+            # Locked-down machine: fall back to the per-user folder.
+            return _user_data_dir()
     return Path.home() / ".local" / "share" / APP_DIR_NAME
 
 

@@ -33,7 +33,7 @@ def _sqlite_path() -> Path:
     """Writable location for the single-workstation SQLite database.
 
     The installed application runs from a read-only directory, so the database
-    lives in the per-user data directory (%APPDATA%\\EasyGest on Windows). In
+    lives in the shared data directory (%PROGRAMDATA%\\EasyGest on Windows). In
     development it stays next to the backend package.
     """
     if getattr(sys, "frozen", False):

@@ -160,7 +160,13 @@ def _open_window(url: str) -> bool:
         )
         api.window = window
         window.events.closed += lambda: os._exit(0)
-        webview.start()
+        # Without an explicit storage path the window runs in private mode and
+        # forgets everything the page saved (session, last user name, screen
+        # preferences) as soon as the computer is restarted.
+        webview.start(
+            private_mode=False,
+            storage_path=str(data_dir() / "webview"),
+        )
     except Exception:  # noqa: BLE001 - no WebView2 runtime, no .NET...
         traceback.print_exc()
         return False
