@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
-import QRCode from "qrcode";
 import {
   Image as ImageIcon,
   Pencil,
@@ -17,6 +16,7 @@ import Modal from "../components/Modal";
 import ProductQrCode from "../components/ProductQrCode";
 import { scanCode } from "../lib/scan";
 import { printLabels } from "../lib/print";
+import { barcodeDataUrl } from "../lib/barcode";
 import { stockBadge } from "../components/badges";
 import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
@@ -44,7 +44,7 @@ const MAX_IMAGE_BYTES = 700_000;
 type SoldFilter = "" | "jamais" | "top";
 
 export default function Products() {
-  const { isAdmin } = useAuth();
+  const { can } = useAuth();
   const { company } = useCompany();
   const version = useSyncVersion();
   const [sold, setSold] = useState<SoldFilter>("");
@@ -179,37 +179,28 @@ export default function Products() {
   }
 
   /** Price labels to stick on the shelves, one per article. */
-  async function printPrices(items: Product[]) {
+  function printPrices(items: Product[]) {
     if (items.length === 0) return;
     const shop = company?.name ?? "";
-    const labels = await Promise.all(
-      items.map(async (p) => {
-        const code = scanCode(p);
-        const qr = await QRCode.toDataURL(code, {
-          width: 160,
-          margin: 0,
-        }).catch(() => "");
-        return (
-          `<div class="label">` +
-          (company?.logo
-            ? `<img class="shop-logo" src="${company.logo}" alt="" />`
-            : "") +
-          `<p class="shop">${shop}</p>` +
-          `<p class="name">${p.name}</p>` +
-          `<p class="price">${formatXOF(p.sale_price)}</p>` +
-          (p.wholesale_price > 0
-            ? `<p class="wholesale">Gros : ${formatXOF(
-                p.wholesale_price
-              )}</p>`
-            : "") +
-          `<p class="code">${p.sku}${
-            p.barcode ? ` · ${p.barcode}` : ""
-          }</p>` +
-          (qr ? `<img class="qr" src="${qr}" alt="" />` : "") +
-          `</div>`
-        );
-      })
-    );
+    const labels = items.map((p) => {
+      const code = scanCode(p);
+      const bars = barcodeDataUrl(code, 60);
+      return (
+        `<div class="label">` +
+        (company?.logo
+          ? `<img class="shop-logo" src="${company.logo}" alt="" />`
+          : "") +
+        `<p class="shop">${shop}</p>` +
+        `<p class="name">${p.name}</p>` +
+        `<p class="price">${formatXOF(p.sale_price)}</p>` +
+        (p.wholesale_price > 0
+          ? `<p class="wholesale">Gros : ${formatXOF(p.wholesale_price)}</p>`
+          : "") +
+        (code === p.sku ? "" : `<p class="code">${p.sku}</p>`) +
+        (bars ? `<img class="qr" src="${bars}" alt="" />` : "") +
+        `</div>`
+      );
+    });
     printLabels(
       items.length === 1 ? `Étiquette ${items[0].sku}` : "Étiquettes de prix",
       labels.join("")
@@ -251,7 +242,7 @@ export default function Products() {
           <button className="btn-ghost" onClick={() => printPrices(filtered)}>
             <Printer size={16} /> Imprimer les prix
           </button>
-          {isAdmin && (
+          {can("produits_gerer") && (
             <button className="btn-primary" onClick={openCreate}>
               <Plus size={18} /> Nouveau produit
             </button>
@@ -344,7 +335,7 @@ export default function Products() {
                       >
                         <Tag size={16} />
                       </button>
-                      {isAdmin && (
+                      {can("produits_gerer") && (
                         <>
                           <button
                             onClick={() => openEdit(p)}

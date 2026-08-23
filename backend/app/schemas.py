@@ -635,3 +635,25 @@ class BackupFile(BaseModel):
 class BackupResult(BaseModel):
     name: str
     size: int
+
+
+# ---------- Access rights ----------
+class PermissionDefinition(BaseModel):
+    key: str
+    label: str
+    section: str
+
+
+class PermissionMatrix(BaseModel):
+    definitions: list[PermissionDefinition]
+    roles: list[str]
+    matrix: dict[str, dict[str, bool]]
+
+
+class PermissionUpdate(BaseModel):
+    matrix: dict[str, dict[str, bool]]
+
+
+class UserPermissions(BaseModel):
+    role: str
+    allowed: list[str]

@@ -3,7 +3,7 @@ import axios from "axios";
 import { PackageCheck, Printer } from "lucide-react";
 import api, { formatDateTime, formatXOF } from "../api/client";
 import type { Delivery, Order } from "../types";
-import { documentHeader, printSheet } from "../lib/print";
+import { documentBarcode, documentHeader, printSheet } from "../lib/print";
 import { useCompany } from "../context/CompanyContext";
 import { useSyncVersion } from "../context/SyncContext";
 
@@ -62,7 +62,8 @@ export default function Livraisons() {
           : "") +
         `</tbody></table>` +
         (delivery.note ? `<p class="meta">${delivery.note}</p>` : "") +
-        `<p class="meta">Signature du client :</p>`
+        `<p class="meta">Signature du client :</p>` +
+        documentBarcode(delivery.reference)
     );
   }
 

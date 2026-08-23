@@ -3,9 +3,10 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from ..auth import get_current_user, require_cashier
+from ..auth import get_current_user
 from ..database import get_db
 from ..models import CashSession, Notification, Sale, User
+from ..permissions import require_permission
 from ..schemas import (
     CashSessionClose,
     CashSessionDetail,
@@ -106,7 +107,7 @@ def list_sessions(
 def open_session(
     payload: CashSessionOpen,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_cashier),
+    current_user: User = Depends(require_permission("caisse")),
 ):
     existing = day_session(db, current_user)
     if existing:
@@ -145,7 +146,7 @@ def open_session(
 def close_session(
     payload: CashSessionClose,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_cashier),
+    current_user: User = Depends(require_permission("caisse")),
 ):
     session = current_session(db, current_user)
     if not session:

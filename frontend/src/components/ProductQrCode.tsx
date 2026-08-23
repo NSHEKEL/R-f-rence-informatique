@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
-import QRCode from "qrcode";
+import { useMemo } from "react";
 import { Download, Printer } from "lucide-react";
 import type { Product } from "../types";
 import { scanCode } from "../lib/scan";
+import { barcodeDataUrl } from "../lib/barcode";
 import { documentHeader, printDocument } from "../lib/print";
 import { useCompany } from "../context/CompanyContext";
 
@@ -11,42 +11,30 @@ interface ProductQrCodeProps {
   size?: number;
 }
 
+/** Sticker of the article: scannable bars with the code printed underneath. */
 export default function ProductQrCode({
   product,
-  size = 180,
+  size = 240,
 }: ProductQrCodeProps) {
   const { company } = useCompany();
-  const [dataUrl, setDataUrl] = useState("");
   const value = scanCode(product);
-
-  useEffect(() => {
-    let active = true;
-    QRCode.toDataURL(value, { width: size, margin: 1 })
-      .then((url) => {
-        if (active) setDataUrl(url);
-      })
-      .catch(() => setDataUrl(""));
-    return () => {
-      active = false;
-    };
-  }, [value, size]);
+  const dataUrl = useMemo(() => barcodeDataUrl(value, 70), [value]);
 
   function download() {
     const link = document.createElement("a");
     link.href = dataUrl;
-    link.download = `QR-${value}.png`;
+    link.download = `Code-${value}.png`;
     link.click();
   }
 
   function print() {
     printDocument(
-      `QR ${value}`,
+      `Code ${value}`,
       "@page { size: A4 portrait; margin: 0; }" +
         "body { font-family: sans-serif; text-align: center; margin: 0;" +
         " padding: 12mm; }" +
-        ".qr { width: 220px; height: 220px; }" +
+        ".code-img { width: 260px; }" +
         ".name { font-weight: 700; margin: 8px 0 0; }" +
-        ".code { margin: 2px 0 0; }" +
         ".doc-head { display: flex; align-items: center; gap: 12px;" +
         " text-align: left; border-bottom: 2px solid #0f172a;" +
         " padding-bottom: 8px; margin-bottom: 16px; }" +
@@ -54,9 +42,8 @@ export default function ProductQrCode({
         ".doc-head h1 { font-size: 16px; margin: 0; }" +
         ".doc-head .meta { margin: 0; font-size: 12px; color: #475569; }",
       documentHeader(company) +
-        `<img class="qr" src="${dataUrl}" alt="" />` +
-        `<p class="name">${product.name}</p>` +
-        `<p class="code">${value}</p>`
+        `<img class="code-img" src="${dataUrl}" alt="" />` +
+        `<p class="name">${product.name}</p>`
     );
   }
 
@@ -65,21 +52,20 @@ export default function ProductQrCode({
       {dataUrl ? (
         <img
           src={dataUrl}
-          alt={`QR ${value}`}
-          className="rounded-xl border border-slate-200 p-2"
-          style={{ width: size, height: size }}
+          alt={value}
+          className="rounded-xl border border-slate-200 bg-white p-2"
+          style={{ width: size }}
         />
       ) : (
         <div
           className="flex items-center justify-center rounded-xl bg-slate-50 text-xs text-slate-400"
-          style={{ width: size, height: size }}
+          style={{ width: size, height: 90 }}
         >
-          Génération...
+          Aucun code
         </div>
       )}
       <p className="text-center text-sm font-semibold text-slate-700">
         {product.name}
-        <span className="block text-xs font-normal text-slate-400">{value}</span>
       </p>
       <div className="flex gap-2">
         <button className="btn-ghost px-3 py-1.5 text-xs" onClick={download}>

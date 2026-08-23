@@ -2,14 +2,14 @@
 <resources>
     <string name="app_name">EasyGest</string>
     <string name="server_title">Poste serveur EasyGest</string>
-    <string name="server_help">Saisissez l\'adresse de l\'ordinateur qui héberge EasyGest, par exemple 192.168.1.20:8000. Les deux appareils doivent être sur le même réseau Wi-Fi.</string>
-    <string name="server_hint">192.168.1.20:8000</string>
+    <string name="server_help">Saisissez l\'adresse de votre serveur EasyGest.\n• Depuis n\'importe où : l\'adresse en ligne, par exemple easygest.mondomaine.com.\n• Sur place : l\'adresse de l\'ordinateur, par exemple 192.168.1.20:8000, les deux appareils sur le même Wi-Fi.</string>
+    <string name="server_hint">easygest.mondomaine.com</string>
     <string name="server_test">Tester et enregistrer</string>
     <string name="server_change">Changer de serveur</string>
     <string name="reload">Actualiser</string>
     <string name="testing">Connexion au serveur…</string>
     <string name="server_ok">Serveur trouvé</string>
-    <string name="server_ko">Serveur injoignable : vérifiez l\'adresse, le Wi-Fi et que EasyGest est lancé sur l\'ordinateur.</string>
+    <string name="server_ko">Serveur injoignable : vérifiez l\'adresse et votre connexion (en local, EasyGest doit être lancé sur l\'ordinateur et sur le même Wi-Fi).</string>
     <string name="options">⋮</string>
     <string name="options_hint">Options EasyGest</string>
     <string name="offline">Connexion perdue. Vérifiez le Wi-Fi puis actualisez.</string>

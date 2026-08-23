@@ -9,7 +9,7 @@ import { useSyncVersion } from "../context/SyncContext";
 const empty = { name: "", email: "", phone: "", address: "" };
 
 export default function Customers() {
-  const { isAdmin } = useAuth();
+  const { can } = useAuth();
   const version = useSyncVersion();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [query, setQuery] = useState("");
@@ -108,7 +108,7 @@ export default function Customers() {
                 >
                   <Pencil size={15} />
                 </button>
-                {isAdmin && (
+                {can("clients_gerer") && (
                   <button
                     onClick={() => remove(c)}
                     className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"

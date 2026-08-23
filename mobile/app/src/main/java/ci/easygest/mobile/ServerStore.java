@@ -28,21 +28,35 @@ final class ServerStore {
         prefs(context).edit().remove(KEY_URL).apply();
     }
 
-    /** Accepts "192.168.1.20", "192.168.1.20:8000" or a full URL. */
+    /**
+     * Accepts "192.168.1.20", "192.168.1.20:8000", "easygest.mondomaine.com"
+     * or a full URL. A bare IP is the computer on the local network (http, port
+     * 8000 by default); a bare domain name is the online server, reached over
+     * https on the standard port.
+     */
     static String normalise(String input) {
         String value = input == null ? "" : input.trim();
         if (value.isEmpty()) {
             return null;
         }
-        if (!value.startsWith("http://") && !value.startsWith("https://")) {
-            value = "http://" + value;
+        boolean hadScheme = value.startsWith("http://") || value.startsWith("https://");
+        if (!hadScheme) {
+            value = (isLocalAddress(value) ? "http://" : "https://") + value;
         }
         while (value.endsWith("/")) {
             value = value.substring(0, value.length() - 1);
         }
-        if (!value.substring("http://".length()).contains(":")) {
+        String host = value.substring(value.indexOf("://") + 3);
+        if (value.startsWith("http://") && !host.contains(":")) {
             value = value + ":8000";
         }
         return value;
+    }
+
+    /** An IP address or "localhost": the EasyGest computer on this network. */
+    private static boolean isLocalAddress(String value) {
+        String host = value.split("/")[0].split(":")[0];
+        return host.equalsIgnoreCase("localhost")
+                || host.matches("\\d{1,3}(\\.\\d{1,3}){3}");
     }
 }

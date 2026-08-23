@@ -6,7 +6,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import backup
-from ..auth import get_current_user, require_admin, require_cashier
 from ..database import get_db
 from ..models import (
     Notification,
@@ -16,6 +15,7 @@ from ..models import (
     StockMovement,
     User,
 )
+from ..permissions import require_permission
 from ..schemas import SaleCreate, SaleOut, SaleUpdate
 from ..sequences import next_reference
 from .cash import current_session
@@ -33,7 +33,10 @@ def _generate_reference(db: Session) -> str:
 
 
 @router.get("", response_model=list[SaleOut])
-def list_sales(db: Session = Depends(get_db), _: User = Depends(require_admin)):
+def list_sales(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission("ventes")),
+):
     return db.query(Sale).order_by(Sale.date.desc()).all()
 
 
@@ -41,7 +44,7 @@ def list_sales(db: Session = Depends(get_db), _: User = Depends(require_admin)):
 def get_sale_by_reference(
     reference: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_permission("ventes")),
 ):
     """Ticket lookup used by the returns screen."""
     sale = db.query(Sale).filter(Sale.reference == reference.strip()).first()
@@ -52,7 +55,9 @@ def get_sale_by_reference(
 
 @router.get("/{sale_id}", response_model=SaleOut)
 def get_sale(
-    sale_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)
+    sale_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission("ventes")),
 ):
     sale = db.query(Sale).get(sale_id)
     if not sale:
@@ -64,7 +69,7 @@ def get_sale(
 def create_sale(
     payload: SaleCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_cashier),
+    current_user: User = Depends(require_permission("vente_nouvelle")),
 ):
     if not payload.items:
         raise HTTPException(status_code=400, detail="Ajoutez au moins un article")
@@ -225,7 +230,7 @@ def _backup_after_sale(db: Session) -> None:
 def register_print(
     sale_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_permission("ventes")),
 ):
     """Count receipt prints so reprints can be flagged as duplicates."""
     sale = db.query(Sale).get(sale_id)
@@ -242,7 +247,7 @@ def update_sale(
     sale_id: int,
     payload: SaleUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_permission("ventes_supprimer")),
 ):
     """Update editable receipt metadata (customer, payment, note, footer).
 
@@ -269,7 +274,7 @@ def update_sale(
 def delete_sale(
     sale_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_permission("ventes_supprimer")),
 ):
     sale = db.query(Sale).get(sale_id)
     if not sale:

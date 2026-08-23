@@ -210,6 +210,13 @@ body {
   color: #334155;
   white-space: pre-line;
 }
+.receipt-barcode {
+  display: block;
+  margin: 0.9rem auto 0;
+  height: 3.2rem;
+  max-width: 100%;
+  object-fit: contain;
+}
 .receipt-footer {
   margin: 1rem 0 0;
   padding-top: 0.6rem;

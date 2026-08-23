@@ -11,7 +11,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
-from ..auth import require_admin
 from ..database import get_db
 from ..models import (
     Customer,
@@ -25,6 +24,7 @@ from ..models import (
     StockMovement,
     User,
 )
+from ..permissions import require_permission
 from ..schemas import (
     DeliveryCreate,
     DeliveryOut,
@@ -91,7 +91,7 @@ def _fill_items(db: Session, order: Order, payload) -> None:
 def list_orders(
     status: str | None = None,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_permission("commandes")),
 ):
     query = db.query(Order)
     if status:
@@ -101,7 +101,9 @@ def list_orders(
 
 @router.get("/{order_id}", response_model=OrderOut)
 def get_order(
-    order_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)
+    order_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission("commandes")),
 ):
     order = db.query(Order).get(order_id)
     if not order:
@@ -113,7 +115,7 @@ def get_order(
 def create_order(
     payload: OrderCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_permission("commandes_gerer")),
 ):
     if not payload.items:
         raise HTTPException(status_code=400, detail="Ajoutez au moins un article")
@@ -149,7 +151,7 @@ def update_order(
     order_id: int,
     payload: OrderUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_permission("commandes_gerer")),
 ):
     order = db.query(Order).get(order_id)
     if not order:
@@ -180,7 +182,9 @@ def update_order(
 
 @router.delete("/{order_id}", status_code=204)
 def delete_order(
-    order_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)
+    order_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission("commandes_gerer")),
 ):
     order = db.query(Order).get(order_id)
     if not order:
@@ -199,7 +203,7 @@ def deliver_order(
     order_id: int,
     payload: DeliveryCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_permission("commandes_gerer")),
 ):
     """Hand the goods over: stock out, delivery note and matching sale."""
     order = db.query(Order).get(order_id)
@@ -300,6 +304,7 @@ def deliver_order(
 
 @router.get("/deliveries/all", response_model=list[DeliveryOut])
 def list_deliveries(
-    db: Session = Depends(get_db), _: User = Depends(require_admin)
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission("livraisons")),
 ):
     return db.query(Delivery).order_by(Delivery.date.desc()).all()

@@ -24,6 +24,7 @@ import {
   PanelLeftOpen,
   ClipboardCheck,
   PackageCheck,
+  ShieldCheck,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
@@ -32,79 +33,97 @@ import NotificationBell from "./NotificationBell";
 import UndoRedo from "./UndoRedo";
 
 /**
- * Who sees the entry: the till side (admins and cashiers), the catalogue side
- * (admins and stock managers), or administrators only.
+ * Right the entry needs; "admin" marks the pages the administrator never
+ * shares (accounts, settings, access rights).
  */
-type Access = "sales" | "stock" | "admin";
-
 const navItems: {
   to: string;
   label: string;
   icon: typeof Wallet;
   end?: boolean;
-  access: Access;
+  access: string;
 }[] = [
   {
     to: "/",
     label: "Tableau de bord",
     icon: LayoutDashboard,
     end: true,
-    access: "admin",
+    access: "tableau_bord",
   },
-  { to: "/caisse", label: "Ma caisse", icon: Wallet, access: "sales" },
+  { to: "/caisse", label: "Ma caisse", icon: Wallet, access: "caisse" },
   {
     to: "/ventes/nouvelle",
     label: "Nouvelle vente",
     icon: Plus,
-    access: "sales",
+    access: "vente_nouvelle",
   },
   {
     to: "/ventes",
     label: "Ventes",
     icon: ShoppingCart,
     end: true,
-    access: "admin",
+    access: "ventes",
   },
-  { to: "/commandes", label: "Commandes", icon: ClipboardCheck, access: "admin" },
+  {
+    to: "/commandes",
+    label: "Commandes",
+    icon: ClipboardCheck,
+    access: "commandes",
+  },
   {
     to: "/livraisons",
     label: "Livraisons",
     icon: PackageCheck,
-    access: "admin",
+    access: "livraisons",
   },
-  { to: "/retours", label: "Retours & avoirs", icon: Undo2, access: "admin" },
-  { to: "/clients", label: "Clients", icon: Users, access: "admin" },
-  { to: "/produits", label: "Produits & Stock", icon: Package, access: "stock" },
+  { to: "/retours", label: "Retours & avoirs", icon: Undo2, access: "retours" },
+  { to: "/clients", label: "Clients", icon: Users, access: "clients" },
+  {
+    to: "/produits",
+    label: "Produits & Stock",
+    icon: Package,
+    access: "produits",
+  },
   {
     to: "/inventaire",
     label: "Inventaire",
     icon: ClipboardList,
-    access: "stock",
+    access: "inventaire",
   },
   {
     to: "/rapports",
     label: "Rapports",
     icon: BarChart3,
-    access: "admin",
+    access: "rapports",
   },
   {
     to: "/proformas",
     label: "Factures proforma",
     icon: FileText,
-    access: "admin",
+    access: "proformas",
   },
   {
     to: "/comptabilite",
     label: "Comptabilité",
     icon: Calculator,
+    access: "comptabilite",
+  },
+  {
+    to: "/fournisseurs",
+    label: "Fournisseurs",
+    icon: Truck,
+    access: "fournisseurs",
+  },
+  { to: "/categories", label: "Catégories", icon: Tags, access: "categories" },
+  { to: "/utilisateurs", label: "Utilisateurs", icon: UserCog, access: "admin" },
+  {
+    to: "/droits",
+    label: "Droits d'accès",
+    icon: ShieldCheck,
     access: "admin",
   },
-  { to: "/fournisseurs", label: "Fournisseurs", icon: Truck, access: "stock" },
-  { to: "/categories", label: "Catégories", icon: Tags, access: "stock" },
-  { to: "/utilisateurs", label: "Utilisateurs", icon: UserCog, access: "admin" },
   { to: "/parametres", label: "Paramètres", icon: Settings, access: "admin" },
-  // Only administrators see "À propos".
-  { to: "/a-propos", label: "À propos de nous", icon: Info, access: "admin" },
+  { to: "/a-propos", label: "À propos de nous", icon: Info, access: "apropos" },
 ];
 
 const COLLAPSED_KEY = "ri_sidebar_collapsed";
@@ -132,6 +151,7 @@ const pageTitles: Record<string, string> = {
   "/fournisseurs": "Fournisseurs",
   "/categories": "Catégories",
   "/utilisateurs": "Utilisateurs",
+  "/droits": "Droits d'accès",
   "/parametres": "Paramètres",
   "/a-propos": "À propos de nous",
 };
@@ -141,16 +161,13 @@ export default function Layout() {
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem(COLLAPSED_KEY) === "1"
   );
-  const { user, isAdmin, isStockManager, isSeller, logout } = useAuth();
+  const { user, isAdmin, can, logout } = useAuth();
   const { brandName, logoSrc } = useCompany();
   const location = useLocation();
   const navigate = useNavigate();
   const title = pageTitles[location.pathname] ?? brandName;
-  const visibleNavItems = navItems.filter(
-    (item) =>
-      (item.access === "sales" && (isAdmin || isSeller)) ||
-      (item.access === "stock" && isStockManager) ||
-      (item.access === "admin" && isAdmin)
+  const visibleNavItems = navItems.filter((item) =>
+    item.access === "admin" ? isAdmin : can(item.access)
   );
 
   useEffect(() => {

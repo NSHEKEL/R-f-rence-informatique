@@ -20,6 +20,16 @@ import Settings from "./pages/Settings";
 import APropos from "./pages/APropos";
 import Commandes from "./pages/Commandes";
 import Livraisons from "./pages/Livraisons";
+import Droits from "./pages/Droits";
+
+/** Home screens, in the order a user falls back to them. */
+const HOME_PAGES: [string, string][] = [
+  ["caisse", "/caisse"],
+  ["vente_nouvelle", "/ventes/nouvelle"],
+  ["produits", "/produits"],
+  ["inventaire", "/inventaire"],
+  ["ventes", "/ventes"],
+];
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -34,10 +44,10 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-/** Where a user without access lands: their own home screen. */
+/** Where a user without access lands: the first page they may open. */
 function useFallbackPath(): string {
-  const { isStockManager } = useAuth();
-  return isStockManager ? "/produits" : "/caisse";
+  const { can } = useAuth();
+  return HOME_PAGES.find(([right]) => can(right))?.[1] ?? "/a-propos";
 }
 
 function AdminRoute({ children }: { children: React.ReactNode }) {
@@ -47,25 +57,26 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-/** Catalogue, stock and purchases: administrators and stock managers. */
-function StockRoute({ children }: { children: React.ReactNode }) {
-  const { isStockManager } = useAuth();
-  if (!isStockManager) return <Navigate to="/caisse" replace />;
+/** Page the administrator can grant or revoke role by role. */
+function PermRoute({
+  right,
+  children,
+}: {
+  right: string;
+  children: React.ReactNode;
+}) {
+  const { can } = useAuth();
+  const fallback = useFallbackPath();
+  if (!can(right)) return <Navigate to={fallback} replace />;
   return <>{children}</>;
 }
 
-/** Till and sales: administrators and cashiers, never stock managers. */
-function SalesRoute({ children }: { children: React.ReactNode }) {
-  const { isAdmin, isSeller } = useAuth();
-  if (!isAdmin && !isSeller) return <Navigate to="/produits" replace />;
-  return <>{children}</>;
-}
-
-/** Sellers have no dashboard: the till is their home screen. */
+/** Users without the dashboard land on their own home screen. */
 function HomeRoute() {
-  const { isAdmin, isStockManager } = useAuth();
-  if (isAdmin) return <Dashboard />;
-  return <Navigate to={isStockManager ? "/produits" : "/caisse"} replace />;
+  const { can } = useAuth();
+  const fallback = useFallbackPath();
+  if (can("tableau_bord")) return <Dashboard />;
+  return <Navigate to={fallback} replace />;
 }
 
 export default function App() {
@@ -83,113 +94,113 @@ export default function App() {
         <Route
           path="/caisse"
           element={
-            <SalesRoute>
+            <PermRoute right="caisse">
               <Caisse />
-            </SalesRoute>
+            </PermRoute>
           }
         />
         <Route
           path="/ventes"
           element={
-            <AdminRoute>
+            <PermRoute right="ventes">
               <Sales />
-            </AdminRoute>
+            </PermRoute>
           }
         />
         <Route
           path="/ventes/nouvelle"
           element={
-            <SalesRoute>
+            <PermRoute right="vente_nouvelle">
               <NouvelleVente />
-            </SalesRoute>
+            </PermRoute>
           }
         />
         <Route
           path="/retours"
           element={
-            <AdminRoute>
+            <PermRoute right="retours">
               <Returns />
-            </AdminRoute>
+            </PermRoute>
           }
         />
         <Route
           path="/clients"
           element={
-            <AdminRoute>
+            <PermRoute right="clients">
               <Customers />
-            </AdminRoute>
+            </PermRoute>
           }
         />
         <Route
           path="/commandes"
           element={
-            <AdminRoute>
+            <PermRoute right="commandes">
               <Commandes />
-            </AdminRoute>
+            </PermRoute>
           }
         />
         <Route
           path="/livraisons"
           element={
-            <AdminRoute>
+            <PermRoute right="livraisons">
               <Livraisons />
-            </AdminRoute>
+            </PermRoute>
           }
         />
         <Route
           path="/produits"
           element={
-            <StockRoute>
+            <PermRoute right="produits">
               <Products />
-            </StockRoute>
+            </PermRoute>
           }
         />
         <Route
           path="/inventaire"
           element={
-            <StockRoute>
+            <PermRoute right="inventaire">
               <Inventaire />
-            </StockRoute>
+            </PermRoute>
           }
         />
         <Route
           path="/rapports"
           element={
-            <AdminRoute>
+            <PermRoute right="rapports">
               <Rapports />
-            </AdminRoute>
+            </PermRoute>
           }
         />
         <Route
           path="/proformas"
           element={
-            <AdminRoute>
+            <PermRoute right="proformas">
               <Proformas />
-            </AdminRoute>
+            </PermRoute>
           }
         />
         <Route
           path="/comptabilite"
           element={
-            <AdminRoute>
+            <PermRoute right="comptabilite">
               <Comptabilite />
-            </AdminRoute>
+            </PermRoute>
           }
         />
         <Route
           path="/fournisseurs"
           element={
-            <StockRoute>
+            <PermRoute right="fournisseurs">
               <Suppliers />
-            </StockRoute>
+            </PermRoute>
           }
         />
         <Route
           path="/categories"
           element={
-            <StockRoute>
+            <PermRoute right="categories">
               <Categories />
-            </StockRoute>
+            </PermRoute>
           }
         />
         <Route
@@ -208,13 +219,20 @@ export default function App() {
             </AdminRoute>
           }
         />
-        {/* "À propos" is reserved for administrators. */}
+        <Route
+          path="/droits"
+          element={
+            <AdminRoute>
+              <Droits />
+            </AdminRoute>
+          }
+        />
         <Route
           path="/a-propos"
           element={
-            <AdminRoute>
+            <PermRoute right="apropos">
               <APropos />
-            </AdminRoute>
+            </PermRoute>
           }
         />
       </Route>

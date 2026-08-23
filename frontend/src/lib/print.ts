@@ -1,4 +1,5 @@
 import type { CompanySettings, ReceiptFormat } from "../types";
+import { barcodeDataUrl } from "./barcode";
 
 const PAGE_STYLE_ID = "receipt-page-style";
 const PRINT_ROOT_ID = "receipt-print-root";
@@ -56,6 +57,7 @@ const SHEET_STYLE = `
   th { background: #f1f5f9; }
   td.num, th.num { text-align: right; }
   td.blank { width: 22%; height: 22px; }
+  .doc-barcode { display: block; margin: 16px auto 0; height: 18mm; }
   /* No page margin: the printer would otherwise stamp the address, the date
      and the page number in the header and the footer of the sheet. */
   @page { size: A4 portrait; margin: 0; }
@@ -108,6 +110,15 @@ export function documentHeader(company: CompanySettings | null): string {
   );
 }
 
+/**
+ * Scannable barcode of a document number, printed at the foot of the sheet so
+ * an order or a delivery note can be pulled up with the shop's scanner.
+ */
+export function documentBarcode(reference: string): string {
+  const image = barcodeDataUrl(reference);
+  return image ? `<img class="doc-barcode" src="${image}" alt="" />` : "";
+}
+
 /** Prints an A4 sheet (report, inventory count sheet, delivery note). */
 export function printSheet(title: string, bodyHtml: string): void {
   printDocument(title, SHEET_STYLE, bodyHtml);
@@ -129,7 +140,8 @@ const LABEL_STYLE = `
   .price { font-size: 20px; font-weight: 800; margin: 0; }
   .wholesale { font-size: 10px; color: #334155; margin: 1mm 0 0; }
   .code { font-size: 9px; color: #64748b; margin: 1mm 0 0; }
-  .qr { width: 18mm; height: 18mm; margin: 1mm auto 0; display: block; }
+  .qr { width: 40mm; height: 13mm; margin: 1mm auto 0; display: block;
+        object-fit: contain; }
 `;
 
 /** Price labels, laid out as a cuttable grid on A4. */

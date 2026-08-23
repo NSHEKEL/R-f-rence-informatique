@@ -6,9 +6,9 @@ from datetime import datetime, time, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from ..auth import require_admin
 from ..database import get_db
 from ..models import Product, Sale, SaleReturn, User
+from ..permissions import require_permission
 from ..schemas import ReportRow, SalesReport
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
@@ -55,7 +55,7 @@ def sales_report(
     start: str | None = None,
     end: str | None = None,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_permission("rapports")),
 ):
     period_start, period_end = _parse_range(start, end)
 

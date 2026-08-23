@@ -4,9 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ..auth import get_current_user, require_admin, require_stock_manager
+from ..auth import get_current_user
 from ..database import get_db
 from ..models import Product, Sale, SaleItem, User
+from ..permissions import require_permission
 from ..schemas import ProductCreate, ProductOut, ProductUpdate
 
 router = APIRouter(prefix="/api/products", tags=["products"])
@@ -55,7 +56,7 @@ def _check_barcode(db: Session, payload, product_id: int | None) -> None:
 
 @router.get("/barcode/next")
 def next_barcode(
-    db: Session = Depends(get_db), _: User = Depends(require_stock_manager)
+    db: Session = Depends(get_db), _: User = Depends(require_permission("produits"))
 ):
     """A free EAN-13 for an article that has no printed barcode."""
     return {"barcode": _generate_barcode(db)}
@@ -171,7 +172,7 @@ def get_product(
 def create_product(
     payload: ProductCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_permission("produits_gerer")),
 ):
     """The catalogue is the administrator's: the stock manager only reads it."""
     if db.query(Product).filter(Product.sku == payload.sku).first():
@@ -189,7 +190,7 @@ def update_product(
     product_id: int,
     payload: ProductUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_permission("produits_gerer")),
 ):
     product = db.query(Product).get(product_id)
     if not product:
@@ -209,7 +210,7 @@ def update_product(
 def delete_product(
     product_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_permission("produits_gerer")),
 ):
     product = db.query(Product).get(product_id)
     if not product:

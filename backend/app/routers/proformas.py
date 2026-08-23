@@ -5,9 +5,9 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from ..auth import require_admin
 from ..database import get_db
 from ..models import Product, Proforma, ProformaItem, User
+from ..permissions import require_permission
 from ..schemas import ProformaCreate, ProformaOut
 from ..sequences import next_reference
 
@@ -22,7 +22,8 @@ def _generate_reference(db: Session) -> str:
 
 @router.get("", response_model=list[ProformaOut])
 def list_proformas(
-    db: Session = Depends(get_db), _: User = Depends(require_admin)
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission("proformas")),
 ):
     return db.query(Proforma).order_by(Proforma.date.desc()).all()
 
@@ -31,7 +32,7 @@ def list_proformas(
 def get_proforma(
     proforma_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_permission("proformas")),
 ):
     proforma = db.query(Proforma).get(proforma_id)
     if not proforma:
@@ -43,7 +44,7 @@ def get_proforma(
 def create_proforma(
     payload: ProformaCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_permission("proformas")),
 ):
     if not payload.items:
         raise HTTPException(status_code=400, detail="Ajoutez au moins une ligne")
@@ -95,7 +96,7 @@ def create_proforma(
 def delete_proforma(
     proforma_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_permission("proformas")),
 ):
     proforma = db.query(Proforma).get(proforma_id)
     if not proforma:

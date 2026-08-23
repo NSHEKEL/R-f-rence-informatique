@@ -8,7 +8,7 @@ import { useAuth } from "../context/AuthContext";
 const empty = { name: "", contact: "", email: "", phone: "", address: "" };
 
 export default function Suppliers() {
-  const { isAdmin } = useAuth();
+  const { can } = useAuth();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -113,7 +113,7 @@ export default function Suppliers() {
                   <td className="px-5 py-3.5 text-slate-600">{s.phone || "—"}</td>
                   <td className="px-5 py-3.5">
                     <div className="flex justify-end gap-1">
-                      {isAdmin ? (
+                      {can("fournisseurs_gerer") ? (
                         <>
                           <button
                             onClick={() => openEdit(s)}

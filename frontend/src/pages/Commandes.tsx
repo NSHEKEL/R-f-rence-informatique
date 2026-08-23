@@ -11,7 +11,7 @@ import {
 import api, { formatDate, formatDateTime, formatXOF } from "../api/client";
 import type { Customer, Order, Product } from "../types";
 import Modal from "../components/Modal";
-import { documentHeader, printSheet } from "../lib/print";
+import { documentBarcode, documentHeader, printSheet } from "../lib/print";
 import { useCompany } from "../context/CompanyContext";
 import { useSyncVersion } from "../context/SyncContext";
 
@@ -218,7 +218,8 @@ export default function Commandes() {
         `<th class="num">${formatXOF(order.balance)}</th></tr></tbody></table>` +
         (order.note ? `<p class="meta">${order.note}</p>` : "") +
         `<p class="meta">Le stock est décrémenté au moment de la ` +
-        `livraison, pas à la commande.</p>`
+        `livraison, pas à la commande.</p>` +
+        documentBarcode(order.reference)
     );
   }
 

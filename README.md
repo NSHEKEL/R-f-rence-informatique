@@ -141,6 +141,56 @@ Les postes indiquent l'adresse du serveur sur l'écran de connexion
 rafraîchissent automatiquement quand un autre poste enregistre une vente, un
 retour ou une ouverture de caisse.
 
+### Accès depuis n'importe où (téléphone Android hors du magasin)
+
+Le Wi-Fi du magasin ne suffit que sur place. Pour atteindre la base depuis
+n'importe où, l'API EasyGest est hébergée en ligne devant une base PostgreSQL
+hébergée (Neon, Supabase, VPS…) ; le téléphone et les postes s'y connectent en
+HTTPS. Le PC du magasin n'est plus exposé à Internet.
+
+1. Créer la base hébergée et récupérer son `DATABASE_URL`.
+2. Transférer les données déjà saisies sur le PC (à faire une seule fois,
+   application fermée) :
+
+   ```bash
+   cd backend
+   python transfer_to_postgres.py "postgresql+psycopg://user:mdp@hote/db"
+   ```
+
+3. Déployer le backend chez un hébergeur qui fournit un domaine HTTPS, avec au
+   minimum :
+
+   ```env
+   DATABASE_URL=postgresql+psycopg://user:mdp@hote/db
+   SECRET_KEY=une-longue-chaine-aleatoire
+   ALLOWED_ORIGINS=https://easygest.mondomaine.com
+   ```
+
+4. Sur le PC du magasin, mettre le même `DATABASE_URL` dans le `.env` : les
+   postes et le serveur en ligne travaillent alors sur la même base.
+5. Dans l'application Android, saisir le domaine (`easygest.mondomaine.com`) :
+   sans `http://` ni port, l'adresse est traitée comme un serveur en ligne et
+   contactée en HTTPS ; une adresse IP reste comprise comme le PC du réseau
+   local.
+
+Sans domaine HTTPS, ne pas ouvrir le port 8000 du PC sur Internet : les
+identifiants circuleraient en clair.
+
+## Droits d'accès des vendeurs et gestionnaires de stock
+
+*Menu → Droits d'accès* (administrateur uniquement) : pour chaque rôle
+(vendeur/caissier, gestionnaire de stock), l'administrateur coche les pages
+autorisées (caisse, ventes, commandes, livraisons, retours, clients, produits,
+inventaire, rapports, proformas, comptabilité, fournisseurs, catégories) et les
+actions sensibles (créer/modifier/supprimer produits, catégories, fournisseurs,
+clients, commandes, supprimer une vente, appliquer un inventaire).
+
+Les droits sont enregistrés en base (`role_permissions`) et vérifiés par l'API :
+un rôle sans le droit reçoit `403`, même en appelant l'API directement. Sans
+configuration, chaque rôle garde ses droits d'origine. L'administrateur conserve
+tous les droits ; Utilisateurs, Paramètres et la page des droits lui restent
+réservés.
+
 ## Mise à jour à distance des postes clients
 
 Chaque installation interroge les *releases* GitHub du dépôt et peut se mettre

@@ -2,6 +2,7 @@ import { createPortal } from "react-dom";
 import { formatDateTime, formatMoney } from "../api/client";
 import type { CompanySettings, ReceiptFormat, Sale } from "../types";
 import { vatBreakdown } from "../lib/vat";
+import { barcodeDataUrl } from "../lib/barcode";
 
 interface ReceiptProps {
   sale: Sale;
@@ -19,6 +20,7 @@ function ReceiptBody({
   const currency = company?.currency || "FCFA";
   const money = (v: number) => formatMoney(v, currency);
   const vat = vatBreakdown(sale.total, company);
+  const barcode = barcodeDataUrl(sale.reference);
   const footer =
     sale.receipt_footer ||
     company?.receipt_footer ||
@@ -111,6 +113,10 @@ function ReceiptBody({
       </div>
 
       {sale.note && <p className="receipt-note">{sale.note}</p>}
+
+      {barcode && (
+        <img src={barcode} alt={sale.reference} className="receipt-barcode" />
+      )}
 
       <p className="receipt-footer">{footer}</p>
     </>

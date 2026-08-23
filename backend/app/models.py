@@ -471,3 +471,14 @@ class Notification(Base):
     sale_id = Column(Integer, ForeignKey("sales.id"), nullable=True)
     is_read = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=utcnow)
+
+
+class RolePermission(Base):
+    """Right granted by the administrator to a role (seller, stock manager)."""
+
+    __tablename__ = "role_permissions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    role = Column(String, index=True, nullable=False)
+    permission = Column(String, index=True, nullable=False)
+    allowed = Column(Boolean, default=False, nullable=False)

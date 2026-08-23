@@ -8,7 +8,7 @@ import { useAuth } from "../context/AuthContext";
 const empty = { name: "", description: "" };
 
 export default function Categories() {
-  const { isAdmin } = useAuth();
+  const { can } = useAuth();
   const [categories, setCategories] = useState<Category[]>([]);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Category | null>(null);
@@ -57,7 +57,7 @@ export default function Categories() {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-end">
-        {isAdmin && (
+        {can("categories_gerer") && (
           <button className="btn-primary" onClick={openCreate}>
             <Plus size={18} /> Nouvelle catégorie
           </button>
@@ -71,7 +71,7 @@ export default function Categories() {
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
                 <Tags size={20} />
               </div>
-              {isAdmin && (
+              {can("categories_gerer") && (
                 <div className="flex gap-1">
                   <button
                     onClick={() => openEdit(c)}

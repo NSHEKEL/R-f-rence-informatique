@@ -31,7 +31,7 @@ import { useSyncVersion } from "../context/SyncContext";
 const PAYMENTS = ["Espèces", "Mobile Money", "Carte bancaire", "Virement"];
 
 export default function Sales() {
-  const { isAdmin } = useAuth();
+  const { can } = useAuth();
   const { company } = useCompany();
   const version = useSyncVersion();
   const navigate = useNavigate();
@@ -292,7 +292,7 @@ export default function Sales() {
                       >
                         <ReceiptIcon size={16} />
                       </button>
-                      {isAdmin && (
+                      {can("ventes_supprimer") && (
                         <button
                           onClick={() => remove(s)}
                           className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"

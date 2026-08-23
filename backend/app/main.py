@@ -28,6 +28,7 @@ from .routers import (
     inventory,
     notifications,
     orders,
+    permissions,
     products,
     proformas,
     reports,
@@ -78,6 +79,7 @@ app.include_router(sales.router)
 app.include_router(settings.router)
 app.include_router(users.router)
 app.include_router(notifications.router)
+app.include_router(permissions.router)
 app.include_router(cash.router)
 app.include_router(inventory.router)
 app.include_router(accounting.router)

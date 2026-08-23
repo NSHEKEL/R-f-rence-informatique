@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from ..auth import get_current_user, require_admin, require_stock_manager
+from ..auth import get_current_user
 from ..database import get_db
 from ..models import Product, Supplier, User
+from ..permissions import require_permission
 from ..schemas import SupplierCreate, SupplierOut
 
 router = APIRouter(prefix="/api/suppliers", tags=["suppliers"])
@@ -18,7 +19,7 @@ def list_suppliers(db: Session = Depends(get_db), _: User = Depends(get_current_
 def create_supplier(
     payload: SupplierCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_stock_manager),
+    _: User = Depends(require_permission("fournisseurs_gerer")),
 ):
     supplier = Supplier(**payload.model_dump())
     db.add(supplier)
@@ -32,7 +33,7 @@ def update_supplier(
     supplier_id: int,
     payload: SupplierCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_permission("fournisseurs_gerer")),
 ):
     supplier = db.query(Supplier).get(supplier_id)
     if not supplier:
@@ -48,7 +49,7 @@ def update_supplier(
 def delete_supplier(
     supplier_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_permission("fournisseurs_gerer")),
 ):
     supplier = db.query(Supplier).get(supplier_id)
     if not supplier:
