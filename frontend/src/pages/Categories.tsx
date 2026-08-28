@@ -3,6 +3,8 @@ import { Pencil, Plus, Tags, Trash2 } from "lucide-react";
 import api from "../api/client";
 import type { Category } from "../types";
 import Modal from "../components/Modal";
+import BulkDelete, { SelectBox } from "../components/BulkDelete";
+import { useSelection } from "../lib/selection";
 import { useAuth } from "../context/AuthContext";
 
 const empty = { name: "", description: "" };
@@ -14,6 +16,7 @@ export default function Categories() {
   const [editing, setEditing] = useState<Category | null>(null);
   const [form, setForm] = useState({ ...empty });
   const [saving, setSaving] = useState(false);
+  const selection = useSelection(categories);
 
   async function load() {
     const res = await api.get<Category[]>("/categories");
@@ -56,13 +59,33 @@ export default function Categories() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-between gap-3">
+        {can("categories_gerer") && categories.length > 0 && (
+          <label className="flex items-center gap-2 text-sm text-slate-500">
+            <SelectBox
+              checked={selection.allSelected}
+              onChange={selection.toggleAll}
+              label="Tout sélectionner"
+            />
+            Tout sélectionner
+          </label>
+        )}
         {can("categories_gerer") && (
-          <button className="btn-primary" onClick={openCreate}>
+          <button className="btn-primary ml-auto" onClick={openCreate}>
             <Plus size={18} /> Nouvelle catégorie
           </button>
         )}
       </div>
+
+      {can("categories_gerer") && (
+        <BulkDelete
+          ids={selection.ids}
+          path="/categories"
+          noun={["catégorie", "catégories"]}
+          onDone={load}
+          onClear={selection.clear}
+        />
+      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {categories.map((c) => (
@@ -72,7 +95,12 @@ export default function Categories() {
                 <Tags size={20} />
               </div>
               {can("categories_gerer") && (
-                <div className="flex gap-1">
+                <div className="flex items-center gap-1">
+                  <SelectBox
+                    checked={selection.isSelected(c.id)}
+                    onChange={() => selection.toggle(c.id)}
+                    label={`Sélectionner ${c.name}`}
+                  />
                   <button
                     onClick={() => openEdit(c)}
                     aria-label="Modifier la catégorie"

@@ -473,6 +473,53 @@ class Notification(Base):
     created_at = Column(DateTime, default=utcnow)
 
 
+class Purchase(Base):
+    """Supply order sent to a supplier: goods bought to refill the stock."""
+
+    __tablename__ = "purchases"
+
+    id = Column(Integer, primary_key=True, index=True)
+    reference = Column(String, unique=True, index=True, nullable=False)
+    supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=True)
+    supplier_name = Column(String, default="")
+    date = Column(DateTime, default=utcnow)
+    expected_date = Column(DateTime, nullable=True)
+    received_at = Column(DateTime, nullable=True)
+    # En attente, Reçu partiellement, Reçu, Annulé
+    status = Column(String, default="En attente", index=True)
+    total = Column(Float, default=0)
+    paid = Column(Float, default=0)  # already settled with the supplier
+    invoice_number = Column(String, default="")  # supplier invoice
+    note = Column(Text, default="")
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    supplier = relationship("Supplier")
+    created_by = relationship("User")
+    items = relationship(
+        "PurchaseItem", back_populates="purchase", cascade="all, delete-orphan"
+    )
+
+    @property
+    def balance(self) -> float:
+        return max(self.total - (self.paid or 0), 0)
+
+
+class PurchaseItem(Base):
+    __tablename__ = "purchase_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    purchase_id = Column(Integer, ForeignKey("purchases.id"), nullable=False)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
+    product_name = Column(String, default="")
+    quantity = Column(Integer, default=1)  # ordered
+    received_quantity = Column(Integer, default=0)  # already in stock
+    unit_cost = Column(Float, default=0)  # purchase price
+    subtotal = Column(Float, default=0)
+
+    purchase = relationship("Purchase", back_populates="items")
+    product = relationship("Product")
+
+
 class RolePermission(Base):
     """Right granted by the administrator to a role (seller, stock manager)."""
 

@@ -70,6 +70,30 @@ api.interceptors.response.use(
 
 export default api;
 
+/**
+ * Calls served by the computer in front of the user, whatever central server
+ * holds the data: updating EasyGest replaces the program installed here.
+ */
+export const localApi = axios.create();
+
+/**
+ * Same origin inside the EasyGest window (it is served by this computer);
+ * otherwise the loopback address, so a page opened from the central server
+ * still updates the workstation in front of the user.
+ */
+export function localBaseUrl(): string {
+  const { hostname, origin, port } = window.location;
+  if (["127.0.0.1", "::1", "localhost"].includes(hostname)) return `${origin}/api`;
+  return `http://127.0.0.1:${port || DEFAULT_PORT}/api`;
+}
+
+localApi.interceptors.request.use((config) => {
+  config.baseURL = localBaseUrl();
+  const token = localStorage.getItem("ri_token");
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
 export function formatMoney(value: number, currency = "FCFA"): string {
   return (
     new Intl.NumberFormat("fr-FR", {

@@ -11,7 +11,10 @@ import {
 import api, { formatDate, formatDateTime, formatXOF } from "../api/client";
 import type { Customer, Order, Product } from "../types";
 import Modal from "../components/Modal";
+import BulkDelete, { SelectBox } from "../components/BulkDelete";
+import { useSelection } from "../lib/selection";
 import { documentBarcode, documentHeader, printSheet } from "../lib/print";
+import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSyncVersion } from "../context/SyncContext";
 
@@ -31,6 +34,7 @@ const statusStyles: Record<string, string> = {
 
 export default function Commandes() {
   const version = useSyncVersion();
+  const { can } = useAuth();
   const { company } = useCompany();
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -80,6 +84,8 @@ export default function Commandes() {
     () => lines.reduce((sum, l) => sum + l.unit_price * l.quantity, 0),
     [lines]
   );
+
+  const selection = useSelection(orders);
 
   function updateLine(index: number, patch: Partial<DraftLine>) {
     setLines((prev) =>
@@ -241,10 +247,29 @@ export default function Commandes() {
         </div>
       )}
 
+      {can("commandes_gerer") && (
+        <BulkDelete
+          ids={selection.ids}
+          path="/orders"
+          noun={["commande", "commandes"]}
+          onDone={load}
+          onClear={selection.clear}
+        />
+      )}
+
       <div className="card overflow-hidden">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-100 bg-slate-50/60 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+              {can("commandes_gerer") && (
+                <th className="px-4 py-3">
+                  <SelectBox
+                    checked={selection.allSelected}
+                    onChange={selection.toggleAll}
+                    label="Tout sélectionner"
+                  />
+                </th>
+              )}
               <th className="px-5 py-3">Référence</th>
               <th className="px-5 py-3">Date et heure</th>
               <th className="px-5 py-3">Client</th>
@@ -257,6 +282,15 @@ export default function Commandes() {
           <tbody className="divide-y divide-slate-100">
             {orders.map((o) => (
               <tr key={o.id} className="hover:bg-slate-50/60">
+                {can("commandes_gerer") && (
+                  <td className="px-4 py-3.5">
+                    <SelectBox
+                      checked={selection.isSelected(o.id)}
+                      onChange={() => selection.toggle(o.id)}
+                      label={`Sélectionner ${o.reference}`}
+                    />
+                  </td>
+                )}
                 <td className="px-5 py-3.5 font-semibold text-slate-800">
                   <span className="flex items-center gap-2">
                     <ClipboardCheck size={15} className="text-brand-600" />
@@ -320,7 +354,7 @@ export default function Commandes() {
             {orders.length === 0 && (
               <tr>
                 <td
-                  colSpan={7}
+                  colSpan={can("commandes_gerer") ? 8 : 7}
                   className="px-5 py-10 text-center text-slate-400"
                 >
                   Aucune commande.

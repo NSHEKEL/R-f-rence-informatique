@@ -20,6 +20,8 @@ import type {
 } from "../types";
 import CashTicket from "../components/CashTicket";
 import Modal from "../components/Modal";
+import BulkDelete, { SelectBox } from "../components/BulkDelete";
+import { useSelection } from "../lib/selection";
 import Receipt from "../components/Receipt";
 import { printReceipt } from "../lib/print";
 import { statusBadge } from "../components/badges";
@@ -91,6 +93,8 @@ export default function Sales() {
         (s.customer?.name ?? "").toLowerCase().includes(q)
     );
   }, [sales, query]);
+
+  const selection = useSelection(filtered);
 
   async function remove(s: Sale) {
     if (!confirm(`Supprimer la vente ${s.reference} ? Le stock sera réajusté.`))
@@ -222,11 +226,30 @@ export default function Sales() {
         </div>
       )}
 
+      {can("ventes_supprimer") && (
+        <BulkDelete
+          ids={selection.ids}
+          path="/sales"
+          noun={["vente", "ventes"]}
+          onDone={load}
+          onClear={selection.clear}
+        />
+      )}
+
       <div className="card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50/60 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                {can("ventes_supprimer") && (
+                  <th className="px-4 py-3">
+                    <SelectBox
+                      checked={selection.allSelected}
+                      onChange={selection.toggleAll}
+                      label="Tout sélectionner"
+                    />
+                  </th>
+                )}
                 <th className="px-5 py-3">Référence</th>
                 <th className="px-5 py-3">Client</th>
                 <th className="px-5 py-3">Date</th>
@@ -240,6 +263,15 @@ export default function Sales() {
             <tbody className="divide-y divide-slate-100">
               {filtered.map((s) => (
                 <tr key={s.id} className="hover:bg-slate-50/60">
+                  {can("ventes_supprimer") && (
+                    <td className="px-4 py-3.5">
+                      <SelectBox
+                        checked={selection.isSelected(s.id)}
+                        onChange={() => selection.toggle(s.id)}
+                        label={`Sélectionner ${s.reference}`}
+                      />
+                    </td>
+                  )}
                   <td className="px-5 py-3.5 font-semibold text-slate-800">
                     {s.reference}
                   </td>
@@ -307,7 +339,7 @@ export default function Sales() {
               {filtered.length === 0 && (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={can("ventes_supprimer") ? 9 : 8}
                     className="px-5 py-10 text-center text-slate-400"
                   >
                     Aucune vente trouvée.

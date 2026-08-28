@@ -3,6 +3,8 @@ import { Mail, Pencil, Phone, Plus, Search, Trash2 } from "lucide-react";
 import api from "../api/client";
 import type { Customer } from "../types";
 import Modal from "../components/Modal";
+import BulkDelete, { SelectBox } from "../components/BulkDelete";
+import { useSelection } from "../lib/selection";
 import { useAuth } from "../context/AuthContext";
 import { useSyncVersion } from "../context/SyncContext";
 
@@ -34,6 +36,8 @@ export default function Customers() {
         c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q)
     );
   }, [customers, query]);
+
+  const selection = useSelection(filtered);
 
   function openCreate() {
     setEditing(null);
@@ -80,10 +84,32 @@ export default function Customers() {
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
-        <button className="btn-primary" onClick={openCreate}>
-          <Plus size={18} /> Nouveau client
-        </button>
+        <div className="flex items-center gap-3">
+          {can("clients_gerer") && filtered.length > 0 && (
+            <label className="flex items-center gap-2 text-sm text-slate-500">
+              <SelectBox
+                checked={selection.allSelected}
+                onChange={selection.toggleAll}
+                label="Tout sélectionner"
+              />
+              Tout sélectionner
+            </label>
+          )}
+          <button className="btn-primary" onClick={openCreate}>
+            <Plus size={18} /> Nouveau client
+          </button>
+        </div>
       </div>
+
+      {can("clients_gerer") && (
+        <BulkDelete
+          ids={selection.ids}
+          path="/customers"
+          noun={["client", "clients"]}
+          onDone={load}
+          onClear={selection.clear}
+        />
+      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {filtered.map((c) => (
@@ -101,7 +127,14 @@ export default function Customers() {
                 <p className="truncate font-semibold text-slate-900">{c.name}</p>
                 <p className="truncate text-xs text-slate-400">{c.address || "—"}</p>
               </div>
-              <div className="flex gap-1">
+              <div className="flex items-center gap-1">
+                {can("clients_gerer") && (
+                  <SelectBox
+                    checked={selection.isSelected(c.id)}
+                    onChange={() => selection.toggle(c.id)}
+                    label={`Sélectionner ${c.name}`}
+                  />
+                )}
                 <button
                   onClick={() => openEdit(c)}
                   className="rounded-lg p-1.5 text-slate-400 hover:bg-brand-50 hover:text-brand-600"

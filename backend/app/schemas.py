@@ -657,3 +657,83 @@ class PermissionUpdate(BaseModel):
 class UserPermissions(BaseModel):
     role: str
     allowed: list[str]
+
+
+# ---------- Supply orders (approvisionnement) ----------
+class PurchaseItemCreate(BaseModel):
+    product_id: int
+    quantity: int
+    unit_cost: Optional[float] = None
+
+
+class PurchaseCreate(BaseModel):
+    supplier_id: Optional[int] = None
+    supplier_name: str = ""
+    expected_date: Optional[datetime] = None
+    paid: float = 0
+    invoice_number: str = ""
+    note: str = ""
+    items: List[PurchaseItemCreate] = []
+
+
+class PurchaseUpdate(BaseModel):
+    supplier_id: Optional[int] = None
+    supplier_name: Optional[str] = None
+    expected_date: Optional[datetime] = None
+    paid: Optional[float] = None
+    invoice_number: Optional[str] = None
+    note: Optional[str] = None
+    status: Optional[str] = None
+    items: Optional[List[PurchaseItemCreate]] = None
+
+
+class PurchaseReceiveItem(BaseModel):
+    item_id: int
+    quantity: int
+
+
+class PurchaseReceive(BaseModel):
+    """Quantities actually delivered; empty means "everything ordered"."""
+
+    items: List[PurchaseReceiveItem] = []
+    update_cost: bool = True  # refresh the product purchase price
+    note: str = ""
+
+
+class PurchaseItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    product_id: Optional[int] = None
+    product_name: str
+    quantity: int
+    received_quantity: int = 0
+    unit_cost: float
+    subtotal: float
+
+
+class PurchaseOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    reference: str
+    supplier_id: Optional[int] = None
+    supplier_name: str = ""
+    date: datetime
+    expected_date: Optional[datetime] = None
+    received_at: Optional[datetime] = None
+    status: str
+    total: float
+    paid: float = 0
+    balance: float = 0
+    invoice_number: str = ""
+    note: str = ""
+    items: List[PurchaseItemOut] = []
+    created_by: Optional[UserOut] = None
+
+
+class PurchaseSummary(BaseModel):
+    """Figures shown on top of the supply page."""
+
+    count: int = 0
+    pending: int = 0
+    total: float = 0
+    unpaid: float = 0

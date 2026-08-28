@@ -18,6 +18,7 @@ import Categories from "./pages/Categories";
 import Users from "./pages/Users";
 import Settings from "./pages/Settings";
 import APropos from "./pages/APropos";
+import Approvisionnements from "./pages/Approvisionnements";
 import Commandes from "./pages/Commandes";
 import Livraisons from "./pages/Livraisons";
 import Droits from "./pages/Droits";
@@ -136,6 +137,14 @@ export default function App() {
           element={
             <PermRoute right="commandes">
               <Commandes />
+            </PermRoute>
+          }
+        />
+        <Route
+          path="/approvisionnements"
+          element={
+            <PermRoute right="approvisionnements">
+              <Approvisionnements />
             </PermRoute>
           }
         />

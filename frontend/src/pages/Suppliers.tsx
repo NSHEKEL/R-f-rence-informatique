@@ -3,6 +3,8 @@ import { Pencil, Plus, Search, Trash2 } from "lucide-react";
 import api from "../api/client";
 import type { Supplier } from "../types";
 import Modal from "../components/Modal";
+import BulkDelete, { SelectBox } from "../components/BulkDelete";
+import { useSelection } from "../lib/selection";
 import { useAuth } from "../context/AuthContext";
 
 const empty = { name: "", contact: "", email: "", phone: "", address: "" };
@@ -32,6 +34,8 @@ export default function Suppliers() {
         s.name.toLowerCase().includes(q) || s.contact.toLowerCase().includes(q)
     );
   }, [suppliers, query]);
+
+  const selection = useSelection(filtered);
 
   function openCreate() {
     setEditing(null);
@@ -89,11 +93,30 @@ export default function Suppliers() {
         </button>
       </div>
 
+      {can("fournisseurs_gerer") && (
+        <BulkDelete
+          ids={selection.ids}
+          path="/suppliers"
+          noun={["fournisseur", "fournisseurs"]}
+          onDone={load}
+          onClear={selection.clear}
+        />
+      )}
+
       <div className="card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50/60 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                {can("fournisseurs_gerer") && (
+                  <th className="px-4 py-3">
+                    <SelectBox
+                      checked={selection.allSelected}
+                      onChange={selection.toggleAll}
+                      label="Tout sélectionner"
+                    />
+                  </th>
+                )}
                 <th className="px-5 py-3">Fournisseur</th>
                 <th className="px-5 py-3">Contact</th>
                 <th className="px-5 py-3">Email</th>
@@ -104,6 +127,15 @@ export default function Suppliers() {
             <tbody className="divide-y divide-slate-100">
               {filtered.map((s) => (
                 <tr key={s.id} className="hover:bg-slate-50/60">
+                  {can("fournisseurs_gerer") && (
+                    <td className="px-4 py-3.5">
+                      <SelectBox
+                        checked={selection.isSelected(s.id)}
+                        onChange={() => selection.toggle(s.id)}
+                        label={`Sélectionner ${s.name}`}
+                      />
+                    </td>
+                  )}
                   <td className="px-5 py-3.5">
                     <p className="font-semibold text-slate-800">{s.name}</p>
                     <p className="text-xs text-slate-400">{s.address || "—"}</p>
@@ -139,7 +171,10 @@ export default function Suppliers() {
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-5 py-10 text-center text-slate-400">
+                  <td
+                    colSpan={can("fournisseurs_gerer") ? 6 : 5}
+                    className="px-5 py-10 text-center text-slate-400"
+                  >
                     Aucun fournisseur trouvé.
                   </td>
                 </tr>

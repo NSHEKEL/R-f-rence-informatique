@@ -19,6 +19,7 @@ import {
 import api, {
   API_BASE,
   formatDateTime,
+  localApi,
   normalizeServerUrl,
   setServerUrl,
 } from "../api/client";
@@ -269,7 +270,7 @@ export default function Settings() {
   async function checkUpdate() {
     setUpdateMessage("Recherche d'une mise à jour...");
     try {
-      const { data } = await api.get<UpdateStatus>("/updates");
+      const { data } = await localApi.get<UpdateStatus>("/updates");
       setUpdateStatus(data);
       setUpdateMessage(
         data.error ||
@@ -292,7 +293,7 @@ export default function Settings() {
       return;
     setUpdateMessage("Téléchargement et installation en cours...");
     try {
-      await api.post("/updates/install");
+      await localApi.post("/updates/install");
       setUpdateMessage(
         "Mise à jour lancée : l'application redémarre dans quelques " +
           "secondes. Rechargez cette page ensuite."
@@ -909,7 +910,8 @@ export default function Settings() {
         </div>
         <p className="mb-4 text-sm text-slate-500">
           L'application vérifie la dernière version publiée, la télécharge et
-          redémarre toute seule. À lancer sur le poste serveur.
+          redémarre toute seule. La mise à jour concerne cet ordinateur : à
+          lancer sur chaque poste.
         </p>
         <div className="flex flex-wrap items-center gap-3">
           <button className="btn-ghost" onClick={checkUpdate}>

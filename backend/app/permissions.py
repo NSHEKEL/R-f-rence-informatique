@@ -28,6 +28,7 @@ PERMISSIONS: dict[str, tuple[str, str]] = {
     "proformas": ("Factures proforma", "Pages"),
     "comptabilite": ("Comptabilité", "Pages"),
     "fournisseurs": ("Fournisseurs", "Pages"),
+    "approvisionnements": ("Approvisionnement", "Pages"),
     "categories": ("Catégories", "Pages"),
     "apropos": ("À propos de nous", "Pages"),
     "produits_gerer": ("Créer, modifier et supprimer des produits", "Actions"),
@@ -40,6 +41,10 @@ PERMISSIONS: dict[str, tuple[str, str]] = {
     "commandes_gerer": ("Créer, livrer et supprimer des commandes", "Actions"),
     "ventes_supprimer": ("Supprimer ou corriger une vente", "Actions"),
     "inventaire_appliquer": ("Appliquer un inventaire (ajuster le stock)", "Actions"),
+    "approvisionnements_gerer": (
+        "Créer, réceptionner et supprimer un approvisionnement",
+        "Actions",
+    ),
 }
 
 CONFIGURABLE_ROLES = ("vendeur", "gestionnaire")
@@ -47,7 +52,13 @@ CONFIGURABLE_ROLES = ("vendeur", "gestionnaire")
 # Rights each role had before they became configurable.
 DEFAULTS: dict[str, set[str]] = {
     "vendeur": {"caisse", "vente_nouvelle"},
-    "gestionnaire": {"produits", "inventaire", "fournisseurs", "categories"},
+    "gestionnaire": {
+        "produits",
+        "inventaire",
+        "fournisseurs",
+        "categories",
+        "approvisionnements",
+    },
 }
 
 

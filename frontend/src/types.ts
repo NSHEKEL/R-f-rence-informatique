@@ -368,3 +368,38 @@ export interface AccountingSummary {
   expenses_by_category: AccountingCategory[];
   daily_revenue: AccountingCategory[];
 }
+
+export interface PurchaseItem {
+  id: number;
+  product_id: number | null;
+  product_name: string;
+  quantity: number;
+  received_quantity: number;
+  unit_cost: number;
+  subtotal: number;
+}
+
+export interface Purchase {
+  id: number;
+  reference: string;
+  supplier_id: number | null;
+  supplier_name: string;
+  date: string;
+  expected_date: string | null;
+  received_at: string | null;
+  status: string;
+  total: number;
+  paid: number;
+  balance: number;
+  invoice_number: string;
+  note: string;
+  items: PurchaseItem[];
+  created_by?: User | null;
+}
+
+export interface PurchaseSummary {
+  count: number;
+  pending: number;
+  total: number;
+  unpaid: number;
+}

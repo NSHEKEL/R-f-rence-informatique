@@ -14,6 +14,8 @@ import api, { formatDateTime, formatXOF } from "../api/client";
 import type { Category, Product, Supplier } from "../types";
 import Modal from "../components/Modal";
 import ProductQrCode from "../components/ProductQrCode";
+import BulkDelete, { SelectBox } from "../components/BulkDelete";
+import { useSelection } from "../lib/selection";
 import { scanCode } from "../lib/scan";
 import { printLabels } from "../lib/print";
 import { barcodeDataUrl } from "../lib/barcode";
@@ -90,6 +92,7 @@ export default function Products() {
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
+  const selection = useSelection(paged);
 
   function openCreate() {
     setEditing(null);
@@ -250,11 +253,30 @@ export default function Products() {
         </div>
       </div>
 
+      {can("produits_gerer") && (
+        <BulkDelete
+          ids={selection.ids}
+          path="/products"
+          noun={["produit", "produits"]}
+          onDone={load}
+          onClear={selection.clear}
+        />
+      )}
+
       <div className="card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50/60 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                {can("produits_gerer") && (
+                  <th className="px-4 py-3">
+                    <SelectBox
+                      checked={selection.allSelected}
+                      onChange={selection.toggleAll}
+                      label="Tout sélectionner"
+                    />
+                  </th>
+                )}
                 <th className="px-5 py-3">Produit</th>
                 <th className="px-5 py-3">Catégorie</th>
                 <th className="px-5 py-3 text-right">Prix vente</th>
@@ -268,6 +290,15 @@ export default function Products() {
             <tbody className="divide-y divide-slate-100">
               {paged.map((p) => (
                 <tr key={p.id} className="hover:bg-slate-50/60">
+                  {can("produits_gerer") && (
+                    <td className="px-4 py-3.5">
+                      <SelectBox
+                        checked={selection.isSelected(p.id)}
+                        onChange={() => selection.toggle(p.id)}
+                        label={`Sélectionner ${p.name}`}
+                      />
+                    </td>
+                  )}
                   <td className="px-5 py-3.5">
                     <div className="flex items-center gap-3">
                       {p.image ? (
@@ -360,7 +391,7 @@ export default function Products() {
               {paged.length === 0 && (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={can("produits_gerer") ? 9 : 8}
                     className="px-5 py-10 text-center text-slate-400"
                   >
                     Aucun produit trouvé.

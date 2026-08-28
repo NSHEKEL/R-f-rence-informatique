@@ -24,11 +24,13 @@ import {
   PanelLeftOpen,
   ClipboardCheck,
   PackageCheck,
+  PackagePlus,
   ShieldCheck,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
 import NetworkBanner from "./NetworkBanner";
+import UpdateBanner from "./UpdateBanner";
 import NotificationBell from "./NotificationBell";
 import UndoRedo from "./UndoRedo";
 
@@ -114,6 +116,12 @@ const navItems: {
     icon: Truck,
     access: "fournisseurs",
   },
+  {
+    to: "/approvisionnements",
+    label: "Approvisionnement",
+    icon: PackagePlus,
+    access: "approvisionnements",
+  },
   { to: "/categories", label: "Catégories", icon: Tags, access: "categories" },
   { to: "/utilisateurs", label: "Utilisateurs", icon: UserCog, access: "admin" },
   {
@@ -149,6 +157,7 @@ const pageTitles: Record<string, string> = {
   "/livraisons": "Livraisons",
   "/clients": "Clients",
   "/fournisseurs": "Fournisseurs",
+  "/approvisionnements": "Approvisionnement",
   "/categories": "Catégories",
   "/utilisateurs": "Utilisateurs",
   "/droits": "Droits d'accès",
@@ -315,6 +324,7 @@ export default function Layout() {
           </div>
         </header>
 
+        <UpdateBanner />
         <NetworkBanner />
 
         <main

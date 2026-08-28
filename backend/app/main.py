@@ -30,6 +30,7 @@ from .routers import (
     orders,
     permissions,
     products,
+    purchases,
     proformas,
     reports,
     returns,
@@ -72,6 +73,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(dashboard.router)
 app.include_router(products.router)
+app.include_router(purchases.router)
 app.include_router(categories.router)
 app.include_router(suppliers.router)
 app.include_router(customers.router)
