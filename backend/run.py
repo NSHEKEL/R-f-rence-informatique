@@ -156,6 +156,9 @@ def _open_window(url: str) -> bool:
             height=900,
             min_size=(1024, 700),
             confirm_close=True,
+            # Without this the native window refuses the mouse: no text can be
+            # selected, so nothing can be copied out of a table or a receipt.
+            text_select=True,
             js_api=api,
         )
         api.window = window

@@ -520,6 +520,39 @@ class PurchaseItem(Base):
     product = relationship("Product")
 
 
+class LicenseState(Base):
+    """Licence this installation received from the central server.
+
+    Only a cache: every field comes from a statement signed by the server, so
+    editing this row does not grant anything (the signature stops matching).
+    """
+
+    __tablename__ = "license_state"
+
+    id = Column(Integer, primary_key=True, index=True)
+    installation_uid = Column(String, default="", nullable=False)
+    central_url = Column(String, default="")
+    # Proof of identity handed out at registration.
+    token = Column(String, default="")
+    # Key of the central server, pinned when the installation registered.
+    public_key = Column(Text, default="")
+    # Signed statement replayed while offline.
+    license_token = Column(Text, default="")
+    client_name = Column(String, default="")
+    license_key = Column(String, default="")
+    plan_code = Column(String, default="")
+    plan_name = Column(String, default="")
+    status = Column(String, default="")
+    features = Column(Text, default="")  # comma separated feature codes
+    starts_at = Column(DateTime, nullable=True)
+    ends_at = Column(DateTime, nullable=True)
+    grace_days = Column(Integer, default=7)
+    offline_days = Column(Integer, default=7)
+    last_sync = Column(DateTime, nullable=True)
+    last_error = Column(String, default="")
+    registered_at = Column(DateTime, default=utcnow)
+
+
 class RolePermission(Base):
     """Right granted by the administrator to a role (seller, stock manager)."""
 

@@ -26,9 +26,14 @@ import {
   PackageCheck,
   PackagePlus,
   ShieldCheck,
+  Lock,
+  BadgeCheck,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
+import { useLicense } from "../context/LicenseContext";
+import { PLAN_FEATURE } from "../lib/planFeatures";
+import LicenseBanner from "./LicenseBanner";
 import NetworkBanner from "./NetworkBanner";
 import UpdateBanner from "./UpdateBanner";
 import NotificationBell from "./NotificationBell";
@@ -131,6 +136,12 @@ const navItems: {
     access: "admin",
   },
   { to: "/parametres", label: "Paramètres", icon: Settings, access: "admin" },
+  {
+    to: "/mon-abonnement",
+    label: "Mon abonnement",
+    icon: BadgeCheck,
+    access: "",
+  },
   { to: "/a-propos", label: "À propos de nous", icon: Info, access: "apropos" },
 ];
 
@@ -162,6 +173,7 @@ const pageTitles: Record<string, string> = {
   "/utilisateurs": "Utilisateurs",
   "/droits": "Droits d'accès",
   "/parametres": "Paramètres",
+  "/mon-abonnement": "Mon abonnement",
   "/a-propos": "À propos de nous",
 };
 
@@ -172,12 +184,14 @@ export default function Layout() {
   );
   const { user, isAdmin, can, logout } = useAuth();
   const { brandName, logoSrc } = useCompany();
+  const { hasFeature, featureName } = useLicense();
   const location = useLocation();
   const navigate = useNavigate();
   const title = pageTitles[location.pathname] ?? brandName;
-  const visibleNavItems = navItems.filter((item) =>
-    item.access === "admin" ? isAdmin : can(item.access)
-  );
+  const visibleNavItems = navItems.filter((item) => {
+    if (!item.access) return true;
+    return item.access === "admin" ? isAdmin : can(item.access);
+  });
 
   useEffect(() => {
     localStorage.setItem(COLLAPSED_KEY, collapsed ? "1" : "0");
@@ -235,15 +249,22 @@ export default function Layout() {
             const isActive = item.end
               ? location.pathname === item.to
               : location.pathname.startsWith(item.to);
+            const feature = PLAN_FEATURE[item.access];
+            const locked = Boolean(feature) && !hasFeature(feature);
             return (
               <button
                 key={item.to}
                 type="button"
                 aria-current={isActive ? "page" : undefined}
                 aria-label={item.label}
+                title={
+                  locked
+                    ? `🔒 ${featureName(feature)} n'est pas incluse dans votre formule`
+                    : undefined
+                }
                 onClick={() => {
                   setMobileOpen(false);
-                  navigate(item.to);
+                  navigate(locked ? "/mon-abonnement" : item.to);
                 }}
                 className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-left text-sm font-medium transition-colors ${
                   collapsed ? "lg:justify-center lg:px-2" : ""
@@ -254,9 +275,21 @@ export default function Layout() {
                 }`}
               >
                 <item.icon size={20} className="shrink-0" />
-                <span className={collapsed ? "lg:hidden" : ""}>
+                <span
+                  className={`${collapsed ? "lg:hidden" : ""} ${
+                    locked ? "text-slate-400" : ""
+                  }`}
+                >
                   {item.label}
                 </span>
+                {locked && (
+                  <Lock
+                    size={14}
+                    className={`ml-auto shrink-0 text-slate-400 ${
+                      collapsed ? "lg:hidden" : ""
+                    }`}
+                  />
+                )}
               </button>
             );
           })}
@@ -325,6 +358,7 @@ export default function Layout() {
         </header>
 
         <UpdateBanner />
+        <LicenseBanner />
         <NetworkBanner />
 
         <main

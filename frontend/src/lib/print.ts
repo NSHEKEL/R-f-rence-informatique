@@ -1,5 +1,6 @@
 import type { CompanySettings, ReceiptFormat } from "../types";
 import { barcodeDataUrl } from "./barcode";
+import { cacheRead } from "./offline";
 
 const PAGE_STYLE_ID = "receipt-page-style";
 const PRINT_ROOT_ID = "receipt-print-root";
@@ -97,7 +98,10 @@ export function printDocument(
  * and contact details, so orders, delivery notes, proformas and inventory
  * sheets look like the shop's own stationery.
  */
-export function documentHeader(company: CompanySettings | null): string {
+export function documentHeader(settings: CompanySettings | null): string {
+  // Printing right after start-up: the settings may still be loading, so fall
+  // back on the copy kept for offline use instead of an empty letterhead.
+  const company = settings ?? cacheRead<CompanySettings>("company");
   const contact = [company?.address, company?.phone, company?.email]
     .filter(Boolean)
     .join(" · ");

@@ -737,3 +737,58 @@ class PurchaseSummary(BaseModel):
     pending: int = 0
     total: float = 0
     unpaid: float = 0
+
+
+class LicenseFeature(BaseModel):
+    """One capability, as shown on "Mon abonnement"."""
+
+    code: str
+    name: str
+    section: str = ""
+    allowed: bool
+
+
+class LicenseStatus(BaseModel):
+    """Licence of this installation, read by the app and by the client."""
+
+    mode: str
+    plan_code: str = ""
+    plan_name: str = ""
+    status: str = ""
+    message: str = ""
+    blocked: bool = False
+    registered: bool = False
+    client_name: str = ""
+    license_key: str = ""
+    ends_at: Optional[datetime] = None
+    days_left: Optional[int] = None
+    grace_days: int = 0
+    last_sync: Optional[datetime] = None
+    last_error: str = ""
+    central_url: str = ""
+    installation_uid: str = ""
+    features: List[str] = []
+    catalogue: List[LicenseFeature] = []
+
+
+class LicenseRegister(BaseModel):
+    """First configuration: "Choisissez votre formule"."""
+
+    central_url: str = ""
+    plan_code: str
+    company: str
+    manager: str = ""
+    phone: str = ""
+    email: str = ""
+    address: str = ""
+    city: str = ""
+
+
+class OfferedPlan(BaseModel):
+    code: str
+    name: str
+    description: str = ""
+    price: float = 0
+    currency: str = "FCFA"
+    duration_days: int = 0
+    features: List[str] = []

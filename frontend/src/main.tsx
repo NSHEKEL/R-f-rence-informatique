@@ -5,6 +5,7 @@ import "./index.css";
 import App from "./App.tsx";
 import { AuthProvider } from "./context/AuthContext";
 import { CompanyProvider } from "./context/CompanyContext";
+import { LicenseProvider } from "./context/LicenseContext";
 import { NetworkProvider } from "./context/NetworkContext";
 import { SyncProvider } from "./context/SyncContext";
 
@@ -15,7 +16,9 @@ createRoot(document.getElementById("root")!).render(
         <AuthProvider>
           <SyncProvider>
             <CompanyProvider>
-              <App />
+              <LicenseProvider>
+                <App />
+              </LicenseProvider>
             </CompanyProvider>
           </SyncProvider>
         </AuthProvider>

@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import hash_password, require_admin
 from ..database import get_db
+from ..licensing import has_feature
 from ..models import User
 from ..schemas import UserCreate, UserOut, UserUpdate
 
@@ -26,6 +27,16 @@ def create_user(
 ):
     if payload.role not in ROLES:
         raise HTTPException(status_code=400, detail="Rôle invalide")
+    if not has_feature(db, "multi_utilisateurs"):
+        others = db.query(User).filter(User.is_active.is_(True)).count()
+        if others >= 1:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "🔒 Multi-utilisateurs n'est pas inclus dans votre "
+                    "formule : un seul compte est autorisé."
+                ),
+            )
     email = payload.email.strip().lower()
     if db.query(User).filter(User.email == email).first():
         raise HTTPException(status_code=400, detail="Cet email est déjà utilisé")

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from .. import backup
 from ..auth import require_admin
 from ..database import get_db
+from ..licensing import require_feature
 from ..models import User
 from ..schemas import BackupFile, BackupResult
 
@@ -62,7 +63,7 @@ def export_backup(
     return {"path": str(target)}
 
 
-@router.post("/restore")
+@router.post("/restore", dependencies=[Depends(require_feature("restauration"))])
 async def restore_backup(
     file: UploadFile = File(...), _: User = Depends(require_admin)
 ):

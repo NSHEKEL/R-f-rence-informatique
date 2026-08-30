@@ -1,5 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./context/AuthContext";
+import { useLicense } from "./context/LicenseContext";
+import { PLAN_FEATURE } from "./lib/planFeatures";
 import Layout from "./components/Layout";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
@@ -22,6 +24,14 @@ import Approvisionnements from "./pages/Approvisionnements";
 import Commandes from "./pages/Commandes";
 import Livraisons from "./pages/Livraisons";
 import Droits from "./pages/Droits";
+import MonAbonnement from "./pages/MonAbonnement";
+import ConsoleLogin from "./pages/console/ConsoleLogin";
+import ConsoleLayout from "./pages/console/ConsoleLayout";
+import ConsoleDashboard from "./pages/console/ConsoleDashboard";
+import ConsoleClients from "./pages/console/ConsoleClients";
+import ConsoleClient from "./pages/console/ConsoleClient";
+import ConsolePlans from "./pages/console/ConsolePlans";
+import ConsoleJournal from "./pages/console/ConsoleJournal";
 
 /** Home screens, in the order a user falls back to them. */
 const HOME_PAGES: [string, string][] = [
@@ -58,7 +68,11 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-/** Page the administrator can grant or revoke role by role. */
+/**
+ * Page the administrator can grant or revoke role by role, and that the
+ * subscribed plan must include: a right the plan does not carry sends the
+ * user back, and the API refuses the calls anyway.
+ */
 function PermRoute({
   right,
   children,
@@ -67,8 +81,13 @@ function PermRoute({
   children: React.ReactNode;
 }) {
   const { can } = useAuth();
+  const { hasFeature } = useLicense();
   const fallback = useFallbackPath();
+  const feature = PLAN_FEATURE[right];
   if (!can(right)) return <Navigate to={fallback} replace />;
+  if (feature && !hasFeature(feature)) {
+    return <Navigate to="/mon-abonnement" replace />;
+  }
   return <>{children}</>;
 }
 
@@ -84,6 +103,14 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/console/connexion" element={<ConsoleLogin />} />
+      <Route path="/console" element={<ConsoleLayout />}>
+        <Route index element={<ConsoleDashboard />} />
+        <Route path="clients" element={<ConsoleClients />} />
+        <Route path="clients/:id" element={<ConsoleClient />} />
+        <Route path="formules" element={<ConsolePlans />} />
+        <Route path="journal" element={<ConsoleJournal />} />
+      </Route>
       <Route
         element={
           <ProtectedRoute>
@@ -236,6 +263,7 @@ export default function App() {
             </AdminRoute>
           }
         />
+        <Route path="/mon-abonnement" element={<MonAbonnement />} />
         <Route
           path="/a-propos"
           element={

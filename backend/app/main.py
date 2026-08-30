@@ -1,17 +1,19 @@
 import os
 import socket
 import sys
+import threading
+import time
 from pathlib import Path
 from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
-from . import backup, clients, history
+from . import backup, clients, history, licensing
 from .auth import ALGORITHM, SECRET_KEY, require_admin
 from .database import Base, SessionLocal, engine, get_db
 from .migrate import migrate
@@ -26,6 +28,7 @@ from .routers import (
     dashboard,
     history as history_router,
     inventory,
+    license as license_router,
     notifications,
     orders,
     permissions,
@@ -70,31 +73,56 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+def feature(code: str) -> list:
+    """Guard every route of a module with the plan the client subscribed to."""
+    return [Depends(licensing.require_feature(code))]
+
+
 app.include_router(auth.router)
-app.include_router(dashboard.router)
-app.include_router(products.router)
-app.include_router(purchases.router)
-app.include_router(categories.router)
-app.include_router(suppliers.router)
-app.include_router(customers.router)
-app.include_router(sales.router)
+app.include_router(dashboard.router, dependencies=feature("tableau_bord"))
+app.include_router(products.router, dependencies=feature("produits"))
+app.include_router(purchases.router, dependencies=feature("achats"))
+app.include_router(categories.router, dependencies=feature("categories"))
+app.include_router(suppliers.router, dependencies=feature("fournisseurs"))
+app.include_router(customers.router, dependencies=feature("clients"))
+app.include_router(sales.router, dependencies=feature("ventes"))
 app.include_router(settings.router)
-app.include_router(users.router)
+app.include_router(users.router, dependencies=feature("gestion_utilisateurs"))
 app.include_router(notifications.router)
 app.include_router(permissions.router)
-app.include_router(cash.router)
-app.include_router(inventory.router)
-app.include_router(accounting.router)
-app.include_router(returns.router)
-app.include_router(proformas.router)
-app.include_router(reports.router)
+app.include_router(cash.router, dependencies=feature("versements"))
+app.include_router(inventory.router, dependencies=feature("stock"))
+app.include_router(accounting.router, dependencies=feature("dettes"))
+app.include_router(returns.router, dependencies=feature("fonctions_avancees"))
+app.include_router(proformas.router, dependencies=feature("fonctions_avancees"))
+app.include_router(reports.router, dependencies=feature("rapports"))
 app.include_router(sync.router)
 app.include_router(updates.router)
-app.include_router(orders.router)
+app.include_router(orders.router, dependencies=feature("dettes"))
 app.include_router(history_router.router)
-app.include_router(backups.router)
+app.include_router(
+    backups.router,
+    # Even suspended, a shop must be able to save its data.
+    dependencies=[
+        Depends(licensing.require_feature("sauvegarde", even_when_blocked=True))
+    ],
+)
+app.include_router(license_router.router)
 
 WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+# Paths a shop must keep even with a suspended or expired licence: signing in,
+# reading and fixing the licence itself, and saving its data.
+LICENSE_FREE_PREFIXES = (
+    "/api/auth",
+    "/api/license",
+    "/api/backups",
+    "/api/updates",
+)
+
+# How often the workstation checks its licence with the central server.
+SYNC_INTERVAL_SECONDS = int(os.getenv("EASYGEST_LICENSE_SYNC_SECONDS", "3600"))
 
 
 def _user_id(request: Request) -> Optional[int]:
@@ -122,6 +150,28 @@ async def record_workstation(request: Request, call_next):
 
 
 @app.middleware("http")
+async def enforce_license(request: Request, call_next):
+    """A suspended, expired or revoked licence freezes the shop's data.
+
+    Nothing is ever deleted: reading stays open so the shop can consult and
+    export its history, only new writes are refused.
+    """
+    path = request.url.path
+    if request.method not in WRITE_METHODS or not path.startswith("/api/"):
+        return await call_next(request)
+    if path.startswith(LICENSE_FREE_PREFIXES):
+        return await call_next(request)
+    db = SessionLocal()
+    try:
+        view = licensing.current(db)
+    finally:
+        db.close()
+    if view.blocked:
+        return JSONResponse(status_code=403, content={"detail": view.message})
+    return await call_next(request)
+
+
+@app.middleware("http")
 async def record_undoable_action(request: Request, call_next):
     """Snapshot the rows a write touches, so it can be undone afterwards."""
     label = (
@@ -141,9 +191,23 @@ async def record_undoable_action(request: Request, call_next):
     return response
 
 
+def _license_loop() -> None:
+    """Check in with the central server, quietly, for as long as we run."""
+    while True:
+        db = SessionLocal()
+        try:
+            licensing.synchronise(db, quiet=True)
+        except Exception as exc:  # noqa: BLE001 - a check must never crash
+            print(f"Synchronisation de licence impossible : {exc}")
+        finally:
+            db.close()
+        time.sleep(SYNC_INTERVAL_SECONDS)
+
+
 @app.on_event("startup")
 def on_startup():
     seed()
+    threading.Thread(target=_license_loop, daemon=True).start()
     sync.trim_change_log()
     db = SessionLocal()
     try:
