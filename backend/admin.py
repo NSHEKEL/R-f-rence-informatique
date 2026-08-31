@@ -1,15 +1,18 @@
-"""EasyGest Admin launcher: central server + Global Administrator console.
+"""EasyGest Admin launcher: the Global Administrator console.
 
-This is the owner's application, distinct from the shop application: it runs
-the central server (licences, plans, clients, journal) and shows only the
-Global Administrator console in a native window.
+This is the owner's application, distinct from the shop application. It shows
+the console of the hosted central server, so the clients it manages are the
+real ones — the shops synchronise with that server, not with this computer.
 
 Modes:
 
-* default            -> desktop window on the console;
-* ``EASYGEST_ADMIN_HOST`` / ``EASYGEST_ADMIN_PORT`` -> where the central API
-                        listens; the default address accepts the shops of the
-                        local network so they can synchronise;
+* default            -> desktop window on the hosted console;
+* ``--local``        -> run the central server on this computer instead (also
+                        used automatically when the hosted server cannot be
+                        reached), with ``EASYGEST_ADMIN_HOST`` /
+                        ``EASYGEST_ADMIN_PORT`` for the shops of the local
+                        network;
+* ``EASYGEST_CENTRAL_URL`` -> address of the hosted server (empty = local);
 * ``--server``       -> no window, to keep the central server running;
 * ``--selftest``     -> start, check the API answers, exit (used by the build).
 """
@@ -50,7 +53,15 @@ DEFAULT_PORT = int(os.getenv("EASYGEST_ADMIN_PORT", "8600"))
 HOST = os.getenv("EASYGEST_ADMIN_HOST", "0.0.0.0").strip() or "0.0.0.0"
 HEADLESS = "--server" in sys.argv or os.getenv("EASYGEST_ADMIN_HEADLESS") == "1"
 SELFTEST = "--selftest" in sys.argv
+FORCE_LOCAL = "--local" in sys.argv or HEADLESS
 LOG_FILE = CENTRAL_DIR / "easygest-admin.log"
+
+
+def _hosted_url() -> str:
+    """Address of the hosted central server, the one the shops talk to."""
+    from app.licensing import central_url
+
+    return central_url()
 
 
 def _redirect_output() -> None:
@@ -173,6 +184,26 @@ def _selftest(url: str) -> None:
 
 def main() -> None:
     _redirect_output()
+
+    hosted = "" if FORCE_LOCAL else _hosted_url()
+    if hosted and _wait_until_ready(hosted, timeout=12):
+        if SELFTEST:
+            _selftest(hosted)
+            return
+        if _open_window(hosted):
+            return
+        import webbrowser
+
+        _report(
+            "La fenêtre de la console n'a pas pu s'ouvrir (composant "
+            "d'affichage Microsoft Edge WebView2 manquant).\nLa console "
+            "continue dans votre navigateur ; installez WebView2 puis "
+            "relancez l'application."
+        )
+        webbrowser.open(f"{hosted}/console/connexion")
+        while True:
+            time.sleep(3600)
+
     port = _free_port(DEFAULT_PORT)
     url = f"http://127.0.0.1:{port}"
     threading.Thread(target=_serve, args=(port,), daemon=True).start()
