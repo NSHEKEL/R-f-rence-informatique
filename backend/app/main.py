@@ -163,7 +163,7 @@ async def enforce_license(request: Request, call_next):
         return await call_next(request)
     db = SessionLocal()
     try:
-        view = licensing.current(db)
+        view = licensing.effective(db)
     finally:
         db.close()
     if view.blocked:

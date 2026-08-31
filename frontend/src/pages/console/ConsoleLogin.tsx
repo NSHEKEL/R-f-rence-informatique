@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ShieldCheck } from "lucide-react";
 import central, {
@@ -14,8 +14,23 @@ export default function ConsoleLogin() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [url, setUrl] = useState(getCentralUrl());
+  const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // A freshly installed central server has no owner: the first launch creates
+  // the account instead of asking for credentials that do not exist yet.
+  const [setup, setSetup] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    central
+      .get<{ needed: boolean }>("/auth/setup")
+      .then((res) => alive && setSetup(res.data.needed))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -23,14 +38,25 @@ export default function ConsoleLogin() {
     setError("");
     setCentralUrl(url);
     try {
-      const res = await central.post<{ access_token: string }>("/auth/login", {
-        email,
-        password,
-      });
+      const res = setup
+        ? await central.post<{ access_token: string }>("/auth/setup", {
+            name,
+            email,
+            password,
+          })
+        : await central.post<{ access_token: string }>("/auth/login", {
+            email,
+            password,
+          });
       setCentralToken(res.data.access_token);
       navigate("/console");
     } catch (err) {
-      setError(centralError(err, "Identifiants incorrects"));
+      setError(
+        centralError(
+          err,
+          setup ? "Création impossible" : "Identifiants incorrects",
+        ),
+      );
     } finally {
       setBusy(false);
     }
@@ -50,7 +76,11 @@ export default function ConsoleLogin() {
             <p className="text-lg font-bold text-slate-900">
               Console Administrateur Global
             </p>
-            <p className="text-sm text-slate-500">EasyGest — gestion centrale</p>
+            <p className="text-sm text-slate-500">
+              {setup
+                ? "Première utilisation : créez votre compte propriétaire"
+                : "EasyGest — gestion centrale"}
+            </p>
           </div>
         </div>
 
@@ -64,6 +94,20 @@ export default function ConsoleLogin() {
           className="mb-4 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"
         />
 
+        {setup && (
+          <>
+            <label className="mb-1 block text-sm font-medium text-slate-700">
+              Nom du propriétaire
+            </label>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Administrateur global"
+              className="mb-4 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"
+            />
+          </>
+        )}
+
         <label className="mb-1 block text-sm font-medium text-slate-700">
           Adresse e-mail
         </label>
@@ -76,11 +120,12 @@ export default function ConsoleLogin() {
         />
 
         <label className="mb-1 block text-sm font-medium text-slate-700">
-          Mot de passe
+          Mot de passe{setup ? " (8 caractères minimum)" : ""}
         </label>
         <input
           type="password"
           required
+          minLength={setup ? 8 : undefined}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           className="mb-5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"
@@ -97,7 +142,11 @@ export default function ConsoleLogin() {
           disabled={busy}
           className="w-full rounded-xl bg-slate-900 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
         >
-          {busy ? "Connexion..." : "Se connecter"}
+          {busy
+            ? "Veuillez patienter..."
+            : setup
+              ? "Créer le compte propriétaire"
+              : "Se connecter"}
         </button>
       </form>
     </div>

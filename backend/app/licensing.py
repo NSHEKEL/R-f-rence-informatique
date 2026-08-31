@@ -395,9 +395,28 @@ def synchronise(db: Session, quiet: bool = False) -> LicenseView:
 
 # -------------------------------------------------------------- enforcement
 
+# A blocked shop asks the central server again instead of waiting for the
+# hourly loop: a workstation started before the server came back online would
+# otherwise stay locked until an administrator pressed the button.
+RETRY_WHEN_BLOCKED = timedelta(seconds=60)
+_last_retry: Optional[datetime] = None
+
+
+def effective(db: Session) -> LicenseView:
+    """Licence in force, retrying the central server while the shop is blocked."""
+    global _last_retry
+    view = current(db)
+    if not view.blocked:
+        return view
+    now = datetime.now(timezone.utc)
+    if _last_retry is not None and now - _last_retry < RETRY_WHEN_BLOCKED:
+        return view
+    _last_retry = now
+    return synchronise(db, quiet=True)
+
 
 def has_feature(db: Session, code: str) -> bool:
-    return current(db).allows(code)
+    return effective(db).allows(code)
 
 
 def require_feature(code: str, even_when_blocked: bool = False):
@@ -411,7 +430,7 @@ def require_feature(code: str, even_when_blocked: bool = False):
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user),
     ) -> User:
-        view = current(db)
+        view = effective(db)
         if view.blocked and not even_when_blocked:
             raise HTTPException(status_code=403, detail=view.message)
         if not (view.allows(code) or (view.blocked and even_when_blocked)):

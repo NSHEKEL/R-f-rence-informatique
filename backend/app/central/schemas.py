@@ -11,6 +11,16 @@ class AdminLogin(BaseModel):
     password: str
 
 
+class AdminSetup(BaseModel):
+    name: str = ""
+    email: str
+    password: str
+
+
+class SetupState(BaseModel):
+    needed: bool
+
+
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"

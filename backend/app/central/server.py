@@ -8,6 +8,7 @@ Run it apart from the shops::
 """
 
 import os
+import sys
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -53,9 +54,18 @@ def health():
 
 
 def _console_dir() -> Path | None:
-    """The console is a route of the EasyGest frontend build."""
-    candidate = Path(__file__).resolve().parents[3] / "frontend" / "dist"
-    return candidate if candidate.exists() else None
+    """The console is a route of the EasyGest frontend build.
+
+    Inside EasyGestAdmin.exe the build is bundled next to the code, so the
+    packaged console keeps working without any development checkout.
+    """
+    candidates = []
+    try:
+        candidates.append(Path(sys._MEIPASS) / "frontend_dist")  # noqa: SLF001
+    except AttributeError:
+        pass
+    candidates.append(Path(__file__).resolve().parents[3] / "frontend" / "dist")
+    return next((path for path in candidates if path.exists()), None)
 
 
 CONSOLE_DIR = _console_dir()

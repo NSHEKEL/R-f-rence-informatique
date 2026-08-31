@@ -23,7 +23,7 @@ router = APIRouter(prefix="/api/license", tags=["license"])
 
 
 def _status(db: Session) -> LicenseStatus:
-    view = licensing.current(db)
+    view = licensing.effective(db)
     row = licensing.state(db)
     return LicenseStatus(
         mode=view.mode,
