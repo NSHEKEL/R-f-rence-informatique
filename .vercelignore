@@ -1,0 +1,9 @@
+backend/venv
+backend/*.db
+backend/*.db-*
+frontend
+mobile
+packaging
+test-screenshots
+*.png
+test-*.md

@@ -65,9 +65,21 @@ MESSAGES = {
 }
 
 
+DEFAULT_CENTRAL_URL = "https://easygest-central.vercel.app"
+
+
 def central_url() -> str:
-    """Address of the central server, empty when the shop runs on its own."""
-    return os.getenv("EASYGEST_CENTRAL_URL", "").strip().rstrip("/")
+    """Address of the central server the shop asks for its licence.
+
+    Points to the hosted service by default, so a fresh installation
+    registers itself over the internet without any manual setting;
+    ``EASYGEST_CENTRAL_URL`` overrides it (own server, or empty to run the
+    shop entirely on its own).
+    """
+    override = os.getenv("EASYGEST_CENTRAL_URL")
+    if override is None:
+        return DEFAULT_CENTRAL_URL
+    return override.strip().rstrip("/")
 
 
 def installation_uid() -> str:
