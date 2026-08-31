@@ -3,10 +3,14 @@ import { Pencil, Plus, Search, Trash2 } from "lucide-react";
 import api from "../api/client";
 import type { Supplier } from "../types";
 import Modal from "../components/Modal";
+import BulkDelete, { SelectBox } from "../components/BulkDelete";
+import { useSelection } from "../lib/selection";
+import { useAuth } from "../context/AuthContext";
 
 const empty = { name: "", contact: "", email: "", phone: "", address: "" };
 
 export default function Suppliers() {
+  const { can } = useAuth();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -30,6 +34,8 @@ export default function Suppliers() {
         s.name.toLowerCase().includes(q) || s.contact.toLowerCase().includes(q)
     );
   }, [suppliers, query]);
+
+  const selection = useSelection(filtered);
 
   function openCreate() {
     setEditing(null);
@@ -87,11 +93,30 @@ export default function Suppliers() {
         </button>
       </div>
 
+      {can("fournisseurs_gerer") && (
+        <BulkDelete
+          ids={selection.ids}
+          path="/suppliers"
+          noun={["fournisseur", "fournisseurs"]}
+          onDone={load}
+          onClear={selection.clear}
+        />
+      )}
+
       <div className="card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50/60 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                {can("fournisseurs_gerer") && (
+                  <th className="px-4 py-3">
+                    <SelectBox
+                      checked={selection.allSelected}
+                      onChange={selection.toggleAll}
+                      label="Tout sélectionner"
+                    />
+                  </th>
+                )}
                 <th className="px-5 py-3">Fournisseur</th>
                 <th className="px-5 py-3">Contact</th>
                 <th className="px-5 py-3">Email</th>
@@ -102,6 +127,15 @@ export default function Suppliers() {
             <tbody className="divide-y divide-slate-100">
               {filtered.map((s) => (
                 <tr key={s.id} className="hover:bg-slate-50/60">
+                  {can("fournisseurs_gerer") && (
+                    <td className="px-4 py-3.5">
+                      <SelectBox
+                        checked={selection.isSelected(s.id)}
+                        onChange={() => selection.toggle(s.id)}
+                        label={`Sélectionner ${s.name}`}
+                      />
+                    </td>
+                  )}
                   <td className="px-5 py-3.5">
                     <p className="font-semibold text-slate-800">{s.name}</p>
                     <p className="text-xs text-slate-400">{s.address || "—"}</p>
@@ -111,25 +145,36 @@ export default function Suppliers() {
                   <td className="px-5 py-3.5 text-slate-600">{s.phone || "—"}</td>
                   <td className="px-5 py-3.5">
                     <div className="flex justify-end gap-1">
-                      <button
-                        onClick={() => openEdit(s)}
-                        className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
-                      >
-                        <Pencil size={16} />
-                      </button>
-                      <button
-                        onClick={() => remove(s)}
-                        className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                      {can("fournisseurs_gerer") ? (
+                        <>
+                          <button
+                            onClick={() => openEdit(s)}
+                            aria-label="Modifier le fournisseur"
+                            className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
+                          >
+                            <Pencil size={16} />
+                          </button>
+                          <button
+                            onClick={() => remove(s)}
+                            aria-label="Supprimer le fournisseur"
+                            className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </>
+                      ) : (
+                        <span className="text-xs text-slate-400">—</span>
+                      )}
                     </div>
                   </td>
                 </tr>
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-5 py-10 text-center text-slate-400">
+                  <td
+                    colSpan={can("fournisseurs_gerer") ? 6 : 5}
+                    className="px-5 py-10 text-center text-slate-400"
+                  >
                     Aucun fournisseur trouvé.
                   </td>
                 </tr>

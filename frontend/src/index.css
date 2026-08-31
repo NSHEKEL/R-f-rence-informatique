@@ -14,6 +14,18 @@ body,
   height: 100%;
 }
 
+/* Amounts, references and table cells stay selectable with the mouse and
+   copyable with Ctrl+C, including inside the native Windows window. */
+body,
+table,
+td,
+th,
+p,
+span {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 body {
   margin: 0;
   font-family: "Inter", system-ui, sans-serif;
@@ -65,6 +77,14 @@ body {
   width: 100%;
   max-width: 28rem;
   font-size: 12px;
+  line-height: 1.45;
+}
+/* The A4 sheet has room to breathe: keep the table off the text blocks. */
+.receipt-A4 .receipt-items {
+  margin: 1.15rem 0;
+}
+.receipt-A4 .receipt-title {
+  margin: 0.9rem 0;
 }
 .receipt-80mm {
   width: 74mm;
@@ -118,6 +138,16 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.12em;
 }
+.receipt-duplicate {
+  margin: 0 0 0.5rem;
+  padding: 0.2rem;
+  border: 1px solid #b91c1c;
+  color: #b91c1c;
+  text-align: center;
+  font-size: 0.85em;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+}
 .receipt-meta {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -136,12 +166,12 @@ body {
 }
 .receipt-items {
   width: 100%;
-  margin-top: 0.6rem;
+  margin: 0.9rem 0;
   border-collapse: collapse;
   font-size: 0.88em;
 }
 .receipt-items th {
-  padding: 0.2rem 0;
+  padding: 0.35rem 0.35rem 0.35rem 0;
   border-bottom: 1px solid #475569;
   text-align: left;
   font-size: 0.85em;
@@ -149,7 +179,7 @@ body {
   color: #475569;
 }
 .receipt-items td {
-  padding: 0.3rem 0.35rem 0.3rem 0;
+  padding: 0.45rem 0.35rem 0.45rem 0;
   border-bottom: 1px dashed #cbd5e1;
   vertical-align: top;
   word-break: break-word;
@@ -165,12 +195,18 @@ body {
 .receipt-items .strong {
   font-weight: 600;
 }
+/* Tax breakdown sits between the table and the grand total: no top border,
+   otherwise it doubles the line already drawn by the last table row. */
+.receipt-taxes {
+  border-top: none;
+  padding-top: 0;
+}
 .receipt-total {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 0.6rem;
-  padding-top: 0.4rem;
+  margin-top: 0.9rem;
+  padding-top: 0.55rem;
   border-top: 2px solid #0f172a;
   font-weight: 800;
   text-transform: uppercase;
@@ -179,12 +215,19 @@ body {
   font-size: 1.25em;
 }
 .receipt-note {
-  margin-top: 0.6rem;
+  margin-top: 0.9rem;
   padding: 0.4rem;
   border: 1px dashed #cbd5e1;
   font-size: 0.85em;
   color: #334155;
   white-space: pre-line;
+}
+.receipt-barcode {
+  display: block;
+  margin: 0.9rem auto 0;
+  height: 3.2rem;
+  max-width: 100%;
+  object-fit: contain;
 }
 .receipt-footer {
   margin: 1rem 0 0;
@@ -208,10 +251,11 @@ body {
   body > *:not(#receipt-print-root) {
     display: none !important;
   }
+  /* Padding comes from the page rule injected at print time, which also sets
+     a zero page margin so the printer stops stamping the URL and the date. */
   #receipt-print-root {
     display: block !important;
     margin: 0 auto;
-    padding: 0;
     border: 0;
     box-shadow: none;
   }

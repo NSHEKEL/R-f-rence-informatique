@@ -1,17 +1,26 @@
 import { createPortal } from "react-dom";
-import logo from "../assets/logo.jpg";
-import { formatDate, formatMoney } from "../api/client";
+import { formatDateTime, formatMoney } from "../api/client";
 import type { CompanySettings, ReceiptFormat, Sale } from "../types";
+import { vatBreakdown } from "../lib/vat";
+import { barcodeDataUrl } from "../lib/barcode";
 
 interface ReceiptProps {
   sale: Sale;
   company: CompanySettings | null;
   format: ReceiptFormat;
+  /** Marks a re-print so the customer copy cannot pass for the original. */
+  duplicate?: boolean;
 }
 
-function ReceiptBody({ sale, company }: Omit<ReceiptProps, "format">) {
+function ReceiptBody({
+  sale,
+  company,
+  duplicate,
+}: Omit<ReceiptProps, "format">) {
   const currency = company?.currency || "FCFA";
   const money = (v: number) => formatMoney(v, currency);
+  const vat = vatBreakdown(sale.total, company);
+  const barcode = barcodeDataUrl(sale.reference);
   const footer =
     sale.receipt_footer ||
     company?.receipt_footer ||
@@ -20,10 +29,12 @@ function ReceiptBody({ sale, company }: Omit<ReceiptProps, "format">) {
   return (
     <>
       <div className="receipt-head">
-        <img src={logo} alt="Logo" className="receipt-logo" />
+        {company?.logo && (
+          <img src={company.logo} alt="" className="receipt-logo" />
+        )}
         <div>
           <p className="receipt-company">
-            {company?.name || "Référence Informatique"}
+            {company?.name}
           </p>
           {company?.slogan && <p className="receipt-slogan">{company.slogan}</p>}
           <div className="receipt-contact">
@@ -45,11 +56,13 @@ function ReceiptBody({ sale, company }: Omit<ReceiptProps, "format">) {
         {company?.receipt_header || "Reçu de caisse"}
       </p>
 
+      {duplicate && <p className="receipt-duplicate">DUPLICATA</p>}
+
       <div className="receipt-meta">
         <span>Référence</span>
         <span>{sale.reference}</span>
         <span>Date</span>
-        <span>{formatDate(sale.date)}</span>
+        <span>{formatDateTime(sale.date)}</span>
         <span>Client</span>
         <span>{sale.customer?.name ?? "Client de passage"}</span>
         <span>Paiement</span>
@@ -85,12 +98,25 @@ function ReceiptBody({ sale, company }: Omit<ReceiptProps, "format">) {
         </tbody>
       </table>
 
+      {vat && (
+        <div className="receipt-meta receipt-taxes">
+          <span>Total HT</span>
+          <span>{money(vat.excluded)}</span>
+          <span>TVA ({vat.rate} %)</span>
+          <span>{money(vat.vat)}</span>
+        </div>
+      )}
+
       <div className="receipt-total">
-        <span>Total</span>
+        <span>{vat ? "Total TTC" : "Total"}</span>
         <span>{money(sale.total)}</span>
       </div>
 
       {sale.note && <p className="receipt-note">{sale.note}</p>}
+
+      {barcode && (
+        <img src={barcode} alt={sale.reference} className="receipt-barcode" />
+      )}
 
       <p className="receipt-footer">{footer}</p>
     </>
@@ -102,8 +128,15 @@ function ReceiptBody({ sale, company }: Omit<ReceiptProps, "format">) {
  * print-only copy portaled to <body> so the printed output escapes the modal's
  * scroll container (which otherwise clipped it to a single, cut-off page).
  */
-export default function Receipt({ sale, company, format }: ReceiptProps) {
-  const body = <ReceiptBody sale={sale} company={company} />;
+export default function Receipt({
+  sale,
+  company,
+  format,
+  duplicate,
+}: ReceiptProps) {
+  const body = (
+    <ReceiptBody sale={sale} company={company} duplicate={duplicate} />
+  );
   return (
     <>
       <div className={`receipt receipt-preview receipt-${format}`}>{body}</div>

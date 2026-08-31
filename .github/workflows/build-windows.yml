@@ -23,6 +23,17 @@ jobs:
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
+      - name: Check the tag matches APP_VERSION
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          declared=$(grep -oP 'APP_VERSION = "\K[^"]+' backend/app/version.py)
+          if [ "v$declared" != "${{ github.ref_name }}" ]; then
+            echo "Tag ${{ github.ref_name }} != APP_VERSION v$declared" >&2
+            exit 1
+          fi
+          echo "APP_VERSION=$declared" >> "$GITHUB_ENV"
+
       - name: Build frontend
         working-directory: frontend
         run: |
@@ -40,28 +51,100 @@ jobs:
           pip install -r backend/requirements.txt
           pip install pyinstaller==6.11.1
 
-      - name: Build executable
-        run: pyinstaller packaging/ReferenceInformatique.spec
+      - name: Build the application
+        run: |
+          python packaging/make_version_info.py
+          pyinstaller packaging/EasyGest.spec
+          pyinstaller packaging/EasyGestAdmin.spec
 
-      - name: Upload build artifact
+      - name: Check the executable really starts
+        shell: pwsh
+        run: |
+          # Runs the packaged application: the server must answer and the
+          # native window backend (pywebview + pythonnet + WinForms) must load,
+          # otherwise the .exe would silently do nothing on the user's PC.
+          $log = "$env:ProgramData\EasyGest\easygest.log"
+          if (Test-Path $log) { Remove-Item $log }
+          # A windowed executable detaches immediately: wait for it explicitly.
+          $run = Start-Process -FilePath dist\EasyGest.exe `
+            -ArgumentList '--selftest' -PassThru -Wait
+          if (Test-Path $log) { Get-Content $log }
+          if ($run.ExitCode -ne 0) {
+            throw "EasyGest.exe ne démarre pas (code $($run.ExitCode))"
+          }
+
+      - name: Check the administrator console really starts
+        shell: pwsh
+        run: |
+          $log = "$env:ProgramData\EasyGest\central\easygest-admin.log"
+          if (Test-Path $log) { Remove-Item $log }
+          $run = Start-Process -FilePath dist\EasyGestAdmin.exe `
+            -ArgumentList '--selftest' -PassThru -Wait
+          if (Test-Path $log) { Get-Content $log }
+          if ($run.ExitCode -ne 0) {
+            throw "EasyGestAdmin.exe ne démarre pas (code $($run.ExitCode))"
+          }
+
+      - name: Download the WebView2 bootstrapper
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=2124703" `
+            -OutFile "packaging/MicrosoftEdgeWebview2Setup.exe"
+
+      - name: Build the Windows installer
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path backend/app/version.py `
+            -Pattern 'APP_VERSION = "(.+)"').Matches[0].Groups[1].Value
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
+            "/DAppVersion=$version" packaging\EasyGest.iss
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
+            "/DAppVersion=$version" packaging\EasyGestAdmin.iss
+
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ReferenceInformatique-windows
-          path: dist/ReferenceInformatique.exe
+          name: EasyGest-windows
+          path: |
+            dist/EasyGest.exe
+            dist/EasyGest_Setup.exe
+            dist/EasyGestAdmin.exe
+            dist/EasyGestAdmin_Setup.exe
 
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/ReferenceInformatique.exe
-          name: Référence Informatique ${{ github.ref_name }}
+          files: |
+            dist/EasyGest_Setup.exe
+            dist/EasyGest.exe
+            dist/EasyGestAdmin_Setup.exe
+            dist/EasyGestAdmin.exe
+          name: EasyGest ${{ github.ref_name }}
           body: |
-            Application Référence Informatique (Vente & Stock) pour Windows.
+            **EasyGest — gestion de vente et de stock.**
 
-            **Installation :** téléchargez `ReferenceInformatique.exe` ci-dessous et double-cliquez dessus. Le navigateur s'ouvre automatiquement sur l'application.
+            - `EasyGest_Setup.exe` : installateur Windows (recommandé).
+              Raccourci Bureau et menu Démarrer, l'application s'ouvre dans sa
+              propre fenêtre, sans navigateur ni fenêtre noire.
+            - `EasyGest.exe` : version portable, à lancer sans installation.
+            - `EasyGestAdmin_Setup.exe` / `EasyGestAdmin.exe` : application de
+              l'Administrateur Global (propriétaire du logiciel). Elle démarre
+              le serveur central et ouvre la console de gestion des clients,
+              formules, droits et licences. À installer uniquement chez le
+              propriétaire, pas chez les boutiques. Au premier lancement, la
+              console demande la création du compte propriétaire ; les données
+              centrales restent dans `%PROGRAMDATA%\EasyGest\central`.
 
-            Comptes de démonstration :
+            Comptes de démonstration (base vierge) :
             - Administrateur : admin@reference.ci / admin123
             - Vendeur : vendeur@reference.ci / vendeur123
 
-            Les données sont enregistrées dans le dossier `ReferenceInformatique` de votre profil utilisateur.
+            Les données restent dans `%PROGRAMDATA%\EasyGest`, partagé par
+            toutes les sessions Windows du poste : elles survivent aux mises à
+            jour, désinstallations et réinstallations. Une base créée par une
+            version précédente dans `%APPDATA%\EasyGest` est reprise
+            automatiquement au premier démarrage.
+
+            **Mise à jour d'un poste existant :** Paramètres → Mise à jour de
+            l'application → Rechercher → Installer.

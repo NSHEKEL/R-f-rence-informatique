@@ -1,60 +1,54 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import {
   Eye,
+  Lock,
   Pencil,
   Plus,
   Printer,
   Receipt as ReceiptIcon,
   Search,
   Trash2,
-  Wallet,
-  X,
 } from "lucide-react";
-import api, { formatDate, formatXOF } from "../api/client";
+import api, { formatDateTime, formatXOF } from "../api/client";
 import type {
-  CompanySettings,
+  CashSessionDetail,
   Customer,
-  Product,
   ReceiptFormat,
   Sale,
 } from "../types";
+import CashTicket from "../components/CashTicket";
 import Modal from "../components/Modal";
+import BulkDelete, { SelectBox } from "../components/BulkDelete";
+import { useSelection } from "../lib/selection";
 import Receipt from "../components/Receipt";
 import { printReceipt } from "../lib/print";
 import { statusBadge } from "../components/badges";
+import PrinterHint from "../components/PrinterHint";
 import { useAuth } from "../context/AuthContext";
-
-interface Line {
-  product_id: number;
-  quantity: number;
-}
+import { useCompany } from "../context/CompanyContext";
+import { useSyncVersion } from "../context/SyncContext";
 
 const PAYMENTS = ["Espèces", "Mobile Money", "Carte bancaire", "Virement"];
-const STATUSES = ["Payée", "En attente", "Annulée"];
 
 export default function Sales() {
-  const { isAdmin } = useAuth();
+  const { can } = useAuth();
+  const { company } = useCompany();
+  const version = useSyncVersion();
   const navigate = useNavigate();
+
   const [sales, setSales] = useState<Sale[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [company, setCompany] = useState<CompanySettings | null>(null);
+  const [session, setSession] = useState<CashSessionDetail | null>(null);
+  const [daySession, setDaySession] = useState<CashSessionDetail | null>(null);
   const [query, setQuery] = useState("");
-  const [createOpen, setCreateOpen] = useState(false);
   const [detail, setDetail] = useState<Sale | null>(null);
   const [error, setError] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  const [customerId, setCustomerId] = useState<string>("");
-  const [payment, setPayment] = useState(PAYMENTS[0]);
-  const [status, setStatus] = useState(STATUSES[0]);
-  const [note, setNote] = useState("");
-  const [lines, setLines] = useState<Line[]>([]);
 
   // Receipt modal
   const [receiptSale, setReceiptSale] = useState<Sale | null>(null);
+  const [duplicate, setDuplicate] = useState(false);
   const [editingReceipt, setEditingReceipt] = useState(false);
   const [rCustomerId, setRCustomerId] = useState<string>("");
   const [rPayment, setRPayment] = useState(PAYMENTS[0]);
@@ -63,24 +57,33 @@ export default function Sales() {
   const [rSaving, setRSaving] = useState(false);
   const [rFormat, setRFormat] = useState<ReceiptFormat>("A4");
 
-  async function load() {
-    const [s, p, c] = await Promise.all([
+  // Till closing (once a day, from the sales side)
+  const [closeOpen, setCloseOpen] = useState(false);
+  const [countedBalance, setCountedBalance] = useState("0");
+  const [closeNote, setCloseNote] = useState("");
+  const [closedTicket, setClosedTicket] = useState<CashSessionDetail | null>(
+    null
+  );
+
+  const format: ReceiptFormat =
+    company?.receipt_format === "80mm" ? "80mm" : "A4";
+
+  const load = useCallback(async () => {
+    const [s, c, current, today] = await Promise.all([
       api.get<Sale[]>("/sales"),
-      api.get<Product[]>("/products"),
       api.get<Customer[]>("/customers"),
+      api.get<CashSessionDetail | null>("/cash-sessions/current"),
+      api.get<CashSessionDetail | null>("/cash-sessions/today"),
     ]);
     setSales(s.data);
-    setProducts(p.data);
     setCustomers(c.data);
-  }
+    setSession(current.data);
+    setDaySession(today.data);
+  }, []);
 
   useEffect(() => {
-    load();
-    api
-      .get<CompanySettings>("/settings/company")
-      .then((res) => setCompany(res.data))
-      .catch(() => setCompany(null));
-  }, []);
+    load().catch(() => setError("Impossible de charger les ventes"));
+  }, [load, version]);
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
@@ -91,69 +94,7 @@ export default function Sales() {
     );
   }, [sales, query]);
 
-  const productMap = useMemo(
-    () => Object.fromEntries(products.map((p) => [p.id, p])),
-    [products]
-  );
-
-  const total = useMemo(
-    () =>
-      lines.reduce((sum, l) => {
-        const p = productMap[l.product_id];
-        return sum + (p ? p.sale_price * l.quantity : 0);
-      }, 0),
-    [lines, productMap]
-  );
-
-  function openCreate() {
-    setCustomerId("");
-    setPayment(PAYMENTS[0]);
-    setStatus(STATUSES[0]);
-    setNote("");
-    setLines([]);
-    setError("");
-    setCreateOpen(true);
-  }
-
-  function addLine() {
-    const first = products[0];
-    if (!first) return;
-    setLines([...lines, { product_id: first.id, quantity: 1 }]);
-  }
-
-  function updateLine(index: number, patch: Partial<Line>) {
-    setLines(lines.map((l, i) => (i === index ? { ...l, ...patch } : l)));
-  }
-
-  function removeLine(index: number) {
-    setLines(lines.filter((_, i) => i !== index));
-  }
-
-  async function save() {
-    setError("");
-    if (lines.length === 0) {
-      setError("Ajoutez au moins un article.");
-      return;
-    }
-    setSaving(true);
-    try {
-      await api.post("/sales", {
-        customer_id: customerId === "" ? null : Number(customerId),
-        payment_method: payment,
-        status,
-        note,
-        items: lines,
-      });
-      setCreateOpen(false);
-      await load();
-    } catch (err) {
-      if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Erreur lors de l'enregistrement");
-      }
-    } finally {
-      setSaving(false);
-    }
-  }
+  const selection = useSelection(filtered);
 
   async function remove(s: Sale) {
     if (!confirm(`Supprimer la vente ${s.reference} ? Le stock sera réajusté.`))
@@ -162,15 +103,29 @@ export default function Sales() {
     await load();
   }
 
-  function openReceipt(s: Sale) {
+  function openReceipt(s: Sale, asDuplicate: boolean) {
     setReceiptSale(s);
+    setDuplicate(asDuplicate);
     setEditingReceipt(false);
     setError("");
-    setRFormat(company?.receipt_format === "80mm" ? "80mm" : "A4");
+    setRFormat(format);
     setRCustomerId(s.customer_id ? String(s.customer_id) : "");
     setRPayment(s.payment_method);
     setRNote(s.note ?? "");
     setRFooter(s.receipt_footer ?? "");
+  }
+
+  /** Prints and records the copy so the history shows how many were issued. */
+  async function printAndCount() {
+    if (!receiptSale) return;
+    printReceipt(rFormat);
+    try {
+      const res = await api.post<Sale>(`/sales/${receiptSale.id}/print`);
+      setReceiptSale(res.data);
+      setSales((prev) => prev.map((x) => (x.id === res.data.id ? res.data : x)));
+    } catch {
+      /* printing must not fail because the counter could not be saved */
+    }
   }
 
   async function saveReceipt() {
@@ -185,22 +140,46 @@ export default function Sales() {
         receipt_footer: rFooter,
       });
       setReceiptSale(res.data);
-      setSales((prev) =>
-        prev.map((x) => (x.id === res.data.id ? res.data : x))
-      );
+      setSales((prev) => prev.map((x) => (x.id === res.data.id ? res.data : x)));
       setEditingReceipt(false);
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Erreur lors de l'enregistrement");
+        setError(
+          err.response?.data?.detail ?? "Erreur lors de l'enregistrement"
+        );
       }
     } finally {
       setRSaving(false);
     }
   }
 
+  async function closeTill() {
+    setError("");
+    try {
+      const res = await api.post<CashSessionDetail>("/cash-sessions/close", {
+        closing_balance: Number(countedBalance) || 0,
+        note: closeNote,
+      });
+      setCloseOpen(false);
+      setCloseNote("");
+      await load();
+      setClosedTicket(res.data);
+      if (company?.auto_print_cash !== false) {
+        window.setTimeout(() => printReceipt(format), 400);
+      }
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        setError(err.response?.data?.detail ?? "Impossible de fermer la caisse");
+      }
+    }
+  }
+
+  const countedDifference =
+    (Number(countedBalance) || 0) - (session?.expected_cash ?? 0);
+
   return (
     <div className="space-y-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative sm:w-80">
           <Search
             size={18}
@@ -213,24 +192,70 @@ export default function Sales() {
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
-        <button className="btn-ghost" onClick={openCreate}>
-          <Plus size={18} /> Vente rapide
-        </button>
-        <button className="btn-primary" onClick={() => navigate("/caisse")}>
-          <Wallet size={18} /> Ouvrir la caisse
-        </button>
+        <div className="flex flex-wrap gap-3 sm:ml-auto">
+          {session ? (
+            <button
+              className="btn-ghost"
+              onClick={() => {
+                setCountedBalance(String(session.expected_cash));
+                setCloseNote("");
+                setCloseOpen(true);
+              }}
+            >
+              <Lock size={18} /> Fermer ma caisse
+            </button>
+          ) : (
+            daySession?.closed_at && (
+              <span className="flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-500">
+                <Lock size={14} /> Caisse déjà fermée aujourd'hui
+              </span>
+            )
+          )}
+          <button
+            className="btn-primary"
+            onClick={() => navigate("/ventes/nouvelle")}
+          >
+            <Plus size={18} /> Nouvelle vente
+          </button>
+        </div>
       </div>
+
+      {error && (
+        <div className="rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-600">
+          {error}
+        </div>
+      )}
+
+      {can("ventes_supprimer") && (
+        <BulkDelete
+          ids={selection.ids}
+          path="/sales"
+          noun={["vente", "ventes"]}
+          onDone={load}
+          onClear={selection.clear}
+        />
+      )}
 
       <div className="card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50/60 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                {can("ventes_supprimer") && (
+                  <th className="px-4 py-3">
+                    <SelectBox
+                      checked={selection.allSelected}
+                      onChange={selection.toggleAll}
+                      label="Tout sélectionner"
+                    />
+                  </th>
+                )}
                 <th className="px-5 py-3">Référence</th>
                 <th className="px-5 py-3">Client</th>
                 <th className="px-5 py-3">Date</th>
                 <th className="px-5 py-3">Paiement</th>
                 <th className="px-5 py-3 text-center">Statut</th>
+                <th className="px-5 py-3 text-center">Reçu</th>
                 <th className="px-5 py-3 text-right">Total</th>
                 <th className="px-5 py-3 text-right">Actions</th>
               </tr>
@@ -238,35 +263,68 @@ export default function Sales() {
             <tbody className="divide-y divide-slate-100">
               {filtered.map((s) => (
                 <tr key={s.id} className="hover:bg-slate-50/60">
+                  {can("ventes_supprimer") && (
+                    <td className="px-4 py-3.5">
+                      <SelectBox
+                        checked={selection.isSelected(s.id)}
+                        onChange={() => selection.toggle(s.id)}
+                        label={`Sélectionner ${s.reference}`}
+                      />
+                    </td>
+                  )}
                   <td className="px-5 py-3.5 font-semibold text-slate-800">
                     {s.reference}
                   </td>
                   <td className="px-5 py-3.5 text-slate-600">
                     {s.customer?.name ?? "Client de passage"}
                   </td>
-                  <td className="px-5 py-3.5 text-slate-500">{formatDate(s.date)}</td>
-                  <td className="px-5 py-3.5 text-slate-500">{s.payment_method}</td>
-                  <td className="px-5 py-3.5 text-center">{statusBadge(s.status)}</td>
+                  <td className="px-5 py-3.5 text-slate-500">
+                    {formatDateTime(s.date)}
+                  </td>
+                  <td className="px-5 py-3.5 text-slate-500">
+                    {s.payment_method}
+                  </td>
+                  <td className="px-5 py-3.5 text-center">
+                    {statusBadge(s.status)}
+                  </td>
+                  <td className="px-5 py-3.5 text-center text-xs">
+                    {s.print_count > 0 ? (
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-600">
+                        Imprimé ×{s.print_count}
+                      </span>
+                    ) : (
+                      <span className="text-slate-300">—</span>
+                    )}
+                  </td>
                   <td className="px-5 py-3.5 text-right font-semibold text-slate-800">
                     {formatXOF(s.total)}
+                    {s.returned_total > 0 && (
+                      <span className="block text-xs font-medium text-amber-600">
+                        Avoir : {formatXOF(s.returned_total)}
+                      </span>
+                    )}
                   </td>
                   <td className="px-5 py-3.5">
                     <div className="flex justify-end gap-1">
                       <button
                         onClick={() => setDetail(s)}
-                        title="Détails"
+                        aria-label="Détails de la vente"
                         className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
                       >
                         <Eye size={16} />
                       </button>
                       <button
-                        onClick={() => openReceipt(s)}
-                        title="Reçu de caisse"
+                        onClick={() => openReceipt(s, s.print_count > 0)}
+                        title={
+                          s.print_count > 0
+                            ? "Réimprimer (duplicata)"
+                            : "Reçu de caisse"
+                        }
                         className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
                       >
                         <ReceiptIcon size={16} />
                       </button>
-                      {isAdmin && (
+                      {can("ventes_supprimer") && (
                         <button
                           onClick={() => remove(s)}
                           className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
@@ -280,7 +338,10 @@ export default function Sales() {
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-5 py-10 text-center text-slate-400">
+                  <td
+                    colSpan={can("ventes_supprimer") ? 9 : 8}
+                    className="px-5 py-10 text-center text-slate-400"
+                  >
                     Aucune vente trouvée.
                   </td>
                 </tr>
@@ -289,141 +350,6 @@ export default function Sales() {
           </table>
         </div>
       </div>
-
-      {/* Create sale modal */}
-      <Modal
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        title="Nouvelle vente"
-        wide
-        footer={
-          <>
-            <button className="btn-ghost" onClick={() => setCreateOpen(false)}>
-              Annuler
-            </button>
-            <button className="btn-primary" onClick={save} disabled={saving}>
-              {saving ? "Enregistrement..." : "Valider la vente"}
-            </button>
-          </>
-        }
-      >
-        {error && (
-          <div className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-600">
-            {error}
-          </div>
-        )}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div>
-            <label className="label">Client</label>
-            <select
-              className="input"
-              value={customerId}
-              onChange={(e) => setCustomerId(e.target.value)}
-            >
-              <option value="">Client de passage</option>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="label">Paiement</label>
-            <select
-              className="input"
-              value={payment}
-              onChange={(e) => setPayment(e.target.value)}
-            >
-              {PAYMENTS.map((p) => (
-                <option key={p}>{p}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="label">Statut</label>
-            <select
-              className="input"
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-            >
-              {STATUSES.map((s) => (
-                <option key={s}>{s}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div className="mt-5">
-          <div className="mb-2 flex items-center justify-between">
-            <label className="label mb-0">Articles</label>
-            <button className="btn-ghost px-3 py-1.5 text-xs" onClick={addLine}>
-              <Plus size={14} /> Ajouter
-            </button>
-          </div>
-          <div className="space-y-2">
-            {lines.map((line, i) => {
-              const p = productMap[line.product_id];
-              return (
-                <div key={i} className="flex items-center gap-2">
-                  <select
-                    className="input flex-1"
-                    value={line.product_id}
-                    onChange={(e) =>
-                      updateLine(i, { product_id: Number(e.target.value) })
-                    }
-                  >
-                    {products.map((prod) => (
-                      <option key={prod.id} value={prod.id}>
-                        {prod.name} (stock : {prod.quantity})
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    type="number"
-                    min={1}
-                    className="input w-20"
-                    value={line.quantity}
-                    onChange={(e) =>
-                      updateLine(i, { quantity: Number(e.target.value) })
-                    }
-                  />
-                  <span className="w-32 text-right text-sm font-medium text-slate-700">
-                    {p ? formatXOF(p.sale_price * line.quantity) : "—"}
-                  </span>
-                  <button
-                    onClick={() => removeLine(i)}
-                    className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                  >
-                    <X size={16} />
-                  </button>
-                </div>
-              );
-            })}
-            {lines.length === 0 && (
-              <p className="rounded-xl bg-slate-50 px-4 py-6 text-center text-sm text-slate-400">
-                Aucun article. Cliquez sur « Ajouter ».
-              </p>
-            )}
-          </div>
-          <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-4">
-            <span className="text-sm font-medium text-slate-500">Total</span>
-            <span className="text-xl font-extrabold text-slate-900">
-              {formatXOF(total)}
-            </span>
-          </div>
-        </div>
-
-        <div className="mt-5">
-          <label className="label">Note (facultatif, imprimée sur le reçu)</label>
-          <textarea
-            className="input min-h-[60px]"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Ex. Garantie 12 mois, livraison incluse..."
-          />
-        </div>
-      </Modal>
 
       {/* Detail modal */}
       <Modal
@@ -438,7 +364,7 @@ export default function Sales() {
               onClick={() => {
                 const s = detail;
                 setDetail(null);
-                openReceipt(s);
+                openReceipt(s, s.print_count > 0);
               }}
             >
               <ReceiptIcon size={16} /> Voir le reçu
@@ -464,7 +390,7 @@ export default function Sales() {
               <div>
                 <p className="text-slate-400">Date</p>
                 <p className="font-semibold text-slate-800">
-                  {formatDate(detail.date)}
+                  {formatDateTime(detail.date)}
                 </p>
               </div>
               <div>
@@ -490,7 +416,14 @@ export default function Sales() {
               <tbody className="divide-y divide-slate-100">
                 {detail.items.map((it) => (
                   <tr key={it.id}>
-                    <td className="py-2.5 text-slate-800">{it.product_name}</td>
+                    <td className="py-2.5 text-slate-800">
+                      {it.product_name}
+                      {it.returned_quantity > 0 && (
+                        <span className="ml-2 text-xs text-amber-600">
+                          {it.returned_quantity} retourné(s)
+                        </span>
+                      )}
+                    </td>
                     <td className="py-2.5 text-center text-slate-600">
                       {it.quantity}
                     </td>
@@ -518,7 +451,11 @@ export default function Sales() {
       <Modal
         open={receiptSale !== null}
         onClose={() => setReceiptSale(null)}
-        title={receiptSale ? `Reçu — ${receiptSale.reference}` : ""}
+        title={
+          receiptSale
+            ? `${duplicate ? "Duplicata" : "Reçu"} — ${receiptSale.reference}`
+            : ""
+        }
         footer={
           receiptSale && (
             <div className="no-print flex w-full flex-wrap items-center justify-between gap-3">
@@ -529,6 +466,14 @@ export default function Sales() {
                 <Pencil size={16} /> {editingReceipt ? "Fermer" : "Modifier"}
               </button>
               <div className="flex items-center gap-3">
+                <label className="flex items-center gap-2 text-xs font-semibold text-slate-500">
+                  <input
+                    type="checkbox"
+                    checked={duplicate}
+                    onChange={(e) => setDuplicate(e.target.checked)}
+                  />
+                  Duplicata
+                </label>
                 <select
                   className="input w-auto"
                   value={rFormat}
@@ -549,10 +494,8 @@ export default function Sales() {
                     {rSaving ? "Enregistrement..." : "Enregistrer"}
                   </button>
                 )}
-                <button
-                  className="btn-primary"
-                  onClick={() => printReceipt(rFormat)}
-                >
+                <PrinterHint />
+                <button className="btn-primary" onClick={printAndCount}>
                   <Printer size={16} /> Imprimer
                 </button>
               </div>
@@ -641,8 +584,100 @@ export default function Sales() {
               }
               company={company}
               format={rFormat}
+              duplicate={duplicate}
             />
           </div>
+        )}
+      </Modal>
+
+      {/* Till closing */}
+      <Modal
+        open={closeOpen}
+        onClose={() => setCloseOpen(false)}
+        title="Fermeture de caisse"
+        footer={
+          <button className="btn-primary" onClick={closeTill}>
+            Fermer ma caisse
+          </button>
+        }
+      >
+        {session && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-4 text-sm">
+              <span className="text-slate-500">Fonds d'ouverture</span>
+              <span className="text-right font-semibold">
+                {formatXOF(session.opening_balance)}
+              </span>
+              <span className="text-slate-500">Ventes en espèces</span>
+              <span className="text-right font-semibold">
+                {formatXOF(session.cash_sales)}
+              </span>
+              <span className="text-slate-500">Solde attendu</span>
+              <span className="text-right font-extrabold text-brand-700">
+                {formatXOF(session.expected_cash)}
+              </span>
+            </div>
+            <div>
+              <label className="label">Montant compté en caisse (FCFA)</label>
+              <input
+                className="input"
+                type="number"
+                min="0"
+                value={countedBalance}
+                onChange={(e) => setCountedBalance(e.target.value)}
+              />
+            </div>
+            <p
+              className={`rounded-xl px-4 py-3 text-sm font-semibold ${
+                Math.abs(countedDifference) < 1
+                  ? "bg-emerald-50 text-emerald-700"
+                  : "bg-amber-50 text-amber-700"
+              }`}
+            >
+              {Math.abs(countedDifference) < 1
+                ? "Caisse conforme"
+                : `Écart : ${formatXOF(countedDifference)}`}
+            </p>
+            <div>
+              <label className="label">Note de fermeture (facultatif)</label>
+              <input
+                className="input"
+                value={closeNote}
+                onChange={(e) => setCloseNote(e.target.value)}
+              />
+            </div>
+            <p className="text-xs text-slate-400">
+              La fermeture n'est possible qu'une fois par jour ; le ticket
+              s'imprime automatiquement.
+            </p>
+          </div>
+        )}
+      </Modal>
+
+      {/* Closing ticket */}
+      <Modal
+        open={closedTicket !== null}
+        onClose={() => setClosedTicket(null)}
+        title="Ticket de fermeture de caisse"
+        footer={
+          <div className="no-print flex w-full justify-end gap-3">
+            <button className="btn-ghost" onClick={() => setClosedTicket(null)}>
+              Fermer
+            </button>
+            <PrinterHint />
+            <button className="btn-primary" onClick={() => printReceipt(format)}>
+              <Printer size={16} /> Imprimer
+            </button>
+          </div>
+        }
+      >
+        {closedTicket && (
+          <CashTicket
+            session={closedTicket}
+            company={company}
+            format={format}
+            kind="close"
+          />
         )}
       </Modal>
     </div>

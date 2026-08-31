@@ -1,0 +1,37 @@
+plugins {
+    id "com.android.application"
+}
+
+android {
+    namespace "ci.easygest.mobile"
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "ci.easygest.mobile"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "2.0.5"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            // Signed with the debug key: the app is installed by hand, not
+            // published on the Play Store.
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    // Aligns the Kotlin runtime pulled in by AndroidX (jdk7/jdk8 splits were
+    // merged into the main artifact and clash otherwise).
+    implementation platform("org.jetbrains.kotlin:kotlin-bom:1.8.22")
+    implementation "androidx.appcompat:appcompat:1.7.0"
+}

@@ -1,11 +1,11 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, update
+from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ..auth import get_current_user, require_admin
+from .. import backup
 from ..database import get_db
 from ..models import (
     Notification,
@@ -15,7 +15,9 @@ from ..models import (
     StockMovement,
     User,
 )
+from ..permissions import require_permission
 from ..schemas import SaleCreate, SaleOut, SaleUpdate
+from ..sequences import next_reference
 from .cash import current_session
 
 router = APIRouter(prefix="/api/sales", tags=["sales"])
@@ -25,30 +27,37 @@ MAX_REFERENCE_ATTEMPTS = 5
 
 
 def _generate_reference(db: Session) -> str:
-    """Next reference for the year, based on the highest one already stored."""
-    prefix = f"VNT-{datetime.now(timezone.utc).year}-"
-    last = (
-        db.query(func.max(Sale.reference))
-        .filter(Sale.reference.like(f"{prefix}%"))
-        .scalar()
+    return next_reference(
+        db, Sale.reference, f"VNT-{datetime.now(timezone.utc).year}-"
     )
-    number = 1
-    if last:
-        try:
-            number = int(last[len(prefix):]) + 1
-        except ValueError:
-            number = db.query(Sale).count() + 1
-    return f"{prefix}{number:04d}"
 
 
 @router.get("", response_model=list[SaleOut])
-def list_sales(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def list_sales(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission("ventes")),
+):
     return db.query(Sale).order_by(Sale.date.desc()).all()
+
+
+@router.get("/by-reference/{reference}", response_model=SaleOut)
+def get_sale_by_reference(
+    reference: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission("ventes")),
+):
+    """Ticket lookup used by the returns screen."""
+    sale = db.query(Sale).filter(Sale.reference == reference.strip()).first()
+    if not sale:
+        raise HTTPException(status_code=404, detail="Ticket introuvable")
+    return sale
 
 
 @router.get("/{sale_id}", response_model=SaleOut)
 def get_sale(
-    sale_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)
+    sale_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission("ventes")),
 ):
     sale = db.query(Sale).get(sale_id)
     if not sale:
@@ -60,10 +69,18 @@ def get_sale(
 def create_sale(
     payload: SaleCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("vente_nouvelle")),
 ):
     if not payload.items:
         raise HTTPException(status_code=400, detail="Ajoutez au moins un article")
+
+    if payload.client_id:
+        # Replay of a ticket recorded offline: return the stored one.
+        existing = (
+            db.query(Sale).filter(Sale.client_id == payload.client_id).first()
+        )
+        if existing:
+            return existing
 
     # Several workstations may checkout at the same time: retry when two of
     # them pick the same reference.
@@ -81,15 +98,22 @@ def create_sale(
 
 
 def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
-    session = current_session(db)
+    session = current_session(db, current_user)
+    if session is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Ouvrez votre caisse avant d'enregistrer une vente",
+        )
     sale = Sale(
         reference=_generate_reference(db),
+        client_id=payload.client_id,
         customer_id=payload.customer_id,
         status=payload.status,
         payment_method=payload.payment_method,
         note=payload.note,
+        price_mode="gros" if payload.price_mode == "gros" else "detail",
         created_by_id=current_user.id,
-        cash_session_id=session.id if session else None,
+        cash_session_id=session.id,
         total=0,
     )
     total = 0.0
@@ -108,14 +132,17 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
                 detail=f"Stock insuffisant pour {product.name} "
                 f"(disponible : {product.quantity})",
             )
-        subtotal = product.sale_price * item.quantity
+        unit_price = product.sale_price
+        if sale.price_mode == "gros" and (product.wholesale_price or 0) > 0:
+            unit_price = product.wholesale_price
+        subtotal = unit_price * item.quantity
         total += subtotal
         sale.items.append(
             SaleItem(
                 product_id=product.id,
                 product_name=product.name,
                 quantity=item.quantity,
-                unit_price=product.sale_price,
+                unit_price=unit_price,
                 subtotal=subtotal,
             )
         )
@@ -187,6 +214,31 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
 
     db.commit()
     db.refresh(sale)
+    _backup_after_sale(db)
+    return sale
+
+
+def _backup_after_sale(db: Session) -> None:
+    """A failed copy must never cancel a sale already recorded."""
+    try:
+        backup.after_sale(db)
+    except Exception:  # noqa: BLE001 - unreachable USB key, full disk...
+        db.rollback()
+
+
+@router.post("/{sale_id}/print", response_model=SaleOut)
+def register_print(
+    sale_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission("ventes")),
+):
+    """Count receipt prints so reprints can be flagged as duplicates."""
+    sale = db.query(Sale).get(sale_id)
+    if not sale:
+        raise HTTPException(status_code=404, detail="Vente introuvable")
+    sale.print_count = (sale.print_count or 0) + 1
+    db.commit()
+    db.refresh(sale)
     return sale
 
 
@@ -195,7 +247,7 @@ def update_sale(
     sale_id: int,
     payload: SaleUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_permission("ventes_supprimer")),
 ):
     """Update editable receipt metadata (customer, payment, note, footer).
 
@@ -222,7 +274,7 @@ def update_sale(
 def delete_sale(
     sale_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_permission("ventes_supprimer")),
 ):
     sale = db.query(Sale).get(sale_id)
     if not sale:

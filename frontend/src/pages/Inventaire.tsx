@@ -1,8 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import { ClipboardCheck, History, RotateCcw, Search } from "lucide-react";
+import {
+  ClipboardCheck,
+  History,
+  Printer,
+  RotateCcw,
+  Search,
+} from "lucide-react";
 import api, { formatDate, formatXOF } from "../api/client";
 import type { Product, StockMovement } from "../types";
+import { documentHeader, printSheet } from "../lib/print";
+import { useCompany } from "../context/CompanyContext";
+import { useSyncVersion } from "../context/SyncContext";
 
 type Counted = Record<number, string>;
 
@@ -13,6 +22,8 @@ const kindLabels: Record<string, string> = {
 };
 
 export default function Inventaire() {
+  const version = useSyncVersion();
+  const { company } = useCompany();
   const [products, setProducts] = useState<Product[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [counted, setCounted] = useState<Counted>({});
@@ -35,7 +46,7 @@ export default function Inventaire() {
 
   useEffect(() => {
     load();
-  }, [load]);
+  }, [load, version]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -95,6 +106,56 @@ export default function Inventaire() {
     } finally {
       setSaving(false);
     }
+  }
+
+  /** Blank count sheet the team fills in by hand during the physical count. */
+  function printCountSheet() {
+    // Only the identity of the article is printed: the counting team must not
+    // see the expected quantity, otherwise the count is biased.
+    const rows = filtered
+      .map(
+        (p) =>
+          `<tr><td>${p.name}</td><td>${p.sku}</td>` +
+          `<td>${p.barcode || ""}</td>` +
+          `<td class="blank"></td><td class="blank"></td></tr>`
+      )
+      .join("");
+    printSheet(
+      "Fiche d'inventaire",
+      documentHeader(company) +
+        `<p class="meta">Fiche d'inventaire — ${new Date().toLocaleDateString("fr-FR")}` +
+        ` · ${filtered.length} article(s)<br/>Compté par : ______________________` +
+        ` · Signature : ______________________</p>` +
+        `<table><thead><tr><th>Article</th><th>SKU</th><th>Code-barres</th>` +
+        `<th>Quantité comptée</th><th>Observation</th>` +
+        `</tr></thead><tbody>${rows}</tbody></table>`
+    );
+  }
+
+  /** Signed record of the differences that are about to be applied. */
+  function printDifferences() {
+    const rows = differences
+      .map(
+        (d) =>
+          `<tr><td>${d.product.name}</td><td>${d.product.sku}</td>` +
+          `<td class="num">${d.product.quantity}</td>` +
+          `<td class="num">${d.product.quantity + d.delta}</td>` +
+          `<td class="num">${d.delta > 0 ? `+${d.delta}` : d.delta}</td>` +
+          `<td class="num">${formatXOF(d.delta * d.product.purchase_price)}</td></tr>`
+      )
+      .join("");
+    printSheet(
+      "Écarts d'inventaire",
+      documentHeader(company) +
+        `<p class="meta">Écarts d'inventaire — ${new Date().toLocaleDateString("fr-FR")}` +
+        (note ? `<br/>Motif : ${note}` : "") +
+        `</p><table><thead><tr><th>Article</th><th>SKU</th>` +
+        `<th class="num">Théorique</th><th class="num">Compté</th>` +
+        `<th class="num">Écart</th><th class="num">Valorisation</th>` +
+        `</tr></thead><tbody>${rows}` +
+        `<tr><th colspan="5">Impact total</th>` +
+        `<th class="num">${formatXOF(impact)}</th></tr></tbody></table>`
+    );
   }
 
   return (
@@ -202,6 +263,16 @@ export default function Inventaire() {
               {formatXOF(impact)}
             </span>
           </p>
+          <button className="btn-ghost" onClick={printCountSheet}>
+            <Printer size={16} /> Fiche de comptage
+          </button>
+          <button
+            className="btn-ghost"
+            onClick={printDifferences}
+            disabled={differences.length === 0}
+          >
+            <Printer size={16} /> Écarts
+          </button>
           <button
             className="btn-ghost"
             onClick={() => setCounted({})}

@@ -26,7 +26,7 @@ class User(Base):
     name = Column(String, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
-    role = Column(String, default="admin")  # admin, vendeur
+    role = Column(String, default="admin")  # admin, vendeur, gestionnaire
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=utcnow)
 
@@ -35,17 +35,37 @@ class CompanySettings(Base):
     __tablename__ = "company_settings"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, default="Référence Informatique", nullable=False)
+    name = Column(String, default="EasyGest", nullable=False)
     slogan = Column(String, default="")
+    logo = Column(Text, default="")  # data URL, optional
     address = Column(String, default="")
     phone = Column(String, default="")
     email = Column(String, default="")
     website = Column(String, default="")
     tax_id = Column(String, default="")  # NCC / RCCM
     currency = Column(String, default="FCFA")
+    # VAT shown on receipts; prices are already tax inclusive.
+    vat_rate = Column(Float, default=0.0, nullable=False)
+    about = Column(Text, default="")  # free text shown on the "À propos" page
     receipt_header = Column(Text, default="")
     receipt_footer = Column(Text, default="Merci de votre confiance !")
     receipt_format = Column(String, default="A4")  # A4, 80mm
+    printer_name = Column(String, default="")  # printer shown in the print help
+    auto_print_cash = Column(Boolean, default=True, nullable=False)
+    # Outgoing mail used by the "forgot password" flow (optional).
+    smtp_host = Column(String, default="")
+    smtp_port = Column(Integer, default=587)
+    smtp_user = Column(String, default="")
+    smtp_password = Column(String, default="")
+    smtp_from = Column(String, default="")
+    smtp_tls = Column(Boolean, default=True, nullable=False)
+    # Copy of the database dropped on a USB key or a synced cloud folder.
+    backup_dir = Column(String, default="")
+    backup_auto = Column(Boolean, default=True, nullable=False)
+    backup_keep = Column(Integer, default=30, nullable=False)
+    # Mirror the database into that folder after every sale.
+    backup_on_sale = Column(Boolean, default=False, nullable=False)
+    last_backup_at = Column(DateTime, nullable=True)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
 
@@ -97,8 +117,12 @@ class Product(Base):
     supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=True)
     purchase_price = Column(Float, default=0)
     sale_price = Column(Float, default=0)
+    wholesale_price = Column(Float, default=0)  # 0 = no wholesale price
     quantity = Column(Integer, default=0)
     min_stock = Column(Integer, default=5)
+    qr_code = Column(String, default="")  # scan code, defaults to the SKU
+    barcode = Column(String, default="", index=True)  # printed EAN-13 digits
+    image = Column(Text, default="")  # data URL, optional
     created_at = Column(DateTime, default=utcnow)
 
     category = relationship("Category", back_populates="products")
@@ -117,16 +141,27 @@ class Sale(Base):
     payment_method = Column(String, default="Espèces")
     note = Column(Text, default="")
     receipt_footer = Column(Text, default="")
+    price_mode = Column(String, default="detail")  # detail, gros
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     cash_session_id = Column(
         Integer, ForeignKey("cash_sessions.id"), nullable=True
     )
+    print_count = Column(Integer, default=0, nullable=False)
+    # Idempotency key of tickets recorded offline, replayed once back online.
+    client_id = Column(String, unique=True, index=True, nullable=True)
 
     customer = relationship("Customer", back_populates="sales")
     created_by = relationship("User")
     items = relationship(
         "SaleItem", back_populates="sale", cascade="all, delete-orphan"
     )
+    returns = relationship(
+        "SaleReturn", back_populates="sale", cascade="all, delete-orphan"
+    )
+
+    @property
+    def returned_total(self) -> float:
+        return sum(r.total for r in self.returns)
 
 
 class SaleItem(Base):
@@ -143,6 +178,57 @@ class SaleItem(Base):
     sale = relationship("Sale", back_populates="items")
     product = relationship("Product")
 
+    @property
+    def returned_quantity(self) -> int:
+        """Units of this line already given back through a credit note."""
+        if not self.sale:
+            return 0
+        return sum(
+            line.quantity
+            for credit in self.sale.returns
+            for line in credit.items
+            if line.product_id == self.product_id
+        )
+
+
+class SaleReturn(Base):
+    """Credit note: goods given back, referencing the original ticket."""
+
+    __tablename__ = "sale_returns"
+
+    id = Column(Integer, primary_key=True, index=True)
+    reference = Column(String, unique=True, index=True, nullable=False)
+    sale_id = Column(Integer, ForeignKey("sales.id"), nullable=False)
+    date = Column(DateTime, default=utcnow)
+    total = Column(Float, default=0)
+    reason = Column(Text, default="")
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    sale = relationship("Sale", back_populates="returns")
+    created_by = relationship("User")
+    items = relationship(
+        "SaleReturnItem", back_populates="sale_return", cascade="all, delete-orphan"
+    )
+
+    @property
+    def sale_reference(self) -> str:
+        return self.sale.reference if self.sale else ""
+
+
+class SaleReturnItem(Base):
+    __tablename__ = "sale_return_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    return_id = Column(Integer, ForeignKey("sale_returns.id"), nullable=False)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
+    product_name = Column(String, default="")
+    quantity = Column(Integer, default=1)
+    unit_price = Column(Float, default=0)
+    subtotal = Column(Float, default=0)
+
+    sale_return = relationship("SaleReturn", back_populates="items")
+    product = relationship("Product")
+
 
 class CashSession(Base):
     """A till session: opened with a starting balance, closed with a count."""
@@ -151,6 +237,8 @@ class CashSession(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     opened_at = Column(DateTime, default=utcnow)
+    # Business day (YYYY-MM-DD): one session per cashier and per day.
+    business_day = Column(String, default="", index=True)
     opened_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     opening_balance = Column(Float, default=0)
     closed_at = Column(DateTime, nullable=True)
@@ -201,6 +289,175 @@ class StockMovement(Base):
     created_by = relationship("User")
 
 
+class Proforma(Base):
+    """Quotation: same layout as an invoice, but nothing is sold or stocked."""
+
+    __tablename__ = "proformas"
+
+    id = Column(Integer, primary_key=True, index=True)
+    reference = Column(String, unique=True, index=True, nullable=False)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True)
+    customer_name = Column(String, default="")
+    date = Column(DateTime, default=utcnow)
+    valid_until = Column(DateTime, nullable=True)
+    total = Column(Float, default=0)
+    note = Column(Text, default="")
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    customer = relationship("Customer")
+    created_by = relationship("User")
+    items = relationship(
+        "ProformaItem", back_populates="proforma", cascade="all, delete-orphan"
+    )
+
+
+class ProformaItem(Base):
+    __tablename__ = "proforma_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    proforma_id = Column(Integer, ForeignKey("proformas.id"), nullable=False)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
+    product_name = Column(String, default="")
+    quantity = Column(Integer, default=1)
+    unit_price = Column(Float, default=0)
+    subtotal = Column(Float, default=0)
+
+    proforma = relationship("Proforma", back_populates="items")
+    product = relationship("Product")
+
+
+class PasswordResetToken(Base):
+    """Single-use token emailed to a user who forgot their password."""
+
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    token_hash = Column(String, unique=True, index=True, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+
+    user = relationship("User")
+
+
+class Counter(Base):
+    """Row-locked sequence, so concurrent tills never pick the same number."""
+
+    __tablename__ = "counters"
+
+    name = Column(String, primary_key=True)
+    value = Column(Integer, default=0, nullable=False)
+
+
+class ChangeLog(Base):
+    """Write feed used by the workstations to refresh almost instantly.
+
+    Every flush that touches business data appends a row; clients poll the
+    latest id and reload their screen when it moves.
+    """
+
+    __tablename__ = "change_log"
+
+    id = Column(Integer, primary_key=True, index=True)
+    entities = Column(String, default="")
+    at = Column(DateTime, default=utcnow)
+
+
+class Order(Base):
+    """Customer order: goods promised now, handed over on delivery."""
+
+    __tablename__ = "orders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    reference = Column(String, unique=True, index=True, nullable=False)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True)
+    customer_name = Column(String, default="")
+    date = Column(DateTime, default=utcnow)
+    expected_date = Column(DateTime, nullable=True)
+    # En attente, Confirmée, Livrée, Annulée
+    status = Column(String, default="En attente", index=True)
+    total = Column(Float, default=0)
+    deposit = Column(Float, default=0)  # advance already paid
+    price_mode = Column(String, default="detail")
+    delivery_address = Column(String, default="")
+    note = Column(Text, default="")
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    customer = relationship("Customer")
+    created_by = relationship("User")
+    items = relationship(
+        "OrderItem", back_populates="order", cascade="all, delete-orphan"
+    )
+    deliveries = relationship(
+        "Delivery", back_populates="order", cascade="all, delete-orphan"
+    )
+
+    @property
+    def balance(self) -> float:
+        return max(self.total - (self.deposit or 0), 0)
+
+
+class OrderItem(Base):
+    __tablename__ = "order_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=False)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
+    product_name = Column(String, default="")
+    quantity = Column(Integer, default=1)
+    unit_price = Column(Float, default=0)
+    subtotal = Column(Float, default=0)
+
+    order = relationship("Order", back_populates="items")
+    product = relationship("Product")
+
+
+class Delivery(Base):
+    """Delivery note issued when an order leaves the shop."""
+
+    __tablename__ = "deliveries"
+
+    id = Column(Integer, primary_key=True, index=True)
+    reference = Column(String, unique=True, index=True, nullable=False)
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=False)
+    sale_id = Column(Integer, ForeignKey("sales.id"), nullable=True)
+    date = Column(DateTime, default=utcnow)
+    address = Column(String, default="")
+    carrier = Column(String, default="")  # person or company delivering
+    recipient = Column(String, default="")  # who signed for the goods
+    note = Column(Text, default="")
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    order = relationship("Order", back_populates="deliveries")
+    sale = relationship("Sale")
+    created_by = relationship("User")
+
+    @property
+    def order_reference(self) -> str:
+        return self.order.reference if self.order else ""
+
+
+class ActionLog(Base):
+    """Undo/redo history of the administrator's edits.
+
+    ``entries`` is a JSON list of row snapshots ({table, pk, before, after});
+    undoing writes ``before`` back, redoing writes ``after`` again.
+    """
+
+    __tablename__ = "action_log"
+
+    id = Column(Integer, primary_key=True, index=True)
+    label = Column(String, default="")
+    entries = Column(Text, default="[]")
+    at = Column(DateTime, default=utcnow)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    # False once undone; a redo sets it back to True.
+    is_applied = Column(Boolean, default=True, nullable=False)
+
+    user = relationship("User")
+
+
 class Notification(Base):
     """In-app notification shown to administrators."""
 
@@ -214,3 +471,94 @@ class Notification(Base):
     sale_id = Column(Integer, ForeignKey("sales.id"), nullable=True)
     is_read = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=utcnow)
+
+
+class Purchase(Base):
+    """Supply order sent to a supplier: goods bought to refill the stock."""
+
+    __tablename__ = "purchases"
+
+    id = Column(Integer, primary_key=True, index=True)
+    reference = Column(String, unique=True, index=True, nullable=False)
+    supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=True)
+    supplier_name = Column(String, default="")
+    date = Column(DateTime, default=utcnow)
+    expected_date = Column(DateTime, nullable=True)
+    received_at = Column(DateTime, nullable=True)
+    # En attente, Reçu partiellement, Reçu, Annulé
+    status = Column(String, default="En attente", index=True)
+    total = Column(Float, default=0)
+    paid = Column(Float, default=0)  # already settled with the supplier
+    invoice_number = Column(String, default="")  # supplier invoice
+    note = Column(Text, default="")
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    supplier = relationship("Supplier")
+    created_by = relationship("User")
+    items = relationship(
+        "PurchaseItem", back_populates="purchase", cascade="all, delete-orphan"
+    )
+
+    @property
+    def balance(self) -> float:
+        return max(self.total - (self.paid or 0), 0)
+
+
+class PurchaseItem(Base):
+    __tablename__ = "purchase_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    purchase_id = Column(Integer, ForeignKey("purchases.id"), nullable=False)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
+    product_name = Column(String, default="")
+    quantity = Column(Integer, default=1)  # ordered
+    received_quantity = Column(Integer, default=0)  # already in stock
+    unit_cost = Column(Float, default=0)  # purchase price
+    subtotal = Column(Float, default=0)
+
+    purchase = relationship("Purchase", back_populates="items")
+    product = relationship("Product")
+
+
+class LicenseState(Base):
+    """Licence this installation received from the central server.
+
+    Only a cache: every field comes from a statement signed by the server, so
+    editing this row does not grant anything (the signature stops matching).
+    """
+
+    __tablename__ = "license_state"
+
+    id = Column(Integer, primary_key=True, index=True)
+    installation_uid = Column(String, default="", nullable=False)
+    central_url = Column(String, default="")
+    # Proof of identity handed out at registration.
+    token = Column(String, default="")
+    # Key of the central server, pinned when the installation registered.
+    public_key = Column(Text, default="")
+    # Signed statement replayed while offline.
+    license_token = Column(Text, default="")
+    client_name = Column(String, default="")
+    license_key = Column(String, default="")
+    plan_code = Column(String, default="")
+    plan_name = Column(String, default="")
+    status = Column(String, default="")
+    features = Column(Text, default="")  # comma separated feature codes
+    starts_at = Column(DateTime, nullable=True)
+    ends_at = Column(DateTime, nullable=True)
+    grace_days = Column(Integer, default=7)
+    offline_days = Column(Integer, default=7)
+    last_sync = Column(DateTime, nullable=True)
+    last_error = Column(String, default="")
+    registered_at = Column(DateTime, default=utcnow)
+
+
+class RolePermission(Base):
+    """Right granted by the administrator to a role (seller, stock manager)."""
+
+    __tablename__ = "role_permissions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    role = Column(String, index=True, nullable=False)
+    permission = Column(String, index=True, nullable=False)
+    allowed = Column(Boolean, default=False, nullable=False)
