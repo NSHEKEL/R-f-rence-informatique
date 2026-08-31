@@ -7,8 +7,10 @@ import type { CashSession, CashSessionDetail, ReceiptFormat } from "../types";
 import CashTicket, { type CashTicketKind } from "../components/CashTicket";
 import Modal from "../components/Modal";
 import PrinterHint from "../components/PrinterHint";
+import { enterFullscreen, leaveFullscreen } from "../lib/fullscreen";
 import { printReceipt } from "../lib/print";
 import { useAuth } from "../context/AuthContext";
+import { useTill } from "../context/TillContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSyncVersion } from "../context/SyncContext";
 
@@ -18,6 +20,7 @@ import { useSyncVersion } from "../context/SyncContext";
  */
 export default function Caisse() {
   const { user, isAdmin } = useAuth();
+  const { refresh: refreshTill } = useTill();
   const { company } = useCompany();
   const version = useSyncVersion();
 
@@ -73,6 +76,10 @@ export default function Caisse() {
       setNote("");
       setOpeningBalance("0");
       await load();
+      await refreshTill();
+      // The counter works better without the desktop around it; the header
+      // button leaves full screen again.
+      if (!isAdmin) await enterFullscreen();
       showTicket(res.data, "open", true);
     } catch (err) {
       if (axios.isAxiosError(err)) {
@@ -94,6 +101,8 @@ export default function Caisse() {
       setCloseOpen(false);
       setCloseNote("");
       await load();
+      await refreshTill();
+      await leaveFullscreen();
       showTicket(res.data, "close", true);
     } catch (err) {
       if (axios.isAxiosError(err)) {

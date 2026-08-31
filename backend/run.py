@@ -139,6 +139,14 @@ class DesktopApi:
             return ""
         return chosen[0] if isinstance(chosen, (list, tuple)) else str(chosen)
 
+    def toggle_fullscreen(self) -> bool:
+        """Full screen for the counter: the web API alone cannot resize the
+        native window."""
+        if self.window is None:
+            return False
+        self.window.toggle_fullscreen()
+        return True
+
 
 def _open_window(url: str) -> bool:
     """Show the application in a native window. False if unavailable."""

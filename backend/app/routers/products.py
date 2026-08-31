@@ -4,11 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ..auth import get_current_user
 from ..database import get_db
 from ..models import Product, Sale, SaleItem, User
 from ..permissions import require_permission
 from ..schemas import ProductCreate, ProductOut, ProductUpdate
+from .cash import require_open_till
 
 router = APIRouter(prefix="/api/products", tags=["products"])
 
@@ -66,7 +66,7 @@ def next_barcode(
 def get_product_by_code(
     code: str,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_open_till),
 ):
     """Scanner lookup: barcode, QR code or SKU."""
     value = code.strip()
@@ -104,7 +104,7 @@ def _sales_stats(db: Session) -> dict[int, tuple[int, object]]:
 def list_products(
     sold: str = "",
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_open_till),
 ):
     """Catalogue, optionally filtered on sales history.
 
@@ -132,7 +132,7 @@ def list_products(
 def best_sellers(
     limit: int = 12,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_open_till),
 ):
     """Articles the shop sells the most, shown first on the till screen."""
     ranked = (
@@ -160,7 +160,7 @@ def best_sellers(
 def get_product(
     product_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_open_till),
 ):
     product = db.query(Product).get(product_id)
     if not product:

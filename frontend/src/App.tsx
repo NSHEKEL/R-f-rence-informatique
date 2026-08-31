@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./context/AuthContext";
 import { useLicense } from "./context/LicenseContext";
+import { TILL_GATED, useTill } from "./context/TillContext";
 import { PLAN_FEATURE } from "./lib/planFeatures";
 import Layout from "./components/Layout";
 import Login from "./pages/Login";
@@ -72,6 +73,9 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
  * Page the administrator can grant or revoke role by role, and that the
  * subscribed plan must include: a right the plan does not carry sends the
  * user back, and the API refuses the calls anyway.
+ *
+ * Selling screens additionally require an open till, so a cashier cannot even
+ * browse the articles before opening the day.
  */
 function PermRoute({
   right,
@@ -82,11 +86,15 @@ function PermRoute({
 }) {
   const { can } = useAuth();
   const { hasFeature } = useLicense();
+  const { selling, loading } = useTill();
   const fallback = useFallbackPath();
   const feature = PLAN_FEATURE[right];
   if (!can(right)) return <Navigate to={fallback} replace />;
   if (feature && !hasFeature(feature)) {
     return <Navigate to="/mon-abonnement" replace />;
+  }
+  if (TILL_GATED.has(right) && !selling && !loading) {
+    return <Navigate to={can("caisse") ? "/caisse" : fallback} replace />;
   }
   return <>{children}</>;
 }

@@ -8,6 +8,7 @@ import { CompanyProvider } from "./context/CompanyContext";
 import { LicenseProvider } from "./context/LicenseContext";
 import { NetworkProvider } from "./context/NetworkContext";
 import { SyncProvider } from "./context/SyncContext";
+import { TillProvider } from "./context/TillContext";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
@@ -17,7 +18,9 @@ createRoot(document.getElementById("root")!).render(
           <SyncProvider>
             <CompanyProvider>
               <LicenseProvider>
-                <App />
+                <TillProvider>
+                  <App />
+                </TillProvider>
               </LicenseProvider>
             </CompanyProvider>
           </SyncProvider>

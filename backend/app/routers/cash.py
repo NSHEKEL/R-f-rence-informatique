@@ -49,6 +49,24 @@ def day_session(db: Session, user: User) -> CashSession | None:
     )
 
 
+def require_open_till(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """A seller sells nothing — and sees no article — with a closed till.
+
+    The rule is enforced here and not only in the pages: a direct call to the
+    API would otherwise still hand over the catalogue. The administrator and
+    the stock manager keep their screens, the counter is not their job.
+    """
+    if current_user.role != "vendeur" or current_session(db, current_user):
+        return current_user
+    raise HTTPException(
+        status_code=403,
+        detail="Ouvrez votre caisse pour accéder aux articles et aux ventes",
+    )
+
+
 def _totals(db: Session, session: CashSession) -> dict:
     sales = (
         db.query(Sale)

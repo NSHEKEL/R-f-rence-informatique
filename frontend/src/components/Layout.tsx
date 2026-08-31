@@ -28,11 +28,15 @@ import {
   ShieldCheck,
   Lock,
   BadgeCheck,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
 import { useLicense } from "../context/LicenseContext";
+import { TILL_GATED, useTill } from "../context/TillContext";
 import { PLAN_FEATURE } from "../lib/planFeatures";
+import { isFullscreen, toggleFullscreen } from "../lib/fullscreen";
 import LicenseBanner from "./LicenseBanner";
 import NetworkBanner from "./NetworkBanner";
 import UpdateBanner from "./UpdateBanner";
@@ -185,6 +189,8 @@ export default function Layout() {
   const { user, isAdmin, can, logout } = useAuth();
   const { brandName, logoSrc } = useCompany();
   const { hasFeature, featureName } = useLicense();
+  const { selling } = useTill();
+  const [fullscreen, setFullscreen] = useState(isFullscreen);
   const location = useLocation();
   const navigate = useNavigate();
   const title = pageTitles[location.pathname] ?? brandName;
@@ -196,6 +202,17 @@ export default function Layout() {
   useEffect(() => {
     localStorage.setItem(COLLAPSED_KEY, collapsed ? "1" : "0");
   }, [collapsed]);
+
+  useEffect(() => {
+    const sync = () => setFullscreen(isFullscreen());
+    document.addEventListener("fullscreenchange", sync);
+    return () => document.removeEventListener("fullscreenchange", sync);
+  }, []);
+
+  async function switchFullscreen() {
+    await toggleFullscreen();
+    setFullscreen(isFullscreen());
+  }
 
   const initials = (user?.name ?? "AD")
     .split(" ")
@@ -250,7 +267,10 @@ export default function Layout() {
               ? location.pathname === item.to
               : location.pathname.startsWith(item.to);
             const feature = PLAN_FEATURE[item.access];
-            const locked = Boolean(feature) && !hasFeature(feature);
+            const planLocked = Boolean(feature) && !hasFeature(feature);
+            // Nothing is sold — nor even browsed — before the till is opened.
+            const tillLocked = TILL_GATED.has(item.access) && !selling;
+            const locked = planLocked || tillLocked;
             return (
               <button
                 key={item.to}
@@ -258,13 +278,16 @@ export default function Layout() {
                 aria-current={isActive ? "page" : undefined}
                 aria-label={item.label}
                 title={
-                  locked
-                    ? `🔒 ${featureName(feature)} n'est pas incluse dans votre formule`
-                    : undefined
+                  tillLocked
+                    ? "🔒 Ouvrez votre caisse pour accéder à cette page"
+                    : planLocked
+                      ? `🔒 ${featureName(feature)} n'est pas incluse dans votre formule`
+                      : undefined
                 }
                 onClick={() => {
                   setMobileOpen(false);
-                  navigate(locked ? "/mon-abonnement" : item.to);
+                  if (tillLocked) navigate("/caisse");
+                  else navigate(planLocked ? "/mon-abonnement" : item.to);
                 }}
                 className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-left text-sm font-medium transition-colors ${
                   collapsed ? "lg:justify-center lg:px-2" : ""
@@ -354,6 +377,25 @@ export default function Layout() {
           <div className="ml-auto flex items-center gap-2">
             {isAdmin && <UndoRedo />}
             {isAdmin && <NotificationBell />}
+            <button
+              onClick={() => void switchFullscreen()}
+              className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+              aria-label={
+                fullscreen ? "Quitter le plein écran" : "Passer en plein écran"
+              }
+              title={
+                fullscreen ? "Quitter le plein écran" : "Passer en plein écran"
+              }
+            >
+              {fullscreen ? <Minimize2 size={20} /> : <Maximize2 size={20} />}
+            </button>
+            <button
+              onClick={logout}
+              className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-red-50 hover:text-red-600"
+            >
+              <LogOut size={18} />
+              <span className="hidden sm:inline">Déconnexion</span>
+            </button>
           </div>
         </header>
 

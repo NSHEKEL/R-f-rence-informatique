@@ -36,6 +36,20 @@ type CompanyForm = Omit<CompanySettings, "id"> & { smtp_password?: string };
 
 const LOGO_MAX_BYTES = 400_000;
 
+/** The page is long: each domain gets its own tab instead of one scroll. */
+const TABS = [
+  { key: "entreprise", label: "Entreprise", icon: Building2 },
+  { key: "reseau", label: "Réseau & postes", icon: Server },
+  { key: "sauvegarde", label: "Sauvegarde", icon: Database },
+  { key: "maj", label: "Mise à jour", icon: DownloadCloud },
+  { key: "emails", label: "E-mails", icon: Mail },
+  { key: "compte", label: "Mon compte", icon: User },
+] as const;
+
+type TabKey = (typeof TABS)[number]["key"];
+
+const TAB_KEY = "easygest_settings_tab";
+
 const emptyCompany: CompanyForm = {
   name: "",
   slogan: "",
@@ -94,6 +108,12 @@ export default function Settings() {
   const [backups, setBackups] = useState<BackupFile[]>([]);
   const [backupMessage, setBackupMessage] = useState("");
   const [lanAddress, setLanAddress] = useState("");
+  const [tab, setTab] = useState<TabKey>(() => {
+    const saved_ = localStorage.getItem(TAB_KEY);
+    return TABS.some((item) => item.key === saved_)
+      ? (saved_ as TabKey)
+      : "entreprise";
+  });
   const [workstations, setWorkstations] = useState<Workstation[]>([]);
   const restoreInput = useRef<HTMLInputElement>(null);
 
@@ -141,6 +161,10 @@ export default function Settings() {
   useEffect(() => {
     loadBackups();
   }, [loadBackups]);
+
+  useEffect(() => {
+    localStorage.setItem(TAB_KEY, tab);
+  }, [tab]);
 
   async function createBackup() {
     setBackupMessage("Sauvegarde en cours...");
@@ -372,7 +396,26 @@ export default function Settings() {
         </div>
       </div>
 
+      <div className="flex flex-wrap gap-2">
+        {TABS.map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            onClick={() => setTab(item.key)}
+            className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold transition-colors ${
+              tab === item.key
+                ? "bg-brand-600 text-white"
+                : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            <item.icon size={16} />
+            {item.label}
+          </button>
+        ))}
+      </div>
+
       {/* Company configuration */}
+      {tab === "entreprise" && (
       <div className="card p-6">
         <div className="mb-4 flex items-center gap-2">
           <Building2 size={18} className="text-brand-600" />
@@ -590,8 +633,10 @@ export default function Settings() {
           </div>
         )}
       </div>
+      )}
 
       {/* Outgoing mail */}
+      {tab === "emails" && (
       <div className="card p-6">
         <div className="mb-4 flex items-center gap-2">
           <Mail size={18} className="text-brand-600" />
@@ -688,8 +733,10 @@ export default function Settings() {
           </div>
         </div>
       </div>
+      )}
 
       {/* Central server */}
+      {tab === "reseau" && (
       <div className="card p-6">
         <div className="mb-4 flex items-center gap-2">
           <Server size={18} className="text-brand-600" />
@@ -778,8 +825,10 @@ export default function Settings() {
           )}
         </div>
       </div>
+      )}
 
       {/* Backups */}
+      {tab === "sauvegarde" && (
       <div className="card p-6">
         <div className="mb-4 flex items-center gap-2">
           <Database size={18} className="text-brand-600" />
@@ -899,8 +948,10 @@ export default function Settings() {
           </ul>
         )}
       </div>
+      )}
 
       {/* Remote update */}
+      {tab === "maj" && (
       <div className="card p-6">
         <div className="mb-4 flex items-center gap-2">
           <DownloadCloud size={18} className="text-brand-600" />
@@ -941,7 +992,9 @@ export default function Settings() {
           </p>
         )}
       </div>
+      )}
 
+      {tab === "compte" && (
       <div className="card p-6">
         <div className="mb-4 flex items-center gap-2">
           <Printer size={18} className="text-slate-400" />
@@ -977,6 +1030,7 @@ export default function Settings() {
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 }
