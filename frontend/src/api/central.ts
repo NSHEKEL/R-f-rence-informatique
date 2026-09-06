@@ -134,6 +134,15 @@ export interface License {
   days_left: number | null;
 }
 
+export interface ClientAdmin {
+  id: number;
+  name: string;
+  email: string;
+  is_active: boolean;
+  has_password: boolean;
+  updated_at: string | null;
+}
+
 export interface ClientDetail {
   id: number;
   company: string;
@@ -143,10 +152,12 @@ export interface ClientDetail {
   address: string;
   city: string;
   note: string;
+  about: string;
   created_at: string | null;
   license: License | null;
   installations: Installation[];
   features: string[];
+  admins: ClientAdmin[];
 }
 
 export interface AdminLogEntry {

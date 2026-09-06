@@ -167,6 +167,32 @@ class ClientPage(BaseModel):
     rows: list[ClientRow]
 
 
+class ClientAdminOut(BaseModel):
+    id: int
+    name: str
+    email: str
+    is_active: bool
+    has_password: bool = False
+    updated_at: Optional[datetime] = None
+
+
+class ClientAdminCreate(BaseModel):
+    name: str = "Administrateur"
+    email: str
+    password: str
+
+
+class ClientAdminUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    password: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class ClientAbout(BaseModel):
+    about: str = ""
+
+
 class ClientDetail(BaseModel):
     id: int
     company: str
@@ -176,10 +202,12 @@ class ClientDetail(BaseModel):
     address: str = ""
     city: str = ""
     note: str = ""
+    about: str = ""
     created_at: Optional[datetime] = None
     license: Optional[LicenseOut] = None
     installations: list[InstallationOut] = []
     features: list[str] = []
+    admins: list[ClientAdminOut] = []
 
 
 class ClientCreate(BaseModel):

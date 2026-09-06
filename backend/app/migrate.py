@@ -60,6 +60,9 @@ COLUMNS: dict[str, dict[str, str]] = {
     "cash_sessions": {
         "business_day": "VARCHAR DEFAULT ''",
     },
+    "license_state": {
+        "directives_state": "TEXT DEFAULT ''",
+    },
 }
 
 INDEXES = [

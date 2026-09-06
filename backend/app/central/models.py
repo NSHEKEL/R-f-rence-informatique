@@ -106,14 +106,45 @@ class Client(Base):
     address = Column(String, default="")
     city = Column(String, default="")
     note = Column(Text, default="")
+    # "À propos de nous" pushed to the shop at the next synchronisation.
+    about = Column(Text, default="")
     created_at = Column(DateTime, default=utcnow)
 
+    admins = relationship(
+        "ClientAdmin", back_populates="client", cascade="all, delete-orphan"
+    )
     licenses = relationship(
         "License", back_populates="client", cascade="all, delete-orphan"
     )
     installations = relationship(
         "Installation", back_populates="client", cascade="all, delete-orphan"
     )
+
+
+class ClientAdmin(Base):
+    """Administrator account of a shop, managed from the owner's console.
+
+    The password never travels in clear: only its hash is stored here and
+    handed to the installation, which creates or updates the matching local
+    account at the next synchronisation.
+    """
+
+    __tablename__ = "client_admins"
+    __table_args__ = (UniqueConstraint("client_id", "email", name="uq_client_admin"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    name = Column(String, nullable=False, default="Administrateur")
+    email = Column(String, nullable=False, index=True)
+    hashed_password = Column(String, default="")
+    is_active = Column(Boolean, default=True, nullable=False)
+    # Removed from the console: the shop deactivates the account instead of
+    # deleting it, so its history of sign-ins and sales stays readable.
+    is_removed = Column(Boolean, default=False, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+    created_at = Column(DateTime, default=utcnow)
+
+    client = relationship("Client", back_populates="admins")
 
 
 # Licence states, in the order they appear in the console.

@@ -14,6 +14,7 @@ from .models import (
     STATUS_SUSPENDED,
     AdminLog,
     Client,
+    ClientAdmin,
     Feature,
     GlobalAdmin,
     Installation,
@@ -130,6 +131,37 @@ def create_license(
     return license_
 
 
+def client_directives(db: Session, client: Optional[Client]) -> dict:
+    """What the owner decided remotely: shop text and administrator accounts.
+
+    Travels inside the signed licence, so a shop cannot forge an extra
+    administrator by editing its own database.
+    """
+    if client is None:
+        return {"about": "", "admins": []}
+    rows = (
+        db.query(ClientAdmin)
+        .filter(ClientAdmin.client_id == client.id)
+        .order_by(ClientAdmin.id)
+        .all()
+    )
+    return {
+        "about": client.about or "",
+        "admins": [
+            {
+                "email": row.email,
+                "name": row.name,
+                "password_hash": row.hashed_password or "",
+                "active": bool(row.is_active and not row.is_removed),
+                "updated_at": aware(row.updated_at).isoformat()
+                if row.updated_at
+                else "",
+            }
+            for row in rows
+        ],
+    }
+
+
 def license_answer(
     db: Session, installation: Installation, license_: License
 ) -> str:
@@ -155,6 +187,7 @@ def license_answer(
         # reaching the server again.
         "offline_days": max(license_.grace_days, 7),
         "issued_at": utcnow().isoformat(),
+        "directives": client_directives(db, installation.client),
     }
     return sign_license(payload)
 

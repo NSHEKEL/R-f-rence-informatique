@@ -15,6 +15,7 @@ from ..models import (
     STATUS_SUSPENDED,
     AdminLog,
     Client,
+    ClientAdmin,
     Feature,
     GlobalAdmin,
     Installation,
@@ -23,6 +24,10 @@ from ..models import (
     PlanFeature,
 )
 from ..schemas import (
+    ClientAbout,
+    ClientAdminCreate,
+    ClientAdminOut,
+    ClientAdminUpdate,
     ClientCreate,
     ClientDetail,
     ClientPage,
@@ -42,7 +47,7 @@ from ..schemas import (
     PlanRightUpdate,
     PlanUpdate,
 )
-from ..security import current_admin
+from ..security import current_admin, hash_password
 from ..service import (
     aware,
     create_license,
@@ -408,6 +413,7 @@ def _client_detail(db: Session, client: Client) -> ClientDetail:
         address=client.address or "",
         city=client.city or "",
         note=client.note or "",
+        about=client.about or "",
         created_at=aware(client.created_at),
         license=_license_out(db, license_),
         installations=[
@@ -428,6 +434,23 @@ def _client_detail(db: Session, client: Client) -> ClientDetail:
         features=plan_feature_codes(db, license_.plan)
         if license_ and license_.plan
         else [],
+        admins=[
+            ClientAdminOut(
+                id=row.id,
+                name=row.name,
+                email=row.email,
+                is_active=bool(row.is_active and not row.is_removed),
+                has_password=bool(row.hashed_password),
+                updated_at=aware(row.updated_at),
+            )
+            for row in db.query(ClientAdmin)
+            .filter(
+                ClientAdmin.client_id == client.id,
+                ClientAdmin.is_removed.is_(False),
+            )
+            .order_by(ClientAdmin.id)
+            .all()
+        ],
     )
 
 
@@ -506,6 +529,133 @@ def update_client(
         before,
         f"{client.company} · {client.manager} · {client.phone}",
     )
+    return _client_detail(db, client)
+
+
+@router.put("/clients/{client_id}/about", response_model=ClientDetail)
+def set_about(
+    client_id: int,
+    payload: ClientAbout,
+    db: Session = Depends(get_db),
+    admin: GlobalAdmin = Depends(current_admin),
+):
+    """« À propos de nous » shown in the shop, written from here."""
+    client = _client_or_404(db, client_id)
+    before = client.about or ""
+    client.about = payload.about
+    db.commit()
+    db.refresh(client)
+    log(db, admin, client, "Modification À propos", before, client.about or "")
+    return _client_detail(db, client)
+
+
+def _admin_or_404(db: Session, client: Client, admin_id: int) -> ClientAdmin:
+    row = (
+        db.query(ClientAdmin)
+        .filter(
+            ClientAdmin.id == admin_id,
+            ClientAdmin.client_id == client.id,
+            ClientAdmin.is_removed.is_(False),
+        )
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Administrateur introuvable")
+    return row
+
+
+@router.post(
+    "/clients/{client_id}/admins", response_model=ClientDetail, status_code=201
+)
+def create_client_admin(
+    client_id: int,
+    payload: ClientAdminCreate,
+    db: Session = Depends(get_db),
+    admin: GlobalAdmin = Depends(current_admin),
+):
+    """Administrator account the shop receives at its next synchronisation."""
+    client = _client_or_404(db, client_id)
+    email = payload.email.strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Adresse e-mail invalide")
+    if len(payload.password) < 6:
+        raise HTTPException(
+            status_code=400, detail="Mot de passe trop court (6 caractères minimum)"
+        )
+    existing = (
+        db.query(ClientAdmin)
+        .filter(ClientAdmin.client_id == client.id, ClientAdmin.email == email)
+        .first()
+    )
+    if existing is not None and not existing.is_removed:
+        raise HTTPException(status_code=400, detail="Cet administrateur existe déjà")
+    row = existing or ClientAdmin(client_id=client.id, email=email)
+    row.name = payload.name.strip() or "Administrateur"
+    row.hashed_password = hash_password(payload.password)
+    row.is_active = True
+    row.is_removed = False
+    row.updated_at = utcnow()
+    db.add(row)
+    db.commit()
+    log(db, admin, client, "Création administrateur client", "", email)
+    return _client_detail(db, client)
+
+
+@router.put("/clients/{client_id}/admins/{admin_id}", response_model=ClientDetail)
+def update_client_admin(
+    client_id: int,
+    admin_id: int,
+    payload: ClientAdminUpdate,
+    db: Session = Depends(get_db),
+    admin: GlobalAdmin = Depends(current_admin),
+):
+    client = _client_or_404(db, client_id)
+    row = _admin_or_404(db, client, admin_id)
+    before = f"{row.name} · {row.email} · {'actif' if row.is_active else 'inactif'}"
+    if payload.name is not None:
+        row.name = payload.name.strip() or row.name
+    if payload.email is not None:
+        email = payload.email.strip().lower()
+        if not email or "@" not in email:
+            raise HTTPException(status_code=400, detail="Adresse e-mail invalide")
+        row.email = email
+    if payload.password:
+        if len(payload.password) < 6:
+            raise HTTPException(
+                status_code=400,
+                detail="Mot de passe trop court (6 caractères minimum)",
+            )
+        row.hashed_password = hash_password(payload.password)
+    if payload.is_active is not None:
+        row.is_active = payload.is_active
+    row.updated_at = utcnow()
+    db.commit()
+    log(
+        db,
+        admin,
+        client,
+        "Modification administrateur client",
+        before,
+        f"{row.name} · {row.email} · {'actif' if row.is_active else 'inactif'}",
+    )
+    return _client_detail(db, client)
+
+
+@router.delete("/clients/{client_id}/admins/{admin_id}", response_model=ClientDetail)
+def delete_client_admin(
+    client_id: int,
+    admin_id: int,
+    db: Session = Depends(get_db),
+    admin: GlobalAdmin = Depends(current_admin),
+):
+    """Withdraw the account; the shop deactivates it and keeps its history."""
+    client = _client_or_404(db, client_id)
+    row = _admin_or_404(db, client, admin_id)
+    row.is_removed = True
+    row.is_active = False
+    row.updated_at = utcnow()
+    db.commit()
+    log(db, admin, client, "Suppression administrateur client", row.email, "")
     return _client_detail(db, client)
 
 

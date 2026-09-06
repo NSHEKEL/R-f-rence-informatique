@@ -21,12 +21,13 @@ from typing import Optional
 
 from fastapi import Depends, HTTPException
 from jose import JWTError, jwt
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .auth import get_current_user
 from .database import get_db
 from .features import FEATURE_CODES, FEATURE_LABELS
-from .models import LicenseState, User
+from .models import CompanySettings, LicenseState, User
 from .paths import data_dir
 from .version import APP_VERSION
 
@@ -327,7 +328,80 @@ def _store(
     row.grace_days = int(payload.get("grace_days", 0) or 0)
     row.offline_days = int(payload.get("offline_days", 7) or 7)
     db.commit()
+    directives = payload.get("directives")
+    if isinstance(directives, dict):
+        apply_directives(db, row, directives)
     return current(db)
+
+
+def apply_directives(db: Session, row: LicenseState, directives: dict) -> None:
+    """Carry out what the owner changed from his console.
+
+    Only signed instructions reach this point. Nothing is ever deleted: an
+    account the owner withdrew is deactivated, so its sign-ins and its sales
+    stay readable.
+    """
+    try:
+        applied = json.loads(row.directives_state or "{}")
+    except ValueError:
+        applied = {}
+    if not isinstance(applied, dict):
+        applied = {}
+    changed = False
+
+    about = directives.get("about")
+    if isinstance(about, str) and applied.get("about") != about:
+        settings = db.query(CompanySettings).order_by(CompanySettings.id).first()
+        if settings is None:
+            settings = CompanySettings()
+            db.add(settings)
+        settings.about = about
+        applied["about"] = about
+        changed = True
+
+    seen = applied.get("admins")
+    known: dict = seen if isinstance(seen, dict) else {}
+    for entry in directives.get("admins") or []:
+        if not isinstance(entry, dict):
+            continue
+        email = str(entry.get("email") or "").strip().lower()
+        if not email:
+            continue
+        stamp = str(entry.get("updated_at") or "")
+        if known.get(email) == stamp:
+            continue
+        user = db.query(User).filter(func.lower(User.email) == email).first()
+        active = bool(entry.get("active", True))
+        password_hash = str(entry.get("password_hash") or "")
+        if user is None:
+            if not active or not password_hash:
+                known[email] = stamp
+                changed = True
+                continue
+            db.add(
+                User(
+                    name=str(entry.get("name") or "Administrateur"),
+                    email=email,
+                    hashed_password=password_hash,
+                    role="admin",
+                    is_active=True,
+                )
+            )
+        else:
+            name = str(entry.get("name") or "").strip()
+            if name:
+                user.name = name
+            if password_hash:
+                user.hashed_password = password_hash
+            user.role = "admin"
+            user.is_active = active
+        known[email] = stamp
+        changed = True
+
+    if changed:
+        applied["admins"] = known
+        row.directives_state = json.dumps(applied)
+        db.commit()
 
 
 def register(

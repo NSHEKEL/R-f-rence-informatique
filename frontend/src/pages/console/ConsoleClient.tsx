@@ -40,6 +40,10 @@ export default function ConsoleClient() {
   const [notice, setNotice] = useState("");
   const [endsAt, setEndsAt] = useState("");
   const [graceDays, setGraceDays] = useState("");
+  const [about, setAbout] = useState("");
+  const [adminName, setAdminName] = useState("");
+  const [adminEmail, setAdminEmail] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -47,6 +51,7 @@ export default function ConsoleClient() {
       setClient(res.data);
       setEndsAt(res.data.license?.ends_at?.slice(0, 10) ?? "");
       setGraceDays(String(res.data.license?.grace_days ?? 7));
+      setAbout(res.data.about ?? "");
       const history = await central.get<AdminLogEntry[]>("/logs", {
         params: { client_id: id, limit: 30 },
       });
@@ -253,6 +258,173 @@ export default function ConsoleClient() {
             Enregistrer les dates
           </button>
         </div>
+      </div>
+
+      <div className="rounded-2xl bg-white p-4 shadow-sm">
+        <p className="mb-3 text-sm font-semibold text-slate-700">
+          Administrateurs du client
+        </p>
+        <table className="min-w-full text-sm">
+          <thead className="text-left text-xs uppercase text-slate-500">
+            <tr>
+              <th className="py-2">Nom</th>
+              <th className="py-2">E-mail</th>
+              <th className="py-2">État</th>
+              <th className="py-2">Modifié le</th>
+              <th className="py-2"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {client.admins.map((entry) => (
+              <tr key={entry.id}>
+                <td className="py-2">{entry.name}</td>
+                <td className="py-2">{entry.email}</td>
+                <td className="py-2">
+                  {entry.is_active ? "Actif" : "Désactivé"}
+                </td>
+                <td className="py-2">{moment(entry.updated_at)}</td>
+                <td className="py-2 text-right">
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void run("Modification de l'administrateur", () =>
+                          central.put(
+                            `/clients/${client.id}/admins/${entry.id}`,
+                            { is_active: !entry.is_active }
+                          )
+                        )
+                      }
+                      className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs"
+                    >
+                      {entry.is_active ? "Désactiver" : "Activer"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const value = window.prompt(
+                          `Nouveau mot de passe pour ${entry.email}`
+                        );
+                        if (!value) return;
+                        void run("Changement de mot de passe", () =>
+                          central.put(
+                            `/clients/${client.id}/admins/${entry.id}`,
+                            { password: value }
+                          )
+                        );
+                      }}
+                      className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs"
+                    >
+                      Mot de passe
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (
+                          !window.confirm(
+                            `Retirer l'administrateur ${entry.email} ? Son compte sera désactivé chez le client, son historique reste intact.`
+                          )
+                        )
+                          return;
+                        void run("Suppression de l'administrateur", () =>
+                          central.delete(
+                            `/clients/${client.id}/admins/${entry.id}`
+                          )
+                        );
+                      }}
+                      className="rounded-lg border border-red-200 px-2.5 py-1 text-xs text-red-600"
+                    >
+                      Supprimer
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {client.admins.length === 0 && (
+              <tr>
+                <td colSpan={5} className="py-4 text-center text-slate-500">
+                  Aucun administrateur piloté depuis la console
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+        <div className="mt-3 flex flex-wrap items-end gap-2">
+          <div>
+            <label className="block text-xs text-slate-500">Nom</label>
+            <input
+              value={adminName}
+              onChange={(e) => setAdminName(e.target.value)}
+              placeholder="Administrateur"
+              className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500">E-mail</label>
+            <input
+              value={adminEmail}
+              onChange={(e) => setAdminEmail(e.target.value)}
+              className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500">
+              Mot de passe
+            </label>
+            <input
+              type="password"
+              value={adminPassword}
+              onChange={(e) => setAdminPassword(e.target.value)}
+              className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() =>
+              void run("Création de l'administrateur", async () => {
+                await central.post(`/clients/${client.id}/admins`, {
+                  name: adminName || "Administrateur",
+                  email: adminEmail,
+                  password: adminPassword,
+                });
+                setAdminName("");
+                setAdminEmail("");
+                setAdminPassword("");
+              })
+            }
+            className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white"
+          >
+            Ajouter
+          </button>
+        </div>
+        <p className="mt-2 text-xs text-slate-500">
+          Le poste du client crée ou met à jour ces comptes à sa prochaine
+          synchronisation. Un compte retiré est désactivé, jamais effacé :
+          l'historique des connexions et des ventes reste consultable.
+        </p>
+      </div>
+
+      <div className="rounded-2xl bg-white p-4 shadow-sm">
+        <p className="mb-3 text-sm font-semibold text-slate-700">
+          À propos de nous (texte affiché chez le client)
+        </p>
+        <textarea
+          value={about}
+          onChange={(e) => setAbout(e.target.value)}
+          rows={6}
+          className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+        />
+        <button
+          type="button"
+          onClick={() =>
+            void run("Mise à jour d'« À propos »", () =>
+              central.put(`/clients/${client.id}/about`, { about })
+            )
+          }
+          className="mt-2 rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white"
+        >
+          Enregistrer
+        </button>
       </div>
 
       <div className="rounded-2xl bg-white p-4 shadow-sm">

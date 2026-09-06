@@ -2,6 +2,7 @@
 
 import os
 
+from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 
 from ..features import BASE_FEATURES, FEATURES
@@ -105,7 +106,31 @@ def _seed_admin(db: Session) -> None:
     db.commit()
 
 
+# Columns added after the first release; create_all() never adds them to a
+# table the deployed database already has.
+ADDED_COLUMNS: dict[str, dict[str, str]] = {
+    "clients": {"about": "TEXT DEFAULT ''"},
+}
+
+
+def _add_missing_columns() -> None:
+    insp = inspect(engine)
+    tables = set(insp.get_table_names())
+    with engine.begin() as conn:
+        for table, columns in ADDED_COLUMNS.items():
+            if table not in tables:
+                continue
+            existing = {c["name"] for c in insp.get_columns(table)}
+            for column, definition in columns.items():
+                if column in existing:
+                    continue
+                conn.execute(
+                    text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+                )
+
+
 def seed() -> None:
+    _add_missing_columns()
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:

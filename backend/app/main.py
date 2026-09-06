@@ -121,8 +121,10 @@ LICENSE_FREE_PREFIXES = (
     "/api/updates",
 )
 
-# How often the workstation checks its licence with the central server.
-SYNC_INTERVAL_SECONDS = int(os.getenv("EASYGEST_LICENSE_SYNC_SECONDS", "3600"))
+# How often the workstation checks its licence with the central server. Ten
+# minutes: what the owner changes from his console reaches the shop the same
+# morning, without hammering the server.
+SYNC_INTERVAL_SECONDS = int(os.getenv("EASYGEST_LICENSE_SYNC_SECONDS", "600"))
 
 
 def _user_id(request: Request) -> Optional[int]:

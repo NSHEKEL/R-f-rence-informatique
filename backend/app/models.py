@@ -556,6 +556,9 @@ class LicenseState(Base):
     offline_days = Column(Integer, default=7)
     last_sync = Column(DateTime, nullable=True)
     last_error = Column(String, default="")
+    # What the owner's last instructions already changed here, so a local
+    # password change is not undone at every synchronisation.
+    directives_state = Column(Text, default="")
     registered_at = Column(DateTime, default=utcnow)
 
 
