@@ -106,9 +106,9 @@ export default function Sales() {
       ["Référence", "Date", "Client", "Vendeur", "Paiement", "Statut", "Total"],
       filtered.map((s) => [
         s.reference,
-        formatDateTime(s.created_at),
+        formatDateTime(s.date),
         s.customer?.name ?? "",
-        s.seller?.name ?? "",
+        s.created_by?.name ?? "",
         s.payment_method ?? "",
         s.status ?? "",
         s.total,
