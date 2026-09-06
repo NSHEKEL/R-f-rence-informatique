@@ -562,6 +562,76 @@ class LicenseState(Base):
     registered_at = Column(DateTime, default=utcnow)
 
 
+class Debt(Base):
+    """Money still owed: by a customer (créance) or to a supplier (dette).
+
+    A credit sale opens one automatically; a purchase paid later can be
+    written down by hand. What is left to pay is the amount minus the
+    payments, so the history of the settlements is never lost.
+    """
+
+    __tablename__ = "debts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    kind = Column(String, default="creance", index=True)  # creance, dette
+    party = Column(String, default="")  # customer or supplier, as written
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True)
+    supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=True)
+    sale_id = Column(Integer, ForeignKey("sales.id"), nullable=True)
+    reference = Column(String, default="")
+    amount = Column(Float, default=0)
+    due_date = Column(DateTime, nullable=True)
+    note = Column(Text, default="")
+    created_at = Column(DateTime, default=utcnow)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    customer = relationship("Customer")
+    supplier = relationship("Supplier")
+    sale = relationship("Sale")
+    created_by = relationship("User")
+    payments = relationship(
+        "DebtPayment", back_populates="debt", cascade="all, delete-orphan"
+    )
+
+    @property
+    def paid(self) -> float:
+        return sum(payment.amount for payment in self.payments)
+
+    @property
+    def remaining(self) -> float:
+        return round(self.amount - self.paid, 2)
+
+    @property
+    def settled(self) -> bool:
+        return self.remaining <= 0.009
+
+    @property
+    def overdue(self) -> bool:
+        if self.settled or self.due_date is None:
+            return False
+        due = self.due_date
+        if due.tzinfo is None:
+            due = due.replace(tzinfo=timezone.utc)
+        return due < utcnow()
+
+
+class DebtPayment(Base):
+    """A settlement, total or partial, of a debt or of a receivable."""
+
+    __tablename__ = "debt_payments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    debt_id = Column(Integer, ForeignKey("debts.id"), nullable=False)
+    amount = Column(Float, default=0)
+    date = Column(DateTime, default=utcnow)
+    method = Column(String, default="Espèces")
+    note = Column(Text, default="")
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    debt = relationship("Debt", back_populates="payments")
+    created_by = relationship("User")
+
+
 class RolePermission(Base):
     """Right granted by the administrator to a role (seller, stock manager)."""
 

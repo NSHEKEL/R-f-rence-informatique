@@ -13,6 +13,7 @@ import {
   Menu,
   X,
   Calculator,
+  HandCoins,
   ClipboardList,
   Wallet,
   Undo2,
@@ -123,6 +124,12 @@ const navItems: {
     access: "comptabilite",
   },
   {
+    to: "/dettes",
+    label: "Dettes & créances",
+    icon: HandCoins,
+    access: "dettes",
+  },
+  {
     to: "/fournisseurs",
     label: "Fournisseurs",
     icon: Truck,
@@ -170,6 +177,7 @@ const pageTitles: Record<string, string> = {
   "/rapports": "Rapports",
   "/proformas": "Factures proforma",
   "/comptabilite": "Comptabilité",
+  "/dettes": "Dettes & créances",
   "/ventes": "Ventes",
   "/commandes": "Commandes",
   "/livraisons": "Livraisons",

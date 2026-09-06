@@ -33,7 +33,13 @@ import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSyncVersion } from "../context/SyncContext";
 
-const PAYMENTS = ["Espèces", "Mobile Money", "Carte bancaire", "Virement"];
+const PAYMENTS = [
+  "Espèces",
+  "Mobile Money",
+  "Carte bancaire",
+  "Virement",
+  "Crédit (à régler plus tard)",
+];
 
 export default function Sales() {
   const { can } = useAuth();

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from .. import backup
 from ..database import get_db
 from ..models import (
+    Debt,
     Notification,
     Product,
     Sale,
@@ -192,6 +193,7 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
     sale.total = total
     db.add(sale)
     db.flush()
+    _open_receivable(db, sale, current_user)
 
     if current_user.role != "admin":
         db.add(
@@ -225,6 +227,26 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
     db.refresh(sale)
     _backup_after_sale(db)
     return sale
+
+
+def _open_receivable(db: Session, sale: Sale, current_user: User) -> None:
+    """A sale settled later stays visible in Dettes & créances until paid."""
+    if "crédit" not in (sale.payment_method or "").lower():
+        return
+    if sale.status == "Annulée":
+        return
+    db.add(
+        Debt(
+            kind="creance",
+            party=sale.customer.name if sale.customer else "Client de passage",
+            customer_id=sale.customer_id,
+            sale_id=sale.id,
+            reference=sale.reference,
+            amount=sale.total,
+            note="Vente à crédit",
+            created_by_id=current_user.id,
+        )
+    )
 
 
 def _backup_after_sale(db: Session) -> None:

@@ -27,6 +27,7 @@ PERMISSIONS: dict[str, tuple[str, str]] = {
     "rapports": ("Rapports", "Pages"),
     "proformas": ("Factures proforma", "Pages"),
     "comptabilite": ("Comptabilité", "Pages"),
+    "dettes": ("Dettes & créances", "Pages"),
     "fournisseurs": ("Fournisseurs", "Pages"),
     "approvisionnements": ("Approvisionnement", "Pages"),
     "categories": ("Catégories", "Pages"),
@@ -42,6 +43,8 @@ PERMISSIONS: dict[str, tuple[str, str]] = {
     "ventes_supprimer": ("Supprimer ou corriger une vente", "Actions"),
     "prix_modifier": ("Modifier le prix pendant une vente", "Actions"),
     "inventaire_appliquer": ("Appliquer un inventaire (ajuster le stock)", "Actions"),
+    "dettes_gerer": ("Créer et modifier une dette ou une créance", "Actions"),
+    "dettes_regler": ("Enregistrer un règlement de dette ou de créance", "Actions"),
     "approvisionnements_gerer": (
         "Créer, réceptionner et supprimer un approvisionnement",
         "Actions",

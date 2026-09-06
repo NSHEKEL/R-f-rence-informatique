@@ -803,3 +803,57 @@ class OfferedPlan(BaseModel):
     currency: str = "FCFA"
     duration_days: int = 0
     features: List[str] = []
+
+
+# ---------- Debts and receivables ----------
+class DebtPaymentCreate(BaseModel):
+    amount: float
+    method: str = "Espèces"
+    note: str = ""
+
+
+class DebtPaymentOut(DebtPaymentCreate):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    date: datetime
+    created_by: Optional[UserOut] = None
+
+
+class DebtCreate(BaseModel):
+    kind: str = "creance"  # creance (client) or dette (fournisseur)
+    party: str = ""
+    customer_id: Optional[int] = None
+    supplier_id: Optional[int] = None
+    reference: str = ""
+    amount: float
+    due_date: Optional[datetime] = None
+    note: str = ""
+
+
+class DebtOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    kind: str
+    party: str
+    customer_id: Optional[int] = None
+    supplier_id: Optional[int] = None
+    sale_id: Optional[int] = None
+    reference: str
+    amount: float
+    due_date: Optional[datetime] = None
+    note: str
+    created_at: datetime
+    paid: float
+    remaining: float
+    settled: bool
+    overdue: bool
+    payments: List[DebtPaymentOut] = []
+
+
+class DebtSummary(BaseModel):
+    receivable_total: float = 0
+    receivable_overdue: float = 0
+    receivable_count: int = 0
+    payable_total: float = 0
+    payable_overdue: float = 0
+    payable_count: int = 0

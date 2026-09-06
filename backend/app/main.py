@@ -26,6 +26,7 @@ from .routers import (
     categories,
     customers,
     dashboard,
+    debts,
     history as history_router,
     inventory,
     license as license_router,
@@ -94,6 +95,7 @@ app.include_router(permissions.router)
 app.include_router(cash.router, dependencies=feature("versements"))
 app.include_router(inventory.router, dependencies=feature("stock"))
 app.include_router(accounting.router, dependencies=feature("dettes"))
+app.include_router(debts.router, dependencies=feature("dettes"))
 app.include_router(returns.router, dependencies=feature("fonctions_avancees"))
 app.include_router(proformas.router, dependencies=feature("fonctions_avancees"))
 app.include_router(reports.router, dependencies=feature("rapports"))

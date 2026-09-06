@@ -40,7 +40,13 @@ import { useCompany } from "../context/CompanyContext";
 import { useNetwork } from "../context/NetworkContext";
 import { useSyncVersion } from "../context/SyncContext";
 
-const PAYMENTS = ["Espèces", "Mobile Money", "Carte bancaire", "Virement"];
+const PAYMENTS = [
+  "Espèces",
+  "Mobile Money",
+  "Carte bancaire",
+  "Virement",
+  "Crédit (à régler plus tard)",
+];
 
 type PriceMode = "detail" | "gros";
 
