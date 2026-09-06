@@ -52,6 +52,12 @@ class CompanySettings(Base):
     receipt_format = Column(String, default="A4")  # A4, 80mm
     printer_name = Column(String, default="")  # printer shown in the print help
     auto_print_cash = Column(Boolean, default=True, nullable=False)
+    # Electronic cash drawer: it is wired to the receipt printer (or to a
+    # serial port) and opens when it receives its kick code.
+    drawer_enabled = Column(Boolean, default=False, nullable=False)
+    drawer_port = Column(String, default="")  # COM1, LPT1, \\\\PC\\CAISSE...
+    drawer_code = Column(String, default="27,112,0,25,250")  # ESC p 0 25 250
+    drawer_open_after_sale = Column(Boolean, default=True, nullable=False)
     # Outgoing mail used by the "forgot password" flow (optional).
     smtp_host = Column(String, default="")
     smtp_port = Column(Integer, default=587)

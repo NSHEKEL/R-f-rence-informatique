@@ -148,6 +148,30 @@ class DesktopApi:
         return True
 
 
+# pywebview speaks English by default; the close dialog is the only text of
+# the native frame the user ever reads.
+FRENCH = {
+    "global.quitConfirmation": "Voulez-vous vraiment fermer EasyGest ?",
+    "global.ok": "OK",
+    "global.quit": "Quitter",
+    "global.cancel": "Annuler",
+    "global.saveFile": "Enregistrer le fichier",
+    "cocoa.menu.about": "À propos",
+    "cocoa.menu.services": "Services",
+    "cocoa.menu.view": "Affichage",
+    "cocoa.menu.hide": "Masquer",
+    "cocoa.menu.hideOthers": "Masquer les autres",
+    "cocoa.menu.showAll": "Tout afficher",
+    "cocoa.menu.quit": "Quitter",
+    "cocoa.menu.fullscreen": "Plein écran",
+    "windows.fileFilter.allFiles": "Tous les fichiers",
+    "windows.fileFilter.otherFiles": "Autres types de fichiers",
+    "linux.openFile": "Ouvrir un fichier",
+    "linux.openFiles": "Ouvrir des fichiers",
+    "linux.openFolder": "Ouvrir un dossier",
+}
+
+
 def _open_window(url: str) -> bool:
     """Show the application in a native window. False if unavailable."""
     try:
@@ -164,6 +188,7 @@ def _open_window(url: str) -> bool:
             height=900,
             min_size=(1024, 700),
             confirm_close=True,
+            localization=FRENCH,
             # Without this the native window refuses the mouse: no text can be
             # selected, so nothing can be copied out of a table or a receipt.
             text_select=True,
@@ -176,6 +201,7 @@ def _open_window(url: str) -> bool:
         # preferences) as soon as the computer is restarted.
         webview.start(
             private_mode=False,
+            localization=FRENCH,
             storage_path=str(data_dir() / "webview"),
         )
     except Exception:  # noqa: BLE001 - no WebView2 runtime, no .NET...
@@ -203,8 +229,28 @@ def _selftest(url: str) -> None:
     print(f"SELFTEST OK — {APP_NAME} {APP_VERSION}")
 
 
+def _auto_update() -> None:
+    """Install a version downloaded earlier, then keep preparing the next one.
+
+    Nothing is asked and nothing is shown: the workstation of a seller or of a
+    stock manager updates itself at start like the administrator's one.
+    """
+    from app import updater
+
+    try:
+        if updater.apply_pending():
+            raise SystemExit(0)
+    except SystemExit:
+        raise
+    except Exception:  # noqa: BLE001 - an update must never block the start
+        traceback.print_exc()
+    updater.stage_in_background()
+
+
 def main() -> None:
     _redirect_output()
+    if not SELFTEST:
+        _auto_update()
     port = _free_port(DEFAULT_PORT)
     url = f"http://127.0.0.1:{port}"
     threading.Thread(target=_serve, args=(port,), daemon=True).start()

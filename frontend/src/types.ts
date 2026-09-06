@@ -27,6 +27,11 @@ export interface CompanySettings {
   receipt_format: ReceiptFormat;
   printer_name: string;
   auto_print_cash: boolean;
+  /** Electronic cash drawer plugged into the receipt printer. */
+  drawer_enabled: boolean;
+  drawer_port: string;
+  drawer_code: string;
+  drawer_open_after_sale: boolean;
   smtp_host: string;
   smtp_port: number;
   smtp_user: string;

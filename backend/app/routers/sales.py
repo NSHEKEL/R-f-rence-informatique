@@ -15,7 +15,7 @@ from ..models import (
     StockMovement,
     User,
 )
-from ..permissions import require_permission
+from ..permissions import has_permission, require_permission
 from ..schemas import SaleCreate, SaleOut, SaleUpdate
 from ..sequences import next_reference
 from .cash import current_session
@@ -135,6 +135,15 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
         unit_price = product.sale_price
         if sale.price_mode == "gros" and (product.wholesale_price or 0) > 0:
             unit_price = product.wholesale_price
+        if item.unit_price is not None and item.unit_price != unit_price:
+            if not has_permission(db, current_user, "prix_modifier"):
+                raise HTTPException(
+                    status_code=403,
+                    detail="Vous n'avez pas le droit de modifier le prix de vente",
+                )
+            if item.unit_price < 0:
+                raise HTTPException(status_code=400, detail="Prix invalide")
+            unit_price = float(item.unit_price)
         subtotal = unit_price * item.quantity
         total += subtotal
         sale.items.append(

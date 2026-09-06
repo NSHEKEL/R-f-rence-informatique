@@ -40,6 +40,7 @@ PERMISSIONS: dict[str, tuple[str, str]] = {
     "clients_gerer": ("Créer, modifier et supprimer des clients", "Actions"),
     "commandes_gerer": ("Créer, livrer et supprimer des commandes", "Actions"),
     "ventes_supprimer": ("Supprimer ou corriger une vente", "Actions"),
+    "prix_modifier": ("Modifier le prix pendant une vente", "Actions"),
     "inventaire_appliquer": ("Appliquer un inventaire (ajuster le stock)", "Actions"),
     "approvisionnements_gerer": (
         "Créer, réceptionner et supprimer un approvisionnement",

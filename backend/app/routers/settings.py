@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from .. import drawer
 from ..auth import get_current_user, require_admin
 from ..database import get_db
 from ..mailer import is_configured, send_mail
@@ -48,6 +49,19 @@ def update_company(
     db.commit()
     db.refresh(settings)
     return _to_out(settings)
+
+
+@router.post("/company/open-drawer")
+def open_cash_drawer(
+    db: Session = Depends(get_db), _: User = Depends(get_current_user)
+):
+    """Open the electronic cash drawer wired to this counter."""
+    settings = _get_or_create(db)
+    try:
+        target = drawer.open_drawer(settings)
+    except drawer.DrawerError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"opened": True, "port": target}
 
 
 @router.post("/company/test-mail")

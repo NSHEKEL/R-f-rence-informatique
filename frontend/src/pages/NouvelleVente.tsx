@@ -54,6 +54,13 @@ function unitPrice(product: Product, mode: PriceMode): number {
 interface CartLine {
   product: Product;
   quantity: number;
+  /** Price agreed at the counter, when it differs from the product sheet. */
+  price?: number;
+}
+
+/** Price actually charged for a cart line. */
+function linePrice(line: CartLine, mode: PriceMode): number {
+  return line.price ?? unitPrice(line.product, mode);
 }
 
 /** Local receipt shown while a ticket recorded offline waits for the server. */
@@ -72,10 +79,7 @@ function offlineSale(
     customer_id: customer?.id ?? null,
     customer,
     date: new Date().toISOString(),
-    total: cart.reduce(
-      (s, l) => s + unitPrice(l.product, priceMode) * l.quantity,
-      0
-    ),
+    total: cart.reduce((s, l) => s + linePrice(l, priceMode) * l.quantity, 0),
     status: "Payée",
     payment_method: payment,
     note,
@@ -87,8 +91,8 @@ function offlineSale(
       product_id: l.product.id,
       product_name: l.product.name,
       quantity: l.quantity,
-      unit_price: unitPrice(l.product, priceMode),
-      subtotal: unitPrice(l.product, priceMode) * l.quantity,
+      unit_price: linePrice(l, priceMode),
+      subtotal: linePrice(l, priceMode) * l.quantity,
       returned_quantity: 0,
     })),
     print_count: 0,
@@ -98,7 +102,8 @@ function offlineSale(
 }
 
 export default function NouvelleVente() {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, can } = useAuth();
+  const canChangePrice = can("prix_modifier");
   const { company } = useCompany();
   const { online } = useNetwork();
   const version = useSyncVersion();
@@ -214,10 +219,7 @@ export default function NouvelleVente() {
 
   const total = useMemo(
     () =>
-      cart.reduce(
-        (sum, l) => sum + unitPrice(l.product, priceMode) * l.quantity,
-        0
-      ),
+      cart.reduce((sum, l) => sum + linePrice(l, priceMode) * l.quantity, 0),
     [cart, priceMode]
   );
 
@@ -262,6 +264,23 @@ export default function NouvelleVente() {
     setQuery("");
   }
 
+  function setLinePrice(productId: number, value: string) {
+    const price = Number(value.replace(",", "."));
+    setCart((prev) =>
+      prev.map((l) =>
+        l.product.id === productId
+          ? {
+              ...l,
+              price:
+                value.trim() === "" || Number.isNaN(price) || price < 0
+                  ? undefined
+                  : price,
+            }
+          : l
+      )
+    );
+  }
+
   function setQuantity(productId: number, quantity: number) {
     setCart((prev) =>
       prev.flatMap((l) => {
@@ -291,6 +310,14 @@ export default function NouvelleVente() {
     }
   }
 
+  /** Electronic drawer: opening it must never hold back the next customer. */
+  function openDrawer() {
+    if (!company?.drawer_enabled || !company.drawer_open_after_sale) return;
+    api.post("/settings/company/open-drawer").catch(() => {
+      setFlash("Caisse électronique : ouverture impossible.");
+    });
+  }
+
   async function checkout() {
     if (cart.length === 0) {
       setError("Le panier est vide.");
@@ -308,11 +335,13 @@ export default function NouvelleVente() {
       items: cart.map((l) => ({
         product_id: l.product.id,
         quantity: l.quantity,
+        unit_price: linePrice(l, priceMode),
       })),
     };
     try {
       const res = await api.post<Sale>("/sales", payload);
       setLastSale(res.data);
+      openDrawer();
       resetCart();
       await Promise.all([loadProducts(), loadSession()]);
     } catch (err) {
@@ -338,6 +367,7 @@ export default function NouvelleVente() {
       );
       queueSale({ payload, snapshot });
       setLastSale(snapshot);
+      openDrawer();
       resetCart();
     } finally {
       setSaving(false);
@@ -473,13 +503,36 @@ export default function NouvelleVente() {
                     {l.quantity}
                   </span>
                   <span className="shrink-0 whitespace-nowrap text-right text-sm font-bold text-slate-900">
-                    {formatXOF(unitPrice(l.product, priceMode) * l.quantity)}
+                    {formatXOF(linePrice(l, priceMode) * l.quantity)}
                   </span>
+                  <button
+                    className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                    onClick={() => setQuantity(l.product.id, 0)}
+                    title="Retirer cet article du panier"
+                    aria-label={`Retirer ${l.product.name}`}
+                  >
+                    <Trash2 size={15} />
+                  </button>
                 </div>
                 <div className="mt-1.5 flex items-center gap-1">
-                  <span className="mr-auto text-xs text-slate-400">
-                    {formatXOF(unitPrice(l.product, priceMode))} l'unité
-                  </span>
+                  {canChangePrice ? (
+                    <span className="mr-auto flex items-center gap-1 text-xs text-slate-400">
+                      <input
+                        className="w-20 rounded-lg border border-slate-200 px-1.5 py-0.5 text-right text-sm text-slate-700"
+                        value={l.price ?? unitPrice(l.product, priceMode)}
+                        onChange={(e) =>
+                          setLinePrice(l.product.id, e.target.value)
+                        }
+                        title="Prix de vente pour cette ligne"
+                        aria-label={`Prix de ${l.product.name}`}
+                      />
+                      l'unité
+                    </span>
+                  ) : (
+                    <span className="mr-auto text-xs text-slate-400">
+                      {formatXOF(unitPrice(l.product, priceMode))} l'unité
+                    </span>
+                  )}
                   <button
                     className="rounded-lg bg-slate-100 p-1 text-slate-600 hover:bg-slate-200"
                     onClick={() => setQuantity(l.product.id, l.quantity - 1)}

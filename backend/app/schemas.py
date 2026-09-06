@@ -59,6 +59,10 @@ class CompanySettingsOut(BaseModel):
     receipt_format: str = "A4"
     printer_name: str = ""
     auto_print_cash: bool = True
+    drawer_enabled: bool = False
+    drawer_port: str = ""
+    drawer_code: str = "27,112,0,25,250"
+    drawer_open_after_sale: bool = True
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
@@ -89,6 +93,10 @@ class CompanySettingsUpdate(BaseModel):
     receipt_format: Optional[str] = None
     printer_name: Optional[str] = None
     auto_print_cash: Optional[bool] = None
+    drawer_enabled: Optional[bool] = None
+    drawer_port: Optional[str] = None
+    drawer_code: Optional[str] = None
+    drawer_open_after_sale: Optional[bool] = None
     smtp_host: Optional[str] = None
     smtp_port: Optional[int] = None
     smtp_user: Optional[str] = None
@@ -191,6 +199,9 @@ class ProductOut(ProductBase):
 class SaleItemCreate(BaseModel):
     product_id: int
     quantity: int
+    # Price agreed at the counter; ignored unless the seller holds the right
+    # to change a price, and never written back to the product sheet.
+    unit_price: Optional[float] = None
 
 
 class SaleCreate(BaseModel):

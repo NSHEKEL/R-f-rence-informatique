@@ -30,10 +30,13 @@ import {
   BadgeCheck,
   Maximize2,
   Minimize2,
+  Moon,
+  Sun,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
 import { useLicense } from "../context/LicenseContext";
+import { useTheme } from "../context/ThemeContext";
 import { TILL_GATED, useTill } from "../context/TillContext";
 import { PLAN_FEATURE } from "../lib/planFeatures";
 import { isFullscreen, toggleFullscreen } from "../lib/fullscreen";
@@ -190,6 +193,7 @@ export default function Layout() {
   const { brandName, logoSrc } = useCompany();
   const { hasFeature, featureName } = useLicense();
   const { selling } = useTill();
+  const { theme, toggle: toggleTheme } = useTheme();
   const [fullscreen, setFullscreen] = useState(isFullscreen);
   const location = useLocation();
   const navigate = useNavigate();
@@ -375,6 +379,14 @@ export default function Layout() {
           </button>
           <h1 className="text-xl font-bold text-slate-900">{title}</h1>
           <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={toggleTheme}
+              className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+              title={theme === "dark" ? "Thème clair" : "Thème sombre"}
+              aria-label={theme === "dark" ? "Thème clair" : "Thème sombre"}
+            >
+              {theme === "dark" ? <Sun size={20} /> : <Moon size={20} />}
+            </button>
             {isAdmin && <UndoRedo />}
             {isAdmin && <NotificationBell />}
             <button

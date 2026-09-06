@@ -52,6 +52,10 @@ COLUMNS: dict[str, dict[str, str]] = {
         "backup_on_sale": f"BOOLEAN DEFAULT {FALSE_LITERAL}",
         "last_backup_at": "TIMESTAMP",
         "vat_rate": "FLOAT DEFAULT 0",
+        "drawer_enabled": f"BOOLEAN DEFAULT {FALSE_LITERAL}",
+        "drawer_port": "VARCHAR DEFAULT ''",
+        "drawer_code": "VARCHAR DEFAULT '27,112,0,25,250'",
+        "drawer_open_after_sale": f"BOOLEAN DEFAULT {TRUE_LITERAL}",
     },
     "cash_sessions": {
         "business_day": "VARCHAR DEFAULT ''",

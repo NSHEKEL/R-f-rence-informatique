@@ -10,6 +10,9 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import socket
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -29,7 +32,38 @@ from .version import (
 )
 
 RELEASE_API = "https://api.github.com/repos/{repo}/releases/latest"
-TIMEOUT = 20
+TIMEOUT = 30
+ATTEMPTS = 4
+CHUNK = 256 * 1024
+
+
+def _ssl_context() -> ssl.SSLContext:
+    """Trusted authorities, taken from certifi when the app is packaged.
+
+    A frozen executable carries no system certificate store, and a proxy that
+    cuts the connection makes OpenSSL report UNEXPECTED_EOF_WHILE_READING.
+    """
+    try:
+        import certifi
+
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:  # noqa: BLE001 - fall back to the system store
+        return ssl.create_default_context()
+
+
+def _urlopen(request: urllib.request.Request, timeout: int):
+    return urllib.request.urlopen(request, timeout=timeout, context=_ssl_context())
+
+
+def _friendly(exc: Exception) -> str:
+    """Say what the user can act on, not what OpenSSL printed."""
+    text = str(exc)
+    if "EOF" in text or "SSL" in text.upper():
+        return (
+            "la connexion sécurisée a été coupée (Internet instable, pare-feu "
+            "ou antivirus). Réessayez dans un instant."
+        )
+    return text
 
 
 @dataclass
@@ -69,13 +103,33 @@ def is_installed() -> bool:
 def latest_release() -> Release:
     url = RELEASE_API.format(repo=_repo())
     request = urllib.request.Request(
-        url, headers={"Accept": "application/vnd.github+json"}
+        url,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": f"EasyGest/{APP_VERSION}",
+        },
     )
-    try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
-            payload = json.load(response)
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
-        raise UpdateError(f"Serveur de mise à jour injoignable : {exc}") from exc
+    last: Exception | None = None
+    payload = None
+    for attempt in range(ATTEMPTS):
+        try:
+            with _urlopen(request, TIMEOUT) as response:
+                payload = json.load(response)
+            break
+        except (
+            urllib.error.URLError,
+            ssl.SSLError,
+            socket.timeout,
+            TimeoutError,
+            OSError,
+            json.JSONDecodeError,
+        ) as exc:
+            last = exc
+            time.sleep(1.5 * (attempt + 1))
+    if payload is None:
+        raise UpdateError(
+            f"Serveur de mise à jour injoignable : {_friendly(last or OSError())}"
+        ) from last
 
     def url_of(name: str) -> str:
         return next(
@@ -101,13 +155,49 @@ def update_available(release: Release) -> bool:
 
 
 def _download(url: str, destination: Path) -> None:
-    try:
-        with urllib.request.urlopen(url, timeout=300) as response:
-            destination.write_bytes(response.read())
-    except (urllib.error.URLError, TimeoutError) as exc:
-        raise UpdateError(f"Téléchargement impossible : {exc}") from exc
-    if destination.stat().st_size < 1_000_000:
-        raise UpdateError("Fichier téléchargé incomplet.")
+    """Fetch the release, resuming where a cut connection left off.
+
+    Downloads of forty megabytes over a shaky line fail often; restarting from
+    zero each time never finishes, so the partial file is kept and the server
+    is asked for the rest.
+    """
+    partial = destination.with_suffix(destination.suffix + ".part")
+    last: Exception | None = None
+    for attempt in range(ATTEMPTS):
+        done = partial.stat().st_size if partial.exists() else 0
+        headers = {"User-Agent": f"EasyGest/{APP_VERSION}"}
+        if done:
+            headers["Range"] = f"bytes={done}-"
+        request = urllib.request.Request(url, headers=headers)
+        try:
+            with _urlopen(request, TIMEOUT * 10) as response:
+                mode = "ab" if done and response.status == 206 else "wb"
+                if mode == "wb":
+                    done = 0
+                with open(partial, mode) as handle:
+                    while True:
+                        block = response.read(CHUNK)
+                        if not block:
+                            break
+                        handle.write(block)
+            if partial.stat().st_size < 1_000_000:
+                raise UpdateError("Fichier téléchargé incomplet.")
+            destination.unlink(missing_ok=True)
+            shutil.move(str(partial), str(destination))
+            return
+        except (
+            urllib.error.URLError,
+            ssl.SSLError,
+            socket.timeout,
+            TimeoutError,
+            OSError,
+        ) as exc:
+            last = exc
+            time.sleep(2.0 * (attempt + 1))
+    partial.unlink(missing_ok=True)
+    raise UpdateError(
+        f"Téléchargement impossible : {_friendly(last or OSError())}"
+    ) from last
 
 
 SWAP_SCRIPT = """@echo off
@@ -167,6 +257,130 @@ def install(release: Release) -> Path:
         creationflags=getattr(subprocess, "DETACHED_PROCESS", 0),
     )
     return staged
+
+
+def _staging_dir() -> Path:
+    from .paths import data_dir
+
+    folder = data_dir() / "updates"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def _marker() -> Path:
+    return _staging_dir() / "pending.json"
+
+
+def pending_update() -> tuple[str, Path] | None:
+    """Version already downloaded and waiting to be installed at next start."""
+    marker = _marker()
+    if not marker.exists():
+        return None
+    try:
+        data = json.loads(marker.read_text(encoding="utf-8"))
+        version = str(data.get("version", ""))
+        target = Path(str(data.get("file", "")))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return None
+    if not version or not target.exists() or not is_newer(version, APP_VERSION):
+        clear_pending()
+        return None
+    return version, target
+
+
+def clear_pending() -> None:
+    pending = _marker()
+    try:
+        if pending.exists():
+            data = json.loads(pending.read_text(encoding="utf-8"))
+            Path(str(data.get("file", ""))).unlink(missing_ok=True)
+    except (OSError, json.JSONDecodeError, ValueError):
+        pass
+    pending.unlink(missing_ok=True)
+
+
+def stage_update() -> str:
+    """Download the new version in the background, without installing it.
+
+    Installing while the user works would close the application under their
+    hands; the file is kept and applied the next time EasyGest starts.
+    """
+    if not is_packaged():
+        return ""
+    already = pending_update()
+    release = latest_release()
+    if not update_available(release):
+        if already:
+            clear_pending()
+        return ""
+    if already and already[0] == release.version:
+        return already[0]
+    clear_pending()
+
+    installed = is_installed()
+    url = release.installer_url if installed else release.download_url
+    if not url:
+        raise UpdateError("Aucun fichier d'installation dans cette version.")
+    target = _staging_dir() / (
+        "EasyGest_Setup.exe" if installed else Path(sys.executable).name
+    )
+    _download(url, target)
+    _marker().write_text(
+        json.dumps({"version": release.version, "file": str(target)}),
+        encoding="utf-8",
+    )
+    return release.version
+
+
+def apply_pending() -> bool:
+    """Install a downloaded version. True when the caller must exit at once."""
+    pending = pending_update()
+    if pending is None or not is_packaged():
+        return False
+    _version, staged = pending
+    try:
+        if is_installed():
+            subprocess.Popen(
+                [str(staged), "/SILENT", "/NORESTART", "/RESTARTAPPLICATIONS"],
+                close_fds=True,
+                creationflags=getattr(subprocess, "DETACHED_PROCESS", 0),
+            )
+        else:
+            current = Path(sys.executable).resolve()
+            script = Path(tempfile.gettempdir()) / "easygest_update.bat"
+            script.write_text(
+                SWAP_SCRIPT.format(new=staged, current=current), encoding="utf-8"
+            )
+            subprocess.Popen(
+                ["cmd", "/c", "start", "", "/min", str(script)],
+                close_fds=True,
+                creationflags=getattr(subprocess, "DETACHED_PROCESS", 0),
+            )
+    except OSError:
+        return False
+    _marker().unlink(missing_ok=True)
+    return True
+
+
+def stage_in_background(delay: float = 20.0) -> None:
+    """Prepare the next version quietly, whoever is signed in.
+
+    Sellers and stock managers never see an update message, but their
+    workstation still updates itself at the following start.
+    """
+    if not is_packaged() or os.getenv("EASYGEST_AUTO_UPDATE") == "0":
+        return
+
+    def run() -> None:
+        time.sleep(delay)
+        while True:
+            try:
+                stage_update()
+            except UpdateError:
+                pass
+            time.sleep(6 * 3600)
+
+    threading.Thread(target=run, daemon=True).start()
 
 
 def shutdown_soon(delay: float = 1.5) -> None:

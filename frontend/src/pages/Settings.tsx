@@ -67,6 +67,10 @@ const emptyCompany: CompanyForm = {
   receipt_format: "A4",
   printer_name: "",
   auto_print_cash: true,
+  drawer_enabled: false,
+  drawer_port: "",
+  drawer_code: "27,112,0,25,250",
+  drawer_open_after_sale: true,
   smtp_host: "",
   smtp_port: 587,
   smtp_user: "",
@@ -103,6 +107,8 @@ export default function Settings() {
   const [serverUrl, setServerUrlValue] = useState(API_BASE);
   const [serverStatus, setServerStatus] = useState("");
   const [mailStatus, setMailStatus] = useState("");
+  const [drawerTesting, setDrawerTesting] = useState(false);
+  const [drawerMessage, setDrawerMessage] = useState("");
   const [update_, setUpdateStatus] = useState<UpdateStatus | null>(null);
   const [updateMessage, setUpdateMessage] = useState("");
   const [backups, setBackups] = useState<BackupFile[]>([]);
@@ -273,6 +279,26 @@ export default function Settings() {
       update({ logo: String(reader.result) });
     };
     reader.readAsDataURL(file);
+  }
+
+  async function testDrawer() {
+    setDrawerTesting(true);
+    setDrawerMessage("");
+    try {
+      await api.put("/settings/company", company);
+      const { data } = await api.post<{ port: string }>(
+        "/settings/company/open-drawer"
+      );
+      setDrawerMessage(`Ouverture envoyée sur ${data.port}.`);
+    } catch (err) {
+      setDrawerMessage(
+        axios.isAxiosError(err)
+          ? err.response?.data?.detail ?? "Ouverture impossible"
+          : "Ouverture impossible"
+      );
+    } finally {
+      setDrawerTesting(false);
+    }
   }
 
   async function testMail() {
@@ -610,6 +636,75 @@ export default function Settings() {
                 Imprimer automatiquement les tickets d'ouverture et de fermeture
                 de caisse
               </label>
+            </div>
+            <div className="sm:col-span-2 rounded-xl border border-slate-200 p-4">
+              <p className="mb-3 text-sm font-bold text-slate-700">
+                Caisse électronique (tiroir-caisse)
+              </p>
+              <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={company.drawer_enabled}
+                  onChange={(e) => update({ drawer_enabled: e.target.checked })}
+                />
+                Utiliser un tiroir-caisse électronique
+              </label>
+              {company.drawer_enabled && (
+                <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="label">Port ou imprimante du tiroir</label>
+                    <input
+                      className="input"
+                      value={company.drawer_port}
+                      onChange={(e) => update({ drawer_port: e.target.value })}
+                      placeholder="Ex. COM1, LPT1 ou \\\\CAISSE\\TICKET"
+                    />
+                    <p className="mt-1 text-xs text-slate-400">
+                      Le tiroir est branché sur l'imprimante à tickets : indiquez
+                      le partage de cette imprimante ou le port série.
+                    </p>
+                  </div>
+                  <div>
+                    <label className="label">Code d'ouverture</label>
+                    <input
+                      className="input"
+                      value={company.drawer_code}
+                      onChange={(e) => update({ drawer_code: e.target.value })}
+                      placeholder="27,112,0,25,250"
+                    />
+                    <p className="mt-1 text-xs text-slate-400">
+                      Code standard ESC/POS ; ne le changez que si le
+                      constructeur en indique un autre.
+                    </p>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={company.drawer_open_after_sale}
+                        onChange={(e) =>
+                          update({ drawer_open_after_sale: e.target.checked })
+                        }
+                      />
+                      Ouvrir automatiquement la caisse après chaque vente validée
+                    </label>
+                  </div>
+                  <div className="sm:col-span-2 flex items-center gap-3">
+                    <button
+                      className="btn-ghost"
+                      onClick={testDrawer}
+                      disabled={drawerTesting}
+                    >
+                      {drawerTesting ? "Ouverture..." : "Tester l'ouverture"}
+                    </button>
+                    {drawerMessage && (
+                      <span className="text-sm text-slate-600">
+                        {drawerMessage}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
             <div className="sm:col-span-2">
               <label className="label">Message de pied de reçu</label>

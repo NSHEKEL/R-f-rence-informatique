@@ -239,6 +239,86 @@ body {
   white-space: pre-line;
 }
 
+/* ---------------- Dark appearance ----------------
+   The pages are written with light utility classes; rather than duplicating
+   every class on twenty screens, the few colours they use are repainted here
+   when <html> carries `dark`. Receipts keep their white paper: they are
+   printed, and the print stylesheet below resets the page anyway. */
+html.dark body {
+  background-color: #0b1220;
+  color: #e2e8f0;
+}
+html.dark .card,
+html.dark .bg-white,
+html.dark .bg-slate-50,
+html.dark .bg-slate-100\/70 {
+  background-color: #111a2e !important;
+  border-color: #1f2b45 !important;
+}
+html.dark .bg-slate-100,
+html.dark .bg-slate-200,
+html.dark .hover\:bg-slate-50:hover,
+html.dark .hover\:bg-slate-100:hover,
+html.dark .hover\:bg-slate-200:hover {
+  background-color: #1b2740 !important;
+}
+html.dark .bg-brand-50,
+html.dark .bg-brand-100 {
+  background-color: #16264a !important;
+}
+html.dark .text-slate-900,
+html.dark .text-ink,
+html.dark .text-slate-800,
+html.dark .text-slate-700 {
+  color: #e2e8f0 !important;
+}
+html.dark .text-slate-600,
+html.dark .text-slate-500 {
+  color: #94a3b8 !important;
+}
+html.dark .text-slate-400 {
+  color: #64748b !important;
+}
+html.dark .text-brand-900,
+html.dark .text-brand-700 {
+  color: #bcd7ff !important;
+}
+html.dark .border-slate-100,
+html.dark .border-slate-200,
+html.dark .border-slate-300,
+html.dark .border-brand-100,
+html.dark .divide-slate-100 > * + *,
+html.dark .divide-slate-200 > * + * {
+  border-color: #1f2b45 !important;
+}
+html.dark .input,
+html.dark select,
+html.dark textarea {
+  background-color: #0f1a30 !important;
+  border-color: #26344f !important;
+  color: #e2e8f0 !important;
+}
+html.dark .input::placeholder {
+  color: #64748b;
+}
+html.dark .btn-ghost {
+  background-color: #1b2740 !important;
+  color: #e2e8f0 !important;
+}
+html.dark .shadow-card,
+html.dark .shadow-soft {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5) !important;
+}
+html.dark ::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+/* A receipt or a label is a sheet of paper, dark or not. */
+html.dark .receipt,
+html.dark #receipt-print-root {
+  background: #fff;
+  color: #0f172a;
+}
+
 /* Print: only the receipt copy portaled to <body> reaches the printer, so it
    escapes the modal's scroll container and paginates normally. */
 @media print {

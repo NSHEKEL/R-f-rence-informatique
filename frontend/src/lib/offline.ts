@@ -11,7 +11,7 @@ export interface SalePayload {
   status: string;
   price_mode: string;
   note: string;
-  items: { product_id: number; quantity: number }[];
+  items: { product_id: number; quantity: number; unit_price?: number }[];
 }
 
 export interface PendingSale {

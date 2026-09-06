@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { DownloadCloud, X } from "lucide-react";
 import axios from "axios";
 import { localApi } from "../api/client";
+import { useAuth } from "../context/AuthContext";
 import type { UpdateStatus } from "../types";
 
 const DISMISSED_KEY = "ri_update_dismissed";
@@ -10,14 +11,23 @@ const CHECK_INTERVAL = 6 * 60 * 60 * 1000;
 /**
  * Offers the new version on the workstation the user sits at — the update
  * replaces the program installed here, not the one on the central server.
+ *
+ * Only the administrator sees it: a seller or a stock manager has nothing to
+ * decide, their workstation installs the version by itself at the next start.
  */
 export default function UpdateBanner() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const [status, setStatus] = useState<UpdateStatus | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [hidden, setHidden] = useState(false);
 
   const check = useCallback(async () => {
+    if (!isAdmin) {
+      setStatus(null);
+      return;
+    }
     try {
       const { data } = await localApi.get<UpdateStatus>("/updates");
       setStatus(data);
@@ -27,7 +37,7 @@ export default function UpdateBanner() {
     } catch {
       setStatus(null);
     }
-  }, []);
+  }, [isAdmin]);
 
   useEffect(() => {
     check();
@@ -54,7 +64,7 @@ export default function UpdateBanner() {
     }
   }
 
-  if (!status?.available || !status.packaged || hidden) return null;
+  if (!isAdmin || !status?.available || !status.packaged || hidden) return null;
 
   function dismiss() {
     if (status) localStorage.setItem(DISMISSED_KEY, status.latest_version);
