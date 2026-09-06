@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import {
   Eye,
+  FileSpreadsheet,
   Lock,
   Pencil,
   Plus,
@@ -24,6 +25,8 @@ import BulkDelete, { SelectBox } from "../components/BulkDelete";
 import { useSelection } from "../lib/selection";
 import Receipt from "../components/Receipt";
 import { printReceipt } from "../lib/print";
+import { exportCsv, stampedName } from "../lib/exportCsv";
+import { useLicense } from "../context/LicenseContext";
 import { statusBadge } from "../components/badges";
 import PrinterHint from "../components/PrinterHint";
 import { useAuth } from "../context/AuthContext";
@@ -35,6 +38,7 @@ const PAYMENTS = ["Espèces", "Mobile Money", "Carte bancaire", "Virement"];
 export default function Sales() {
   const { can } = useAuth();
   const { company } = useCompany();
+  const { hasFeature } = useLicense();
   const version = useSyncVersion();
   const navigate = useNavigate();
 
@@ -95,6 +99,22 @@ export default function Sales() {
   }, [sales, query]);
 
   const selection = useSelection(filtered);
+
+  function exportExcel() {
+    exportCsv(
+      stampedName("ventes"),
+      ["Référence", "Date", "Client", "Vendeur", "Paiement", "Statut", "Total"],
+      filtered.map((s) => [
+        s.reference,
+        formatDateTime(s.created_at),
+        s.customer?.name ?? "",
+        s.seller?.name ?? "",
+        s.payment_method ?? "",
+        s.status ?? "",
+        s.total,
+      ])
+    );
+  }
 
   async function remove(s: Sale) {
     if (!confirm(`Supprimer la vente ${s.reference} ? Le stock sera réajusté.`))
@@ -211,6 +231,11 @@ export default function Sales() {
               </span>
             )
           )}
+          {hasFeature("export_excel") && (
+            <button className="btn-ghost" onClick={exportExcel}>
+              <FileSpreadsheet size={16} /> Exporter Excel
+            </button>
+          )}
           <button
             className="btn-primary"
             onClick={() => navigate("/ventes/nouvelle")}
@@ -313,17 +338,19 @@ export default function Sales() {
                       >
                         <Eye size={16} />
                       </button>
-                      <button
-                        onClick={() => openReceipt(s, s.print_count > 0)}
-                        title={
-                          s.print_count > 0
-                            ? "Réimprimer (duplicata)"
-                            : "Reçu de caisse"
-                        }
-                        className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
-                      >
-                        <ReceiptIcon size={16} />
-                      </button>
+                      {hasFeature("recus") && (
+                        <button
+                          onClick={() => openReceipt(s, s.print_count > 0)}
+                          title={
+                            s.print_count > 0
+                              ? "Réimprimer (duplicata)"
+                              : "Reçu de caisse"
+                          }
+                          className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
+                        >
+                          <ReceiptIcon size={16} />
+                        </button>
+                      )}
                       {can("ventes_supprimer") && (
                         <button
                           onClick={() => remove(s)}
@@ -483,7 +510,9 @@ export default function Sales() {
                   title="Format d'impression"
                 >
                   <option value="A4">Feuille A4</option>
-                  <option value="80mm">Ticket 80 mm</option>
+                  {hasFeature("impression_thermique") && (
+                    <option value="80mm">Ticket 80 mm</option>
+                  )}
                 </select>
                 {editingReceipt && (
                   <button

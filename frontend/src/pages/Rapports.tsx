@@ -9,11 +9,21 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Printer, Receipt, TrendingUp, Undo2, Wallet } from "lucide-react";
+import {
+  FileDown,
+  FileSpreadsheet,
+  Printer,
+  Receipt,
+  TrendingUp,
+  Undo2,
+  Wallet,
+} from "lucide-react";
 import api, { formatXOF } from "../api/client";
 import type { ReportRow, SalesReport } from "../types";
 import { documentHeader, printSheet } from "../lib/print";
+import { exportCsv, stampedName } from "../lib/exportCsv";
 import { useCompany } from "../context/CompanyContext";
+import { useLicense } from "../context/LicenseContext";
 import { useSyncVersion } from "../context/SyncContext";
 
 function today(): string {
@@ -87,6 +97,7 @@ function rowsTable(title: string, rows: ReportRow[], unit: string): string {
 export default function Rapports() {
   const version = useSyncVersion();
   const { company } = useCompany();
+  const { hasFeature } = useLicense();
   const [start, setStart] = useState(daysAgo(29));
   const [end, setEnd] = useState(today());
   const [report, setReport] = useState<SalesReport | null>(null);
@@ -134,6 +145,34 @@ export default function Rapports() {
         rowsTable("Par vendeuse / caissière", report.by_seller, "ventes") +
         rowsTable("Par catégorie", report.by_category, "u.") +
         rowsTable("Meilleurs articles", report.by_product, "u.")
+    );
+  }
+
+  function exportExcel() {
+    if (!report) return;
+    const rows: (string | number)[][] = [
+      ["Chiffre d'affaires", "", report.revenue],
+      ["Nombre de ventes", "", report.sales_count],
+      ["Retours", "", report.returns_total],
+      ["Revenu net", "", report.net_revenue],
+      ["Ticket moyen", "", report.average_ticket],
+    ];
+    const groups: [string, ReportRow[]][] = [
+      ["Mode de paiement", report.by_payment],
+      ["Vendeuse / caissière", report.by_seller],
+      ["Catégorie", report.by_category],
+      ["Article", report.by_product],
+      ["Jour", report.by_day],
+    ];
+    for (const [section, list] of groups) {
+      for (const row of list) {
+        rows.push([section, row.label, row.amount, row.quantity]);
+      }
+    }
+    exportCsv(
+      stampedName("rapport-ventes"),
+      ["Section", "Libellé", "Montant", "Quantité"],
+      rows
     );
   }
 
@@ -187,9 +226,21 @@ export default function Rapports() {
             onChange={(e) => setEnd(e.target.value)}
           />
         </div>
-        <button className="btn-primary ml-auto" onClick={print}>
-          <Printer size={16} /> Imprimer le rapport
-        </button>
+        <div className="ml-auto flex flex-wrap gap-2">
+          {hasFeature("export_excel") && (
+            <button className="btn-ghost" onClick={exportExcel}>
+              <FileSpreadsheet size={16} /> Exporter Excel
+            </button>
+          )}
+          {hasFeature("export_pdf") && (
+            <button className="btn-ghost" onClick={print}>
+              <FileDown size={16} /> Exporter PDF
+            </button>
+          )}
+          <button className="btn-primary" onClick={print}>
+            <Printer size={16} /> Imprimer le rapport
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -232,7 +283,7 @@ export default function Rapports() {
           </div>
         )}
 
-        {report && report.by_day.length > 0 && (
+        {report && report.by_day.length > 0 && hasFeature("statistiques") && (
           <div className="card p-5">
             <h3 className="mb-4 text-base font-bold text-slate-900">
               Ventes par jour

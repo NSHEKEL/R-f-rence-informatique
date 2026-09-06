@@ -1,7 +1,9 @@
 backend/venv
 backend/*.db
 backend/*.db-*
-frontend
+frontend/node_modules
+frontend/src
+frontend/public
 mobile
 packaging
 test-screenshots

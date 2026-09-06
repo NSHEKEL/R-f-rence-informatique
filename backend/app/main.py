@@ -206,18 +206,27 @@ def _license_loop() -> None:
         time.sleep(SYNC_INTERVAL_SECONDS)
 
 
+def _housekeeping() -> None:
+    """Copy the database and trim the change log once the shop can work.
+
+    Both walk the whole database, which takes seconds on a busy shop; running
+    them in the background keeps the window open as fast as an empty one.
+    """
+    db = SessionLocal()
+    try:
+        sync.trim_change_log()
+        backup.auto_backup_if_due(db)
+    except Exception as exc:  # noqa: BLE001 - never block the application
+        print(f"Entretien de la base impossible : {exc}")
+    finally:
+        db.close()
+
+
 @app.on_event("startup")
 def on_startup():
     seed()
     threading.Thread(target=_license_loop, daemon=True).start()
-    sync.trim_change_log()
-    db = SessionLocal()
-    try:
-        backup.auto_backup_if_due(db)
-    except Exception as exc:  # a failed backup must never block the app
-        print(f"Sauvegarde automatique impossible : {exc}")
-    finally:
-        db.close()
+    threading.Thread(target=_housekeeping, daemon=True).start()
 
 
 @app.get("/api/health")

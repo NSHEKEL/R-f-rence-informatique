@@ -24,6 +24,7 @@ import {
 import api, { formatDate, formatXOF } from "../api/client";
 import type { DashboardStats } from "../types";
 import { statusBadge } from "../components/badges";
+import { useLicense } from "../context/LicenseContext";
 import { useSyncVersion } from "../context/SyncContext";
 
 function isoDay(date: Date): string {
@@ -78,6 +79,7 @@ function StatCard({
 
 export default function Dashboard() {
   const version = useSyncVersion();
+  const { hasFeature } = useLicense();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [start, setStart] = useState(() =>
@@ -184,6 +186,7 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        {hasFeature("statistiques") && (
         <div className="card p-6 xl:col-span-2">
           <div className="mb-6 flex items-center justify-between">
             <div>
@@ -238,6 +241,7 @@ export default function Dashboard() {
             </AreaChart>
           </ResponsiveContainer>
         </div>
+        )}
 
         <div className="space-y-6">
           <div className="card p-6">

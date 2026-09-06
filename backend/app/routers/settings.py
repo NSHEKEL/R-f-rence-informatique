@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from .. import drawer
 from ..auth import get_current_user, require_admin
 from ..database import get_db
+from ..licensing import has_feature
 from ..mailer import is_configured, send_mail
 from ..models import CompanySettings, User
 from ..schemas import CompanySettingsOut, CompanySettingsUpdate
@@ -41,6 +42,16 @@ def update_company(
 ):
     settings = _get_or_create(db)
     data = payload.model_dump(exclude_unset=True)
+    if data.get("receipt_format") == "80mm" and not has_feature(
+        db, "impression_thermique"
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "🔒 L'impression thermique n'est pas incluse dans votre "
+                "formule."
+            ),
+        )
     # An empty password means "keep the stored one".
     if data.get("smtp_password") == "":
         data.pop("smtp_password")

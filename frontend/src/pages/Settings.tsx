@@ -31,6 +31,7 @@ import type {
 } from "../types";
 import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
+import { useLicense } from "../context/LicenseContext";
 
 type CompanyForm = Omit<CompanySettings, "id"> & { smtp_password?: string };
 
@@ -97,6 +98,7 @@ function nativeApi(): { choose_folder?: () => Promise<string> } | undefined {
 export default function Settings() {
   const { user } = useAuth();
   const { setCompany: setBranding } = useCompany();
+  const { hasFeature } = useLicense();
   const [company, setCompany] = useState<CompanyForm>(emptyCompany);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -608,7 +610,11 @@ export default function Settings() {
                 }
               >
                 <option value="A4">Feuille A4 (imprimante classique)</option>
-                <option value="80mm">Ticket 80 mm (imprimante thermique)</option>
+                {hasFeature("impression_thermique") && (
+                  <option value="80mm">
+                    Ticket 80 mm (imprimante thermique)
+                  </option>
+                )}
               </select>
             </div>
             <div>

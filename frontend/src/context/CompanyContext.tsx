@@ -47,8 +47,21 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     }
   }, [setCompany]);
 
+  // The settings also change without the user touching them: another
+  // workstation edits the company sheet, or the owner pushes a new "À propos"
+  // from his console. They are read again regularly and when the window is
+  // brought back to the front.
   useEffect(() => {
-    if (localStorage.getItem("ri_token")) reload();
+    const refresh = () => {
+      if (localStorage.getItem("ri_token")) reload();
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 300000);
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+    };
   }, [reload]);
 
   return (

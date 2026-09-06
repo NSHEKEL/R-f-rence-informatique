@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import {
+  FileSpreadsheet,
   Image as ImageIcon,
   Pencil,
   Plus,
@@ -19,6 +20,8 @@ import { useSelection } from "../lib/selection";
 import { scanCode } from "../lib/scan";
 import { printLabels } from "../lib/print";
 import { barcodeDataUrl } from "../lib/barcode";
+import { exportCsv, stampedName } from "../lib/exportCsv";
+import { useLicense } from "../context/LicenseContext";
 import { stockBadge } from "../components/badges";
 import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
@@ -48,6 +51,7 @@ type SoldFilter = "" | "jamais" | "top";
 export default function Products() {
   const { can } = useAuth();
   const { company } = useCompany();
+  const { hasFeature } = useLicense();
   const version = useSyncVersion();
   const [sold, setSold] = useState<SoldFilter>("");
   const [products, setProducts] = useState<Product[]>([]);
@@ -89,6 +93,36 @@ export default function Products() {
         (p.barcode || "").toLowerCase().includes(q)
     );
   }, [products, query]);
+
+  function exportExcel() {
+    exportCsv(
+      stampedName("produits"),
+      [
+        "Nom",
+        "Référence",
+        "Catégorie",
+        "Fournisseur",
+        "Prix d'achat",
+        "Prix de vente",
+        "Prix de gros",
+        "Stock",
+        "Stock minimum",
+        "Code-barres",
+      ],
+      filtered.map((p) => [
+        p.name,
+        p.sku,
+        categories.find((c) => c.id === p.category_id)?.name ?? "",
+        suppliers.find((s) => s.id === p.supplier_id)?.name ?? "",
+        p.purchase_price,
+        p.sale_price,
+        p.wholesale_price ?? 0,
+        p.quantity,
+        p.min_stock,
+        p.barcode ?? "",
+      ])
+    );
+  }
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
@@ -245,6 +279,11 @@ export default function Products() {
           <button className="btn-ghost" onClick={() => printPrices(filtered)}>
             <Printer size={16} /> Imprimer les prix
           </button>
+          {hasFeature("export_excel") && (
+            <button className="btn-ghost" onClick={exportExcel}>
+              <FileSpreadsheet size={16} /> Exporter Excel
+            </button>
+          )}
           {can("produits_gerer") && (
             <button className="btn-primary" onClick={openCreate}>
               <Plus size={18} /> Nouveau produit
