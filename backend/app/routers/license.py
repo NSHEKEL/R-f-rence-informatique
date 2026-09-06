@@ -7,7 +7,7 @@ forcing a synchronisation is reserved to the administrator.
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from .. import licensing
+from .. import licensing, remote_sales
 from ..auth import get_current_user, require_admin
 from ..database import get_db
 from ..features import FEATURES
@@ -111,3 +111,17 @@ def sync(db: Session = Depends(get_db), _: User = Depends(require_admin)):
     except licensing.CentralError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return _status(db)
+
+
+@router.post("/mobile")
+def mobile_access(db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    """Publish the shop copy read from the phone and give back its code."""
+    try:
+        answer = remote_sales.push(db)
+    except licensing.CentralError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {
+        "code": answer.get("code", ""),
+        "sales": answer.get("sales", 0),
+        "url": f"{licensing.central_url().rstrip('/')}/mobile",
+    }

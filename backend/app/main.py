@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
-from . import backup, clients, history, licensing
+from . import backup, clients, history, licensing, remote_sales
 from .auth import ALGORITHM, SECRET_KEY, require_admin
 from .database import Base, SessionLocal, engine, get_db
 from .migrate import migrate
@@ -198,7 +198,10 @@ def _license_loop() -> None:
     while True:
         db = SessionLocal()
         try:
-            licensing.synchronise(db, quiet=True)
+            view = licensing.synchronise(db, quiet=True)
+            if view.allows("synchronisation"):
+                # Copy read from the phone when the shop is far away.
+                remote_sales.push_quietly(db)
         except Exception as exc:  # noqa: BLE001 - a check must never crash
             print(f"Synchronisation de licence impossible : {exc}")
         finally:

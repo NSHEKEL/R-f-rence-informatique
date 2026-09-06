@@ -109,7 +109,7 @@ def _seed_admin(db: Session) -> None:
 # Columns added after the first release; create_all() never adds them to a
 # table the deployed database already has.
 ADDED_COLUMNS: dict[str, dict[str, str]] = {
-    "clients": {"about": "TEXT DEFAULT ''"},
+    "clients": {"about": "TEXT DEFAULT ''", "mobile_code": "VARCHAR"},
 }
 
 

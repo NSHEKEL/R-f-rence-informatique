@@ -116,6 +116,9 @@ export default function Settings() {
   const [backups, setBackups] = useState<BackupFile[]>([]);
   const [backupMessage, setBackupMessage] = useState("");
   const [lanAddress, setLanAddress] = useState("");
+  const [mobileCode, setMobileCode] = useState("");
+  const [mobileUrl, setMobileUrl] = useState("");
+  const [mobileStatus, setMobileStatus] = useState("");
   const [tab, setTab] = useState<TabKey>(() => {
     const saved_ = localStorage.getItem(TAB_KEY);
     return TABS.some((item) => item.key === saved_)
@@ -360,6 +363,28 @@ export default function Settings() {
   }
 
   /** Points this workstation at the central server hosting the database. */
+  async function publishMobile() {
+    setMobileStatus("Publication en cours...");
+    try {
+      const res = await api.post<{
+        code: string;
+        sales: number;
+        url: string;
+      }>("/license/mobile");
+      setMobileCode(res.data.code);
+      setMobileUrl(res.data.url);
+      setMobileStatus(
+        `${res.data.sales} vente(s) consultables depuis un téléphone.`
+      );
+    } catch (err) {
+      setMobileStatus(
+        axios.isAxiosError(err) && typeof err.response?.data?.detail === "string"
+          ? err.response.data.detail
+          : "Publication impossible pour le moment."
+      );
+    }
+  }
+
   async function testServer() {
     setServerStatus("Test en cours...");
     const base = normalizeServerUrl(serverUrl);
@@ -923,6 +948,36 @@ export default function Settings() {
                 ))}
               </tbody>
             </table>
+          )}
+        </div>
+
+        <div className="mt-6 border-t border-slate-100 pt-4">
+          <h4 className="mb-2 text-sm font-bold text-slate-900">
+            Consultation des ventes depuis un téléphone
+          </h4>
+          <p className="mb-3 text-sm text-slate-500">
+            Publie une copie en lecture seule des ventes sur le serveur
+            EasyGest : vos ventes se consultent alors depuis n'importe où, sans
+            ouvrir ce poste sur Internet. Connexion avec les comptes habituels.
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <button className="btn-primary" onClick={publishMobile}>
+              Activer / actualiser
+            </button>
+            {mobileCode && (
+              <span className="text-sm text-slate-700">
+                Code boutique :{" "}
+                <span className="font-mono text-base font-semibold">
+                  {mobileCode}
+                </span>{" "}
+                — adresse : <span className="font-mono">{mobileUrl}</span>
+              </span>
+            )}
+          </div>
+          {mobileStatus && (
+            <p className="mt-2 text-sm font-medium text-slate-600">
+              {mobileStatus}
+            </p>
           )}
         </div>
       </div>

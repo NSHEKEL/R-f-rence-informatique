@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..version import APP_NAME, APP_VERSION
-from .routers import auth, console, provisioning
+from .routers import auth, console, mobile, provisioning
 from .seed import seed
 
 app = FastAPI(title=f"{APP_NAME} — Serveur central")
@@ -41,6 +41,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(console.router)
 app.include_router(provisioning.router)
+app.include_router(mobile.router)
 
 
 @app.on_event("startup")

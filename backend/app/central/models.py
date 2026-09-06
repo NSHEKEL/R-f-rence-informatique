@@ -108,6 +108,8 @@ class Client(Base):
     note = Column(Text, default="")
     # "À propos de nous" pushed to the shop at the next synchronisation.
     about = Column(Text, default="")
+    # Short code typed on the phone to reach this shop's sales from anywhere.
+    mobile_code = Column(String, unique=True, index=True, nullable=True)
     created_at = Column(DateTime, default=utcnow)
 
     admins = relationship(
@@ -203,6 +205,53 @@ class Installation(Base):
 
     client = relationship("Client", back_populates="installations")
     license = relationship("License", back_populates="installations")
+
+
+class MirrorUser(Base):
+    """Account allowed to consult the shop from the phone.
+
+    The shop pushes the hash of its own accounts, so signing in on the phone
+    uses the very same password as at the counter and no password ever
+    travels or is stored in clear.
+    """
+
+    __tablename__ = "mirror_users"
+    __table_args__ = (UniqueConstraint("client_id", "email", name="uq_mirror_user"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    email = Column(String, nullable=False, index=True)
+    name = Column(String, default="")
+    role = Column(String, default="")
+    hashed_password = Column(String, default="")
+    is_active = Column(Boolean, default=True, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class MirrorSale(Base):
+    """Copy of a shop sale, pushed by the shop for remote consultation.
+
+    Read only: the phone never writes into a shop, and this copy holds no
+    other client's data.
+    """
+
+    __tablename__ = "mirror_sales"
+    __table_args__ = (
+        UniqueConstraint("client_id", "reference", name="uq_mirror_sale"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    reference = Column(String, nullable=False, index=True)
+    date = Column(DateTime, nullable=True, index=True)
+    total = Column(Float, default=0)
+    status = Column(String, default="")
+    payment_method = Column(String, default="")
+    customer = Column(String, default="")
+    seller = Column(String, default="")
+    seller_email = Column(String, default="", index=True)
+    items = Column(Text, default="[]")
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
 
 class AdminLog(Base):

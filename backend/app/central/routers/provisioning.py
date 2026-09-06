@@ -4,12 +4,21 @@ These are the only routes a shop can reach: they never expose another
 client's data, and everything they answer is signed by the server.
 """
 
+import json
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Client, Installation, License, Plan
-from ..schemas import LicenseAnswer, PublicPlan, RegisterRequest, SyncRequest
+from ..models import Client, Installation, License, MirrorSale, MirrorUser, Plan
+from ..schemas import (
+    LicenseAnswer,
+    MirrorRequest,
+    PublicPlan,
+    RegisterRequest,
+    SyncRequest,
+)
 from ..security import license_public_key
 from ..service import (
     create_license,
@@ -21,7 +30,16 @@ from ..service import (
     utcnow,
 )
 
+from .mobile import mobile_code
+
 router = APIRouter(prefix="/api/central/public", tags=["central-public"])
+
+
+def _naive(value: datetime | None) -> datetime | None:
+    """Store dates without a zone: PostgreSQL columns here are naive."""
+    if value is None:
+        return None
+    return value.replace(tzinfo=None) if value.tzinfo else value
 
 
 @router.get("/key")
@@ -130,6 +148,63 @@ def register(
         public_key=license_public_key(),
         token=installation.token,
     )
+
+
+@router.post("/mirror")
+def mirror(payload: MirrorRequest, db: Session = Depends(get_db)):
+    """Read-only copy pushed by a shop for consultation from a phone."""
+    installation = (
+        db.query(Installation)
+        .filter(Installation.uid == payload.installation_uid.strip())
+        .first()
+    )
+    if installation is None:
+        raise HTTPException(status_code=404, detail="Installation inconnue")
+    if not payload.token or payload.token != installation.token:
+        raise HTTPException(status_code=401, detail="Installation non autorisée")
+    client = installation.client
+
+    known = {
+        row.email: row
+        for row in db.query(MirrorUser).filter(MirrorUser.client_id == client.id)
+    }
+    for user in payload.users:
+        email = user.email.strip().lower()
+        if not email:
+            continue
+        row = known.pop(email, None)
+        if row is None:
+            row = MirrorUser(client_id=client.id, email=email)
+            db.add(row)
+        row.name = user.name
+        row.role = user.role
+        row.hashed_password = user.hashed_password
+        row.is_active = user.is_active
+    for row in known.values():
+        # An account removed at the counter loses its phone access, but its
+        # sales stay readable by the shop.
+        row.is_active = False
+
+    stored = {
+        row.reference: row
+        for row in db.query(MirrorSale).filter(MirrorSale.client_id == client.id)
+    }
+    for sale in payload.sales:
+        row = stored.get(sale.reference)
+        if row is None:
+            row = MirrorSale(client_id=client.id, reference=sale.reference)
+            db.add(row)
+        row.date = _naive(sale.date)
+        row.total = sale.total
+        row.status = sale.status
+        row.payment_method = sale.payment_method
+        row.customer = sale.customer
+        row.seller = sale.seller
+        row.seller_email = sale.seller_email.strip().lower()
+        row.items = json.dumps(sale.items, ensure_ascii=False)
+    installation.last_seen = utcnow()
+    db.commit()
+    return {"status": "ok", "code": mobile_code(db, client), "sales": len(payload.sales)}
 
 
 @router.post("/sync", response_model=LicenseAnswer)

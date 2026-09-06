@@ -33,6 +33,7 @@ import ConsoleClients from "./pages/console/ConsoleClients";
 import ConsoleClient from "./pages/console/ConsoleClient";
 import ConsolePlans from "./pages/console/ConsolePlans";
 import ConsoleJournal from "./pages/console/ConsoleJournal";
+import Mobile from "./pages/Mobile";
 
 /** Home screens, in the order a user falls back to them. */
 const HOME_PAGES: [string, string][] = [
@@ -112,6 +113,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/console/connexion" element={<ConsoleLogin />} />
+      <Route path="/mobile" element={<Mobile />} />
       <Route path="/console" element={<ConsoleLayout />}>
         <Route index element={<ConsoleDashboard />} />
         <Route path="clients" element={<ConsoleClients />} />

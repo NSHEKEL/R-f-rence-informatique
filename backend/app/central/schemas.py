@@ -296,6 +296,35 @@ class SyncRequest(BaseModel):
     users_count: int = 0
 
 
+class MirrorUserIn(BaseModel):
+    email: str
+    name: str = ""
+    role: str = ""
+    hashed_password: str = ""
+    is_active: bool = True
+
+
+class MirrorSaleIn(BaseModel):
+    reference: str
+    date: Optional[datetime] = None
+    total: float = 0
+    status: str = ""
+    payment_method: str = ""
+    customer: str = ""
+    seller: str = ""
+    seller_email: str = ""
+    items: list = []
+
+
+class MirrorRequest(BaseModel):
+    """Copy a shop pushes so its sales can be read from a phone."""
+
+    installation_uid: str
+    token: str
+    users: list[MirrorUserIn] = []
+    sales: list[MirrorSaleIn] = []
+
+
 class LicenseAnswer(BaseModel):
     """Signed statement handed back to an installation."""
 
