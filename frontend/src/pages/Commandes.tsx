@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import {
   ClipboardCheck,
+  Pencil,
   Plus,
   Printer,
   Trash2,
@@ -51,6 +52,7 @@ export default function Commandes() {
   const [note, setNote] = useState("");
   const [lines, setLines] = useState<DraftLine[]>([]);
   const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState<Order | null>(null);
 
   const [delivering, setDelivering] = useState<Order | null>(null);
   const [carrier, setCarrier] = useState("");
@@ -106,6 +108,39 @@ export default function Commandes() {
     });
   }
 
+  function resetForm() {
+    setEditing(null);
+    setLines([]);
+    setNote("");
+    setCustomerName("");
+    setCustomerId("");
+    setExpected("");
+    setAddress("");
+    setDeposit(0);
+    setPriceMode("detail");
+  }
+
+  /** Reopen a pending order to correct a line, a price or the delivery date. */
+  function edit(order: Order) {
+    setEditing(order);
+    setCustomerId(order.customer_id ? String(order.customer_id) : "");
+    setCustomerName(order.customer_name);
+    setExpected(order.expected_date ? order.expected_date.slice(0, 10) : "");
+    setAddress(order.delivery_address);
+    setDeposit(order.deposit);
+    setPriceMode(order.price_mode ?? "detail");
+    setNote(order.note ?? "");
+    setLines(
+      order.items.map((item) => ({
+        product_id: item.product_id,
+        product_name: item.product_name,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+      }))
+    );
+    setOpen(true);
+  }
+
   async function save() {
     if (lines.some((l) => !l.product_id)) {
       setError("Chaque ligne doit désigner un article du catalogue");
@@ -118,7 +153,7 @@ export default function Commandes() {
     setSaving(true);
     setError("");
     try {
-      await api.post("/orders", {
+      const body = {
         customer_id: customerId ? Number(customerId) : null,
         customer_name: customerName,
         expected_date: expected ? new Date(expected).toISOString() : null,
@@ -131,15 +166,14 @@ export default function Commandes() {
           quantity: l.quantity,
           unit_price: l.unit_price,
         })),
-      });
+      };
+      if (editing) {
+        await api.put(`/orders/${editing.id}`, body);
+      } else {
+        await api.post("/orders", body);
+      }
       setOpen(false);
-      setLines([]);
-      setNote("");
-      setCustomerName("");
-      setCustomerId("");
-      setExpected("");
-      setAddress("");
-      setDeposit(0);
+      resetForm();
       await load();
     } catch (err) {
       if (axios.isAxiosError(err)) {
@@ -320,6 +354,15 @@ export default function Commandes() {
                 </td>
                 <td className="px-5 py-3.5">
                   <div className="flex justify-end gap-1">
+                    {o.status !== "Livrée" && can("commandes_gerer") && (
+                      <button
+                        className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
+                        onClick={() => edit(o)}
+                        aria-label="Modifier la commande"
+                      >
+                        <Pencil size={16} />
+                      </button>
+                    )}
                     {o.status !== "Livrée" && (
                       <button
                         className="rounded-lg p-2 text-slate-400 hover:bg-emerald-50 hover:text-emerald-600"
@@ -367,12 +410,23 @@ export default function Commandes() {
 
       <Modal
         open={open}
-        onClose={() => setOpen(false)}
-        title="Nouvelle commande"
+        onClose={() => {
+          setOpen(false);
+          resetForm();
+        }}
+        title={
+          editing ? `Modifier la commande ${editing.reference}` : "Nouvelle commande"
+        }
         wide
         footer={
           <>
-            <button className="btn-ghost" onClick={() => setOpen(false)}>
+            <button
+              className="btn-ghost"
+              onClick={() => {
+                setOpen(false);
+                resetForm();
+              }}
+            >
               Annuler
             </button>
             <button className="btn-primary" onClick={save} disabled={saving}>

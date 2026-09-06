@@ -24,6 +24,7 @@ import time
 import traceback
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 import uvicorn
 
@@ -138,6 +139,24 @@ class DesktopApi:
         if not chosen:
             return ""
         return chosen[0] if isinstance(chosen, (list, tuple)) else str(chosen)
+
+    def save_file(self, filename: str, content: str) -> str:
+        """Write an export to disk: the native window blocks browser downloads,
+        so the Excel and PDF buttons would do nothing without this."""
+        import webview
+
+        if self.window is None:
+            return ""
+        target = self.window.create_file_dialog(
+            webview.SAVE_DIALOG,
+            directory=str(Path.home() / "Documents"),
+            save_filename=filename,
+        )
+        if not target:
+            return ""
+        path = Path(target[0] if isinstance(target, (list, tuple)) else str(target))
+        path.write_text(content, encoding="utf-8-sig")
+        return str(path)
 
     def toggle_fullscreen(self) -> bool:
         """Full screen for the counter: the web API alone cannot resize the

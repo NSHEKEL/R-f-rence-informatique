@@ -587,6 +587,13 @@ class DeliveryCreate(BaseModel):
     payment_method: str = "Espèces"
 
 
+class DeliveryUpdate(BaseModel):
+    address: Optional[str] = None
+    carrier: Optional[str] = None
+    recipient: Optional[str] = None
+    note: Optional[str] = None
+
+
 class DeliveryOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int

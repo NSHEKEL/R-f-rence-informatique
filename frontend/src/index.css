@@ -312,6 +312,71 @@ html.dark .shadow-soft {
 html.dark ::-webkit-scrollbar-thumb {
   background: #334155;
 }
+/* Coloured statuses (paid, late, alert) are unreadable on a dark card when
+   they keep the shades meant for white paper: the tint is darkened and the
+   writing lightened. */
+html.dark .bg-emerald-50,
+html.dark .bg-emerald-100,
+html.dark .bg-green-50 {
+  background-color: #10291f !important;
+}
+html.dark .bg-amber-50,
+html.dark .bg-amber-100,
+html.dark .bg-orange-50 {
+  background-color: #2e2413 !important;
+}
+html.dark .bg-red-50,
+html.dark .bg-rose-50 {
+  background-color: #331717 !important;
+}
+html.dark .bg-blue-50,
+html.dark .bg-sky-50,
+html.dark .bg-indigo-50,
+html.dark .bg-violet-50 {
+  background-color: #16264a !important;
+}
+html.dark .text-emerald-900,
+html.dark .text-emerald-800,
+html.dark .text-emerald-700,
+html.dark .text-emerald-600,
+html.dark .text-green-700,
+html.dark .text-green-600 {
+  color: #6ee7b7 !important;
+}
+html.dark .text-amber-900,
+html.dark .text-amber-800,
+html.dark .text-amber-700,
+html.dark .text-amber-600,
+html.dark .text-orange-600 {
+  color: #fcd34d !important;
+}
+html.dark .text-red-700,
+html.dark .text-red-600,
+html.dark .text-rose-600 {
+  color: #fca5a5 !important;
+}
+html.dark .text-blue-700,
+html.dark .text-sky-600,
+html.dark .text-indigo-600,
+html.dark .text-violet-600,
+html.dark .text-brand-600 {
+  color: #93c5fd !important;
+}
+html.dark .text-slate-300 {
+  color: #94a3b8 !important;
+}
+html.dark thead,
+html.dark th {
+  color: #94a3b8 !important;
+}
+html.dark option {
+  background-color: #0f1a30;
+  color: #e2e8f0;
+}
+html.dark .btn-danger {
+  background-color: #331717 !important;
+  color: #fca5a5 !important;
+}
 /* A receipt or a label is a sheet of paper, dark or not. */
 html.dark .receipt,
 html.dark #receipt-print-root {

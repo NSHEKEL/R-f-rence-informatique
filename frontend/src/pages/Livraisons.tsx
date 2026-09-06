@@ -1,18 +1,29 @@
 import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
-import { PackageCheck, Printer } from "lucide-react";
+import { PackageCheck, Pencil, Printer } from "lucide-react";
 import api, { formatDateTime, formatXOF } from "../api/client";
 import type { Delivery, Order } from "../types";
+import Modal from "../components/Modal";
 import { documentBarcode, documentHeader, printSheet } from "../lib/print";
+import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSyncVersion } from "../context/SyncContext";
 
 export default function Livraisons() {
   const version = useSyncVersion();
   const { company } = useCompany();
+  const { can } = useAuth();
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [error, setError] = useState("");
+  const [editing, setEditing] = useState<Delivery | null>(null);
+  const [form, setForm] = useState({
+    address: "",
+    carrier: "",
+    recipient: "",
+    note: "",
+  });
+  const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -32,6 +43,32 @@ export default function Livraisons() {
   useEffect(() => {
     load();
   }, [load, version]);
+
+  function edit(delivery: Delivery) {
+    setEditing(delivery);
+    setForm({
+      address: delivery.address,
+      carrier: delivery.carrier,
+      recipient: delivery.recipient,
+      note: delivery.note,
+    });
+  }
+
+  async function saveDelivery() {
+    if (!editing) return;
+    setSaving(true);
+    try {
+      await api.put(`/orders/deliveries/${editing.id}`, form);
+      setEditing(null);
+      await load();
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        setError(err.response?.data?.detail ?? "Modification impossible");
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
 
   function print(delivery: Delivery) {
     const order = orders.find((o) => o.id === delivery.order_id);
@@ -118,7 +155,16 @@ export default function Livraisons() {
                   {d.recipient || "—"}
                 </td>
                 <td className="px-5 py-3.5">
-                  <div className="flex justify-end">
+                  <div className="flex justify-end gap-1">
+                    {can("commandes_gerer") && (
+                      <button
+                        className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
+                        onClick={() => edit(d)}
+                        aria-label="Modifier la livraison"
+                      >
+                        <Pencil size={16} />
+                      </button>
+                    )}
                     <button
                       className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
                       onClick={() => print(d)}
@@ -143,6 +189,69 @@ export default function Livraisons() {
           </tbody>
         </table>
       </div>
+
+      <Modal
+        open={editing !== null}
+        onClose={() => setEditing(null)}
+        title={editing ? `Modifier le bon ${editing.reference}` : ""}
+        footer={
+          <>
+            <button className="btn-ghost" onClick={() => setEditing(null)}>
+              Annuler
+            </button>
+            <button
+              className="btn-primary"
+              onClick={saveDelivery}
+              disabled={saving}
+            >
+              {saving ? "Enregistrement..." : "Enregistrer"}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="label">Adresse de livraison</label>
+            <input
+              className="input"
+              value={form.address}
+              onChange={(e) => setForm({ ...form, address: e.target.value })}
+            />
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="label">Livreur</label>
+              <input
+                className="input"
+                value={form.carrier}
+                onChange={(e) => setForm({ ...form, carrier: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="label">Reçu par</label>
+              <input
+                className="input"
+                value={form.recipient}
+                onChange={(e) =>
+                  setForm({ ...form, recipient: e.target.value })
+                }
+              />
+            </div>
+          </div>
+          <div>
+            <label className="label">Remarque</label>
+            <textarea
+              className="input"
+              rows={2}
+              value={form.note}
+              onChange={(e) => setForm({ ...form, note: e.target.value })}
+            />
+          </div>
+          <p className="text-xs text-slate-500">
+            Le stock et la vente enregistrés à la livraison ne changent pas.
+          </p>
+        </div>
+      </Modal>
     </div>
   );
 }

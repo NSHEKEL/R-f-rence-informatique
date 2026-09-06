@@ -3,6 +3,7 @@ import axios from "axios";
 import {
   Ban,
   PackagePlus,
+  Pencil,
   Plus,
   Printer,
   Trash2,
@@ -56,6 +57,7 @@ export default function Approvisionnements() {
   const [note, setNote] = useState("");
   const [lines, setLines] = useState<DraftLine[]>([]);
   const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState<Purchase | null>(null);
 
   const [receiving, setReceiving] = useState<Purchase | null>(null);
   const [received, setReceived] = useState<Record<number, number>>({});
@@ -106,6 +108,7 @@ export default function Approvisionnements() {
   }
 
   function resetForm() {
+    setEditing(null);
     setLines([]);
     setSupplierId("");
     setSupplierName("");
@@ -113,6 +116,27 @@ export default function Approvisionnements() {
     setInvoice("");
     setPaidAmount(0);
     setNote("");
+  }
+
+  /** Correct a supply still open: supplier, invoice, quantities or costs. */
+  function edit(purchase: Purchase) {
+    setEditing(purchase);
+    setSupplierId(purchase.supplier_id ? String(purchase.supplier_id) : "");
+    setSupplierName(purchase.supplier_name);
+    setExpected(
+      purchase.expected_date ? purchase.expected_date.slice(0, 10) : ""
+    );
+    setInvoice(purchase.invoice_number ?? "");
+    setPaidAmount(purchase.paid);
+    setNote(purchase.note ?? "");
+    setLines(
+      purchase.items.map((item) => ({
+        product_id: item.product_id,
+        quantity: item.quantity,
+        unit_cost: item.unit_cost,
+      }))
+    );
+    setOpen(true);
   }
 
   async function save() {
@@ -127,7 +151,7 @@ export default function Approvisionnements() {
     setSaving(true);
     setError("");
     try {
-      await api.post("/purchases", {
+      const body = {
         supplier_id: supplierId ? Number(supplierId) : null,
         supplier_name: supplierName,
         expected_date: expected ? new Date(expected).toISOString() : null,
@@ -139,7 +163,12 @@ export default function Approvisionnements() {
           quantity: l.quantity,
           unit_cost: l.unit_cost,
         })),
-      });
+      };
+      if (editing) {
+        await api.put(`/purchases/${editing.id}`, body);
+      } else {
+        await api.post("/purchases", body);
+      }
       setOpen(false);
       resetForm();
       await load();
@@ -387,6 +416,15 @@ export default function Approvisionnements() {
                         <TruckIcon size={16} />
                       </button>
                     )}
+                    {manage && p.status === "En attente" && (
+                      <button
+                        className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
+                        onClick={() => edit(p)}
+                        aria-label="Modifier l'approvisionnement"
+                      >
+                        <Pencil size={16} />
+                      </button>
+                    )}
                     <button
                       className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
                       onClick={() => print(p)}
@@ -432,12 +470,25 @@ export default function Approvisionnements() {
 
       <Modal
         open={open}
-        onClose={() => setOpen(false)}
-        title="Nouvel approvisionnement"
+        onClose={() => {
+          setOpen(false);
+          resetForm();
+        }}
+        title={
+          editing
+            ? `Modifier l'approvisionnement ${editing.reference}`
+            : "Nouvel approvisionnement"
+        }
         wide
         footer={
           <>
-            <button className="btn-ghost" onClick={() => setOpen(false)}>
+            <button
+              className="btn-ghost"
+              onClick={() => {
+                setOpen(false);
+                resetForm();
+              }}
+            >
               Annuler
             </button>
             <button className="btn-primary" onClick={save} disabled={saving}>

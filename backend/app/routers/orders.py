@@ -28,6 +28,7 @@ from ..permissions import require_permission
 from ..schemas import (
     DeliveryCreate,
     DeliveryOut,
+    DeliveryUpdate,
     OrderCreate,
     OrderOut,
     OrderUpdate,
@@ -297,6 +298,29 @@ def deliver_order(
             sale_id=sale.id,
         )
     )
+    db.commit()
+    db.refresh(delivery)
+    return delivery
+
+
+@router.put("/deliveries/{delivery_id}", response_model=DeliveryOut)
+def update_delivery(
+    delivery_id: int,
+    payload: DeliveryUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission("commandes_gerer")),
+):
+    """Correct a delivery note: address, carrier, recipient or remark.
+
+    The goods already left, so the stock movements and the sale are untouched.
+    """
+    delivery = db.query(Delivery).get(delivery_id)
+    if not delivery:
+        raise HTTPException(status_code=404, detail="Livraison introuvable")
+    data = payload.model_dump(exclude_unset=True)
+    for field in ("address", "carrier", "recipient", "note"):
+        if field in data and data[field] is not None:
+            setattr(delivery, field, data[field])
     db.commit()
     db.refresh(delivery)
     return delivery
