@@ -9,6 +9,12 @@ final class ServerStore {
     private static final String PREFS = "easygest";
     private static final String KEY_URL = "server_url";
 
+    /** Online EasyGest server: reads the sales copy pushed by the shop. */
+    static final String CENTRAL_URL = "https://easygest-central.vercel.app";
+
+    /** Page a phone opens to consult the sales from anywhere. */
+    static final String CENTRAL_MOBILE_URL = CENTRAL_URL + "/mobile";
+
     private ServerStore() {
     }
 

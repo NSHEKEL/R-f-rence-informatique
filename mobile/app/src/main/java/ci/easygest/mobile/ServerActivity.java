@@ -37,6 +37,26 @@ public class ServerActivity extends AppCompatActivity {
             address.setText(saved);
         }
 
+        Button remote = findViewById(R.id.remote);
+        remote.setOnClickListener((View view) -> {
+            remote.setEnabled(false);
+            status.setText(R.string.testing);
+            workers.execute(() -> {
+                boolean reachable = reachable(
+                        ServerStore.CENTRAL_URL + "/api/central/health");
+                ui.post(() -> {
+                    remote.setEnabled(true);
+                    if (!reachable) {
+                        status.setText(R.string.central_ko);
+                        return;
+                    }
+                    ServerStore.save(this, ServerStore.CENTRAL_MOBILE_URL);
+                    startActivity(new Intent(this, MainActivity.class));
+                    finish();
+                });
+            });
+        });
+
         connect.setOnClickListener((View view) -> {
             String url = ServerStore.normalise(address.getText().toString());
             if (url == null) {
@@ -46,7 +66,7 @@ public class ServerActivity extends AppCompatActivity {
             connect.setEnabled(false);
             status.setText(R.string.testing);
             workers.execute(() -> {
-                boolean reachable = ping(url);
+                boolean reachable = reachable(url + "/api/health");
                 ui.post(() -> {
                     connect.setEnabled(true);
                     if (!reachable) {
@@ -62,11 +82,11 @@ public class ServerActivity extends AppCompatActivity {
         });
     }
 
-    /** The server answers on /api/health as soon as EasyGest runs. */
-    private boolean ping(String base) {
+    /** A health address answers 200 as soon as the server runs. */
+    private boolean reachable(String url) {
         HttpURLConnection connection = null;
         try {
-            connection = (HttpURLConnection) new URL(base + "/api/health").openConnection();
+            connection = (HttpURLConnection) new URL(url).openConnection();
             connection.setConnectTimeout(4000);
             connection.setReadTimeout(4000);
             return connection.getResponseCode() == 200;
