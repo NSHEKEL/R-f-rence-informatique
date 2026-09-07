@@ -159,6 +159,116 @@ def sales(
     ]
 
 
+@router.get("/team")
+def team(
+    session: tuple[MirrorUser, Client] = Depends(current_mobile),
+    db: Session = Depends(get_db),
+):
+    """Accounts of the shop, with what each of them sold."""
+    user, client = session
+    if (user.role or "").lower() not in FULL_VIEW_ROLES:
+        raise HTTPException(status_code=403, detail="Accès réservé à la direction")
+    sales = db.query(MirrorSale).filter(MirrorSale.client_id == client.id).all()
+    rows = (
+        db.query(MirrorUser)
+        .filter(MirrorUser.client_id == client.id)
+        .order_by(MirrorUser.name)
+        .all()
+    )
+    return [
+        {
+            "email": row.email,
+            "name": row.name or row.email,
+            "role": row.role or "",
+            "is_active": bool(row.is_active),
+            "sales_count": sum(1 for s in sales if s.seller_email == row.email),
+            "sales_total": sum(
+                s.total or 0 for s in sales if s.seller_email == row.email
+            ),
+        }
+        for row in rows
+    ]
+
+
+@router.get("/accounting")
+def accounting(
+    days: int = 7,
+    session: tuple[MirrorUser, Client] = Depends(current_mobile),
+    db: Session = Depends(get_db),
+):
+    """Figures of the shop for the phone: days, payments, best sellers."""
+    user, client = session
+    rows = _visible(db, user, client).all()
+    span = max(1, min(days, 60))
+    start = (utcnow() - timedelta(days=span - 1)).date()
+
+    per_day: dict[str, dict[str, float]] = {}
+    per_payment: dict[str, dict[str, float]] = {}
+    per_product: dict[str, dict[str, float]] = {}
+    for row in rows:
+        if not row.date or row.date.date() < start:
+            continue
+        day = per_day.setdefault(
+            row.date.date().isoformat(), {"total": 0.0, "count": 0.0}
+        )
+        day["total"] += row.total or 0
+        day["count"] += 1
+        payment = per_payment.setdefault(
+            row.payment_method or "Non précisé", {"total": 0.0, "count": 0.0}
+        )
+        payment["total"] += row.total or 0
+        payment["count"] += 1
+        for item in json.loads(row.items or "[]"):
+            product = per_product.setdefault(
+                str(item.get("name", "")), {"quantity": 0.0, "total": 0.0}
+            )
+            product["quantity"] += float(item.get("quantity") or 0)
+            product["total"] += float(item.get("subtotal") or 0)
+
+    best = sorted(per_product.items(), key=lambda pair: -pair[1]["total"])[:10]
+    return {
+        "days": [
+            {"day": key, "total": value["total"], "count": int(value["count"])}
+            for key, value in sorted(per_day.items())
+        ],
+        "payments": [
+            {"method": key, "total": value["total"], "count": int(value["count"])}
+            for key, value in sorted(per_payment.items(), key=lambda p: -p[1]["total"])
+        ],
+        "products": [
+            {"name": name, "quantity": value["quantity"], "total": value["total"]}
+            for name, value in best
+        ],
+        "period_total": sum(value["total"] for value in per_day.values()),
+        "period_count": int(sum(value["count"] for value in per_day.values())),
+    }
+
+
+@router.get("/about")
+def about(
+    session: tuple[MirrorUser, Client] = Depends(current_mobile),
+    db: Session = Depends(get_db),
+):
+    """Shop identity and the text the owner writes from his console."""
+    _, client = session
+    installation = (
+        db.query(Installation)
+        .filter(Installation.client_id == client.id)
+        .order_by(Installation.last_seen.desc().nullslast())
+        .first()
+    )
+    return {
+        "company": client.company,
+        "manager": client.manager or "",
+        "phone": client.phone or "",
+        "email": client.email or "",
+        "address": client.address or "",
+        "city": client.city or "",
+        "about": client.about or "",
+        "version": installation.version if installation else "",
+    }
+
+
 @router.get("/summary")
 def summary(
     session: tuple[MirrorUser, Client] = Depends(current_mobile),

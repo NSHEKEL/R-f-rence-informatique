@@ -5,7 +5,7 @@ from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .. import backup
+from .. import backup, remote_sales
 from ..database import get_db
 from ..models import (
     Debt,
@@ -226,6 +226,7 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
     db.commit()
     db.refresh(sale)
     _backup_after_sale(db)
+    remote_sales.schedule()
     return sale
 
 

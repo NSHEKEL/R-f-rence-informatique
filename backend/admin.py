@@ -18,6 +18,7 @@ Modes:
 """
 
 import os
+import shutil
 import socket
 import sys
 import threading
@@ -138,6 +139,26 @@ def _serve(port: int) -> None:
         traceback.print_exc()
 
 
+def _refresh_cache() -> Path:
+    """Drop the window cache on a new version.
+
+    The console is a single-page application whose file names change at every
+    deployment: a cache kept from the previous version asks for scripts that no
+    longer exist and the window stays blank.
+    """
+    storage = CENTRAL_DIR / "webview"
+    stamp = CENTRAL_DIR / "webview.version"
+    previous = stamp.read_text(encoding="utf-8").strip() if stamp.exists() else ""
+    if previous != APP_VERSION:
+        shutil.rmtree(storage, ignore_errors=True)
+        try:
+            stamp.write_text(APP_VERSION, encoding="utf-8")
+        except OSError:
+            pass
+    storage.mkdir(parents=True, exist_ok=True)
+    return storage
+
+
 def _open_window(url: str) -> bool:
     try:
         import webview
@@ -145,9 +166,10 @@ def _open_window(url: str) -> bool:
         traceback.print_exc()
         return False
     try:
+        storage = _refresh_cache()
         window = webview.create_window(
             ADMIN_NAME,
-            f"{url}/console/connexion",
+            f"{url}/console/connexion?v={APP_VERSION}",
             width=1400,
             height=900,
             min_size=(1024, 700),
@@ -157,7 +179,7 @@ def _open_window(url: str) -> bool:
         window.events.closed += lambda: os._exit(0)
         webview.start(
             private_mode=False,
-            storage_path=str(CENTRAL_DIR / "webview"),
+            storage_path=str(storage),
         )
     except Exception:  # noqa: BLE001
         traceback.print_exc()

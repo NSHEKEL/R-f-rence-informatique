@@ -7,16 +7,26 @@ calls out, and the phone reads the copy through the central API.
 Nothing is ever read back from the central copy into the shop database.
 """
 
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
 from . import licensing
+from .database import SessionLocal
 from .models import Sale, User
 
 # Window of sales kept on the central server for the phone.
 MIRROR_DAYS = 120
 MIRROR_LIMIT = 500
+
+# Short pause before publishing a fresh sale: several receipts printed in a row
+# then travel in a single call.
+PUSH_DELAY_SECONDS = 2.0
+
+_pending = threading.Lock()
+_scheduled = False
 
 
 def _sales(db: Session) -> list[dict]:
@@ -95,3 +105,34 @@ def push_quietly(db: Session) -> None:
         push(db)
     except Exception as exc:  # noqa: BLE001 - best effort only
         print(f"Copie distante impossible : {exc}")
+
+
+def _publish_soon() -> None:
+    global _scheduled
+
+    time.sleep(PUSH_DELAY_SECONDS)
+    with _pending:
+        _scheduled = False
+    db = SessionLocal()
+    try:
+        if licensing.effective(db).allows("synchronisation"):
+            push_quietly(db)
+    except Exception as exc:  # noqa: BLE001 - best effort only
+        print(f"Copie distante impossible : {exc}")
+    finally:
+        db.close()
+
+
+def schedule() -> None:
+    """Publish just after a sale, so the phone shows it within seconds.
+
+    Waiting for the periodic loop meant up to ten minutes; the copy now leaves
+    on its own thread and a network outage never delays the counter.
+    """
+    global _scheduled
+
+    with _pending:
+        if _scheduled:
+            return
+        _scheduled = True
+    threading.Thread(target=_publish_soon, daemon=True).start()
