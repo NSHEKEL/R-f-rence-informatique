@@ -10,8 +10,12 @@ android {
         applicationId "ci.easygest.mobile"
         minSdk 24
         targetSdk 34
-        versionCode 5
-        versionName "2.10.1"
+        versionCode 6
+        versionName "2.10.2"
+    }
+
+    buildFeatures {
+        buildConfig true
     }
 
     buildTypes {

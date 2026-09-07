@@ -2,9 +2,13 @@ package ci.easygest.mobile;
 
 import android.Manifest;
 import android.content.Intent;
+import android.content.SharedPreferences;
+import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
+import android.webkit.ConsoleMessage;
 import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
@@ -25,8 +29,14 @@ import androidx.core.content.ContextCompat;
 /** The EasyGest application itself, served by the shop computer. */
 public class MainActivity extends AppCompatActivity {
 
+    /** Oldest WebView known to run the EasyGest bundle. */
+    private static final int MINIMUM_WEBVIEW = 64;
+
+    private static final String KEY_BUILD = "webview_build";
+
     private WebView webView;
     private ProgressBar progress;
+    private boolean pageFailed;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -53,16 +63,20 @@ public class MainActivity extends AppCompatActivity {
         settings.setDisplayZoomControls(false);
         settings.setMediaPlaybackRequiresUserGesture(false);
 
+        forgetCacheOfPreviousVersion();
+
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageFinished(WebView view, String url) {
                 progress.setVisibility(View.GONE);
+                view.postDelayed(() -> warnIfBlank(view), 4000);
             }
 
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request,
                                         WebResourceError error) {
                 if (request.isForMainFrame()) {
+                    pageFailed = true;
                     progress.setVisibility(View.GONE);
                     Toast.makeText(MainActivity.this, R.string.offline,
                             Toast.LENGTH_LONG).show();
@@ -75,6 +89,14 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onPermissionRequest(PermissionRequest request) {
                 runOnUiThread(() -> request.grant(request.getResources()));
+            }
+
+            @Override
+            public boolean onConsoleMessage(ConsoleMessage message) {
+                if (message.messageLevel() == ConsoleMessage.MessageLevel.ERROR) {
+                    pageFailed = true;
+                }
+                return true;
             }
         });
 
@@ -101,6 +123,53 @@ public class MainActivity extends AppCompatActivity {
         webView.loadUrl(server);
     }
 
+    /**
+     * A new application version ships new pages: the copy kept by the WebView
+     * would otherwise mix old scripts with new ones and show a blank screen.
+     */
+    private void forgetCacheOfPreviousVersion() {
+        SharedPreferences prefs = ServerStore.prefs(this);
+        String installed = BuildConfig.VERSION_NAME;
+        if (installed.equals(prefs.getString(KEY_BUILD, ""))) {
+            return;
+        }
+        webView.clearCache(true);
+        prefs.edit().putString(KEY_BUILD, installed).apply();
+    }
+
+    /** A blank window means the page failed: say what to do instead. */
+    private void warnIfBlank(WebView view) {
+        view.evaluateJavascript(
+                "document.body ? document.body.innerText.trim().length : 0",
+                (String value) -> {
+                    boolean empty = "0".equals(value) || "null".equals(value);
+                    if (!empty) {
+                        return;
+                    }
+                    Toast.makeText(this,
+                            outdatedWebView() || pageFailed
+                                    ? R.string.webview_old : R.string.page_error,
+                            Toast.LENGTH_LONG).show();
+                });
+    }
+
+    /** Very old system WebViews cannot run the EasyGest scripts. */
+    private boolean outdatedWebView() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return true;
+        }
+        PackageInfo info = WebView.getCurrentWebViewPackage();
+        if (info == null) {
+            return true;
+        }
+        String major = info.versionName.split("\\.")[0];
+        try {
+            return Integer.parseInt(major) < MINIMUM_WEBVIEW;
+        } catch (NumberFormatException error) {
+            return false;
+        }
+    }
+
     /** Reload / change server, reachable without an action bar. */
     private void showOptions() {
         new AlertDialog.Builder(this)
@@ -112,6 +181,8 @@ public class MainActivity extends AppCompatActivity {
                         },
                         (dialog, which) -> {
                             if (which == 0) {
+                                pageFailed = false;
+                                webView.clearCache(true);
                                 webView.reload();
                                 return;
                             }
