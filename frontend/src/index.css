@@ -29,17 +29,62 @@ span {
 body {
   margin: 0;
   font-family: "Inter", system-ui, sans-serif;
-  background-color: #f4f6fb;
+  background-color: #f3f6fc;
+  background-image: radial-gradient(
+      1200px 600px at 0% -10%,
+      rgba(27, 111, 227, 0.09),
+      transparent 60%
+    ),
+    radial-gradient(900px 500px at 100% 0%, rgba(16, 185, 129, 0.07), transparent 60%);
+  background-attachment: fixed;
   color: #0f172a;
   -webkit-font-smoothing: antialiased;
 }
 
+/* Keyboard users must always see where they are, mouse users are left
+   alone: the ring only shows up on :focus-visible. */
+:focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 2px;
+  border-radius: 0.5rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Jumping straight to the page content with the Tab key. */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 60;
+}
+.skip-link:focus {
+  left: 1rem;
+  top: 1rem;
+  padding: 0.6rem 1rem;
+  border-radius: 0.75rem;
+  background: #1b6fe3;
+  color: #fff;
+  font-weight: 600;
+}
+
 @layer components {
   .card {
-    @apply rounded-2xl bg-white shadow-card border border-slate-100;
+    @apply rounded-2xl bg-white shadow-card border border-slate-200/70;
   }
+  /* Comfortable click target: fingers on a touch screen, tired eyes on a
+     counter. */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex min-h-[2.5rem] items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
   }
   .btn-primary {
     @apply btn bg-brand-600 text-white hover:bg-brand-700;
@@ -246,7 +291,16 @@ body {
    printed, and the print stylesheet below resets the page anyway. */
 html.dark body {
   background-color: #0b1220;
+  background-image: radial-gradient(
+      1200px 600px at 0% -10%,
+      rgba(59, 130, 246, 0.14),
+      transparent 60%
+    ),
+    radial-gradient(900px 500px at 100% 0%, rgba(16, 185, 129, 0.08), transparent 60%);
   color: #e2e8f0;
+}
+html.dark :focus-visible {
+  outline-color: #93c5fd;
 }
 html.dark .card,
 html.dark .bg-white,

@@ -234,7 +234,10 @@ export default function Layout() {
     .toUpperCase();
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50">
+    <div className="flex h-screen overflow-hidden">
+      <a className="skip-link" href="#contenu">
+        Aller au contenu
+      </a>
       {/* Sidebar */}
       <aside
         className={`fixed inset-y-0 left-0 z-40 flex flex-col border-r border-slate-200 bg-white transition-all duration-200 lg:static lg:translate-x-0 ${
@@ -266,12 +269,16 @@ export default function Layout() {
           <button
             className="ml-auto rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 lg:hidden"
             onClick={() => setMobileOpen(false)}
+            aria-label="Fermer le menu"
           >
             <X size={20} />
           </button>
         </div>
 
-        <nav className="flex-1 space-y-1 overflow-y-auto px-4 py-2">
+        <nav
+          aria-label="Menu principal"
+          className="flex-1 space-y-1 overflow-y-auto px-4 py-2"
+        >
           {/* Buttons, not links: an <a href> would make the browser print the
               target address in the status bar while hovering. */}
           {visibleNavItems.map((item) => {
@@ -360,6 +367,7 @@ export default function Layout() {
 
       {mobileOpen && (
         <div
+          aria-hidden="true"
           className="fixed inset-0 z-30 bg-slate-900/40 lg:hidden"
           onClick={() => setMobileOpen(false)}
         />
@@ -371,6 +379,7 @@ export default function Layout() {
           <button
             className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 lg:hidden"
             onClick={() => setMobileOpen(true)}
+            aria-label="Ouvrir le menu"
           >
             <Menu size={22} />
           </button>
@@ -424,6 +433,7 @@ export default function Layout() {
         <NetworkBanner />
 
         <main
+          id="contenu"
           className={`flex-1 overflow-y-auto ${
             // The POS uses the whole screen: no page padding around it.
             location.pathname === "/ventes/nouvelle" ? "p-0" : "p-5 lg:p-7"

@@ -243,7 +243,15 @@ export default function Dashboard() {
         </div>
         )}
 
-        <div className="space-y-6">
+        {/* Widgets in a grid: side by side on a wide screen, stacked in the
+            right-hand column when the chart is displayed. */}
+        <div
+          className={`grid grid-cols-1 gap-6 sm:grid-cols-2 ${
+            hasFeature("statistiques")
+              ? "xl:grid-cols-1"
+              : "xl:col-span-3 xl:grid-cols-3"
+          }`}
+        >
           <div className="card p-6">
             <div className="mb-4 flex items-center gap-2">
               <AlertTriangle size={18} className="text-amber-500" />
