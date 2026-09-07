@@ -5,10 +5,14 @@ description: End-to-end test the sales/inventory (Ventes & Stock) flow of the R�
 
 # Testing — Référence Informatique (Ventes & Stock)
 
-Full-stack app: FastAPI backend (`backend/`, port 8000, SQLite auto-seeded) + React/Vite frontend (`frontend/`, port 5173, proxies `/api`).
+Full-stack app: FastAPI backend (`backend/`, port 8000, SQLite) + React/Vite frontend (`frontend/`, port 5173, proxies `/api`).
+
+A fresh database only holds the administrator account — no product, no sale. Load
+the showroom catalogue explicitly when a test needs data:
+`cd backend && ./venv/bin/python -m app.seed --demo`.
 
 ## Devin Secrets Needed
-None. Login is a seeded demo account: `admin@reference.ci` / `admin123`.
+None. Login with the first-run administrator: `admin@reference.ci` / `admin123`.
 
 ## Start the services
 Both are killed on any VM/process restart — always re-check and restart before testing:
@@ -41,7 +45,7 @@ Verifies the role-based access layer. Roles: `admin` (full) and `vendeur` (sales
 5. **Deactivation gate**: admin → Utilisateurs → toggle the vendeur to Désactivé (badge turns red). Logout, attempt vendeur login → rejected with inline "Compte désactivé", stays on /login. Reactivate afterwards to leave a clean state.
 
 Gotchas:
-- On an already-seeded DB the demo `vendeur@reference.ci` may or may not exist (only auto-seeded on an empty DB). Create a test vendeur via the UI rather than assuming it exists.
+- `vendeur@reference.ci` only exists when the showroom data was loaded with `--demo`. Create a test vendeur via the UI rather than assuming it exists.
 - The deactivate/activate action is the eye-style icon next to the pencil (Modifier) in the Utilisateurs row; title toggles between "Désactiver"/"Activer".
 - Admin can't deactivate/demote/delete the last active admin or their own account (buttons hidden/blocked) — expected, not a bug.
 
@@ -103,6 +107,6 @@ Gotcha: `@page { size: 80mm auto; }` is invalid CSS (`auto` can't be combined wi
 ## Tips / gotchas
 - Native `<select>` dropdowns: click to open, click the option; the annotated DOM lists options with `stock : N` so you can confirm the current stock inline.
 - Numeric inputs: click the field, `ctrl+a`, then type — avoids leftover leading zeros.
-- The record for the current year auto-seeds ~58 sales; new sales get the next `VNT-<year>-NNNN` ref.
+- `python -m app.seed --demo` writes ~58 sales for the current year; new sales get the next `VNT-<year>-NNNN` ref.
 - Maximize the window before recording: `wmctrl -r :ACTIVE: -b add,maximized_vert,maximized_horz`.
 - If a process restart interrupts an active recording, annotations start failing with "no active recording" — restart services and re-run the whole flow in a fresh recording rather than stitching partial ones.

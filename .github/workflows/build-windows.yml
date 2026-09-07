@@ -136,9 +136,10 @@ jobs:
               console demande la création du compte propriétaire ; les données
               centrales restent dans `%PROGRAMDATA%\EasyGest\central`.
 
-            Comptes de démonstration (base vierge) :
-            - Administrateur : admin@reference.ci / admin123
-            - Vendeur : vendeur@reference.ci / vendeur123
+            Première connexion (base vierge : aucun produit ni vente de
+            démonstration) :
+            - Administrateur : admin@reference.ci / admin123 (à changer dans
+              Paramètres → Mon compte)
 
             Les données restent dans `%PROGRAMDATA%\EasyGest`, partagé par
             toutes les sessions Windows du poste : elles survivent aux mises à

@@ -55,10 +55,19 @@ L'application démarre sur http://localhost:5173 (proxy `/api` → backend).
 
 > **Node.js** : utiliser la version 20.19+ ou 22.12+.
 
-### Connexion de démonstration
+### Première connexion
+
+Une installation neuve démarre sur une base vide (aucun produit, aucune vente) avec
+le seul compte administrateur :
 
 - Email : `admin@reference.ci`
-- Mot de passe : `admin123`
+- Mot de passe : `admin123` (à changer immédiatement dans Paramètres → Mon compte)
+
+Pour charger le catalogue de démonstration (uniquement sur une base de test) :
+
+```bash
+cd backend && ./venv/bin/python -m app.seed --demo
+```
 
 ## Plusieurs ordinateurs sur la même base de données
 

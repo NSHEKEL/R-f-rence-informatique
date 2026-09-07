@@ -1,4 +1,6 @@
+import os
 import random
+import sys
 from datetime import datetime, timedelta, timezone
 
 from .auth import hash_password
@@ -15,27 +17,54 @@ from .models import (
 
 
 def seed():
+    """Prepare a brand new installation.
+
+    A shop opens on an empty book: only the administrator account is created,
+    so the first sale recorded is a real one. The showroom catalogue lives in
+    :func:`seed_demo`, which nothing calls automatically.
+    """
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
         if db.query(User).first():
             return
+        db.add(
+            User(
+                name="Administrateur",
+                email="admin@reference.ci",
+                hashed_password=hash_password("admin123"),
+                role="admin",
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
 
-        db.add_all(
-            [
+
+def seed_demo():
+    """Showroom data: catalogue, customers and past sales (never automatic)."""
+    Base.metadata.create_all(bind=engine)
+    db = SessionLocal()
+    try:
+        if db.query(Product).first():
+            print("La base contient déjà des produits : démonstration ignorée.")
+            return
+        if not db.query(User).first():
+            db.add(
                 User(
                     name="Administrateur",
                     email="admin@reference.ci",
                     hashed_password=hash_password("admin123"),
                     role="admin",
-                ),
-                User(
-                    name="Vendeur Démo",
-                    email="vendeur@reference.ci",
-                    hashed_password=hash_password("vendeur123"),
-                    role="vendeur",
-                ),
-            ]
+                )
+            )
+        db.add(
+            User(
+                name="Vendeur Démo",
+                email="vendeur@reference.ci",
+                hashed_password=hash_password("vendeur123"),
+                role="vendeur",
+            )
         )
 
         categories = [
@@ -154,4 +183,7 @@ def seed():
 
 
 if __name__ == "__main__":
-    seed()
+    if "--demo" in sys.argv or os.getenv("EASYGEST_DEMO_DATA") == "1":
+        seed_demo()
+    else:
+        seed()
