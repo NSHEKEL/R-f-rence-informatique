@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from .. import remote_sales
 from ..database import get_db
 from ..models import (
     Notification,
@@ -124,4 +125,5 @@ def create_return(
     )
     db.commit()
     db.refresh(credit)
+    remote_sales.schedule()
     return credit

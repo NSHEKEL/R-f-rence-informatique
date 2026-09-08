@@ -86,14 +86,21 @@ function PermRoute({
   right: string;
   children: React.ReactNode;
 }) {
-  const { can } = useAuth();
+  const { can, isAdmin } = useAuth();
   const { hasFeature } = useLicense();
   const { selling, loading } = useTill();
   const fallback = useFallbackPath();
   const feature = PLAN_FEATURE[right];
   if (!can(right)) return <Navigate to={fallback} replace />;
   if (feature && !hasFeature(feature)) {
-    return <Navigate to="/mon-abonnement" replace />;
+    // Only the client administrator manages the subscription; the others are
+    // simply told the page is out of their plan.
+    if (isAdmin) return <Navigate to="/mon-abonnement" replace />;
+    return (
+      <div className="p-8 text-center text-slate-500">
+        🔒 Cette page n'est pas incluse dans la formule de votre boutique.
+      </div>
+    );
   }
   if (TILL_GATED.has(right) && !selling && !loading) {
     return <Navigate to={can("caisse") ? "/caisse" : fallback} replace />;
@@ -282,7 +289,14 @@ export default function App() {
             </AdminRoute>
           }
         />
-        <Route path="/mon-abonnement" element={<MonAbonnement />} />
+        <Route
+          path="/mon-abonnement"
+          element={
+            <AdminRoute>
+              <MonAbonnement />
+            </AdminRoute>
+          }
+        />
         <Route
           path="/a-propos"
           element={

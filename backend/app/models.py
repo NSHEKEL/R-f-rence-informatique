@@ -27,6 +27,7 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     role = Column(String, default="admin")  # admin, vendeur, gestionnaire
+    photo = Column(Text, default="")  # data URL, optional
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=utcnow)
 
@@ -94,6 +95,7 @@ class Supplier(Base):
     email = Column(String, default="")
     phone = Column(String, default="")
     address = Column(String, default="")
+    logo = Column(Text, default="")  # data URL, falls back to the company logo
     created_at = Column(DateTime, default=utcnow)
 
     products = relationship("Product", back_populates="supplier")

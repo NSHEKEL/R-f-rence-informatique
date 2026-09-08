@@ -3,11 +3,19 @@ import { Pencil, Plus, Search, Trash2 } from "lucide-react";
 import api from "../api/client";
 import type { Supplier } from "../types";
 import Modal from "../components/Modal";
+import PhotoPicker from "../components/PhotoPicker";
 import BulkDelete, { SelectBox } from "../components/BulkDelete";
 import { useSelection } from "../lib/selection";
 import { useAuth } from "../context/AuthContext";
 
-const empty = { name: "", contact: "", email: "", phone: "", address: "" };
+const empty = {
+  name: "",
+  contact: "",
+  email: "",
+  phone: "",
+  address: "",
+  logo: "",
+};
 
 export default function Suppliers() {
   const { can } = useAuth();
@@ -51,6 +59,7 @@ export default function Suppliers() {
       email: s.email,
       phone: s.phone,
       address: s.address,
+      logo: s.logo ?? "",
     });
     setOpen(true);
   }
@@ -137,8 +146,21 @@ export default function Suppliers() {
                     </td>
                   )}
                   <td className="px-5 py-3.5">
-                    <p className="font-semibold text-slate-800">{s.name}</p>
-                    <p className="text-xs text-slate-400">{s.address || "—"}</p>
+                    <div className="flex items-center gap-3">
+                      {s.logo && (
+                        <img
+                          src={s.logo}
+                          alt=""
+                          className="h-9 w-9 rounded-lg object-cover"
+                        />
+                      )}
+                      <div>
+                        <p className="font-semibold text-slate-800">{s.name}</p>
+                        <p className="text-xs text-slate-400">
+                          {s.address || "—"}
+                        </p>
+                      </div>
+                    </div>
                   </td>
                   <td className="px-5 py-3.5 text-slate-600">{s.contact || "—"}</td>
                   <td className="px-5 py-3.5 text-slate-600">{s.email || "—"}</td>
@@ -240,6 +262,11 @@ export default function Suppliers() {
               onChange={(e) => setForm({ ...form, address: e.target.value })}
             />
           </div>
+          <PhotoPicker
+            label="Logo du fournisseur (sinon le logo de l'entreprise)"
+            value={form.logo}
+            onChange={(logo) => setForm({ ...form, logo })}
+          />
         </div>
       </Modal>
     </div>

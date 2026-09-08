@@ -253,9 +253,16 @@ export default function Approvisionnements() {
           `<td class="num">${formatXOF(it.subtotal)}</td></tr>`
       )
       .join("");
+    const totalItems = purchase.items.reduce(
+      (sum, it) => sum + it.quantity,
+      0
+    );
+    const supplierLogo = suppliers.find(
+      (s) => s.id === purchase.supplier_id
+    )?.logo;
     printSheet(
       `Approvisionnement ${purchase.reference}`,
-      documentHeader(company) +
+      documentHeader(company, supplierLogo) +
         `<h2>Bon d'approvisionnement ${purchase.reference}</h2>` +
         `<p class="meta">Date : ${formatDateTime(purchase.date)}` +
         (purchase.expected_date
@@ -269,13 +276,12 @@ export default function Approvisionnements() {
         `<table><thead><tr><th>Désignation</th><th class="num">Commandé</th>` +
         `<th class="num">Reçu</th><th class="num">Coût unitaire</th>` +
         `<th class="num">Total</th></tr></thead>` +
-        `<tbody>${rows}<tr><th colspan="4">Total</th>` +
+        `<tbody>${rows}<tr><th colspan="4">Total — ${totalItems} article(s)</th>` +
         `<th class="num">${formatXOF(purchase.total)}</th></tr>` +
         `<tr><th colspan="4">Réglé</th>` +
         `<th class="num">${formatXOF(purchase.paid)}</th></tr>` +
         `<tr><th colspan="4">Reste à payer</th>` +
         `<th class="num">${formatXOF(purchase.balance)}</th></tr></tbody></table>` +
-        (purchase.note ? `<p class="meta">${purchase.note}</p>` : "") +
         documentBarcode(purchase.reference)
     );
   }
@@ -361,6 +367,7 @@ export default function Approvisionnements() {
               <th className="px-5 py-3">Date et heure</th>
               <th className="px-5 py-3">Fournisseur</th>
               <th className="px-5 py-3">Statut</th>
+              <th className="px-5 py-3 text-right">Articles</th>
               <th className="px-5 py-3 text-right">Total</th>
               <th className="px-5 py-3 text-right">Reste</th>
               <th className="px-5 py-3 text-right">Actions</th>
@@ -398,6 +405,9 @@ export default function Approvisionnements() {
                   >
                     {p.status}
                   </span>
+                </td>
+                <td className="px-5 py-3.5 text-right text-slate-600">
+                  {p.items.reduce((sum, it) => sum + it.quantity, 0)}
                 </td>
                 <td className="px-5 py-3.5 text-right font-semibold text-slate-900">
                   {formatXOF(p.total)}
@@ -457,7 +467,7 @@ export default function Approvisionnements() {
             {purchases.length === 0 && (
               <tr>
                 <td
-                  colSpan={manage ? 8 : 7}
+                  colSpan={manage ? 9 : 8}
                   className="px-5 py-10 text-center text-slate-400"
                 >
                   Aucun approvisionnement.
@@ -615,8 +625,14 @@ export default function Approvisionnements() {
                 type="number"
                 className="input"
                 value={paidAmount}
+                disabled={editing?.status === "Reçu"}
                 onChange={(e) => setPaidAmount(Number(e.target.value))}
               />
+              {editing?.status === "Reçu" && (
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  Reste à payer suivi dans Dettes &amp; créances.
+                </p>
+              )}
             </div>
             <div>
               <label className="label">Note</label>

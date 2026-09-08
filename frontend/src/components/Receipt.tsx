@@ -112,8 +112,6 @@ function ReceiptBody({
         <span>{money(sale.total)}</span>
       </div>
 
-      {sale.note && <p className="receipt-note">{sale.note}</p>}
-
       {barcode && (
         <img src={barcode} alt={sale.reference} className="receipt-barcode" />
       )}

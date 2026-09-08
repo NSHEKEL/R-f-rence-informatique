@@ -98,16 +98,21 @@ export function printDocument(
  * and contact details, so orders, delivery notes, proformas and inventory
  * sheets look like the shop's own stationery.
  */
-export function documentHeader(settings: CompanySettings | null): string {
+export function documentHeader(
+  settings: CompanySettings | null,
+  /** Supplier logo printed instead of the company one on its own documents. */
+  logoOverride?: string
+): string {
   // Printing right after start-up: the settings may still be loading, so fall
   // back on the copy kept for offline use instead of an empty letterhead.
   const company = settings ?? cacheRead<CompanySettings>("company");
   const contact = [company?.address, company?.phone, company?.email]
     .filter(Boolean)
     .join(" · ");
+  const logo = logoOverride || company?.logo;
   return (
     `<div class="doc-head">` +
-    (company?.logo ? `<img src="${company.logo}" alt="" />` : "") +
+    (logo ? `<img src="${logo}" alt="" />` : "") +
     `<div><h1>${company?.name ?? ""}</h1>` +
     (contact ? `<p class="meta">${contact}</p>` : "") +
     `</div></div>`

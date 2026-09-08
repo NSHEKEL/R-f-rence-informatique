@@ -254,6 +254,28 @@ class MirrorSale(Base):
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
 
+class MirrorReturn(Base):
+    """Copy of a credit note, so returns show up on the phone as well."""
+
+    __tablename__ = "mirror_returns"
+    __table_args__ = (
+        UniqueConstraint("client_id", "reference", name="uq_mirror_return"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    reference = Column(String, nullable=False, index=True)
+    sale_reference = Column(String, default="")
+    date = Column(DateTime, nullable=True, index=True)
+    total = Column(Float, default=0)
+    reason = Column(Text, default="")
+    customer = Column(String, default="")
+    seller = Column(String, default="")
+    seller_email = Column(String, default="", index=True)
+    items = Column(Text, default="[]")
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
 class AdminLog(Base):
     """Every administrative action, with what changed."""
 

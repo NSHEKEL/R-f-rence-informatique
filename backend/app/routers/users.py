@@ -46,6 +46,7 @@ def create_user(
         name=payload.name.strip(),
         email=email,
         role=payload.role,
+        photo=payload.photo,
         hashed_password=hash_password(payload.password),
     )
     db.add(user)
@@ -99,6 +100,8 @@ def update_user(
         user.email = email
     if payload.role is not None:
         user.role = payload.role
+    if payload.photo is not None:
+        user.photo = payload.photo
     if payload.is_active is not None:
         user.is_active = payload.is_active
     if payload.password:

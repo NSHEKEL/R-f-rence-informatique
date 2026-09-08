@@ -17,7 +17,14 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Client, Installation, MirrorSale, MirrorUser, utcnow
+from ..models import (
+    Client,
+    Installation,
+    MirrorReturn,
+    MirrorSale,
+    MirrorUser,
+    utcnow,
+)
 from ..security import ALGORITHM, session_key, verify_password
 
 router = APIRouter(prefix="/api/central/mobile", tags=["central-mobile"])
@@ -151,6 +158,33 @@ def sales(
             "total": row.total,
             "status": row.status,
             "payment_method": row.payment_method,
+            "customer": row.customer,
+            "seller": row.seller,
+            "items": json.loads(row.items or "[]"),
+        }
+        for row in rows
+    ]
+
+
+@router.get("/returns")
+def returns(
+    limit: int = 100,
+    session: tuple[MirrorUser, Client] = Depends(current_mobile),
+    db: Session = Depends(get_db),
+):
+    """Credit notes of the shop, with the same visibility rules as sales."""
+    user, client = session
+    query = db.query(MirrorReturn).filter(MirrorReturn.client_id == client.id)
+    if (user.role or "").lower() not in FULL_VIEW_ROLES:
+        query = query.filter(MirrorReturn.seller_email == user.email)
+    rows = query.order_by(MirrorReturn.date.desc()).limit(max(1, min(limit, 500))).all()
+    return [
+        {
+            "reference": row.reference,
+            "sale_reference": row.sale_reference,
+            "date": row.date.isoformat() if row.date else "",
+            "total": row.total,
+            "reason": row.reason,
             "customer": row.customer,
             "seller": row.seller,
             "items": json.loads(row.items or "[]"),

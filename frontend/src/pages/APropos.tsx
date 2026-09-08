@@ -8,27 +8,12 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import api from "../api/client";
+import { PUBLISHER } from "../lib/publisher";
 import { useCompany } from "../context/CompanyContext";
 
 interface HealthInfo {
   version: string;
 }
-
-/**
- * Fixed presentation of the publisher. This page is deliberately read-only:
- * nothing here can be edited from the application.
- */
-const PUBLISHER = {
-  address: "Bondoukou, Côte d'Ivoire — quartier Église Sainte Odile",
-  phone: "07 10 06 90 59",
-  email: "ankouame022@gmail.com",
-  about:
-    "EasyGest est un logiciel ivoirien de gestion des ventes et des " +
-    "stocks : caisse, articles, clients, commandes, livraisons, " +
-    "comptabilité, inventaire et rapports.\n\n" +
-    "Il accompagne les commerces, les entreprises et les administrations " +
-    "avec un suivi fiable au quotidien et un conseil de proximité.",
-};
 
 export default function APropos() {
   const { company, brandName, logoSrc } = useCompany();

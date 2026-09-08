@@ -18,6 +18,10 @@ COLUMNS: dict[str, dict[str, str]] = {
     "users": {
         "is_active": f"BOOLEAN DEFAULT {TRUE_LITERAL}",
         "role": "VARCHAR DEFAULT 'admin'",
+        "photo": "TEXT DEFAULT ''",
+    },
+    "suppliers": {
+        "logo": "TEXT DEFAULT ''",
     },
     "sales": {
         "created_by_id": "INTEGER",

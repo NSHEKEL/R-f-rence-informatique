@@ -21,6 +21,7 @@ class UserOut(BaseModel):
     name: str
     email: str
     role: str
+    photo: str = ""
     is_active: bool = True
 
 
@@ -29,6 +30,7 @@ class UserCreate(BaseModel):
     email: str
     password: str
     role: str = "vendeur"
+    photo: str = ""
 
 
 class UserUpdate(BaseModel):
@@ -36,6 +38,7 @@ class UserUpdate(BaseModel):
     email: Optional[str] = None
     password: Optional[str] = None
     role: Optional[str] = None
+    photo: Optional[str] = None
     is_active: Optional[bool] = None
 
 
@@ -131,6 +134,7 @@ class SupplierBase(BaseModel):
     email: str = ""
     phone: str = ""
     address: str = ""
+    logo: str = ""
 
 
 class SupplierCreate(SupplierBase):

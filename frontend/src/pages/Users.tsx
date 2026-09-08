@@ -12,6 +12,7 @@ import {
 import api from "../api/client";
 import type { User } from "../types";
 import Modal from "../components/Modal";
+import PhotoPicker from "../components/PhotoPicker";
 import { useAuth } from "../context/AuthContext";
 
 const ROLES = [
@@ -23,7 +24,13 @@ const ROLES = [
 const roleLabel = (role: string) =>
   ROLES.find((r) => r.value === role)?.label ?? role;
 
-const empty = { name: "", email: "", password: "", role: "vendeur" };
+const empty = {
+  name: "",
+  email: "",
+  password: "",
+  role: "vendeur",
+  photo: "",
+};
 
 export default function Users() {
   const { user: current } = useAuth();
@@ -61,7 +68,13 @@ export default function Users() {
 
   function openEdit(u: User) {
     setEditing(u);
-    setForm({ name: u.name, email: u.email, password: "", role: u.role });
+    setForm({
+      name: u.name,
+      email: u.email,
+      password: "",
+      role: u.role,
+      photo: u.photo ?? "",
+    });
     setError("");
     setOpen(true);
   }
@@ -83,6 +96,7 @@ export default function Users() {
           name: form.name,
           email: form.email,
           role: form.role,
+          photo: form.photo,
         };
         if (form.password) payload.password = form.password;
         await api.put(`/users/${editing.id}`, payload);
@@ -172,14 +186,22 @@ export default function Users() {
                 <tr key={u.id} className="hover:bg-slate-50/60">
                   <td className="px-5 py-3.5">
                     <div className="flex items-center gap-3">
-                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-600 text-xs font-bold text-white">
-                        {u.name
-                          .split(" ")
-                          .map((n) => n[0])
-                          .slice(0, 2)
-                          .join("")
-                          .toUpperCase()}
-                      </div>
+                      {u.photo ? (
+                        <img
+                          src={u.photo}
+                          alt=""
+                          className="h-9 w-9 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-600 text-xs font-bold text-white">
+                          {u.name
+                            .split(" ")
+                            .map((n) => n[0])
+                            .slice(0, 2)
+                            .join("")
+                            .toUpperCase()}
+                        </div>
+                      )}
                       <span className="font-semibold text-slate-800">
                         {u.name}
                         {u.id === current?.id && (
@@ -327,6 +349,13 @@ export default function Users() {
               ))}
             </select>
           </div>
+          <PhotoPicker
+            label="Photo de l'utilisateur"
+            rounded="rounded-full"
+            value={form.photo}
+            onChange={(photo) => setForm({ ...form, photo })}
+            onError={setError}
+          />
         </div>
       </Modal>
     </div>

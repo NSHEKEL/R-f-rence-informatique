@@ -3,6 +3,7 @@ export interface User {
   name: string;
   email: string;
   role: string;
+  photo?: string;
   is_active: boolean;
 }
 
@@ -136,6 +137,7 @@ export interface Supplier {
   email: string;
   phone: string;
   address: string;
+  logo?: string;
 }
 
 export interface Customer {

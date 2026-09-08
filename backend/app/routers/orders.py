@@ -25,6 +25,7 @@ from ..models import (
     User,
 )
 from ..permissions import require_permission
+from ..receivables import open_order_receivable
 from ..schemas import (
     DeliveryCreate,
     DeliveryOut,
@@ -285,6 +286,10 @@ def deliver_order(
         created_by_id=current_user.id,
     )
     order.status = "Livrée"
+    if payload.paid:
+        order.deposit = order.total
+    else:
+        open_order_receivable(db, order, current_user)
     db.add(delivery)
     db.add(
         Notification(

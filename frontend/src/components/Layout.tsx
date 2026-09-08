@@ -33,6 +33,8 @@ import {
   Minimize2,
   Moon,
   Sun,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
@@ -46,18 +48,27 @@ import NetworkBanner from "./NetworkBanner";
 import UpdateBanner from "./UpdateBanner";
 import NotificationBell from "./NotificationBell";
 import UndoRedo from "./UndoRedo";
+import TillGate from "./TillGate";
 
-/**
- * Right the entry needs; "admin" marks the pages the administrator never
- * shares (accounts, settings, access rights).
- */
-const navItems: {
+type NavItem = {
   to: string;
   label: string;
   icon: typeof Wallet;
   end?: boolean;
   access: string;
-}[] = [
+};
+
+type NavGroup = {
+  label: string;
+  icon: typeof Wallet;
+  items: NavItem[];
+};
+
+/**
+ * Right the entry needs; "admin" marks the pages the administrator never
+ * shares (accounts, settings, access rights).
+ */
+const navItems: NavItem[] = [
   {
     to: "/",
     label: "Tableau de bord",
@@ -154,10 +165,61 @@ const navItems: {
     to: "/mon-abonnement",
     label: "Mon abonnement",
     icon: BadgeCheck,
-    access: "",
+    access: "admin",
   },
   { to: "/a-propos", label: "À propos de nous", icon: Info, access: "apropos" },
 ];
+
+const byPath = new Map(navItems.map((item) => [item.to, item]));
+
+function pick(...paths: string[]): NavItem[] {
+  return paths
+    .map((path) => byPath.get(path))
+    .filter((item): item is NavItem => Boolean(item));
+}
+
+/** Daily work grouped by trade, so a frequent action is one click away. */
+const navGroups: NavGroup[] = [
+  {
+    label: "Vente",
+    icon: ShoppingCart,
+    items: pick("/ventes/nouvelle", "/ventes", "/retours", "/proformas"),
+  },
+  {
+    label: "Commandes & livraisons",
+    icon: ClipboardCheck,
+    items: pick(
+      "/commandes",
+      "/livraisons",
+      "/approvisionnements",
+      "/fournisseurs"
+    ),
+  },
+  {
+    label: "Produits & stock",
+    icon: Package,
+    items: pick("/produits", "/categories", "/inventaire"),
+  },
+  {
+    label: "Clients & finances",
+    icon: HandCoins,
+    items: pick("/clients", "/dettes", "/comptabilite", "/rapports"),
+  },
+  {
+    label: "Comptes",
+    icon: UserCog,
+    items: pick(
+      "/utilisateurs",
+      "/droits",
+      "/parametres",
+      "/mon-abonnement",
+      "/a-propos"
+    ),
+  },
+];
+
+const topLevel = pick("/", "/caisse");
+const GROUPS_KEY = "ri_sidebar_groups";
 
 const COLLAPSED_KEY = "ri_sidebar_collapsed";
 
@@ -206,10 +268,26 @@ export default function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
   const title = pageTitles[location.pathname] ?? brandName;
-  const visibleNavItems = navItems.filter((item) => {
+  const allowed = (item: NavItem) => {
     if (!item.access) return true;
     return item.access === "admin" ? isAdmin : can(item.access);
+  };
+  const visibleTopLevel = topLevel.filter(allowed);
+  const visibleGroups = navGroups
+    .map((group) => ({ ...group, items: group.items.filter(allowed) }))
+    .filter((group) => group.items.length > 0);
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
+    const saved = localStorage.getItem(GROUPS_KEY);
+    if (!saved) return {};
+    const parsed: unknown = JSON.parse(saved);
+    return typeof parsed === "object" && parsed !== null
+      ? (parsed as Record<string, boolean>)
+      : {};
   });
+
+  useEffect(() => {
+    localStorage.setItem(GROUPS_KEY, JSON.stringify(openGroups));
+  }, [openGroups]);
 
   useEffect(() => {
     localStorage.setItem(COLLAPSED_KEY, collapsed ? "1" : "0");
@@ -226,6 +304,61 @@ export default function Layout() {
     setFullscreen(isFullscreen());
   }
 
+  function renderItem(item: NavItem) {
+    const isActive = item.end
+      ? location.pathname === item.to
+      : location.pathname.startsWith(item.to);
+    const feature = PLAN_FEATURE[item.access];
+    const planLocked = Boolean(feature) && !hasFeature(feature);
+    // Nothing is sold — nor even browsed — before the till is opened.
+    const tillLocked = TILL_GATED.has(item.access) && !selling;
+    const locked = planLocked || tillLocked;
+    return (
+      <button
+        key={item.to}
+        type="button"
+        aria-current={isActive ? "page" : undefined}
+        aria-label={item.label}
+        title={
+          tillLocked
+            ? "🔒 Ouvrez votre caisse pour accéder à cette page"
+            : planLocked
+              ? `🔒 ${featureName(feature)} n'est pas incluse dans votre formule`
+              : undefined
+        }
+        onClick={() => {
+          setMobileOpen(false);
+          if (tillLocked) navigate("/caisse");
+          else navigate(planLocked ? "/mon-abonnement" : item.to);
+        }}
+        className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-left text-sm font-medium transition-colors ${
+          collapsed ? "lg:justify-center lg:px-2" : ""
+        } ${
+          isActive
+            ? "bg-brand-50 text-brand-700"
+            : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+        }`}
+      >
+        <item.icon size={20} className="shrink-0" />
+        <span
+          className={`${collapsed ? "lg:hidden" : ""} ${
+            locked ? "text-slate-400" : ""
+          }`}
+        >
+          {item.label}
+        </span>
+        {locked && (
+          <Lock
+            size={14}
+            className={`ml-auto shrink-0 text-slate-400 ${
+              collapsed ? "lg:hidden" : ""
+            }`}
+          />
+        )}
+      </button>
+    );
+  }
+
   const initials = (user?.name ?? "AD")
     .split(" ")
     .map((n) => n[0])
@@ -235,6 +368,7 @@ export default function Layout() {
 
   return (
     <div className="flex h-screen overflow-hidden">
+      <TillGate />
       <a className="skip-link" href="#contenu">
         Aller au contenu
       </a>
@@ -281,58 +415,55 @@ export default function Layout() {
         >
           {/* Buttons, not links: an <a href> would make the browser print the
               target address in the status bar while hovering. */}
-          {visibleNavItems.map((item) => {
-            const isActive = item.end
-              ? location.pathname === item.to
-              : location.pathname.startsWith(item.to);
-            const feature = PLAN_FEATURE[item.access];
-            const planLocked = Boolean(feature) && !hasFeature(feature);
-            // Nothing is sold — nor even browsed — before the till is opened.
-            const tillLocked = TILL_GATED.has(item.access) && !selling;
-            const locked = planLocked || tillLocked;
+          {visibleTopLevel.map(renderItem)}
+          {visibleGroups.map((group) => {
+            const active = group.items.some((item) =>
+              item.end
+                ? location.pathname === item.to
+                : location.pathname.startsWith(item.to)
+            );
+            const open = openGroups[group.label] ?? active;
             return (
-              <button
-                key={item.to}
-                type="button"
-                aria-current={isActive ? "page" : undefined}
-                aria-label={item.label}
-                title={
-                  tillLocked
-                    ? "🔒 Ouvrez votre caisse pour accéder à cette page"
-                    : planLocked
-                      ? `🔒 ${featureName(feature)} n'est pas incluse dans votre formule`
-                      : undefined
-                }
-                onClick={() => {
-                  setMobileOpen(false);
-                  if (tillLocked) navigate("/caisse");
-                  else navigate(planLocked ? "/mon-abonnement" : item.to);
-                }}
-                className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-left text-sm font-medium transition-colors ${
-                  collapsed ? "lg:justify-center lg:px-2" : ""
-                } ${
-                  isActive
-                    ? "bg-brand-50 text-brand-700"
-                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                }`}
-              >
-                <item.icon size={20} className="shrink-0" />
-                <span
-                  className={`${collapsed ? "lg:hidden" : ""} ${
-                    locked ? "text-slate-400" : ""
+              <div key={group.label}>
+                <button
+                  type="button"
+                  aria-expanded={open}
+                  onClick={() =>
+                    setOpenGroups((groups) => ({
+                      ...groups,
+                      [group.label]: !open,
+                    }))
+                  }
+                  className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-left text-sm font-medium transition-colors ${
+                    collapsed ? "lg:justify-center lg:px-2" : ""
+                  } ${
+                    active
+                      ? "bg-brand-50 text-brand-700"
+                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                   }`}
                 >
-                  {item.label}
-                </span>
-                {locked && (
-                  <Lock
-                    size={14}
-                    className={`ml-auto shrink-0 text-slate-400 ${
-                      collapsed ? "lg:hidden" : ""
+                  <group.icon size={20} className="shrink-0" />
+                  <span className={collapsed ? "lg:hidden" : ""}>
+                    {group.label}
+                  </span>
+                  <span className={`ml-auto ${collapsed ? "lg:hidden" : ""}`}>
+                    {open ? (
+                      <ChevronDown size={16} />
+                    ) : (
+                      <ChevronRight size={16} />
+                    )}
+                  </span>
+                </button>
+                {open && (
+                  <div
+                    className={`mt-1 space-y-1 border-l border-slate-100 pl-3 ${
+                      collapsed ? "lg:border-0 lg:pl-0" : "ml-5"
                     }`}
-                  />
+                  >
+                    {group.items.map(renderItem)}
+                  </div>
                 )}
-              </button>
+              </div>
             );
           })}
         </nav>

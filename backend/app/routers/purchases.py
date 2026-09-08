@@ -21,6 +21,7 @@ from ..models import (
     User,
 )
 from ..permissions import require_permission
+from ..receivables import open_purchase_payable
 from ..schemas import (
     PurchaseCreate,
     PurchaseOut,
@@ -161,6 +162,18 @@ def update_purchase(
 ):
     purchase = _get(db, purchase_id)
     data = payload.model_dump(exclude_unset=True)
+    if (
+        purchase.status == "Reçu"
+        and data.get("paid") is not None
+        and float(data["paid"]) != float(purchase.paid or 0)
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Approvisionnement reçu : le reste à payer se règle "
+                "dans Dettes & créances"
+            ),
+        )
     if payload.items is not None and purchase.status != "En attente":
         raise HTTPException(
             status_code=400,
@@ -269,6 +282,8 @@ def receive_purchase(
     purchase.received_at = datetime.now(timezone.utc)
     if payload.note:
         purchase.note = payload.note
+    if complete:
+        open_purchase_payable(db, purchase, current_user)
     db.add(
         Notification(
             kind="approvisionnement",

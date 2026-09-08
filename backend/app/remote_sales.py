@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from . import licensing
 from .database import SessionLocal
-from .models import Sale, User
+from .models import Sale, SaleReturn, User
 
 # Window of sales kept on the central server for the phone.
 MIRROR_DAYS = 120
@@ -67,6 +67,45 @@ def _sales(db: Session) -> list[dict]:
     return copies
 
 
+def _returns(db: Session) -> list[dict]:
+    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(
+        days=MIRROR_DAYS
+    )
+    rows = (
+        db.query(SaleReturn)
+        .filter(SaleReturn.date >= since)
+        .order_by(SaleReturn.date.desc())
+        .limit(MIRROR_LIMIT)
+        .all()
+    )
+    copies = []
+    for credit in rows:
+        seller = credit.created_by
+        sale = credit.sale
+        copies.append(
+            {
+                "reference": credit.reference,
+                "sale_reference": sale.reference if sale else "",
+                "date": credit.date.isoformat() if credit.date else None,
+                "total": credit.total or 0,
+                "reason": credit.reason or "",
+                "customer": sale.customer.name if sale and sale.customer else "",
+                "seller": seller.name if seller else "",
+                "seller_email": seller.email if seller else "",
+                "items": [
+                    {
+                        "name": item.product_name,
+                        "quantity": item.quantity,
+                        "unit_price": item.unit_price,
+                        "subtotal": item.subtotal,
+                    }
+                    for item in credit.items
+                ],
+            }
+        )
+    return copies
+
+
 def _users(db: Session) -> list[dict]:
     return [
         {
@@ -95,6 +134,7 @@ def push(db: Session) -> dict:
             "token": row.token,
             "users": _users(db),
             "sales": _sales(db),
+            "returns": _returns(db),
         },
     )
 

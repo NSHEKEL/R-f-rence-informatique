@@ -77,9 +77,14 @@ export default function Livraisons() {
         (it) =>
           `<tr><td>${it.product_name}</td>` +
           `<td class="num">${it.quantity}</td>` +
+          `<td class="num">${formatXOF(it.unit_price)}</td>` +
           `<td class="num">${formatXOF(it.subtotal)}</td></tr>`
       )
       .join("");
+    const totalItems = (order?.items ?? []).reduce(
+      (sum, it) => sum + it.quantity,
+      0
+    );
     printSheet(
       `Bon de livraison ${delivery.reference}`,
       documentHeader(company) +
@@ -92,13 +97,14 @@ export default function Livraisons() {
         (delivery.recipient ? `<br/>Reçu par : ${delivery.recipient}` : "") +
         `</p>` +
         `<table><thead><tr><th>Désignation</th><th class="num">Qté</th>` +
+        `<th class="num">Prix unitaire</th>` +
         `<th class="num">Total</th></tr></thead><tbody>${rows}` +
         (order
-          ? `<tr><th colspan="2">Total</th>` +
+          ? `<tr><th>Total — ${totalItems} article(s)</th>` +
+            `<th class="num">${totalItems}</th><th></th>` +
             `<th class="num">${formatXOF(order.total)}</th></tr>`
           : "") +
         `</tbody></table>` +
-        (delivery.note ? `<p class="meta">${delivery.note}</p>` : "") +
         `<p class="meta">Signature du client :</p>` +
         documentBarcode(delivery.reference)
     );
@@ -124,6 +130,7 @@ export default function Livraisons() {
               <th className="px-5 py-3">Bon</th>
               <th className="px-5 py-3">Date et heure</th>
               <th className="px-5 py-3">Commande</th>
+              <th className="px-5 py-3 text-right">Articles</th>
               <th className="px-5 py-3">Adresse</th>
               <th className="px-5 py-3">Livreur</th>
               <th className="px-5 py-3">Reçu par</th>
@@ -144,6 +151,11 @@ export default function Livraisons() {
                 </td>
                 <td className="px-5 py-3.5 text-slate-600">
                   {d.order_reference}
+                </td>
+                <td className="px-5 py-3.5 text-right text-slate-600">
+                  {(
+                    orders.find((o) => o.id === d.order_id)?.items ?? []
+                  ).reduce((sum, it) => sum + it.quantity, 0)}
                 </td>
                 <td className="px-5 py-3.5 text-slate-600">
                   {d.address || "—"}
@@ -179,7 +191,7 @@ export default function Livraisons() {
             {deliveries.length === 0 && (
               <tr>
                 <td
-                  colSpan={7}
+                  colSpan={8}
                   className="px-5 py-10 text-center text-slate-400"
                 >
                   Aucune livraison.

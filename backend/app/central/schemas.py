@@ -316,6 +316,18 @@ class MirrorSaleIn(BaseModel):
     items: list = []
 
 
+class MirrorReturnIn(BaseModel):
+    reference: str
+    sale_reference: str = ""
+    date: Optional[datetime] = None
+    total: float = 0
+    reason: str = ""
+    customer: str = ""
+    seller: str = ""
+    seller_email: str = ""
+    items: list = []
+
+
 class MirrorRequest(BaseModel):
     """Copy a shop pushes so its sales can be read from a phone."""
 
@@ -323,6 +335,7 @@ class MirrorRequest(BaseModel):
     token: str
     users: list[MirrorUserIn] = []
     sales: list[MirrorSaleIn] = []
+    returns: list[MirrorReturnIn] = []
 
 
 class LicenseAnswer(BaseModel):

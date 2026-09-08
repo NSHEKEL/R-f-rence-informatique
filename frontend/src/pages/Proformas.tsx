@@ -150,7 +150,6 @@ export default function Proformas() {
         `<tbody>${rows}${vatRows}` +
         `<tr><th colspan="3">${vat ? "Total TTC" : "Total"}</th>` +
         `<th class="num">${formatXOF(proforma.total)}</th></tr></tbody></table>` +
-        (proforma.note ? `<p class="meta">${proforma.note}</p>` : "") +
         `<p class="meta">Document non contractuel : cette proforma ne vaut ` +
         `pas facture et n'engage aucun mouvement de stock.</p>`
     );

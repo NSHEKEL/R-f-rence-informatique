@@ -112,8 +112,6 @@ function TicketBody({
         </div>
       )}
 
-      {session.note && <p className="receipt-note">{session.note}</p>}
-
       <p className="receipt-footer">
         Signature : ______________________
       </p>

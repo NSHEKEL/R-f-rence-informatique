@@ -235,6 +235,7 @@ export default function Commandes() {
           `<td class="num">${formatXOF(it.subtotal)}</td></tr>`
       )
       .join("");
+    const totalItems = order.items.reduce((sum, it) => sum + it.quantity, 0);
     printSheet(
       `Commande ${order.reference}`,
       documentHeader(company) +
@@ -250,13 +251,12 @@ export default function Commandes() {
         `</p>` +
         `<table><thead><tr><th>Désignation</th><th class="num">Qté</th>` +
         `<th class="num">P.U.</th><th class="num">Total</th></tr></thead>` +
-        `<tbody>${rows}<tr><th colspan="3">Total</th>` +
+        `<tbody>${rows}<tr><th colspan="3">Total — ${totalItems} article(s)</th>` +
         `<th class="num">${formatXOF(order.total)}</th></tr>` +
         `<tr><th colspan="3">Acompte</th>` +
         `<th class="num">${formatXOF(order.deposit)}</th></tr>` +
         `<tr><th colspan="3">Reste à payer</th>` +
         `<th class="num">${formatXOF(order.balance)}</th></tr></tbody></table>` +
-        (order.note ? `<p class="meta">${order.note}</p>` : "") +
         `<p class="meta">Le stock est décrémenté au moment de la ` +
         `livraison, pas à la commande.</p>` +
         documentBarcode(order.reference)
@@ -308,6 +308,7 @@ export default function Commandes() {
               <th className="px-5 py-3">Date et heure</th>
               <th className="px-5 py-3">Client</th>
               <th className="px-5 py-3">Statut</th>
+              <th className="px-5 py-3 text-right">Articles</th>
               <th className="px-5 py-3 text-right">Total</th>
               <th className="px-5 py-3 text-right">Reste</th>
               <th className="px-5 py-3 text-right">Actions</th>
@@ -345,6 +346,9 @@ export default function Commandes() {
                   >
                     {o.status}
                   </span>
+                </td>
+                <td className="px-5 py-3.5 text-right text-slate-600">
+                  {o.items.reduce((sum, it) => sum + it.quantity, 0)}
                 </td>
                 <td className="px-5 py-3.5 text-right font-semibold text-slate-900">
                   {formatXOF(o.total)}
@@ -397,7 +401,7 @@ export default function Commandes() {
             {orders.length === 0 && (
               <tr>
                 <td
-                  colSpan={can("commandes_gerer") ? 8 : 7}
+                  colSpan={can("commandes_gerer") ? 9 : 8}
                   className="px-5 py-10 text-center text-slate-400"
                 >
                   Aucune commande.

@@ -11,7 +11,15 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Client, Installation, License, MirrorSale, MirrorUser, Plan
+from ..models import (
+    Client,
+    Installation,
+    License,
+    MirrorReturn,
+    MirrorSale,
+    MirrorUser,
+    Plan,
+)
 from ..schemas import (
     LicenseAnswer,
     MirrorRequest,
@@ -202,6 +210,25 @@ def mirror(payload: MirrorRequest, db: Session = Depends(get_db)):
         row.seller = sale.seller
         row.seller_email = sale.seller_email.strip().lower()
         row.items = json.dumps(sale.items, ensure_ascii=False)
+
+    credits = {
+        row.reference: row
+        for row in db.query(MirrorReturn).filter(MirrorReturn.client_id == client.id)
+    }
+    for credit in payload.returns:
+        row = credits.get(credit.reference)
+        if row is None:
+            row = MirrorReturn(client_id=client.id, reference=credit.reference)
+            db.add(row)
+        row.sale_reference = credit.sale_reference
+        row.date = _naive(credit.date)
+        row.total = credit.total
+        row.reason = credit.reason
+        row.customer = credit.customer
+        row.seller = credit.seller
+        row.seller_email = credit.seller_email.strip().lower()
+        row.items = json.dumps(credit.items, ensure_ascii=False)
+
     installation.last_seen = utcnow()
     db.commit()
     return {"status": "ok", "code": mobile_code(db, client), "sales": len(payload.sales)}

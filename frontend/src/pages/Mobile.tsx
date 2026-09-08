@@ -14,6 +14,7 @@ import {
   Users,
 } from "lucide-react";
 import { useTheme } from "../context/ThemeContext";
+import { PUBLISHER } from "../lib/publisher";
 
 /**
  * Consultation of the shop from a phone, wherever it is.
@@ -37,6 +38,17 @@ interface MobileSale {
   total: number;
   status: string;
   payment_method: string;
+  customer: string;
+  seller: string;
+  items: { name: string; quantity: number; unit_price: number }[];
+}
+
+interface MobileReturn {
+  reference: string;
+  sale_reference: string;
+  date: string;
+  total: number;
+  reason: string;
   customer: string;
   seller: string;
   items: { name: string; quantity: number; unit_price: number }[];
@@ -80,10 +92,15 @@ interface About {
   version: string;
 }
 
-type Tab = "ventes" | "comptabilite" | "utilisateurs" | "parametres" | "apropos";
+type Tab =
+  "ventes" | "comptabilite" | "utilisateurs" | "parametres" | "apropos";
 
 const SESSION_KEY = "easygest_mobile_session";
 const AUTO_KEY = "easygest_mobile_auto";
+// The shop code and the e-mail are typed once and kept for the next sign-in;
+// the password is never stored.
+const CODE_KEY = "easygest_mobile_code";
+const EMAIL_KEY = "easygest_mobile_email";
 // A sale rung up at the counter reaches the phone within this delay, without
 // anyone touching the screen.
 const AUTO_REFRESH_MS = 8000;
@@ -110,7 +127,11 @@ function day(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime())
     ? value
-    : date.toLocaleDateString("fr-FR", { weekday: "short", day: "2-digit", month: "2-digit" });
+    : date.toLocaleDateString("fr-FR", {
+        weekday: "short",
+        day: "2-digit",
+        month: "2-digit",
+      });
 }
 
 export default function Mobile() {
@@ -119,12 +140,16 @@ export default function Mobile() {
     const saved = localStorage.getItem(SESSION_KEY);
     return saved ? (JSON.parse(saved) as Session) : null;
   });
-  const [code, setCode] = useState("");
-  const [email, setEmail] = useState("");
+  const [code, setCode] = useState(() => localStorage.getItem(CODE_KEY) ?? "");
+  const [email, setEmail] = useState(
+    () => localStorage.getItem(EMAIL_KEY) ?? "",
+  );
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [sales, setSales] = useState<MobileSale[]>([]);
+  const [credits, setCredits] = useState<MobileReturn[]>([]);
+  const [showReturns, setShowReturns] = useState(false);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [accounting, setAccounting] = useState<Accounting | null>(null);
@@ -133,15 +158,17 @@ export default function Mobile() {
   const [opened, setOpened] = useState("");
   const [tab, setTab] = useState<Tab>("ventes");
   const [auto, setAuto] = useState(
-    () => localStorage.getItem(AUTO_KEY) !== "0"
+    () => localStorage.getItem(AUTO_KEY) !== "0",
   );
   const [fresh, setFresh] = useState("");
   const known = useRef<string>("");
 
   const signOut = useCallback(() => {
     localStorage.removeItem(SESSION_KEY);
+    setPassword("");
     setSession(null);
     setSales([]);
+    setCredits([]);
     setSummary(null);
     setTeam([]);
     setAccounting(null);
@@ -174,7 +201,7 @@ export default function Mobile() {
         if (!silent) setBusy(false);
       }
     },
-    [session, search, signOut]
+    [session, search, signOut],
   );
 
   useEffect(() => {
@@ -213,6 +240,12 @@ export default function Mobile() {
         .then((res) => setAccounting(res.data))
         .catch(() => setAccounting(null));
     }
+    if (tab === "ventes") {
+      api
+        .get<MobileReturn[]>("/returns", { headers })
+        .then((res) => setCredits(res.data))
+        .catch(() => setCredits([]));
+    }
     if (tab === "apropos") {
       api
         .get<About>("/about", { headers })
@@ -226,19 +259,24 @@ export default function Mobile() {
     setBusy(true);
     setError("");
     try {
+      const shopCode = code.trim().toUpperCase();
+      const account = email.trim();
       const res = await api.post<Session>("/login", {
-        code: code.trim().toUpperCase(),
-        email: email.trim(),
+        code: shopCode,
+        email: account,
         password,
       });
       localStorage.setItem(SESSION_KEY, JSON.stringify(res.data));
+      localStorage.setItem(CODE_KEY, shopCode);
+      localStorage.setItem(EMAIL_KEY, account);
       setSession(res.data);
       setPassword("");
     } catch (err) {
       setError(
-        axios.isAxiosError(err) && typeof err.response?.data?.detail === "string"
+        axios.isAxiosError(err) &&
+          typeof err.response?.data?.detail === "string"
           ? err.response.data.detail
-          : "Connexion impossible"
+          : "Connexion impossible",
       );
     } finally {
       setBusy(false);
@@ -287,7 +325,9 @@ export default function Mobile() {
             onChange={(e) => setPassword(e.target.value)}
             required
           />
-          {error && <p className="text-sm text-red-600 dark:text-red-300">{error}</p>}
+          {error && (
+            <p className="text-sm text-red-600 dark:text-red-300">{error}</p>
+          )}
           <button className="btn-primary w-full py-3 text-base" disabled={busy}>
             {busy ? "Connexion…" : "Se connecter"}
           </button>
@@ -300,7 +340,11 @@ export default function Mobile() {
     ["ventes", "Ventes", ShoppingBag],
     ["comptabilite", "Compta", Calculator],
     ...(session.full_view
-      ? ([["utilisateurs", "Équipe", Users]] as [Tab, string, typeof ShoppingBag][])
+      ? ([["utilisateurs", "Équipe", Users]] as [
+          Tab,
+          string,
+          typeof ShoppingBag,
+        ][])
       : []),
     ["parametres", "Réglages", Settings2],
     ["apropos", "À propos", BadgeInfo],
@@ -314,7 +358,11 @@ export default function Mobile() {
           <p className="text-xs opacity-80">{session.name}</p>
         </div>
         <div className="flex items-center gap-4">
-          <button onClick={() => void load()} title="Actualiser" className="p-1">
+          <button
+            onClick={() => void load()}
+            title="Actualiser"
+            className="p-1"
+          >
             <RefreshCw size={20} className={busy ? "animate-spin" : ""} />
           </button>
           <button onClick={signOut} title="Déconnexion" className="p-1">
@@ -335,50 +383,65 @@ export default function Mobile() {
             {summary && (
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-xl bg-white p-3 shadow-sm dark:bg-slate-900">
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Aujourd'hui</p>
-                  <p className="text-lg font-semibold">{money(summary.today_total)}</p>
-                  <p className="text-xs text-slate-400">{summary.today_count} vente(s)</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Aujourd'hui
+                  </p>
+                  <p className="text-lg font-semibold">
+                    {money(summary.today_total)}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {summary.today_count} vente(s)
+                  </p>
                 </div>
                 <div className="rounded-xl bg-white p-3 shadow-sm dark:bg-slate-900">
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Ce mois</p>
-                  <p className="text-lg font-semibold">{money(summary.month_total)}</p>
-                  <p className="text-xs text-slate-400">{summary.month_count} vente(s)</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Ce mois
+                  </p>
+                  <p className="text-lg font-semibold">
+                    {money(summary.month_total)}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {summary.month_count} vente(s)
+                  </p>
                 </div>
               </div>
             )}
 
-            <div className="flex items-center gap-2 rounded-xl bg-white px-3 py-2 shadow-sm dark:bg-slate-900">
-              <Search size={16} className="text-slate-400" />
-              <input
-                className="w-full bg-transparent outline-none"
-                placeholder="Référence ou client"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
+            <div className="flex rounded-xl bg-white p-1 text-sm shadow-sm dark:bg-slate-900">
+              {[false, true].map((mode) => (
+                <button
+                  key={String(mode)}
+                  onClick={() => setShowReturns(mode)}
+                  className={`flex-1 rounded-lg py-2 ${
+                    showReturns === mode
+                      ? "bg-brand-600 font-medium text-white"
+                      : "text-slate-500 dark:text-slate-400"
+                  }`}
+                >
+                  {mode ? `Retours (${credits.length})` : "Ventes"}
+                </button>
+              ))}
             </div>
 
-            {error && <p className="text-sm text-red-600 dark:text-red-300">{error}</p>}
-
-            <div className="space-y-2">
-              {sales.map((sale) => (
-                <button
-                  key={sale.reference}
-                  onClick={() =>
-                    setOpened(opened === sale.reference ? "" : sale.reference)
-                  }
-                  className="w-full rounded-xl bg-white p-3 text-left shadow-sm dark:bg-slate-900"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium">{sale.reference}</span>
-                    <span className="font-semibold">{money(sale.total)}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                    <span>{when(sale.date)}</span>
-                    <span>{sale.customer || sale.payment_method}</span>
-                  </div>
-                  {opened === sale.reference && (
+            {showReturns ? (
+              <div className="space-y-2">
+                {credits.map((credit) => (
+                  <div
+                    key={credit.reference}
+                    className="rounded-xl bg-white p-3 shadow-sm dark:bg-slate-900"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">{credit.reference}</span>
+                      <span className="font-semibold text-red-600 dark:text-red-300">
+                        −{money(credit.total)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                      <span>{when(credit.date)}</span>
+                      <span>Ticket {credit.sale_reference || "—"}</span>
+                    </div>
                     <ul className="mt-2 space-y-1 border-t pt-2 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300">
-                      {sale.items.map((item, index) => (
+                      {credit.items.map((item, index) => (
                         <li key={index} className="flex justify-between">
                           <span>
                             {item.quantity} × {item.name}
@@ -386,24 +449,94 @@ export default function Mobile() {
                           <span>{money(item.quantity * item.unit_price)}</span>
                         </li>
                       ))}
-                      {sale.seller && (
-                        <li className="pt-1 text-slate-400">Vendeur : {sale.seller}</li>
+                      {credit.reason && (
+                        <li className="pt-1 text-slate-400">
+                          Motif : {credit.reason}
+                        </li>
                       )}
                     </ul>
-                  )}
-                </button>
-              ))}
-              {!sales.length && !busy && (
-                <p className="pt-6 text-center text-sm text-slate-500 dark:text-slate-400">
-                  Aucune vente à afficher.
-                </p>
-              )}
-            </div>
+                  </div>
+                ))}
+                {!credits.length && (
+                  <p className="pt-6 text-center text-sm text-slate-500 dark:text-slate-400">
+                    Aucun retour enregistré.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center gap-2 rounded-xl bg-white px-3 py-2 shadow-sm dark:bg-slate-900">
+                  <Search size={16} className="text-slate-400" />
+                  <input
+                    className="w-full bg-transparent outline-none"
+                    placeholder="Référence ou client"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </div>
 
-            {summary?.last_sync && (
-              <p className="pt-2 text-center text-xs text-slate-400">
-                Dernière mise à jour de la boutique : {when(summary.last_sync)}
-              </p>
+                {error && (
+                  <p className="text-sm text-red-600 dark:text-red-300">
+                    {error}
+                  </p>
+                )}
+
+                <div className="space-y-2">
+                  {sales.map((sale) => (
+                    <button
+                      key={sale.reference}
+                      onClick={() =>
+                        setOpened(
+                          opened === sale.reference ? "" : sale.reference,
+                        )
+                      }
+                      className="w-full rounded-xl bg-white p-3 text-left shadow-sm dark:bg-slate-900"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium">{sale.reference}</span>
+                        <span className="font-semibold">
+                          {money(sale.total)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                        <span>{when(sale.date)}</span>
+                        <span>{sale.customer || sale.payment_method}</span>
+                      </div>
+                      {opened === sale.reference && (
+                        <ul className="mt-2 space-y-1 border-t pt-2 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300">
+                          {sale.items.map((item, index) => (
+                            <li key={index} className="flex justify-between">
+                              <span>
+                                {item.quantity} × {item.name}
+                              </span>
+                              <span>
+                                {money(item.quantity * item.unit_price)}
+                              </span>
+                            </li>
+                          ))}
+                          {sale.seller && (
+                            <li className="pt-1 text-slate-400">
+                              Vendeur : {sale.seller}
+                            </li>
+                          )}
+                        </ul>
+                      )}
+                    </button>
+                  ))}
+                  {!sales.length && !busy && (
+                    <p className="pt-6 text-center text-sm text-slate-500 dark:text-slate-400">
+                      Aucune vente à afficher.
+                    </p>
+                  )}
+                </div>
+
+                {summary?.last_sync && (
+                  <p className="pt-2 text-center text-xs text-slate-400">
+                    Dernière mise à jour de la boutique :{" "}
+                    {when(summary.last_sync)}
+                  </p>
+                )}
+              </>
             )}
           </>
         )}
@@ -412,47 +545,72 @@ export default function Mobile() {
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-xl bg-white p-3 shadow-sm dark:bg-slate-900">
-                <p className="text-xs text-slate-500 dark:text-slate-400">7 derniers jours</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  7 derniers jours
+                </p>
                 <p className="text-lg font-semibold">
                   {money(accounting?.period_total || 0)}
                 </p>
               </div>
               <div className="rounded-xl bg-white p-3 shadow-sm dark:bg-slate-900">
-                <p className="text-xs text-slate-500 dark:text-slate-400">Tickets</p>
-                <p className="text-lg font-semibold">{accounting?.period_count || 0}</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Tickets
+                </p>
+                <p className="text-lg font-semibold">
+                  {accounting?.period_count || 0}
+                </p>
               </div>
             </div>
             <section className="rounded-xl bg-white p-3 shadow-sm dark:bg-slate-900">
               <h2 className="mb-2 text-sm font-semibold">Par jour</h2>
               {accounting?.days.length ? (
                 accounting.days.map((row) => (
-                  <div key={row.day} className="flex justify-between py-1 text-sm">
-                    <span className="text-slate-500 dark:text-slate-400">{day(row.day)}</span>
+                  <div
+                    key={row.day}
+                    className="flex justify-between py-1 text-sm"
+                  >
+                    <span className="text-slate-500 dark:text-slate-400">
+                      {day(row.day)}
+                    </span>
                     <span className="font-medium">{money(row.total)}</span>
                   </div>
                 ))
               ) : (
-                <p className="text-sm text-slate-500 dark:text-slate-400">Aucun mouvement.</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  Aucun mouvement.
+                </p>
               )}
             </section>
             <section className="rounded-xl bg-white p-3 shadow-sm dark:bg-slate-900">
-              <h2 className="mb-2 text-sm font-semibold">Par mode de paiement</h2>
+              <h2 className="mb-2 text-sm font-semibold">
+                Par mode de paiement
+              </h2>
               {accounting?.payments.length ? (
                 accounting.payments.map((row) => (
-                  <div key={row.method} className="flex justify-between py-1 text-sm">
-                    <span className="text-slate-500 dark:text-slate-400">{row.method}</span>
+                  <div
+                    key={row.method}
+                    className="flex justify-between py-1 text-sm"
+                  >
+                    <span className="text-slate-500 dark:text-slate-400">
+                      {row.method}
+                    </span>
                     <span className="font-medium">{money(row.total)}</span>
                   </div>
                 ))
               ) : (
-                <p className="text-sm text-slate-500 dark:text-slate-400">Aucun mouvement.</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  Aucun mouvement.
+                </p>
               )}
             </section>
             <section className="rounded-xl bg-white p-3 shadow-sm dark:bg-slate-900">
               <h2 className="mb-2 text-sm font-semibold">Meilleures ventes</h2>
               {accounting?.products.length ? (
                 accounting.products.map((row) => (
-                  <div key={row.name} className="flex justify-between py-1 text-sm">
+                  <div
+                    key={row.name}
+                    className="flex justify-between py-1 text-sm"
+                  >
                     <span className="text-slate-500 dark:text-slate-400">
                       {row.quantity} × {row.name}
                     </span>
@@ -460,7 +618,9 @@ export default function Mobile() {
                   </div>
                 ))
               ) : (
-                <p className="text-sm text-slate-500 dark:text-slate-400">Aucun article vendu.</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  Aucun article vendu.
+                </p>
               )}
             </section>
           </div>
@@ -508,7 +668,9 @@ export default function Mobile() {
               <p className="text-sm text-slate-500 dark:text-slate-400">
                 {session.name} · {session.role || "—"}
               </p>
-              <p className="text-sm text-slate-500 dark:text-slate-400">{session.company}</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                {session.company}
+              </p>
             </section>
             <section className="rounded-xl bg-white p-3 shadow-sm dark:bg-slate-900">
               <h2 className="mb-2 text-sm font-semibold">Affichage</h2>
@@ -520,7 +682,9 @@ export default function Mobile() {
                   {theme === "dark" ? <Moon size={16} /> : <Sun size={16} />}
                   Thème {theme === "dark" ? "sombre" : "clair"}
                 </span>
-                <span className="text-brand-600 dark:text-brand-300">Changer</span>
+                <span className="text-brand-600 dark:text-brand-300">
+                  Changer
+                </span>
               </button>
             </section>
             <section className="rounded-xl bg-white p-3 shadow-sm dark:bg-slate-900">
@@ -547,9 +711,13 @@ export default function Mobile() {
         {tab === "apropos" && (
           <div className="space-y-3">
             <section className="rounded-xl bg-white p-4 shadow-sm dark:bg-slate-900">
-              <h2 className="text-base font-semibold">{about?.company || session.company}</h2>
+              <h2 className="text-base font-semibold">
+                {about?.company || session.company}
+              </h2>
               {about?.manager && (
-                <p className="text-sm text-slate-500 dark:text-slate-400">{about.manager}</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  {about.manager}
+                </p>
               )}
               {(about?.address || about?.city) && (
                 <p className="pt-1 text-sm">
@@ -564,6 +732,15 @@ export default function Mobile() {
                 {about.about}
               </section>
             )}
+            <section className="rounded-xl bg-white p-4 shadow-sm dark:bg-slate-900">
+              <h2 className="mb-2 text-sm font-semibold">Qui sommes-nous ?</h2>
+              <p className="whitespace-pre-line text-sm text-slate-600 dark:text-slate-300">
+                {PUBLISHER.about}
+              </p>
+              <p className="pt-3 text-sm">{PUBLISHER.address}</p>
+              <p className="text-sm">Tél. : {PUBLISHER.phone}</p>
+              <p className="text-sm">{PUBLISHER.email}</p>
+            </section>
             <p className="text-center text-xs text-slate-400">
               EasyGest {about?.version ? `— version ${about.version}` : ""}
             </p>
