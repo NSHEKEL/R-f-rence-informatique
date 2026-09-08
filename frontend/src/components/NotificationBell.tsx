@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Bell, CheckCheck, Package, ShoppingCart, Wallet } from "lucide-react";
-import api from "../api/client";
+import api, { formatDateTime } from "../api/client";
 import type { Notification } from "../types";
 
 const POLL_MS = 15000;
@@ -19,7 +19,15 @@ function timeAgo(iso: string): string {
   if (minutes < 60) return `il y a ${minutes} min`;
   const hours = Math.round(minutes / 60);
   if (hours < 24) return `il y a ${hours} h`;
-  return new Date(iso).toLocaleDateString("fr-FR");
+  return "";
+}
+
+/** "il y a 5 min · 23/07/2026 à 10:53" — the exact hour always shows. */
+function stamp(iso: string): string {
+  const relative = timeAgo(iso);
+  return relative
+    ? `${relative} · ${formatDateTime(iso)}`
+    : formatDateTime(iso);
 }
 
 export default function NotificationBell() {
@@ -76,7 +84,7 @@ export default function NotificationBell() {
     <div className="relative" ref={boxRef}>
       <button
         onClick={() => setOpen((v) => !v)}
-        title="Notifications"
+        aria-label="Notifications"
         className="relative rounded-xl border border-slate-200 p-2.5 text-slate-500 hover:bg-slate-100"
       >
         <Bell size={18} />
@@ -133,7 +141,7 @@ export default function NotificationBell() {
                       {item.message}
                     </span>
                     <span className="mt-0.5 block text-[11px] text-slate-400">
-                      {timeAgo(item.created_at)}
+                      {stamp(item.created_at)}
                     </span>
                   </span>
                 </button>

@@ -14,20 +14,77 @@ body,
   height: 100%;
 }
 
+/* Amounts, references and table cells stay selectable with the mouse and
+   copyable with Ctrl+C, including inside the native Windows window. */
+body,
+table,
+td,
+th,
+p,
+span {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 body {
   margin: 0;
   font-family: "Inter", system-ui, sans-serif;
-  background-color: #f4f6fb;
+  background-color: #f3f6fc;
+  background-image: radial-gradient(
+      1200px 600px at 0% -10%,
+      rgba(27, 111, 227, 0.09),
+      transparent 60%
+    ),
+    radial-gradient(900px 500px at 100% 0%, rgba(16, 185, 129, 0.07), transparent 60%);
+  background-attachment: fixed;
   color: #0f172a;
   -webkit-font-smoothing: antialiased;
 }
 
+/* Keyboard users must always see where they are, mouse users are left
+   alone: the ring only shows up on :focus-visible. */
+:focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 2px;
+  border-radius: 0.5rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Jumping straight to the page content with the Tab key. */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 60;
+}
+.skip-link:focus {
+  left: 1rem;
+  top: 1rem;
+  padding: 0.6rem 1rem;
+  border-radius: 0.75rem;
+  background: #1b6fe3;
+  color: #fff;
+  font-weight: 600;
+}
+
 @layer components {
   .card {
-    @apply rounded-2xl bg-white shadow-card border border-slate-100;
+    @apply rounded-2xl bg-white shadow-card border border-slate-200/70;
   }
+  /* Comfortable click target: fingers on a touch screen, tired eyes on a
+     counter. */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex min-h-[2.5rem] items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
   }
   .btn-primary {
     @apply btn bg-brand-600 text-white hover:bg-brand-700;
@@ -65,6 +122,14 @@ body {
   width: 100%;
   max-width: 28rem;
   font-size: 12px;
+  line-height: 1.45;
+}
+/* The A4 sheet has room to breathe: keep the table off the text blocks. */
+.receipt-A4 .receipt-items {
+  margin: 1.15rem 0;
+}
+.receipt-A4 .receipt-title {
+  margin: 0.9rem 0;
 }
 .receipt-80mm {
   width: 74mm;
@@ -118,6 +183,16 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.12em;
 }
+.receipt-duplicate {
+  margin: 0 0 0.5rem;
+  padding: 0.2rem;
+  border: 1px solid #b91c1c;
+  color: #b91c1c;
+  text-align: center;
+  font-size: 0.85em;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+}
 .receipt-meta {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -136,12 +211,12 @@ body {
 }
 .receipt-items {
   width: 100%;
-  margin-top: 0.6rem;
+  margin: 0.9rem 0;
   border-collapse: collapse;
   font-size: 0.88em;
 }
 .receipt-items th {
-  padding: 0.2rem 0;
+  padding: 0.35rem 0.35rem 0.35rem 0;
   border-bottom: 1px solid #475569;
   text-align: left;
   font-size: 0.85em;
@@ -149,7 +224,7 @@ body {
   color: #475569;
 }
 .receipt-items td {
-  padding: 0.3rem 0.35rem 0.3rem 0;
+  padding: 0.45rem 0.35rem 0.45rem 0;
   border-bottom: 1px dashed #cbd5e1;
   vertical-align: top;
   word-break: break-word;
@@ -165,12 +240,18 @@ body {
 .receipt-items .strong {
   font-weight: 600;
 }
+/* Tax breakdown sits between the table and the grand total: no top border,
+   otherwise it doubles the line already drawn by the last table row. */
+.receipt-taxes {
+  border-top: none;
+  padding-top: 0;
+}
 .receipt-total {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 0.6rem;
-  padding-top: 0.4rem;
+  margin-top: 0.9rem;
+  padding-top: 0.55rem;
   border-top: 2px solid #0f172a;
   font-weight: 800;
   text-transform: uppercase;
@@ -179,12 +260,19 @@ body {
   font-size: 1.25em;
 }
 .receipt-note {
-  margin-top: 0.6rem;
+  margin-top: 0.9rem;
   padding: 0.4rem;
   border: 1px dashed #cbd5e1;
   font-size: 0.85em;
   color: #334155;
   white-space: pre-line;
+}
+.receipt-barcode {
+  display: block;
+  margin: 0.9rem auto 0;
+  height: 3.2rem;
+  max-width: 100%;
+  object-fit: contain;
 }
 .receipt-footer {
   margin: 1rem 0 0;
@@ -194,6 +282,162 @@ body {
   font-size: 0.85em;
   font-weight: 500;
   white-space: pre-line;
+}
+
+/* ---------------- Dark appearance ----------------
+   The pages are written with light utility classes; rather than duplicating
+   every class on twenty screens, the few colours they use are repainted here
+   when <html> carries `dark`. Receipts keep their white paper: they are
+   printed, and the print stylesheet below resets the page anyway. */
+html.dark body {
+  background-color: #0b1220;
+  background-image: radial-gradient(
+      1200px 600px at 0% -10%,
+      rgba(59, 130, 246, 0.14),
+      transparent 60%
+    ),
+    radial-gradient(900px 500px at 100% 0%, rgba(16, 185, 129, 0.08), transparent 60%);
+  color: #e2e8f0;
+}
+html.dark :focus-visible {
+  outline-color: #93c5fd;
+}
+html.dark .card,
+html.dark .bg-white,
+html.dark .bg-white\/80,
+html.dark .bg-slate-50,
+html.dark .bg-slate-50\/60,
+html.dark .bg-slate-100\/70 {
+  background-color: #111a2e !important;
+  border-color: #1f2b45 !important;
+}
+html.dark .bg-slate-100,
+html.dark .bg-slate-200,
+html.dark .hover\:bg-slate-50:hover,
+html.dark .hover\:bg-slate-100:hover,
+html.dark .hover\:bg-slate-200:hover {
+  background-color: #1b2740 !important;
+}
+html.dark .bg-brand-50,
+html.dark .bg-brand-100 {
+  background-color: #16264a !important;
+}
+html.dark .text-slate-900,
+html.dark .text-ink,
+html.dark .text-slate-800,
+html.dark .text-slate-700 {
+  color: #e2e8f0 !important;
+}
+html.dark .text-slate-600,
+html.dark .text-slate-500 {
+  color: #94a3b8 !important;
+}
+html.dark .text-slate-400 {
+  color: #64748b !important;
+}
+html.dark .text-brand-900,
+html.dark .text-brand-700 {
+  color: #bcd7ff !important;
+}
+html.dark .border-slate-100,
+html.dark .border-slate-200,
+html.dark .border-slate-300,
+html.dark .border-brand-100,
+html.dark .divide-slate-100 > * + *,
+html.dark .divide-slate-200 > * + * {
+  border-color: #1f2b45 !important;
+}
+html.dark .input,
+html.dark select,
+html.dark textarea {
+  background-color: #0f1a30 !important;
+  border-color: #26344f !important;
+  color: #e2e8f0 !important;
+}
+html.dark .input::placeholder {
+  color: #64748b;
+}
+html.dark .btn-ghost {
+  background-color: #1b2740 !important;
+  color: #e2e8f0 !important;
+}
+html.dark .shadow-card,
+html.dark .shadow-soft {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5) !important;
+}
+html.dark ::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+/* Coloured statuses (paid, late, alert) are unreadable on a dark card when
+   they keep the shades meant for white paper: the tint is darkened and the
+   writing lightened. */
+html.dark .bg-emerald-50,
+html.dark .bg-emerald-100,
+html.dark .bg-green-50 {
+  background-color: #10291f !important;
+}
+html.dark .bg-amber-50,
+html.dark .bg-amber-100,
+html.dark .bg-orange-50 {
+  background-color: #2e2413 !important;
+}
+html.dark .bg-red-50,
+html.dark .bg-rose-50 {
+  background-color: #331717 !important;
+}
+html.dark .bg-blue-50,
+html.dark .bg-sky-50,
+html.dark .bg-indigo-50,
+html.dark .bg-violet-50 {
+  background-color: #16264a !important;
+}
+html.dark .text-emerald-900,
+html.dark .text-emerald-800,
+html.dark .text-emerald-700,
+html.dark .text-emerald-600,
+html.dark .text-green-700,
+html.dark .text-green-600 {
+  color: #6ee7b7 !important;
+}
+html.dark .text-amber-900,
+html.dark .text-amber-800,
+html.dark .text-amber-700,
+html.dark .text-amber-600,
+html.dark .text-orange-600 {
+  color: #fcd34d !important;
+}
+html.dark .text-red-700,
+html.dark .text-red-600,
+html.dark .text-rose-600 {
+  color: #fca5a5 !important;
+}
+html.dark .text-blue-700,
+html.dark .text-sky-600,
+html.dark .text-indigo-600,
+html.dark .text-violet-600,
+html.dark .text-brand-600 {
+  color: #93c5fd !important;
+}
+html.dark .text-slate-300 {
+  color: #94a3b8 !important;
+}
+html.dark thead,
+html.dark th {
+  color: #94a3b8 !important;
+}
+html.dark option {
+  background-color: #0f1a30;
+  color: #e2e8f0;
+}
+html.dark .btn-danger {
+  background-color: #331717 !important;
+  color: #fca5a5 !important;
+}
+/* A receipt or a label is a sheet of paper, dark or not. */
+html.dark .receipt,
+html.dark #receipt-print-root {
+  background: #fff;
+  color: #0f172a;
 }
 
 /* Print: only the receipt copy portaled to <body> reaches the printer, so it
@@ -208,10 +452,11 @@ body {
   body > *:not(#receipt-print-root) {
     display: none !important;
   }
+  /* Padding comes from the page rule injected at print time, which also sets
+     a zero page margin so the printer stops stamping the URL and the date. */
   #receipt-print-root {
     display: block !important;
     margin: 0 auto;
-    padding: 0;
     border: 0;
     box-shadow: none;
   }

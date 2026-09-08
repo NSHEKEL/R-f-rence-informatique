@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from ..auth import get_current_user, require_admin
 from ..database import get_db
 from ..models import Notification, Product, StockMovement, User
+from ..permissions import require_permission
 from ..schemas import InventoryApply, StockMovementOut
 
 router = APIRouter(prefix="/api/inventory", tags=["inventory"])
@@ -14,7 +14,7 @@ def list_movements(
     limit: int = 100,
     product_id: int | None = None,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_permission("inventaire")),
 ):
     query = db.query(StockMovement)
     if product_id is not None:
@@ -26,7 +26,7 @@ def list_movements(
 def apply_inventory(
     payload: InventoryApply,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_permission("inventaire_appliquer")),
 ):
     """Align stock with a physical count, recording every adjustment."""
     if not payload.lines:

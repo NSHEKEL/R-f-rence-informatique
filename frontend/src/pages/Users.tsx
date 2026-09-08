@@ -1,20 +1,36 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import { Pencil, Plus, Search, ShieldCheck, ToggleLeft, ToggleRight } from "lucide-react";
+import {
+  KeyRound,
+  Pencil,
+  Plus,
+  Search,
+  ShieldCheck,
+  ToggleLeft,
+  ToggleRight,
+} from "lucide-react";
 import api from "../api/client";
 import type { User } from "../types";
 import Modal from "../components/Modal";
+import PhotoPicker from "../components/PhotoPicker";
 import { useAuth } from "../context/AuthContext";
 
 const ROLES = [
   { value: "admin", label: "Administrateur" },
-  { value: "vendeur", label: "Vendeur" },
+  { value: "vendeur", label: "Vendeur / caissier" },
+  { value: "gestionnaire", label: "Gestionnaire de stock" },
 ];
 
 const roleLabel = (role: string) =>
   ROLES.find((r) => r.value === role)?.label ?? role;
 
-const empty = { name: "", email: "", password: "", role: "vendeur" };
+const empty = {
+  name: "",
+  email: "",
+  password: "",
+  role: "vendeur",
+  photo: "",
+};
 
 export default function Users() {
   const { user: current } = useAuth();
@@ -52,7 +68,13 @@ export default function Users() {
 
   function openEdit(u: User) {
     setEditing(u);
-    setForm({ name: u.name, email: u.email, password: "", role: u.role });
+    setForm({
+      name: u.name,
+      email: u.email,
+      password: "",
+      role: u.role,
+      photo: u.photo ?? "",
+    });
     setError("");
     setOpen(true);
   }
@@ -74,6 +96,7 @@ export default function Users() {
           name: form.name,
           email: form.email,
           role: form.role,
+          photo: form.photo,
         };
         if (form.password) payload.password = form.password;
         await api.put(`/users/${editing.id}`, payload);
@@ -88,6 +111,30 @@ export default function Users() {
       }
     } finally {
       setSaving(false);
+    }
+  }
+
+  /** Fallback when no mail server is configured: the admin hands over a
+   *  temporary password shown once. */
+  async function resetPassword(u: User) {
+    if (
+      !window.confirm(
+        `Générer un nouveau mot de passe temporaire pour ${u.name} ?`
+      )
+    )
+      return;
+    try {
+      const { data } = await api.post<{ password: string }>(
+        `/users/${u.id}/reset-password`
+      );
+      window.alert(
+        `Mot de passe temporaire de ${u.name} : ${data.password}\n\n` +
+          "Notez-le maintenant : il ne sera plus affiché."
+      );
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        alert(err.response?.data?.detail ?? "Action impossible");
+      }
     }
   }
 
@@ -139,14 +186,22 @@ export default function Users() {
                 <tr key={u.id} className="hover:bg-slate-50/60">
                   <td className="px-5 py-3.5">
                     <div className="flex items-center gap-3">
-                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-600 text-xs font-bold text-white">
-                        {u.name
-                          .split(" ")
-                          .map((n) => n[0])
-                          .slice(0, 2)
-                          .join("")
-                          .toUpperCase()}
-                      </div>
+                      {u.photo ? (
+                        <img
+                          src={u.photo}
+                          alt=""
+                          className="h-9 w-9 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-600 text-xs font-bold text-white">
+                          {u.name
+                            .split(" ")
+                            .map((n) => n[0])
+                            .slice(0, 2)
+                            .join("")
+                            .toUpperCase()}
+                        </div>
+                      )}
                       <span className="font-semibold text-slate-800">
                         {u.name}
                         {u.id === current?.id && (
@@ -184,8 +239,15 @@ export default function Users() {
                   <td className="px-5 py-3.5">
                     <div className="flex justify-end gap-1">
                       <button
+                        onClick={() => resetPassword(u)}
+                        aria-label="Réinitialiser le mot de passe"
+                        className="rounded-lg p-2 text-slate-400 hover:bg-amber-50 hover:text-amber-600"
+                      >
+                        <KeyRound size={16} />
+                      </button>
+                      <button
                         onClick={() => openEdit(u)}
-                        title="Modifier"
+                        aria-label="Modifier"
                         className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
                       >
                         <Pencil size={16} />
@@ -287,6 +349,13 @@ export default function Users() {
               ))}
             </select>
           </div>
+          <PhotoPicker
+            label="Photo de l'utilisateur"
+            rounded="rounded-full"
+            value={form.photo}
+            onChange={(photo) => setForm({ ...form, photo })}
+            onError={setError}
+          />
         </div>
       </Modal>
     </div>

@@ -1,14 +1,17 @@
+import secrets
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..auth import hash_password, require_admin
 from ..database import get_db
+from ..licensing import has_feature
 from ..models import User
 from ..schemas import UserCreate, UserOut, UserUpdate
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
-ROLES = {"admin", "vendeur"}
+ROLES = {"admin", "vendeur", "gestionnaire"}
 
 
 @router.get("", response_model=list[UserOut])
@@ -24,6 +27,16 @@ def create_user(
 ):
     if payload.role not in ROLES:
         raise HTTPException(status_code=400, detail="Rôle invalide")
+    if not has_feature(db, "multi_utilisateurs"):
+        others = db.query(User).filter(User.is_active.is_(True)).count()
+        if others >= 1:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "🔒 Multi-utilisateurs n'est pas inclus dans votre "
+                    "formule : un seul compte est autorisé."
+                ),
+            )
     email = payload.email.strip().lower()
     if db.query(User).filter(User.email == email).first():
         raise HTTPException(status_code=400, detail="Cet email est déjà utilisé")
@@ -33,6 +46,7 @@ def create_user(
         name=payload.name.strip(),
         email=email,
         role=payload.role,
+        photo=payload.photo,
         hashed_password=hash_password(payload.password),
     )
     db.add(user)
@@ -86,6 +100,8 @@ def update_user(
         user.email = email
     if payload.role is not None:
         user.role = payload.role
+    if payload.photo is not None:
+        user.photo = payload.photo
     if payload.is_active is not None:
         user.is_active = payload.is_active
     if payload.password:
@@ -94,6 +110,22 @@ def update_user(
     db.commit()
     db.refresh(user)
     return user
+
+
+@router.post("/{user_id}/reset-password")
+def reset_user_password(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Give a user a temporary password, shown once to the administrator."""
+    user = db.query(User).get(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    temporary = secrets.token_urlsafe(6)
+    user.hashed_password = hash_password(temporary)
+    db.commit()
+    return {"password": temporary}
 
 
 @router.delete("/{user_id}", status_code=204)

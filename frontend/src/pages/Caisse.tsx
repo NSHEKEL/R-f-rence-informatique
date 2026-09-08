@@ -1,280 +1,130 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
-import {
-  Lock,
-  Minus,
-  Plus,
-  Printer,
-  Search,
-  ShoppingCart,
-  Trash2,
-  Unlock,
-  Wallet,
-} from "lucide-react";
+import { Link } from "react-router-dom";
+import { CheckCircle2, Lock, Printer, ShoppingCart, Unlock, Wallet } from "lucide-react";
 import api, { formatXOF } from "../api/client";
-import type {
-  CashSessionDetail,
-  CompanySettings,
-  Customer,
-  Product,
-  ReceiptFormat,
-  Sale,
-} from "../types";
+import type { CashSession, CashSessionDetail, ReceiptFormat } from "../types";
+import CashTicket, { type CashTicketKind } from "../components/CashTicket";
 import Modal from "../components/Modal";
-import Receipt from "../components/Receipt";
+import PrinterHint from "../components/PrinterHint";
+import { enterFullscreen, leaveFullscreen } from "../lib/fullscreen";
 import { printReceipt } from "../lib/print";
 import { useAuth } from "../context/AuthContext";
+import { useTill } from "../context/TillContext";
+import { useCompany } from "../context/CompanyContext";
+import { useSyncVersion } from "../context/SyncContext";
 
-const PAYMENTS = ["Espèces", "Mobile Money", "Carte bancaire", "Virement"];
-
-interface CartLine {
-  product: Product;
-  quantity: number;
-}
-
+/**
+ * Till screen: one opening and one closing per cashier and per day. Selling
+ * happens on the dedicated POS screen.
+ */
 export default function Caisse() {
-  const { isAdmin } = useAuth();
-  const [products, setProducts] = useState<Product[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [company, setCompany] = useState<CompanySettings | null>(null);
-  const [session, setSession] = useState<CashSessionDetail | null>(null);
-  const [query, setQuery] = useState("");
-  const [cart, setCart] = useState<CartLine[]>([]);
-  const [customerId, setCustomerId] = useState("");
-  const [payment, setPayment] = useState(PAYMENTS[0]);
+  const { user, isAdmin } = useAuth();
+  const { refresh: refreshTill } = useTill();
+  const { company } = useCompany();
+  const version = useSyncVersion();
+
+  const [today, setToday] = useState<CashSessionDetail | null>(null);
+  const [history, setHistory] = useState<CashSession[]>([]);
+  const [openingBalance, setOpeningBalance] = useState("0");
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const [openCash, setOpenCash] = useState(false);
-  const [closeCash, setCloseCash] = useState(false);
-  const [openingBalance, setOpeningBalance] = useState("0");
+  const [closeOpen, setCloseOpen] = useState(false);
   const [countedBalance, setCountedBalance] = useState("0");
-  const [cashNote, setCashNote] = useState("");
+  const [closeNote, setCloseNote] = useState("");
 
-  const [lastSale, setLastSale] = useState<Sale | null>(null);
-  const [format, setFormat] = useState<ReceiptFormat>("A4");
+  const [ticket, setTicket] = useState<{
+    session: CashSessionDetail;
+    kind: CashTicketKind;
+  } | null>(null);
+  const format: ReceiptFormat = company?.receipt_format === "80mm" ? "80mm" : "A4";
 
-  const loadSession = useCallback(async () => {
-    const res = await api.get<CashSessionDetail | null>(
-      "/cash-sessions/current"
-    );
-    setSession(res.data);
-  }, []);
-
-  const loadProducts = useCallback(async () => {
-    const res = await api.get<Product[]>("/products");
-    setProducts(res.data);
+  const load = useCallback(async () => {
+    const [session, sessions] = await Promise.all([
+      api.get<CashSessionDetail | null>("/cash-sessions/today"),
+      api.get<CashSession[]>("/cash-sessions", { params: { limit: 15 } }),
+    ]);
+    setToday(session.data);
+    setHistory(sessions.data);
   }, []);
 
   useEffect(() => {
-    loadProducts();
-    loadSession();
-    api
-      .get<Customer[]>("/customers")
-      .then((res) => setCustomers(res.data))
-      .catch(() => setCustomers([]));
-    api
-      .get<CompanySettings>("/settings/company")
-      .then((res) => {
-        setCompany(res.data);
-        setFormat(res.data.receipt_format === "80mm" ? "80mm" : "A4");
-      })
-      .catch(() => setCompany(null));
-  }, [loadProducts, loadSession]);
+    load().catch(() => setError("Impossible de charger la caisse"));
+  }, [load, version]);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const available = products.filter((p) => p.quantity > 0);
-    if (!q) return available.slice(0, 24);
-    return available
-      .filter(
-        (p) =>
-          p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)
-      )
-      .slice(0, 24);
-  }, [products, query]);
-
-  const total = useMemo(
-    () => cart.reduce((sum, l) => sum + l.product.sale_price * l.quantity, 0),
-    [cart]
+  const showTicket = useCallback(
+    (session: CashSessionDetail, kind: CashTicketKind, auto: boolean) => {
+      setTicket({ session, kind });
+      if (auto && company?.auto_print_cash !== false) {
+        // Let the print copy mount before asking the browser to print.
+        window.setTimeout(() => printReceipt(format), 400);
+      }
+    },
+    [company?.auto_print_cash, format]
   );
 
-  function addToCart(product: Product) {
-    setError("");
-    setCart((prev) => {
-      const existing = prev.find((l) => l.product.id === product.id);
-      if (!existing) return [...prev, { product, quantity: 1 }];
-      if (existing.quantity >= product.quantity) return prev;
-      return prev.map((l) =>
-        l.product.id === product.id ? { ...l, quantity: l.quantity + 1 } : l
-      );
-    });
-  }
-
-  function setQuantity(productId: number, quantity: number) {
-    setCart((prev) =>
-      prev.flatMap((l) => {
-        if (l.product.id !== productId) return [l];
-        const capped = Math.min(Math.max(quantity, 0), l.product.quantity);
-        return capped === 0 ? [] : [{ ...l, quantity: capped }];
-      })
-    );
-  }
-
-  async function checkout() {
-    if (cart.length === 0) {
-      setError("Le panier est vide.");
-      return;
-    }
+  async function openTill() {
     setSaving(true);
     setError("");
     try {
-      const res = await api.post<Sale>("/sales", {
-        customer_id: customerId === "" ? null : Number(customerId),
-        payment_method: payment,
-        status: "Payée",
+      const res = await api.post<CashSessionDetail>("/cash-sessions/open", {
+        opening_balance: Number(openingBalance) || 0,
         note,
-        items: cart.map((l) => ({
-          product_id: l.product.id,
-          quantity: l.quantity,
-        })),
       });
-      setCart([]);
       setNote("");
-      setCustomerId("");
-      setLastSale(res.data);
-      await Promise.all([loadProducts(), loadSession()]);
+      setOpeningBalance("0");
+      await load();
+      await refreshTill();
+      // The counter works better without the desktop around it; the header
+      // button leaves full screen again.
+      if (!isAdmin) await enterFullscreen();
+      showTicket(res.data, "open", true);
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Erreur lors de l'encaissement");
+        setError(err.response?.data?.detail ?? "Impossible d'ouvrir la caisse");
       }
     } finally {
       setSaving(false);
     }
   }
 
-  async function submitOpen() {
+  async function closeTill() {
+    setSaving(true);
     setError("");
     try {
-      await api.post("/cash-sessions/open", {
-        opening_balance: Number(openingBalance) || 0,
-        note: cashNote,
-      });
-      setOpenCash(false);
-      setCashNote("");
-      setOpeningBalance("0");
-      await loadSession();
-    } catch (err) {
-      if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Impossible d'ouvrir la caisse");
-      }
-    }
-  }
-
-  async function submitClose() {
-    setError("");
-    try {
-      await api.post("/cash-sessions/close", {
+      const res = await api.post<CashSessionDetail>("/cash-sessions/close", {
         closing_balance: Number(countedBalance) || 0,
-        note: cashNote,
+        note: closeNote,
       });
-      setCloseCash(false);
-      setCashNote("");
-      setCountedBalance("0");
-      await loadSession();
+      setCloseOpen(false);
+      setCloseNote("");
+      await load();
+      await refreshTill();
+      await leaveFullscreen();
+      showTicket(res.data, "close", true);
     } catch (err) {
       if (axios.isAxiosError(err)) {
         setError(err.response?.data?.detail ?? "Impossible de fermer la caisse");
       }
+    } finally {
+      setSaving(false);
     }
   }
 
+  const closed = Boolean(today?.closed_at);
   const countedDifference =
-    (Number(countedBalance) || 0) - (session?.expected_cash ?? 0);
+    (Number(countedBalance) || 0) - (today?.expected_cash ?? 0);
 
   return (
-    <div className="space-y-5">
-      {/* Cash session banner */}
-      <div className="card p-5">
-        {session ? (
-          <div className="flex flex-wrap items-center gap-5">
-            <div className="flex items-center gap-3">
-              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-                <Unlock size={20} />
-              </span>
-              <div>
-                <p className="text-sm font-bold text-slate-900">
-                  Caisse ouverte
-                </p>
-                <p className="text-xs text-slate-500">
-                  Par {session.opened_by?.name ?? "—"} ·{" "}
-                  {new Date(session.opened_at).toLocaleString("fr-FR", {
-                    day: "2-digit",
-                    month: "2-digit",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </p>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-6 text-sm">
-              <div>
-                <p className="text-xs text-slate-400">Fonds d'ouverture</p>
-                <p className="font-bold text-slate-800">
-                  {formatXOF(session.opening_balance)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-400">Ventes espèces</p>
-                <p className="font-bold text-slate-800">
-                  {formatXOF(session.cash_sales)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-400">Autres paiements</p>
-                <p className="font-bold text-slate-800">
-                  {formatXOF(session.other_sales)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-400">Solde attendu</p>
-                <p className="font-extrabold text-brand-700">
-                  {formatXOF(session.expected_cash)}
-                </p>
-              </div>
-            </div>
-            <button
-              className="btn-ghost ml-auto"
-              onClick={() => {
-                setCountedBalance(String(session.expected_cash));
-                setCashNote("");
-                setCloseCash(true);
-              }}
-            >
-              <Lock size={16} /> Fermer la caisse
-            </button>
-          </div>
-        ) : (
-          <div className="flex flex-wrap items-center gap-4">
-            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
-              <Wallet size={20} />
-            </span>
-            <div>
-              <p className="text-sm font-bold text-slate-900">Caisse fermée</p>
-              <p className="text-xs text-slate-500">
-                Ouvrez la caisse avec le fonds initial pour suivre les
-                encaissements de la journée.
-              </p>
-            </div>
-            <button
-              className="btn-primary ml-auto"
-              onClick={() => setOpenCash(true)}
-            >
-              <Unlock size={16} /> Ouvrir la caisse
-            </button>
-          </div>
-        )}
+    <div className="mx-auto max-w-5xl space-y-5">
+      <div>
+        <h1 className="text-xl font-bold text-slate-900">Ma caisse</h1>
+        <p className="text-sm text-slate-500">
+          Une ouverture par caissier et par jour. Le ticket d'ouverture
+          s'imprime automatiquement.
+        </p>
       </div>
 
       {error && (
@@ -283,288 +133,307 @@ export default function Caisse() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
-        {/* Product picker */}
-        <div className="card p-5 xl:col-span-2">
-          <div className="mb-4 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5">
-            <Search size={18} className="text-slate-400" />
-            <input
-              autoFocus
-              className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
-              placeholder="Rechercher un article (nom ou code)..."
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {filtered.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => addToCart(p)}
-                className="rounded-xl border border-slate-200 p-3 text-left transition hover:border-brand-400 hover:bg-brand-50"
-              >
-                <p className="line-clamp-2 text-sm font-semibold text-slate-800">
-                  {p.name}
-                </p>
-                <p className="mt-1 text-sm font-extrabold text-brand-700">
-                  {formatXOF(p.sale_price)}
-                </p>
-                {isAdmin && (
-                  <p className="text-xs text-slate-400">
-                    Stock : {p.quantity}
-                  </p>
-                )}
-              </button>
-            ))}
-            {filtered.length === 0 && (
-              <p className="col-span-full py-8 text-center text-sm text-slate-400">
-                Aucun article disponible.
-              </p>
-            )}
-          </div>
-        </div>
-
-        {/* Cart */}
-        <div className="card flex flex-col p-5">
-          <div className="mb-3 flex items-center gap-2">
-            <ShoppingCart size={18} className="text-brand-600" />
-            <h3 className="text-base font-bold text-slate-900">Panier</h3>
-            <span className="ml-auto text-sm text-slate-400">
-              {cart.length} ligne(s)
+      {!today && (
+        <div className="card space-y-4 p-6">
+          <div className="flex items-center gap-3">
+            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
+              <Wallet size={20} />
             </span>
+            <div>
+              <p className="text-sm font-bold text-slate-900">
+                Caisse non ouverte aujourd'hui
+              </p>
+              <p className="text-xs text-slate-500">
+                Saisissez le fonds de caisse pour commencer la journée.
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="label">Fonds de caisse initial (FCFA)</label>
+              <input
+                autoFocus
+                className="input"
+                type="number"
+                min="0"
+                value={openingBalance}
+                onChange={(e) => setOpeningBalance(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="label">Note (facultatif)</label>
+              <input
+                className="input"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="Ex. billets remis par le gérant"
+              />
+            </div>
+          </div>
+          <button
+            className="btn-primary w-full py-3 text-base sm:w-auto"
+            onClick={openTill}
+            disabled={saving}
+          >
+            <Unlock size={16} />
+            {saving ? "Ouverture..." : "Ouvrir ma caisse"}
+          </button>
+        </div>
+      )}
+
+      {today && (
+        <div className="card space-y-5 p-6">
+          <div className="flex flex-wrap items-center gap-3">
+            <span
+              className={`flex h-11 w-11 items-center justify-center rounded-xl ${
+                closed
+                  ? "bg-slate-100 text-slate-500"
+                  : "bg-emerald-50 text-emerald-600"
+              }`}
+            >
+              {closed ? <Lock size={20} /> : <CheckCircle2 size={20} />}
+            </span>
+            <div>
+              <p className="text-sm font-bold text-slate-900">
+                {closed ? "Caisse fermée pour aujourd'hui" : "Caisse ouverte"}
+              </p>
+              <p className="text-xs text-slate-500">
+                {today.opened_by?.name ?? user?.name} · journée{" "}
+                {today.business_day}
+              </p>
+            </div>
+            <div className="ml-auto flex flex-wrap gap-2">
+              <button
+                className="btn-ghost"
+                onClick={() => showTicket(today, "open", false)}
+              >
+                <Printer size={16} /> Ticket d'ouverture
+              </button>
+              {closed && (
+                <button
+                  className="btn-ghost"
+                  onClick={() => showTicket(today, "close", false)}
+                >
+                  <Printer size={16} /> Ticket de fermeture
+                </button>
+              )}
+              {!closed && (
+                <>
+                  <button
+                    className="btn-ghost"
+                    onClick={() => {
+                      setCountedBalance(String(today.expected_cash));
+                      setCloseNote("");
+                      setCloseOpen(true);
+                    }}
+                  >
+                    <Lock size={16} /> Fermer ma caisse
+                  </button>
+                  <Link className="btn-primary" to="/ventes/nouvelle">
+                    <ShoppingCart size={16} /> Aller à la vente
+                  </Link>
+                </>
+              )}
+            </div>
           </div>
 
-          <div className="flex-1 space-y-2 overflow-y-auto">
-            {cart.length === 0 && (
-              <p className="rounded-xl bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">
-                Cliquez sur un article pour l'ajouter.
-              </p>
-            )}
-            {cart.map((l) => (
-              <div
-                key={l.product.id}
-                className="flex items-center gap-2 rounded-xl border border-slate-100 p-2.5"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-slate-800">
-                    {l.product.name}
-                  </p>
-                  <p className="text-xs text-slate-500">
-                    {formatXOF(l.product.sale_price)} ×{l.quantity} ={" "}
-                    <span className="font-semibold text-slate-700">
-                      {formatXOF(l.product.sale_price * l.quantity)}
-                    </span>
-                  </p>
-                </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    className="rounded-lg bg-slate-100 p-1.5 text-slate-600 hover:bg-slate-200"
-                    onClick={() => setQuantity(l.product.id, l.quantity - 1)}
-                  >
-                    <Minus size={14} />
-                  </button>
-                  <input
-                    className="w-12 rounded-lg border border-slate-200 py-1 text-center text-sm"
-                    value={l.quantity}
-                    onChange={(e) =>
-                      setQuantity(l.product.id, Number(e.target.value) || 0)
-                    }
-                  />
-                  <button
-                    className="rounded-lg bg-slate-100 p-1.5 text-slate-600 hover:bg-slate-200"
-                    onClick={() => setQuantity(l.product.id, l.quantity + 1)}
-                  >
-                    <Plus size={14} />
-                  </button>
-                  <button
-                    className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                    onClick={() => setQuantity(l.product.id, 0)}
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            {[
+              ["Fonds d'ouverture", formatXOF(today.opening_balance)],
+              ["Ventes espèces", formatXOF(today.cash_sales)],
+              ["Autres paiements", formatXOF(today.other_sales)],
+              [
+                closed ? "Solde compté" : "Solde attendu",
+                formatXOF(
+                  closed ? today.closing_balance ?? 0 : today.expected_cash
+                ),
+              ],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-xl bg-slate-50 p-4">
+                <p className="text-xs text-slate-400">{label}</p>
+                <p className="text-base font-extrabold text-slate-800">
+                  {value}
+                </p>
               </div>
             ))}
           </div>
 
-          <div className="mt-4 space-y-3 border-t border-slate-100 pt-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="label">Client</label>
-                <select
-                  className="input"
-                  value={customerId}
-                  onChange={(e) => setCustomerId(e.target.value)}
-                >
-                  <option value="">Client de passage</option>
-                  {customers.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="label">Paiement</label>
-                <select
-                  className="input"
-                  value={payment}
-                  onChange={(e) => setPayment(e.target.value)}
-                >
-                  {PAYMENTS.map((p) => (
-                    <option key={p}>{p}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <input
-              className="input"
-              placeholder="Note sur le reçu (facultatif)"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-            />
-            <div className="flex items-center justify-between rounded-xl bg-slate-900 px-4 py-3 text-white">
-              <span className="text-sm font-medium uppercase">Total</span>
-              <span className="text-xl font-extrabold">{formatXOF(total)}</span>
-            </div>
-            <button
-              className="btn-primary w-full py-3 text-base"
-              onClick={checkout}
-              disabled={saving || cart.length === 0}
+          {closed && (
+            <p
+              className={`rounded-xl px-4 py-3 text-sm font-semibold ${
+                Math.abs(today.difference ?? 0) < 1
+                  ? "bg-emerald-50 text-emerald-700"
+                  : "bg-amber-50 text-amber-700"
+              }`}
             >
-              {saving ? "Encaissement..." : "Encaisser"}
-            </button>
-          </div>
+              {Math.abs(today.difference ?? 0) < 1
+                ? "Caisse conforme"
+                : `Écart : ${formatXOF(today.difference ?? 0)}`}
+            </p>
+          )}
+
+          {!closed && (
+            <p className="rounded-xl bg-slate-50 px-4 py-3 text-xs text-slate-500">
+              La fermeture se fait une seule fois par jour, en fin de journée.
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className="card p-5">
+        <h2 className="mb-3 text-sm font-bold text-slate-900">
+          {isAdmin ? "Dernières caisses" : "Mes dernières caisses"}
+        </h2>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase text-slate-400">
+                <th className="py-2">Journée</th>
+                <th>Caissier</th>
+                <th className="text-right">Fonds</th>
+                <th className="text-right">Solde compté</th>
+                <th className="text-right">Écart</th>
+                <th>État</th>
+              </tr>
+            </thead>
+            <tbody>
+              {history.map((s) => (
+                <tr key={s.id} className="border-t border-slate-100">
+                  <td className="py-2.5 font-medium text-slate-700">
+                    {s.business_day ||
+                      new Date(s.opened_at).toLocaleDateString("fr-FR")}
+                  </td>
+                  <td className="text-slate-600">{s.opened_by?.name ?? "—"}</td>
+                  <td className="text-right">{formatXOF(s.opening_balance)}</td>
+                  <td className="text-right">
+                    {s.closing_balance === null
+                      ? "—"
+                      : formatXOF(s.closing_balance)}
+                  </td>
+                  <td className="text-right">
+                    {s.difference === null ? "—" : formatXOF(s.difference)}
+                  </td>
+                  <td>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                        s.closed_at
+                          ? "bg-slate-100 text-slate-600"
+                          : "bg-emerald-50 text-emerald-700"
+                      }`}
+                    >
+                      {s.closed_at ? "Fermée" : "Ouverte"}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+              {history.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="py-6 text-center text-slate-400">
+                    Aucune caisse enregistrée.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
-      {/* Open cash modal */}
       <Modal
-        open={openCash}
-        onClose={() => setOpenCash(false)}
-        title="Ouverture de caisse"
+        open={closeOpen}
+        onClose={() => setCloseOpen(false)}
+        title="Fermeture de caisse"
         footer={
-          <button className="btn-primary" onClick={submitOpen}>
-            Ouvrir la caisse
-          </button>
+          <div className="flex w-full justify-end gap-3">
+            <button className="btn-ghost" onClick={() => setCloseOpen(false)}>
+              Annuler
+            </button>
+            <button
+              className="btn-primary"
+              onClick={closeTill}
+              disabled={saving}
+            >
+              <Lock size={16} /> Fermer ma caisse
+            </button>
+          </div>
         }
       >
         <div className="space-y-4">
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              ["Fonds d'ouverture", formatXOF(today?.opening_balance ?? 0)],
+              ["Ventes espèces", formatXOF(today?.cash_sales ?? 0)],
+              ["Solde attendu", formatXOF(today?.expected_cash ?? 0)],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-xl bg-slate-50 p-3">
+                <p className="text-xs text-slate-400">{label}</p>
+                <p className="text-sm font-bold text-slate-800">{value}</p>
+              </div>
+            ))}
+          </div>
           <div>
-            <label className="label">Fonds de caisse initial (FCFA)</label>
+            <label className="label">Montant compté en caisse (FCFA)</label>
             <input
+              autoFocus
               className="input"
               type="number"
               min="0"
-              value={openingBalance}
-              onChange={(e) => setOpeningBalance(e.target.value)}
+              value={countedBalance}
+              onChange={(e) => setCountedBalance(e.target.value)}
             />
           </div>
           <div>
             <label className="label">Note (facultatif)</label>
             <input
               className="input"
-              value={cashNote}
-              onChange={(e) => setCashNote(e.target.value)}
-              placeholder="Ex. billets remis par le gérant"
+              value={closeNote}
+              onChange={(e) => setCloseNote(e.target.value)}
+              placeholder="Ex. fonds remis par le gérant"
             />
           </div>
+          <p
+            className={`rounded-xl px-4 py-3 text-sm font-semibold ${
+              Math.abs(countedDifference) < 1
+                ? "bg-emerald-50 text-emerald-700"
+                : "bg-amber-50 text-amber-700"
+            }`}
+          >
+            {Math.abs(countedDifference) < 1
+              ? "Caisse conforme"
+              : `Écart : ${formatXOF(countedDifference)}`}
+          </p>
         </div>
       </Modal>
 
-      {/* Close cash modal */}
       <Modal
-        open={closeCash}
-        onClose={() => setCloseCash(false)}
-        title="Fermeture de caisse"
-        footer={
-          <button className="btn-primary" onClick={submitClose}>
-            Fermer la caisse
-          </button>
+        open={ticket !== null}
+        onClose={() => setTicket(null)}
+        title={
+          ticket?.kind === "close"
+            ? "Ticket de fermeture de caisse"
+            : "Ticket d'ouverture de caisse"
         }
-      >
-        {session && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-4 text-sm">
-              <span className="text-slate-500">Fonds d'ouverture</span>
-              <span className="text-right font-semibold">
-                {formatXOF(session.opening_balance)}
-              </span>
-              <span className="text-slate-500">Ventes en espèces</span>
-              <span className="text-right font-semibold">
-                {formatXOF(session.cash_sales)}
-              </span>
-              <span className="text-slate-500">Solde attendu</span>
-              <span className="text-right font-extrabold text-brand-700">
-                {formatXOF(session.expected_cash)}
-              </span>
-            </div>
-            <div>
-              <label className="label">Montant compté en caisse (FCFA)</label>
-              <input
-                className="input"
-                type="number"
-                min="0"
-                value={countedBalance}
-                onChange={(e) => setCountedBalance(e.target.value)}
-              />
-            </div>
-            <p
-              className={`rounded-xl px-4 py-3 text-sm font-semibold ${
-                Math.abs(countedDifference) < 1
-                  ? "bg-emerald-50 text-emerald-700"
-                  : "bg-amber-50 text-amber-700"
-              }`}
+        footer={
+          <div className="no-print flex w-full justify-end gap-3">
+            <button className="btn-ghost" onClick={() => setTicket(null)}>
+              Fermer
+            </button>
+            <PrinterHint />
+            <button
+              className="btn-primary"
+              onClick={() => printReceipt(format)}
             >
-              {Math.abs(countedDifference) < 1
-                ? "Caisse conforme"
-                : `Écart : ${formatXOF(countedDifference)}`}
-            </p>
-            <div>
-              <label className="label">Note de fermeture (facultatif)</label>
-              <input
-                className="input"
-                value={cashNote}
-                onChange={(e) => setCashNote(e.target.value)}
-              />
-            </div>
+              <Printer size={16} /> Imprimer
+            </button>
           </div>
-        )}
-      </Modal>
-
-      {/* Receipt after checkout */}
-      <Modal
-        open={lastSale !== null}
-        onClose={() => setLastSale(null)}
-        title={lastSale ? `Vente enregistrée — ${lastSale.reference}` : ""}
-        footer={
-          lastSale && (
-            <div className="no-print flex w-full items-center justify-end gap-3">
-              <select
-                className="input w-auto"
-                value={format}
-                onChange={(e) =>
-                  setFormat(e.target.value === "80mm" ? "80mm" : "A4")
-                }
-              >
-                <option value="A4">Feuille A4</option>
-                <option value="80mm">Ticket 80 mm</option>
-              </select>
-              <button className="btn-ghost" onClick={() => setLastSale(null)}>
-                Nouvelle vente
-              </button>
-              <button
-                className="btn-primary"
-                onClick={() => printReceipt(format)}
-              >
-                <Printer size={16} /> Imprimer le reçu
-              </button>
-            </div>
-          )
         }
       >
-        {lastSale && (
-          <Receipt sale={lastSale} company={company} format={format} />
+        {ticket && (
+          <CashTicket
+            session={ticket.session}
+            company={company}
+            format={format}
+            kind={ticket.kind}
+          />
         )}
       </Modal>
     </div>

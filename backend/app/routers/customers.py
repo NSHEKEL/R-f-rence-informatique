@@ -1,17 +1,41 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from ..auth import get_current_user, require_admin
+from ..auth import get_current_user
 from ..database import get_db
 from ..models import Customer, User
+from ..permissions import require_permission
 from ..schemas import CustomerCreate, CustomerOut
 
 router = APIRouter(prefix="/api/customers", tags=["customers"])
 
 
 @router.get("", response_model=list[CustomerOut])
-def list_customers(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def list_customers(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission("clients")),
+):
     return db.query(Customer).order_by(Customer.name).all()
+
+
+@router.get("/search", response_model=list[CustomerOut])
+def search_customers(
+    q: str = "",
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Attach a customer to a ticket without exposing the whole file."""
+    term = q.strip()
+    if len(term) < 2:
+        return []
+    like = f"%{term}%"
+    return (
+        db.query(Customer)
+        .filter((Customer.name.ilike(like)) | (Customer.phone.ilike(like)))
+        .order_by(Customer.name)
+        .limit(10)
+        .all()
+    )
 
 
 @router.post("", response_model=CustomerOut, status_code=201)
@@ -32,7 +56,7 @@ def update_customer(
     customer_id: int,
     payload: CustomerCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_permission("clients_gerer")),
 ):
     customer = db.query(Customer).get(customer_id)
     if not customer:
@@ -48,7 +72,7 @@ def update_customer(
 def delete_customer(
     customer_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_permission("clients_gerer")),
 ):
     customer = db.query(Customer).get(customer_id)
     if not customer:
