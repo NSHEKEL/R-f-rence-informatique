@@ -1,4 +1,10 @@
-import type { CompanySettings, ReceiptFormat } from "../types";
+import type {
+  CompanySettings,
+  LabelPrinterConfig,
+  ReceiptFormat,
+  ReceiptPrinterConfig,
+} from "../types";
+import { DEFAULT_PRINTING } from "../types";
 import { barcodeDataUrl } from "./barcode";
 import { cacheRead } from "./offline";
 
@@ -6,9 +12,15 @@ const PAGE_STYLE_ID = "receipt-page-style";
 const PRINT_ROOT_ID = "receipt-print-root";
 const MM_PER_PX = 25.4 / 96;
 const TICKET_WIDTH_MM = 80;
+const NARROW_WIDTH_MM = 58;
 const TICKET_MARGIN_MM = 3;
 const TICKET_MIN_HEIGHT_MM = 60;
 const TICKET_SLACK_MM = 4;
+
+/** Paper width of a receipt format, in millimetres. */
+function widthMm(format: ReceiptFormat): number {
+  return format === "58mm" ? NARROW_WIDTH_MM : TICKET_WIDTH_MM;
+}
 
 /** Height of the hidden print copy, measured at its printing width. */
 function ticketHeightMm(): number {
@@ -24,15 +36,16 @@ function ticketHeightMm(): number {
   );
 }
 
-function pageRule(format: ReceiptFormat): string {
-  if (format === "80mm") {
+function pageRule(format: ReceiptFormat, marginMm: number): string {
+  if (format === "80mm" || format === "58mm") {
     // Thermal roll: `auto` is invalid next to a length, so the exact ticket
     // length is measured to avoid both blank feed and a truncated ticket.
     // Zero page margin keeps the printer from adding the URL, the date and the
     // page number around the ticket; the padding is applied to the copy itself.
     return (
-      `@page { size: ${TICKET_WIDTH_MM}mm ${ticketHeightMm()}mm; margin: 0; }` +
-      `#${PRINT_ROOT_ID} { padding: ${TICKET_MARGIN_MM}mm; }`
+      `@page { size: ${widthMm(format)}mm ${ticketHeightMm()}mm; margin: 0; }` +
+      `#${PRINT_ROOT_ID} { padding: ${marginMm}mm;` +
+      ` width: ${widthMm(format)}mm; box-sizing: border-box; }`
     );
   }
   return (
@@ -153,19 +166,54 @@ const LABEL_STYLE = `
         object-fit: contain; }
 `;
 
-/** Price labels, laid out as a cuttable grid on A4. */
-export function printLabels(title: string, labelsHtml: string): void {
-  printDocument(title, LABEL_STYLE, `<div class="grid">${labelsHtml}</div>`);
+/**
+ * Price labels, laid out as a cuttable grid on A4. The label size comes from
+ * the label printer configuration, which is independent from the receipt one.
+ */
+export function printLabels(
+  title: string,
+  labelsHtml: string,
+  config: LabelPrinterConfig = DEFAULT_PRINTING.label
+): void {
+  const sizing =
+    `.label { width: ${config.width_mm}mm;` +
+    ` min-height: ${config.height_mm}mm;` +
+    ` font-size: ${config.font_size}px; }`;
+  printDocument(
+    title,
+    LABEL_STYLE + sizing,
+    `<div class="grid">${labelsHtml}</div>`
+  );
 }
 
-/** Applies the page geometry matching the receipt format, then prints. */
-export function printReceipt(format: ReceiptFormat): void {
+/**
+ * Applies the page geometry matching the receipt format, then prints. When
+ * several copies are configured, the ticket is repeated on as many pages so a
+ * single dialog produces the whole set.
+ */
+export function printReceipt(
+  format: ReceiptFormat,
+  config: ReceiptPrinterConfig = DEFAULT_PRINTING.receipt
+): void {
   let style = document.getElementById(PAGE_STYLE_ID);
   if (!style) {
     style = document.createElement("style");
     style.id = PAGE_STYLE_ID;
     document.head.appendChild(style);
   }
-  style.textContent = pageRule(format);
+  style.textContent = pageRule(format, config.margin_mm);
+  const root = document.getElementById(PRINT_ROOT_ID);
+  const copies = Math.min(Math.max(Math.round(config.copies) || 1, 1), 5);
+  const extras: HTMLElement[] = [];
+  if (root && copies > 1) {
+    for (let i = 1; i < copies; i += 1) {
+      const copy = root.cloneNode(true) as HTMLElement;
+      copy.removeAttribute("id");
+      copy.classList.add("receipt-copy");
+      root.appendChild(copy);
+      extras.push(copy);
+    }
+  }
   window.print();
+  extras.forEach((copy) => copy.remove());
 }

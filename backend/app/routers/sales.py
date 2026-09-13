@@ -113,6 +113,8 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
         payment_method=payload.payment_method,
         note=payload.note,
         price_mode="gros" if payload.price_mode == "gros" else "detail",
+        paid_amount=max(payload.paid_amount, 0.0),
+        discount=max(payload.discount, 0.0),
         created_by_id=current_user.id,
         cash_session_id=session.id,
         total=0,
@@ -190,7 +192,8 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
             if product.quantity <= product.min_stock:
                 low_stock.append(product)
 
-    sale.total = total
+    sale.total = max(total - sale.discount, 0.0)
+    total = sale.total
     db.add(sale)
     db.flush()
     _open_receivable(db, sale, current_user)

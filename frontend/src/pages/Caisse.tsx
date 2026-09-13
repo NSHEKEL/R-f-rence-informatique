@@ -21,7 +21,7 @@ import { useSyncVersion } from "../context/SyncContext";
 export default function Caisse() {
   const { user, isAdmin } = useAuth();
   const { refresh: refreshTill } = useTill();
-  const { company } = useCompany();
+  const { company, printing } = useCompany();
   const version = useSyncVersion();
 
   const [today, setToday] = useState<CashSessionDetail | null>(null);
@@ -39,7 +39,7 @@ export default function Caisse() {
     session: CashSessionDetail;
     kind: CashTicketKind;
   } | null>(null);
-  const format: ReceiptFormat = company?.receipt_format === "80mm" ? "80mm" : "A4";
+  const format: ReceiptFormat = printing.receipt.width;
 
   const load = useCallback(async () => {
     const [session, sessions] = await Promise.all([
@@ -59,10 +59,10 @@ export default function Caisse() {
       setTicket({ session, kind });
       if (auto && company?.auto_print_cash !== false) {
         // Let the print copy mount before asking the browser to print.
-        window.setTimeout(() => printReceipt(format), 400);
+        window.setTimeout(() => printReceipt(format, printing.receipt), 400);
       }
     },
-    [company?.auto_print_cash, format]
+    [company?.auto_print_cash, format, printing.receipt]
   );
 
   async function openTill() {
@@ -420,7 +420,7 @@ export default function Caisse() {
             <PrinterHint />
             <button
               className="btn-primary"
-              onClick={() => printReceipt(format)}
+              onClick={() => printReceipt(format, printing.receipt)}
             >
               <Printer size={16} /> Imprimer
             </button>

@@ -59,6 +59,9 @@ class CompanySettings(Base):
     drawer_port = Column(String, default="")  # COM1, LPT1, \\\\PC\\CAISSE...
     drawer_code = Column(String, default="27,112,0,25,250")  # ESC p 0 25 250
     drawer_open_after_sale = Column(Boolean, default=True, nullable=False)
+    # Receipt and label printer settings, kept as JSON: they are a long list of
+    # display switches that only the printing code reads.
+    printing_config = Column(Text, default="")
     # Outgoing mail used by the "forgot password" flow (optional).
     smtp_host = Column(String, default="")
     smtp_port = Column(Integer, default=587)
@@ -155,6 +158,10 @@ class Sale(Base):
         Integer, ForeignKey("cash_sessions.id"), nullable=True
     )
     print_count = Column(Integer, default=0, nullable=False)
+    # Cash handed over by the customer, used to print the change given back.
+    paid_amount = Column(Float, default=0, nullable=False)
+    # Discount granted at the counter, already deducted from the total.
+    discount = Column(Float, default=0, nullable=False)
     # Idempotency key of tickets recorded offline, replayed once back online.
     client_id = Column(String, unique=True, index=True, nullable=True)
 

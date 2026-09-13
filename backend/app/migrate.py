@@ -31,6 +31,8 @@ COLUMNS: dict[str, dict[str, str]] = {
         "print_count": "INTEGER DEFAULT 0",
         "client_id": "VARCHAR",
         "price_mode": "VARCHAR DEFAULT 'detail'",
+        "paid_amount": "FLOAT DEFAULT 0",
+        "discount": "FLOAT DEFAULT 0",
     },
     "products": {
         "qr_code": "VARCHAR DEFAULT ''",
@@ -60,6 +62,7 @@ COLUMNS: dict[str, dict[str, str]] = {
         "drawer_port": "VARCHAR DEFAULT ''",
         "drawer_code": "VARCHAR DEFAULT '27,112,0,25,250'",
         "drawer_open_after_sale": f"BOOLEAN DEFAULT {TRUE_LITERAL}",
+        "printing_config": "TEXT DEFAULT ''",
     },
     "cash_sessions": {
         "business_day": "VARCHAR DEFAULT ''",

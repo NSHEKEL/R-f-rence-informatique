@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ---------- Auth ----------
@@ -116,6 +116,70 @@ class CompanySettingsUpdate(BaseModel):
     backup_on_sale: Optional[bool] = None
 
 
+# ---------- Printing ----------
+class ReceiptPrinterConfig(BaseModel):
+    """Thermal receipt printer: hardware, layout and ticket contents."""
+
+    printer_name: str = ""
+    width: str = "80mm"  # 80mm, 58mm, A4
+    copies: int = 1
+    auto_print: bool = True
+    cut_paper: bool = True
+    open_drawer: bool = True
+    font_family: str = "Arial"
+    font_size: int = 11
+    line_height: float = 1.35
+    align: str = "left"
+    margin_mm: float = 3.0
+    logo_size_mm: float = 18.0
+    logo_align: str = "center"
+    show_logo: bool = True
+    show_company: bool = True
+    show_address: bool = True
+    show_phone: bool = True
+    show_email: bool = True
+    show_website: bool = True
+    show_tax_id: bool = True
+    show_header: bool = True
+    show_footer: bool = True
+    show_number: bool = True
+    show_datetime: bool = True
+    show_seller: bool = True
+    show_customer: bool = True
+    show_qty: bool = True
+    show_unit_price: bool = True
+    show_discount: bool = True
+    show_vat: bool = True
+    show_total_ht: bool = True
+    show_total_ttc: bool = True
+    show_paid: bool = True
+    show_change: bool = True
+    show_payment: bool = True
+    show_barcode: bool = True
+
+
+class LabelPrinterConfig(BaseModel):
+    """Price labels: a different printer, a different set of settings."""
+
+    printer_name: str = ""
+    width_mm: float = 60.0
+    height_mm: float = 40.0
+    columns: int = 3
+    font_size: int = 12
+    show_logo: bool = True
+    show_shop: bool = True
+    show_name: bool = True
+    show_price: bool = True
+    show_wholesale: bool = False
+    show_code: bool = True
+    show_barcode: bool = True
+
+
+class PrintingConfig(BaseModel):
+    receipt: ReceiptPrinterConfig = Field(default_factory=ReceiptPrinterConfig)
+    label: LabelPrinterConfig = Field(default_factory=LabelPrinterConfig)
+
+
 # ---------- Category ----------
 class CategoryBase(BaseModel):
     name: str
@@ -218,6 +282,10 @@ class SaleCreate(BaseModel):
     status: str = "Payée"
     note: str = ""
     price_mode: str = "detail"  # detail, gros
+    # Cash handed over at the counter, so the ticket can print the change.
+    paid_amount: float = 0
+    # Discount granted on the whole ticket, deducted from the total.
+    discount: float = 0
     items: List[SaleItemCreate]
     # Idempotency key set by tills recording offline; replaying the same key
     # returns the existing ticket instead of duplicating it.
@@ -259,6 +327,8 @@ class SaleOut(BaseModel):
     items: List[SaleItemOut] = []
     print_count: int = 0
     returned_total: float = 0
+    paid_amount: float = 0
+    discount: float = 0
 
 
 # ---------- Returns (avoirs) ----------

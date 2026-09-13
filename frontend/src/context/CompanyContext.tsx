@@ -9,9 +9,11 @@ import {
 import api from "../api/client";
 import defaultLogo from "../assets/logo-easygest.png";
 import { cacheRead, cacheWrite } from "../lib/offline";
-import type { CompanySettings } from "../types";
+import type { CompanySettings, PrintingConfig } from "../types";
+import { DEFAULT_PRINTING } from "../types";
 
 export const COMPANY_CACHE_KEY = "company";
+export const PRINTING_CACHE_KEY = "printing";
 export const DEFAULT_BRAND = "EasyGest";
 
 interface CompanyContextValue {
@@ -21,6 +23,9 @@ interface CompanyContextValue {
   logoSrc: string;
   hasCustomLogo: boolean;
   setCompany: (company: CompanySettings) => void;
+  /** Receipt and label printer settings, configured once and reused. */
+  printing: PrintingConfig;
+  setPrinting: (printing: PrintingConfig) => void;
   reload: () => Promise<void>;
 }
 
@@ -33,9 +38,18 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     cacheRead<CompanySettings>(COMPANY_CACHE_KEY)
   );
 
+  const [printing, setPrintingState] = useState<PrintingConfig>(
+    () => cacheRead<PrintingConfig>(PRINTING_CACHE_KEY) ?? DEFAULT_PRINTING
+  );
+
   const setCompany = useCallback((next: CompanySettings) => {
     setCompanyState(next);
     cacheWrite(COMPANY_CACHE_KEY, next);
+  }, []);
+
+  const setPrinting = useCallback((next: PrintingConfig) => {
+    setPrintingState(next);
+    cacheWrite(PRINTING_CACHE_KEY, next);
   }, []);
 
   const reload = useCallback(async () => {
@@ -45,7 +59,13 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     } catch {
       /* offline: keep the cached branding */
     }
-  }, [setCompany]);
+    try {
+      const res = await api.get<PrintingConfig>("/settings/printing");
+      setPrinting(res.data);
+    } catch {
+      /* offline, or a server older than the printing module */
+    }
+  }, [setCompany, setPrinting]);
 
   // The settings also change without the user touching them: another
   // workstation edits the company sheet, or the owner pushes a new "À propos"
@@ -72,6 +92,8 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
         logoSrc: company?.logo || defaultLogo,
         hasCustomLogo: Boolean(company?.logo),
         setCompany,
+        printing,
+        setPrinting,
         reload,
       }}
     >

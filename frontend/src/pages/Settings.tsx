@@ -31,8 +31,8 @@ import type {
 } from "../types";
 import { useAuth } from "../context/AuthContext";
 import PhotoPicker from "../components/PhotoPicker";
+import PrintingSettings from "../components/PrintingSettings";
 import { useCompany } from "../context/CompanyContext";
-import { useLicense } from "../context/LicenseContext";
 
 type CompanyForm = Omit<CompanySettings, "id"> & { smtp_password?: string };
 
@@ -41,6 +41,7 @@ const LOGO_MAX_BYTES = 400_000;
 /** The page is long: each domain gets its own tab instead of one scroll. */
 const TABS = [
   { key: "entreprise", label: "Entreprise", icon: Building2 },
+  { key: "impression", label: "Impression", icon: Printer },
   { key: "reseau", label: "Réseau & postes", icon: Server },
   { key: "sauvegarde", label: "Sauvegarde", icon: Database },
   { key: "maj", label: "Mise à jour", icon: DownloadCloud },
@@ -100,7 +101,6 @@ export default function Settings() {
   const { user, refreshUser } = useAuth();
   const [photoMessage, setPhotoMessage] = useState("");
   const { setCompany: setBranding } = useCompany();
-  const { hasFeature } = useLicense();
   const [company, setCompany] = useState<CompanyForm>(emptyCompany);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -111,8 +111,6 @@ export default function Settings() {
   const [serverUrl, setServerUrlValue] = useState(API_BASE);
   const [serverStatus, setServerStatus] = useState("");
   const [mailStatus, setMailStatus] = useState("");
-  const [drawerTesting, setDrawerTesting] = useState(false);
-  const [drawerMessage, setDrawerMessage] = useState("");
   const [update_, setUpdateStatus] = useState<UpdateStatus | null>(null);
   const [updateMessage, setUpdateMessage] = useState("");
   const [backups, setBackups] = useState<BackupFile[]>([]);
@@ -286,26 +284,6 @@ export default function Settings() {
       update({ logo: String(reader.result) });
     };
     reader.readAsDataURL(file);
-  }
-
-  async function testDrawer() {
-    setDrawerTesting(true);
-    setDrawerMessage("");
-    try {
-      await api.put("/settings/company", company);
-      const { data } = await api.post<{ port: string }>(
-        "/settings/company/open-drawer"
-      );
-      setDrawerMessage(`Ouverture envoyée sur ${data.port}.`);
-    } catch (err) {
-      setDrawerMessage(
-        axios.isAxiosError(err)
-          ? err.response?.data?.detail ?? "Ouverture impossible"
-          : "Ouverture impossible"
-      );
-    } finally {
-      setDrawerTesting(false);
-    }
   }
 
   async function testMail() {
@@ -615,138 +593,9 @@ export default function Settings() {
                 affiche le total HT, la TVA et le total TTC.
               </p>
             </div>
-            <div className="sm:col-span-2">
-              <label className="label">En-tête du reçu (optionnel)</label>
-              <input
-                className="input"
-                value={company.receipt_header}
-                onChange={(e) => update({ receipt_header: e.target.value })}
-                placeholder="REÇU DE CAISSE"
-              />
-            </div>
-            <div>
-              <label className="label">Format d'impression du reçu</label>
-              <select
-                className="input"
-                value={company.receipt_format}
-                onChange={(e) =>
-                  update({
-                    receipt_format:
-                      e.target.value === "80mm" ? "80mm" : "A4",
-                  })
-                }
-              >
-                <option value="A4">Feuille A4 (imprimante classique)</option>
-                {hasFeature("impression_thermique") && (
-                  <option value="80mm">
-                    Ticket 80 mm (imprimante thermique)
-                  </option>
-                )}
-              </select>
-            </div>
-            <div>
-              <label className="label">Imprimante à utiliser</label>
-              <input
-                className="input"
-                value={company.printer_name}
-                onChange={(e) => update({ printer_name: e.target.value })}
-                placeholder="Ex. EPSON TM-T20 (nom Windows)"
-              />
-              <p className="mt-1 text-xs text-slate-400">
-                Nom rappelé sur l'écran d'impression ; sélectionnez la même
-                imprimante dans la boîte de dialogue Windows.
-              </p>
-            </div>
-            <div className="sm:col-span-2">
-              <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={company.auto_print_cash}
-                  onChange={(e) =>
-                    update({ auto_print_cash: e.target.checked })
-                  }
-                />
-                Imprimer automatiquement les tickets d'ouverture et de fermeture
-                de caisse
-              </label>
-            </div>
-            <div className="sm:col-span-2 rounded-xl border border-slate-200 p-4">
-              <p className="mb-3 text-sm font-bold text-slate-700">
-                Caisse électronique (tiroir-caisse)
-              </p>
-              <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={company.drawer_enabled}
-                  onChange={(e) => update({ drawer_enabled: e.target.checked })}
-                />
-                Utiliser un tiroir-caisse électronique
-              </label>
-              {company.drawer_enabled && (
-                <div className="mt-3 grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="label">Port ou imprimante du tiroir</label>
-                    <input
-                      className="input"
-                      value={company.drawer_port}
-                      onChange={(e) => update({ drawer_port: e.target.value })}
-                      placeholder="Ex. COM1, LPT1 ou \\\\CAISSE\\TICKET"
-                    />
-                    <p className="mt-1 text-xs text-slate-400">
-                      Le tiroir est branché sur l'imprimante à tickets : indiquez
-                      le partage de cette imprimante ou le port série.
-                    </p>
-                  </div>
-                  <div>
-                    <label className="label">Code d'ouverture</label>
-                    <input
-                      className="input"
-                      value={company.drawer_code}
-                      onChange={(e) => update({ drawer_code: e.target.value })}
-                      placeholder="27,112,0,25,250"
-                    />
-                    <p className="mt-1 text-xs text-slate-400">
-                      Code standard ESC/POS ; ne le changez que si le
-                      constructeur en indique un autre.
-                    </p>
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
-                      <input
-                        type="checkbox"
-                        checked={company.drawer_open_after_sale}
-                        onChange={(e) =>
-                          update({ drawer_open_after_sale: e.target.checked })
-                        }
-                      />
-                      Ouvrir automatiquement la caisse après chaque vente validée
-                    </label>
-                  </div>
-                  <div className="sm:col-span-2 flex items-center gap-3">
-                    <button
-                      className="btn-ghost"
-                      onClick={testDrawer}
-                      disabled={drawerTesting}
-                    >
-                      {drawerTesting ? "Ouverture..." : "Tester l'ouverture"}
-                    </button>
-                    {drawerMessage && (
-                      <span className="text-sm text-slate-600">
-                        {drawerMessage}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-            <div className="sm:col-span-2">
-              <label className="label">Message de pied de reçu</label>
-              <textarea
-                className="input min-h-[70px]"
-                value={company.receipt_footer}
-                onChange={(e) => update({ receipt_footer: e.target.value })}
-                placeholder="Merci de votre confiance !"
-              />
+            <div className="sm:col-span-2 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              Reçus, tiroir-caisse et étiquettes se règlent désormais dans
+              l'onglet <span className="font-semibold">Impression</span>.
             </div>
             <div className="flex items-center gap-3 sm:col-span-2">
               <button className="btn-primary" onClick={save} disabled={saving}>
@@ -761,6 +610,15 @@ export default function Settings() {
           </div>
         )}
       </div>
+      )}
+
+      {/* Receipt and label printers */}
+      {tab === "impression" && (
+        <PrintingSettings
+          company={company}
+          update={update}
+          saveCompany={save}
+        />
       )}
 
       {/* Outgoing mail */}

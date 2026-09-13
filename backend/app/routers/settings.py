@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from .. import drawer
+from .. import drawer, printing
 from ..auth import get_current_user, require_admin
 from ..database import get_db
 from ..licensing import has_feature
 from ..mailer import is_configured, send_mail
 from ..models import CompanySettings, User
-from ..schemas import CompanySettingsOut, CompanySettingsUpdate
+from ..schemas import CompanySettingsOut, CompanySettingsUpdate, PrintingConfig
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -60,6 +60,38 @@ def update_company(
     db.commit()
     db.refresh(settings)
     return _to_out(settings)
+
+
+@router.get("/printing", response_model=PrintingConfig)
+def get_printing(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    """Receipt and label printer settings, with the defaults filled in."""
+    return printing.read_config(_get_or_create(db))
+
+
+@router.put("/printing", response_model=PrintingConfig)
+def update_printing(
+    payload: PrintingConfig,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    settings = _get_or_create(db)
+    if payload.receipt.width in ("80mm", "58mm") and not has_feature(
+        db, "impression_thermique"
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="🔒 L'impression thermique n'est pas incluse dans votre formule.",
+        )
+    printing.write_config(settings, payload)
+    db.commit()
+    db.refresh(settings)
+    return printing.read_config(settings)
+
+
+@router.get("/printers")
+def list_printers(_: User = Depends(get_current_user)):
+    """Printers installed on this computer, for the selection lists."""
+    return {"printers": printing.installed_printers()}
 
 
 @router.post("/company/open-drawer")

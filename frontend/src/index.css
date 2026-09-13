@@ -136,6 +136,16 @@ body {
   max-width: 74mm;
   font-size: 11px;
 }
+.receipt-58mm {
+  width: 54mm;
+  max-width: 54mm;
+  font-size: 10px;
+}
+/* Extra copies appended when the printer is configured for several tickets. */
+.receipt-copy {
+  break-before: page;
+  page-break-before: always;
+}
 #receipt-print-root {
   display: none;
 }

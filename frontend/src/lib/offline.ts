@@ -11,6 +11,10 @@ export interface SalePayload {
   status: string;
   price_mode: string;
   note: string;
+  /** Discount granted on the whole ticket. */
+  discount: number;
+  /** Cash handed over, used to print the change given back. */
+  paid_amount: number;
   items: { product_id: number; quantity: number; unit_price?: number }[];
 }
 

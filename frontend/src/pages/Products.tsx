@@ -19,7 +19,7 @@ import BulkDelete, { SelectBox } from "../components/BulkDelete";
 import { useSelection } from "../lib/selection";
 import { scanCode } from "../lib/scan";
 import { printLabels } from "../lib/print";
-import { barcodeDataUrl } from "../lib/barcode";
+import { priceLabelHtml } from "../lib/labels";
 import { exportCsv, stampedName } from "../lib/exportCsv";
 import { useLicense } from "../context/LicenseContext";
 import { stockBadge } from "../components/badges";
@@ -50,7 +50,7 @@ type SoldFilter = "" | "jamais" | "top";
 
 export default function Products() {
   const { can } = useAuth();
-  const { company } = useCompany();
+  const { company, printing } = useCompany();
   const { hasFeature } = useLicense();
   const version = useSyncVersion();
   const [sold, setSold] = useState<SoldFilter>("");
@@ -218,29 +218,23 @@ export default function Products() {
   /** Price labels to stick on the shelves, one per article. */
   function printPrices(items: Product[]) {
     if (items.length === 0) return;
-    const shop = company?.name ?? "";
-    const labels = items.map((p) => {
-      const code = scanCode(p);
-      const bars = barcodeDataUrl(code, 60);
-      return (
-        `<div class="label">` +
-        (company?.logo
-          ? `<img class="shop-logo" src="${company.logo}" alt="" />`
-          : "") +
-        `<p class="shop">${shop}</p>` +
-        `<p class="name">${p.name}</p>` +
-        `<p class="price">${formatXOF(p.sale_price)}</p>` +
-        (p.wholesale_price > 0
-          ? `<p class="wholesale">Gros : ${formatXOF(p.wholesale_price)}</p>`
-          : "") +
-        (code === p.sku ? "" : `<p class="code">${p.sku}</p>`) +
-        (bars ? `<img class="qr" src="${bars}" alt="" />` : "") +
-        `</div>`
-      );
-    });
+    const labels = items.map((p) =>
+      priceLabelHtml(
+        {
+          name: p.name,
+          sale_price: p.sale_price,
+          wholesale_price: p.wholesale_price,
+          code: scanCode(p) === p.sku ? "" : p.sku,
+          barcode: scanCode(p),
+        },
+        company,
+        printing.label
+      )
+    );
     printLabels(
       items.length === 1 ? `Étiquette ${items[0].sku}` : "Étiquettes de prix",
-      labels.join("")
+      labels.join(""),
+      printing.label
     );
   }
 

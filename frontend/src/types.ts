@@ -7,7 +7,123 @@ export interface User {
   is_active: boolean;
 }
 
-export type ReceiptFormat = "A4" | "80mm";
+export type ReceiptFormat = "A4" | "80mm" | "58mm";
+
+/** Receipt printer: hardware, layout and contents of the ticket. */
+export interface ReceiptPrinterConfig {
+  printer_name: string;
+  width: ReceiptFormat;
+  copies: number;
+  auto_print: boolean;
+  cut_paper: boolean;
+  open_drawer: boolean;
+  font_family: string;
+  font_size: number;
+  line_height: number;
+  align: "left" | "center";
+  margin_mm: number;
+  logo_size_mm: number;
+  logo_align: "left" | "center";
+  show_logo: boolean;
+  show_company: boolean;
+  show_address: boolean;
+  show_phone: boolean;
+  show_email: boolean;
+  show_website: boolean;
+  show_tax_id: boolean;
+  show_header: boolean;
+  show_footer: boolean;
+  show_number: boolean;
+  show_datetime: boolean;
+  show_seller: boolean;
+  show_customer: boolean;
+  show_qty: boolean;
+  show_unit_price: boolean;
+  show_discount: boolean;
+  show_vat: boolean;
+  show_total_ht: boolean;
+  show_total_ttc: boolean;
+  show_paid: boolean;
+  show_change: boolean;
+  show_payment: boolean;
+  show_barcode: boolean;
+}
+
+/** Price labels: a separate printer with its own settings. */
+export interface LabelPrinterConfig {
+  printer_name: string;
+  width_mm: number;
+  height_mm: number;
+  columns: number;
+  font_size: number;
+  show_logo: boolean;
+  show_shop: boolean;
+  show_name: boolean;
+  show_price: boolean;
+  show_wholesale: boolean;
+  show_code: boolean;
+  show_barcode: boolean;
+}
+
+export interface PrintingConfig {
+  receipt: ReceiptPrinterConfig;
+  label: LabelPrinterConfig;
+}
+
+export const DEFAULT_PRINTING: PrintingConfig = {
+  receipt: {
+    printer_name: "",
+    width: "80mm",
+    copies: 1,
+    auto_print: true,
+    cut_paper: true,
+    open_drawer: true,
+    font_family: "Arial",
+    font_size: 11,
+    line_height: 1.35,
+    align: "left",
+    margin_mm: 3,
+    logo_size_mm: 18,
+    logo_align: "center",
+    show_logo: true,
+    show_company: true,
+    show_address: true,
+    show_phone: true,
+    show_email: true,
+    show_website: true,
+    show_tax_id: true,
+    show_header: true,
+    show_footer: true,
+    show_number: true,
+    show_datetime: true,
+    show_seller: true,
+    show_customer: true,
+    show_qty: true,
+    show_unit_price: true,
+    show_discount: true,
+    show_vat: true,
+    show_total_ht: true,
+    show_total_ttc: true,
+    show_paid: true,
+    show_change: true,
+    show_payment: true,
+    show_barcode: true,
+  },
+  label: {
+    printer_name: "",
+    width_mm: 60,
+    height_mm: 40,
+    columns: 3,
+    font_size: 12,
+    show_logo: true,
+    show_shop: true,
+    show_name: true,
+    show_price: true,
+    show_wholesale: false,
+    show_code: true,
+    show_barcode: true,
+  },
+};
 
 export interface CompanySettings {
   id: number;
@@ -197,6 +313,10 @@ export interface Sale {
   items: SaleItem[];
   print_count: number;
   returned_total: number;
+  /** Cash handed over, used to print the change given back. */
+  paid_amount: number;
+  /** Discount granted on the whole ticket, already deducted. */
+  discount: number;
   /** Set on tickets queued offline and not yet pushed to the server. */
   pending_sync?: boolean;
 }

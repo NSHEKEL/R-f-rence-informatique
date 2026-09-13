@@ -43,7 +43,7 @@ const PAYMENTS = [
 
 export default function Sales() {
   const { can } = useAuth();
-  const { company } = useCompany();
+  const { company, printing } = useCompany();
   const { hasFeature } = useLicense();
   const version = useSyncVersion();
   const navigate = useNavigate();
@@ -75,8 +75,7 @@ export default function Sales() {
     null
   );
 
-  const format: ReceiptFormat =
-    company?.receipt_format === "80mm" ? "80mm" : "A4";
+  const format: ReceiptFormat = printing.receipt.width;
 
   const load = useCallback(async () => {
     const [s, c, current, today] = await Promise.all([
@@ -144,7 +143,7 @@ export default function Sales() {
   /** Prints and records the copy so the history shows how many were issued. */
   async function printAndCount() {
     if (!receiptSale) return;
-    printReceipt(rFormat);
+    printReceipt(rFormat, printing.receipt);
     try {
       const res = await api.post<Sale>(`/sales/${receiptSale.id}/print`);
       setReceiptSale(res.data);
@@ -191,7 +190,7 @@ export default function Sales() {
       await load();
       setClosedTicket(res.data);
       if (company?.auto_print_cash !== false) {
-        window.setTimeout(() => printReceipt(format), 400);
+        window.setTimeout(() => printReceipt(format, printing.receipt), 400);
       }
     } catch (err) {
       if (axios.isAxiosError(err)) {
@@ -510,14 +509,15 @@ export default function Sales() {
                 <select
                   className="input w-auto"
                   value={rFormat}
-                  onChange={(e) =>
-                    setRFormat(e.target.value === "80mm" ? "80mm" : "A4")
-                  }
+                  onChange={(e) => setRFormat(e.target.value as ReceiptFormat)}
                   title="Format d'impression"
                 >
                   <option value="A4">Feuille A4</option>
                   {hasFeature("impression_thermique") && (
-                    <option value="80mm">Ticket 80 mm</option>
+                    <>
+                      <option value="80mm">Ticket 80 mm</option>
+                      <option value="58mm">Ticket 58 mm</option>
+                    </>
                   )}
                 </select>
                 {editingReceipt && (
@@ -700,7 +700,10 @@ export default function Sales() {
               Fermer
             </button>
             <PrinterHint />
-            <button className="btn-primary" onClick={() => printReceipt(format)}>
+            <button
+              className="btn-primary"
+              onClick={() => printReceipt(format, printing.receipt)}
+            >
               <Printer size={16} /> Imprimer
             </button>
           </div>

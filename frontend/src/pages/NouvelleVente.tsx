@@ -77,15 +77,21 @@ function offlineSale(
   payment: string,
   note: string,
   sellerName: string,
-  priceMode: PriceMode
+  priceMode: PriceMode,
+  discount: number,
+  paidAmount: number
 ): Sale {
+  const gross = cart.reduce(
+    (s, l) => s + linePrice(l, priceMode) * l.quantity,
+    0
+  );
   return {
     id: -Date.now(),
     reference,
     customer_id: customer?.id ?? null,
     customer,
     date: new Date().toISOString(),
-    total: cart.reduce((s, l) => s + linePrice(l, priceMode) * l.quantity, 0),
+    total: Math.max(gross - discount, 0),
     status: "Payée",
     payment_method: payment,
     note,
@@ -103,6 +109,8 @@ function offlineSale(
     })),
     print_count: 0,
     returned_total: 0,
+    paid_amount: paidAmount,
+    discount,
     pending_sync: true,
   };
 }
@@ -110,7 +118,7 @@ function offlineSale(
 export default function NouvelleVente() {
   const { user, isAdmin, can } = useAuth();
   const canChangePrice = can("prix_modifier");
-  const { company } = useCompany();
+  const { company, printing } = useCompany();
   const { online } = useNetwork();
   const version = useSyncVersion();
 
@@ -130,6 +138,8 @@ export default function NouvelleVente() {
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [payment, setPayment] = useState(PAYMENTS[0]);
   const [note, setNote] = useState("");
+  const [discount, setDiscount] = useState(0);
+  const [paidAmount, setPaidAmount] = useState(0);
   const [error, setError] = useState("");
   const [flash, setFlash] = useState("");
   const [saving, setSaving] = useState(false);
@@ -197,10 +207,8 @@ export default function NouvelleVente() {
   }, [customerQuery]);
 
   useEffect(() => {
-    if (company) {
-      setFormat(company.receipt_format === "80mm" ? "80mm" : "A4");
-    }
-  }, [company]);
+    setFormat(printing.receipt.width);
+  }, [printing.receipt.width]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -223,11 +231,13 @@ export default function NouvelleVente() {
     return available.filter((p) => p.category_id === activeCategory);
   }, [products, query, activeCategory, bestSellerIds]);
 
-  const total = useMemo(
+  const subtotal = useMemo(
     () =>
       cart.reduce((sum, l) => sum + linePrice(l, priceMode) * l.quantity, 0),
     [cart, priceMode]
   );
+  const total = Math.max(subtotal - discount, 0);
+  const change = paidAmount > 0 ? Math.max(paidAmount - total, 0) : 0;
 
   const vat = vatBreakdown(total, company);
 
@@ -318,10 +328,34 @@ export default function NouvelleVente() {
 
   /** Electronic drawer: opening it must never hold back the next customer. */
   function openDrawer() {
-    if (!company?.drawer_enabled || !company.drawer_open_after_sale) return;
+    if (
+      !company?.drawer_enabled ||
+      !company.drawer_open_after_sale ||
+      !printing.receipt.open_drawer
+    ) {
+      return;
+    }
     api.post("/settings/company/open-drawer").catch(() => {
       setFlash("Caisse électronique : ouverture impossible.");
     });
+  }
+
+  /**
+   * Checkout epilogue, in the order the counter expects: the ticket is shown,
+   * printed when the printer is set to automatic, and only then the drawer is
+   * asked to open.
+   */
+  function finishSale(sale: Sale) {
+    setLastSale(sale);
+    if (printing.receipt.auto_print) {
+      // Let the hidden print copy mount before calling the printer.
+      window.setTimeout(() => {
+        printReceipt(printing.receipt.width, printing.receipt);
+        openDrawer();
+      }, 400);
+      return;
+    }
+    openDrawer();
   }
 
   async function checkout() {
@@ -338,6 +372,8 @@ export default function NouvelleVente() {
       status: "Payée",
       price_mode: priceMode,
       note,
+      discount,
+      paid_amount: paidAmount,
       items: cart.map((l) => ({
         product_id: l.product.id,
         quantity: l.quantity,
@@ -346,8 +382,7 @@ export default function NouvelleVente() {
     };
     try {
       const res = await api.post<Sale>("/sales", payload);
-      setLastSale(res.data);
-      openDrawer();
+      finishSale(res.data);
       resetCart();
       await Promise.all([loadProducts(), loadSession()]);
     } catch (err) {
@@ -369,11 +404,12 @@ export default function NouvelleVente() {
         payment,
         note,
         user?.name ?? "",
-        priceMode
+        priceMode,
+        discount,
+        paidAmount
       );
       queueSale({ payload, snapshot });
-      setLastSale(snapshot);
-      openDrawer();
+      finishSale(snapshot);
       resetCart();
     } finally {
       setSaving(false);
@@ -383,6 +419,8 @@ export default function NouvelleVente() {
   function resetCart() {
     setCart([]);
     setNote("");
+    setDiscount(0);
+    setPaidAmount(0);
     setCustomer(null);
     setCustomerQuery("");
     setCustomers([]);
@@ -648,6 +686,34 @@ export default function NouvelleVente() {
               value={note}
               onChange={(e) => setNote(e.target.value)}
             />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">Remise</label>
+                <input
+                  className="input"
+                  type="number"
+                  min={0}
+                  value={discount || ""}
+                  onChange={(e) =>
+                    setDiscount(Math.max(Number(e.target.value) || 0, 0))
+                  }
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <label className="label">Montant reçu</label>
+                <input
+                  className="input"
+                  type="number"
+                  min={0}
+                  value={paidAmount || ""}
+                  onChange={(e) =>
+                    setPaidAmount(Math.max(Number(e.target.value) || 0, 0))
+                  }
+                  placeholder="0"
+                />
+              </div>
+            </div>
           </div>
 
           <div className="bg-slate-800 px-4 py-3 text-white">
@@ -663,6 +729,18 @@ export default function NouvelleVente() {
               <div className="mt-1 flex items-center justify-between text-sm text-slate-300">
                 <span>TVA ({vat.rate} %)</span>
                 <span>{formatXOF(vat.vat)}</span>
+              </div>
+            )}
+            {discount > 0 && (
+              <div className="mt-1 flex items-center justify-between text-sm text-slate-300">
+                <span>Remise</span>
+                <span>- {formatXOF(discount)}</span>
+              </div>
+            )}
+            {change > 0 && (
+              <div className="mt-1 flex items-center justify-between text-sm text-emerald-300">
+                <span>Monnaie à rendre</span>
+                <span>{formatXOF(change)}</span>
               </div>
             )}
             <div className="mt-2 flex items-center justify-between border-t border-slate-600 pt-2">
@@ -829,12 +907,11 @@ export default function NouvelleVente() {
               <select
                 className="input w-auto"
                 value={format}
-                onChange={(e) =>
-                  setFormat(e.target.value === "80mm" ? "80mm" : "A4")
-                }
+                onChange={(e) => setFormat(e.target.value as ReceiptFormat)}
               >
                 <option value="A4">Feuille A4</option>
                 <option value="80mm">Ticket 80 mm</option>
+                <option value="58mm">Ticket 58 mm</option>
               </select>
               <button className="btn-ghost" onClick={() => setLastSale(null)}>
                 Nouvelle vente
@@ -842,7 +919,7 @@ export default function NouvelleVente() {
               <PrinterHint />
               <button
                 className="btn-primary"
-                onClick={() => printReceipt(format)}
+                onClick={() => printReceipt(format, printing.receipt)}
               >
                 <Printer size={16} /> Imprimer le reçu
               </button>
