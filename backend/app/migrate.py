@@ -9,6 +9,7 @@ shared PostgreSQL server.
 from sqlalchemy import inspect, text
 
 from .database import engine
+from .models import Delivery
 
 TRUE_LITERAL = "1" if engine.dialect.name == "sqlite" else "TRUE"
 FALSE_LITERAL = "0" if engine.dialect.name == "sqlite" else "FALSE"
@@ -64,6 +65,23 @@ COLUMNS: dict[str, dict[str, str]] = {
         "drawer_open_after_sale": f"BOOLEAN DEFAULT {TRUE_LITERAL}",
         "printing_config": "TEXT DEFAULT ''",
     },
+    "orders": {
+        "discount": "FLOAT DEFAULT 0",
+        "payment_terms": "VARCHAR DEFAULT ''",
+        "delivery_terms": "VARCHAR DEFAULT ''",
+    },
+    "order_items": {
+        "reference": "VARCHAR DEFAULT ''",
+        "unit": "VARCHAR DEFAULT 'u'",
+        "delivered_quantity": "INTEGER DEFAULT 0",
+        "discount": "FLOAT DEFAULT 0",
+    },
+    "deliveries": {
+        "customer_id": "INTEGER",
+        "customer_name": "VARCHAR DEFAULT ''",
+        "status": "VARCHAR DEFAULT 'Validé'",
+        "validated_at": "TIMESTAMP",
+    },
     "cash_sessions": {
         "business_day": "VARCHAR DEFAULT ''",
     },
@@ -86,6 +104,32 @@ def _columns(insp, table: str) -> set[str]:
     return {c["name"] for c in insp.get_columns(table)}
 
 
+def _relax_delivery_order(conn, insp) -> None:
+    """Delivery notes may now stand alone, so ``order_id`` accepts NULL."""
+    column = next(
+        (c for c in insp.get_columns("deliveries") if c["name"] == "order_id"),
+        None,
+    )
+    if column is None or column["nullable"]:
+        return
+    if engine.dialect.name != "sqlite":
+        conn.execute(
+            text("ALTER TABLE deliveries ALTER COLUMN order_id DROP NOT NULL")
+        )
+        return
+    names = [c["name"] for c in insp.get_columns("deliveries")]
+    columns = ", ".join(names)
+    conn.execute(text("ALTER TABLE deliveries RENAME TO deliveries_old"))
+    Delivery.__table__.create(bind=conn)
+    conn.execute(
+        text(
+            f"INSERT INTO deliveries ({columns}) "
+            f"SELECT {columns} FROM deliveries_old"
+        )
+    )
+    conn.execute(text("DROP TABLE deliveries_old"))
+
+
 def migrate() -> None:
     insp = inspect(engine)
     tables = set(insp.get_table_names())
@@ -104,6 +148,8 @@ def migrate() -> None:
         if "sales" in tables:
             for statement in INDEXES:
                 conn.execute(text(statement))
+        if "deliveries" in tables:
+            _relax_delivery_order(conn, inspect(conn))
         if "company_settings" in tables:
             conn.execute(
                 text(

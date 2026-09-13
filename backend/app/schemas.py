@@ -175,9 +175,29 @@ class LabelPrinterConfig(BaseModel):
     show_barcode: bool = True
 
 
+class DocumentConfig(BaseModel):
+    """A4/A5 commercial documents: purchase orders and delivery notes."""
+
+    format: str = "A4"  # A4, A5
+    order_prefix: str = "BC"
+    delivery_prefix: str = "BL"
+    show_logo: bool = True
+    show_address: bool = True
+    show_phone: bool = True
+    show_whatsapp: bool = True
+    show_email: bool = True
+    show_website: bool = True
+    show_vat: bool = True
+    show_discount: bool = True
+    show_prices_on_delivery: bool = False
+    show_customer_signature: bool = True
+    show_company_signature: bool = True
+
+
 class PrintingConfig(BaseModel):
     receipt: ReceiptPrinterConfig = Field(default_factory=ReceiptPrinterConfig)
     label: LabelPrinterConfig = Field(default_factory=LabelPrinterConfig)
+    documents: DocumentConfig = Field(default_factory=DocumentConfig)
 
 
 # ---------- Category ----------
@@ -621,6 +641,8 @@ class OrderItemCreate(BaseModel):
     product_id: int
     quantity: int
     unit_price: Optional[float] = None
+    unit: str = "u"
+    discount: float = 0
 
 
 class OrderCreate(BaseModel):
@@ -628,8 +650,12 @@ class OrderCreate(BaseModel):
     customer_name: str = ""
     expected_date: Optional[datetime] = None
     deposit: float = 0
+    discount: float = 0
     price_mode: str = "detail"
     delivery_address: str = ""
+    payment_terms: str = ""
+    delivery_terms: str = ""
+    status: str = "Brouillon"
     note: str = ""
     items: List[OrderItemCreate] = []
 
@@ -639,8 +665,11 @@ class OrderUpdate(BaseModel):
     customer_name: Optional[str] = None
     expected_date: Optional[datetime] = None
     deposit: Optional[float] = None
+    discount: Optional[float] = None
     price_mode: Optional[str] = None
     delivery_address: Optional[str] = None
+    payment_terms: Optional[str] = None
+    delivery_terms: Optional[str] = None
     note: Optional[str] = None
     status: Optional[str] = None
     items: Optional[List[OrderItemCreate]] = None
@@ -651,8 +680,13 @@ class OrderItemOut(BaseModel):
     id: int
     product_id: Optional[int] = None
     product_name: str
+    reference: str = ""
+    unit: str = "u"
     quantity: int
+    delivered_quantity: int = 0
+    remaining_quantity: int = 0
     unit_price: float
+    discount: float = 0
     subtotal: float
 
 
@@ -672,18 +706,74 @@ class DeliveryUpdate(BaseModel):
     note: Optional[str] = None
 
 
+class DeliveryItemCreate(BaseModel):
+    product_id: int
+    quantity: int
+    unit: str = "u"
+    observation: str = ""
+    unit_price: Optional[float] = None
+
+
+class DeliveryNoteCreate(BaseModel):
+    """Delivery note, either standalone or drawn from a purchase order."""
+
+    order_id: Optional[int] = None
+    customer_id: Optional[int] = None
+    customer_name: str = ""
+    address: str = ""
+    carrier: str = ""
+    recipient: str = ""
+    note: str = ""
+    items: List[DeliveryItemCreate] = []
+
+
+class DeliveryNoteUpdate(BaseModel):
+    customer_id: Optional[int] = None
+    customer_name: Optional[str] = None
+    address: Optional[str] = None
+    carrier: Optional[str] = None
+    recipient: Optional[str] = None
+    note: Optional[str] = None
+    items: Optional[List[DeliveryItemCreate]] = None
+
+
+class DeliveryValidate(BaseModel):
+    paid: bool = True
+    payment_method: str = "Espèces"
+
+
+class DeliveryItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    product_id: Optional[int] = None
+    product_name: str = ""
+    reference: str = ""
+    unit: str = "u"
+    ordered_quantity: int = 0
+    previously_delivered: int = 0
+    quantity: int = 0
+    unit_price: float = 0
+    subtotal: float = 0
+    observation: str = ""
+
+
 class DeliveryOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     reference: str
-    order_id: int
+    order_id: Optional[int] = None
     order_reference: str = ""
+    customer_id: Optional[int] = None
+    customer_name: str = ""
+    status: str = "Validé"
+    validated_at: Optional[datetime] = None
     sale_id: Optional[int] = None
     date: datetime
     address: str = ""
     carrier: str = ""
     recipient: str = ""
     note: str = ""
+    items: List[DeliveryItemOut] = []
     created_by: Optional[UserOut] = None
 
 
@@ -697,10 +787,13 @@ class OrderOut(BaseModel):
     expected_date: Optional[datetime] = None
     status: str
     total: float
+    discount: float = 0
     deposit: float = 0
     balance: float = 0
     price_mode: str = "detail"
     delivery_address: str = ""
+    payment_terms: str = ""
+    delivery_terms: str = ""
     note: str = ""
     items: List[OrderItemOut] = []
     deliveries: List[DeliveryOut] = []

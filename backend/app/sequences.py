@@ -22,7 +22,7 @@ def _seed_from(db: Session, column, prefix: str) -> int:
         return 0
 
 
-def next_reference(db: Session, column, prefix: str) -> str:
+def next_reference(db: Session, column, prefix: str, digits: int = 4) -> str:
     name = prefix.rstrip("-")
     locked = db.execute(
         update(Counter)
@@ -37,4 +37,4 @@ def next_reference(db: Session, column, prefix: str) -> str:
         number = _seed_from(db, column, prefix) + 1
         db.add(Counter(name=name, value=number))
         db.flush()
-    return f"{prefix}{number:04d}"
+    return f"{prefix}{number:0{digits}d}"

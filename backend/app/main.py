@@ -27,6 +27,7 @@ from .routers import (
     customers,
     dashboard,
     debts,
+    deliveries,
     history as history_router,
     inventory,
     license as license_router,
@@ -102,6 +103,7 @@ app.include_router(reports.router, dependencies=feature("rapports"))
 app.include_router(sync.router)
 app.include_router(updates.router)
 app.include_router(orders.router, dependencies=feature("dettes"))
+app.include_router(deliveries.router, dependencies=feature("dettes"))
 app.include_router(history_router.router)
 app.include_router(
     backups.router,

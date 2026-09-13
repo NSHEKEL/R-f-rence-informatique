@@ -65,9 +65,28 @@ export interface LabelPrinterConfig {
   show_barcode: boolean;
 }
 
+/** A4/A5 commercial documents: purchase orders and delivery notes. */
+export interface DocumentConfig {
+  format: "A4" | "A5";
+  order_prefix: string;
+  delivery_prefix: string;
+  show_logo: boolean;
+  show_address: boolean;
+  show_phone: boolean;
+  show_whatsapp: boolean;
+  show_email: boolean;
+  show_website: boolean;
+  show_vat: boolean;
+  show_discount: boolean;
+  show_prices_on_delivery: boolean;
+  show_customer_signature: boolean;
+  show_company_signature: boolean;
+}
+
 export interface PrintingConfig {
   receipt: ReceiptPrinterConfig;
   label: LabelPrinterConfig;
+  documents: DocumentConfig;
 }
 
 export const DEFAULT_PRINTING: PrintingConfig = {
@@ -122,6 +141,22 @@ export const DEFAULT_PRINTING: PrintingConfig = {
     show_wholesale: false,
     show_code: true,
     show_barcode: true,
+  },
+  documents: {
+    format: "A4",
+    order_prefix: "BC",
+    delivery_prefix: "BL",
+    show_logo: true,
+    show_address: true,
+    show_phone: true,
+    show_whatsapp: true,
+    show_email: true,
+    show_website: true,
+    show_vat: true,
+    show_discount: true,
+    show_prices_on_delivery: false,
+    show_customer_signature: true,
+    show_company_signature: true,
   },
 };
 
@@ -192,22 +227,46 @@ export interface OrderItem {
   id: number;
   product_id: number | null;
   product_name: string;
+  reference: string;
+  unit: string;
+  quantity: number;
+  delivered_quantity: number;
+  remaining_quantity: number;
+  unit_price: number;
+  discount: number;
+  subtotal: number;
+}
+
+export interface DeliveryItem {
+  id: number;
+  product_id: number | null;
+  product_name: string;
+  reference: string;
+  unit: string;
+  ordered_quantity: number;
+  previously_delivered: number;
   quantity: number;
   unit_price: number;
   subtotal: number;
+  observation: string;
 }
 
 export interface Delivery {
   id: number;
   reference: string;
-  order_id: number;
+  order_id: number | null;
   order_reference: string;
+  customer_id: number | null;
+  customer_name: string;
+  status: string;
+  validated_at: string | null;
   sale_id: number | null;
   date: string;
   address: string;
   carrier: string;
   recipient: string;
   note: string;
+  items: DeliveryItem[];
   created_by?: User | null;
 }
 
@@ -220,10 +279,13 @@ export interface Order {
   expected_date: string | null;
   status: string;
   total: number;
+  discount: number;
   deposit: number;
   balance: number;
   price_mode: string;
   delivery_address: string;
+  payment_terms: string;
+  delivery_terms: string;
   note: string;
   items: OrderItem[];
   deliveries: Delivery[];

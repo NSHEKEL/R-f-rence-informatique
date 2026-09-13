@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
-import { Check, Printer, Receipt as ReceiptIcon, Tags } from "lucide-react";
+import {
+  Check,
+  FileText,
+  Printer,
+  Receipt as ReceiptIcon,
+  Tags,
+} from "lucide-react";
 import api from "../api/client";
 import Modal from "../components/Modal";
 import Receipt from "../components/Receipt";
@@ -10,6 +16,7 @@ import { useCompany } from "../context/CompanyContext";
 import { useLicense } from "../context/LicenseContext";
 import type {
   CompanySettings,
+  DocumentConfig,
   LabelPrinterConfig,
   PrintingConfig,
   ReceiptPrinterConfig,
@@ -107,6 +114,24 @@ const LABEL_SWITCHES: { key: keyof LabelPrinterConfig; label: string }[] = [
   { key: "show_barcode", label: "Code-barres" },
 ];
 
+/** Blocks of the commercial documents (order and delivery notes). */
+const DOCUMENT_SWITCHES: { key: keyof DocumentConfig; label: string }[] = [
+  { key: "show_logo", label: "Afficher le logo" },
+  { key: "show_address", label: "Afficher l'adresse" },
+  { key: "show_phone", label: "Afficher le téléphone" },
+  { key: "show_whatsapp", label: "Afficher le WhatsApp" },
+  { key: "show_email", label: "Afficher l'e-mail" },
+  { key: "show_website", label: "Afficher le site web" },
+  { key: "show_vat", label: "Afficher la TVA" },
+  { key: "show_discount", label: "Afficher la remise" },
+  { key: "show_prices_on_delivery", label: "Afficher les prix sur le BL" },
+  { key: "show_customer_signature", label: "Afficher la signature client" },
+  {
+    key: "show_company_signature",
+    label: "Afficher la signature entreprise",
+  },
+];
+
 /**
  * Printing tab: the receipt printer and the label printer are configured
  * separately, saved once and reused automatically by every printout.
@@ -146,6 +171,11 @@ export default function PrintingSettings({
 
   function patchLabel(patch: Partial<LabelPrinterConfig>) {
     setForm((f) => ({ ...f, label: { ...f.label, ...patch } }));
+    setSaved(false);
+  }
+
+  function patchDocuments(patch: Partial<DocumentConfig>) {
+    setForm((f) => ({ ...f, documents: { ...f.documents, ...patch } }));
     setSaved(false);
   }
 
@@ -631,6 +661,91 @@ export default function PrintingSettings({
           </button>
           <button className="btn-ghost" onClick={() => testLabels(6)}>
             <Printer size={16} /> Six étiquettes test
+          </button>
+        </div>
+      </div>
+
+      {/* Commercial documents (order and delivery notes) */}
+      <div className="card p-6">
+        <div className="mb-4 flex items-center gap-2">
+          <FileText size={18} className="text-brand-600" />
+          <h3 className="text-base font-bold text-slate-900">
+            Documents commerciaux
+          </h3>
+        </div>
+        <p className="mb-4 text-sm text-slate-500">
+          Bons de commande et bons de livraison : format du papier,
+          numérotation et informations imprimées.
+        </p>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div>
+            <label className="label">Format du papier</label>
+            <select
+              className="input"
+              value={form.documents.format}
+              onChange={(e) =>
+                patchDocuments({
+                  format: e.target.value === "A5" ? "A5" : "A4",
+                })
+              }
+            >
+              <option value="A4">A4 portrait</option>
+              <option value="A5">A5 portrait</option>
+            </select>
+          </div>
+          <div>
+            <label className="label">Préfixe des bons de commande</label>
+            <input
+              className="input"
+              value={form.documents.order_prefix}
+              onChange={(e) =>
+                patchDocuments({
+                  order_prefix: e.target.value.toUpperCase(),
+                })
+              }
+              placeholder="BC"
+            />
+          </div>
+          <div>
+            <label className="label">Préfixe des bons de livraison</label>
+            <input
+              className="input"
+              value={form.documents.delivery_prefix}
+              onChange={(e) =>
+                patchDocuments({
+                  delivery_prefix: e.target.value.toUpperCase(),
+                })
+              }
+              placeholder="BL"
+            />
+          </div>
+        </div>
+        <p className="mt-2 text-xs text-slate-500">
+          Numérotation automatique : {form.documents.order_prefix || "BC"}
+          -{new Date().getFullYear()}-000001 et{" "}
+          {form.documents.delivery_prefix || "BL"}-{new Date().getFullYear()}
+          -000001.
+        </p>
+        <div className="mt-4 grid gap-2 sm:grid-cols-3">
+          {DOCUMENT_SWITCHES.map((item) => (
+            <label
+              key={item.key}
+              className="flex items-center gap-2 text-sm text-slate-700"
+            >
+              <input
+                type="checkbox"
+                checked={Boolean(form.documents[item.key])}
+                onChange={(e) =>
+                  patchDocuments({ [item.key]: e.target.checked })
+                }
+              />
+              {item.label}
+            </label>
+          ))}
+        </div>
+        <div className="mt-6 flex flex-wrap items-center gap-3">
+          <button className="btn-primary" onClick={save} disabled={saving}>
+            {saving ? "Enregistrement..." : "Enregistrer la configuration"}
           </button>
         </div>
       </div>

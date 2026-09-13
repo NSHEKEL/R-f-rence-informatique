@@ -33,13 +33,23 @@ const CompanyContext = createContext<CompanyContextValue | undefined>(
   undefined
 );
 
+/** A cache or a server older than a section still yields a usable config. */
+function withDefaults(config: PrintingConfig | null): PrintingConfig {
+  if (!config) return DEFAULT_PRINTING;
+  return {
+    receipt: { ...DEFAULT_PRINTING.receipt, ...config.receipt },
+    label: { ...DEFAULT_PRINTING.label, ...config.label },
+    documents: { ...DEFAULT_PRINTING.documents, ...config.documents },
+  };
+}
+
 export function CompanyProvider({ children }: { children: ReactNode }) {
   const [company, setCompanyState] = useState<CompanySettings | null>(() =>
     cacheRead<CompanySettings>(COMPANY_CACHE_KEY)
   );
 
-  const [printing, setPrintingState] = useState<PrintingConfig>(
-    () => cacheRead<PrintingConfig>(PRINTING_CACHE_KEY) ?? DEFAULT_PRINTING
+  const [printing, setPrintingState] = useState<PrintingConfig>(() =>
+    withDefaults(cacheRead<PrintingConfig>(PRINTING_CACHE_KEY))
   );
 
   const setCompany = useCallback((next: CompanySettings) => {
@@ -48,8 +58,9 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setPrinting = useCallback((next: PrintingConfig) => {
-    setPrintingState(next);
-    cacheWrite(PRINTING_CACHE_KEY, next);
+    const merged = withDefaults(next);
+    setPrintingState(merged);
+    cacheWrite(PRINTING_CACHE_KEY, merged);
   }, []);
 
   const reload = useCallback(async () => {

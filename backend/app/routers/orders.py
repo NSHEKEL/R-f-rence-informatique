@@ -12,9 +12,16 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..documents import (
+    delivery_reference,
+    fill_order_items,
+    order_reference,
+    refresh_order_status,
+)
 from ..models import (
     Customer,
     Delivery,
+    DeliveryItem,
     Notification,
     Order,
     OrderItem,
@@ -38,55 +45,7 @@ from ..sequences import next_reference
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
 
-OPEN_STATUSES = ("En attente", "Confirmée")
-
-
-def _order_reference(db: Session) -> str:
-    return next_reference(
-        db, Order.reference, f"CMD-{datetime.now(timezone.utc).year}-"
-    )
-
-
-def _delivery_reference(db: Session) -> str:
-    return next_reference(
-        db, Delivery.reference, f"LIV-{datetime.now(timezone.utc).year}-"
-    )
-
-
-def _unit_price(product: Product, price_mode: str) -> float:
-    if price_mode == "gros" and (product.wholesale_price or 0) > 0:
-        return product.wholesale_price
-    return product.sale_price
-
-
-def _fill_items(db: Session, order: Order, payload) -> None:
-    order.items.clear()
-    total = 0.0
-    for item in payload.items:
-        product = db.query(Product).get(item.product_id)
-        if not product:
-            raise HTTPException(
-                status_code=404, detail=f"Produit {item.product_id} introuvable"
-            )
-        if item.quantity <= 0:
-            raise HTTPException(status_code=400, detail="Quantité invalide")
-        price = (
-            item.unit_price
-            if item.unit_price is not None and item.unit_price > 0
-            else _unit_price(product, order.price_mode)
-        )
-        subtotal = price * item.quantity
-        total += subtotal
-        order.items.append(
-            OrderItem(
-                product_id=product.id,
-                product_name=product.name,
-                quantity=item.quantity,
-                unit_price=price,
-                subtotal=subtotal,
-            )
-        )
-    order.total = total
+OPEN_STATUSES = ("Brouillon", "En attente", "Confirmée", "Partiellement livrée")
 
 
 @router.get("", response_model=list[OrderOut])
@@ -131,17 +90,21 @@ def create_order(
         raise HTTPException(status_code=400, detail="Indiquez le client")
 
     order = Order(
-        reference=_order_reference(db),
+        reference=order_reference(db),
         customer_id=payload.customer_id,
         customer_name=customer_name,
         expected_date=payload.expected_date,
         deposit=payload.deposit,
+        discount=max(payload.discount, 0.0),
+        status=payload.status or "Brouillon",
         price_mode="gros" if payload.price_mode == "gros" else "detail",
         delivery_address=payload.delivery_address,
+        payment_terms=payload.payment_terms,
+        delivery_terms=payload.delivery_terms,
         note=payload.note,
         created_by_id=current_user.id,
     )
-    _fill_items(db, order, payload)
+    fill_order_items(db, order, payload.items)
     db.add(order)
     db.commit()
     db.refresh(order)
@@ -168,7 +131,10 @@ def update_order(
         "customer_name",
         "expected_date",
         "deposit",
+        "discount",
         "delivery_address",
+        "payment_terms",
+        "delivery_terms",
         "note",
         "status",
         "price_mode",
@@ -176,7 +142,76 @@ def update_order(
         if field in data and data[field] is not None:
             setattr(order, field, data[field])
     if payload.items is not None:
-        _fill_items(db, order, payload)
+        if any((item.delivered_quantity or 0) > 0 for item in order.items):
+            raise HTTPException(
+                status_code=400,
+                detail="Commande déjà livrée en partie : lignes verrouillées",
+            )
+        fill_order_items(db, order, payload.items)
+    db.commit()
+    db.refresh(order)
+    return order
+
+
+@router.post("/{order_id}/duplicate", response_model=OrderOut, status_code=201)
+def duplicate_order(
+    order_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("commandes_gerer")),
+):
+    """Copy an order into a fresh draft, nothing delivered yet."""
+    source = db.query(Order).get(order_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Commande introuvable")
+    order = Order(
+        reference=order_reference(db),
+        customer_id=source.customer_id,
+        customer_name=source.customer_name,
+        expected_date=source.expected_date,
+        discount=source.discount,
+        status="Brouillon",
+        price_mode=source.price_mode,
+        delivery_address=source.delivery_address,
+        payment_terms=source.payment_terms,
+        delivery_terms=source.delivery_terms,
+        note=source.note,
+        created_by_id=current_user.id,
+    )
+    for item in source.items:
+        order.items.append(
+            OrderItem(
+                product_id=item.product_id,
+                product_name=item.product_name,
+                reference=item.reference,
+                unit=item.unit,
+                quantity=item.quantity,
+                unit_price=item.unit_price,
+                discount=item.discount,
+                subtotal=item.subtotal,
+            )
+        )
+    order.total = source.total
+    db.add(order)
+    db.commit()
+    db.refresh(order)
+    return order
+
+
+@router.post("/{order_id}/cancel", response_model=OrderOut)
+def cancel_order(
+    order_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission("commandes_annuler")),
+):
+    order = db.query(Order).get(order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Commande introuvable")
+    if any((item.delivered_quantity or 0) > 0 for item in order.items):
+        raise HTTPException(
+            status_code=400,
+            detail="Commande déjà livrée en partie : annulation impossible",
+        )
+    order.status = "Annulée"
     db.commit()
     db.refresh(order)
     return order
@@ -217,6 +252,10 @@ def deliver_order(
             detail=f"Commande « {order.status} » : livraison impossible",
         )
 
+    remaining = [item for item in order.items if item.remaining_quantity > 0]
+    if not remaining:
+        raise HTTPException(status_code=400, detail="Commande déjà livrée")
+    lines: list[DeliveryItem] = []
     sale = Sale(
         reference=next_reference(
             db, Sale.reference, f"VNT-{datetime.now(timezone.utc).year}-"
@@ -227,9 +266,12 @@ def deliver_order(
         note=f"Commande {order.reference}",
         price_mode=order.price_mode,
         created_by_id=current_user.id,
-        total=order.total,
+        total=sum(
+            item.unit_price * item.remaining_quantity for item in remaining
+        ),
     )
-    for item in order.items:
+    for item in remaining:
+        quantity = item.remaining_quantity
         product = db.query(Product).get(item.product_id) if item.product_id else None
         if product is None:
             raise HTTPException(
@@ -238,8 +280,8 @@ def deliver_order(
             )
         result = db.execute(
             update(Product)
-            .where(Product.id == product.id, Product.quantity >= item.quantity)
-            .values(quantity=Product.quantity - item.quantity)
+            .where(Product.id == product.id, Product.quantity >= quantity)
+            .values(quantity=Product.quantity - quantity)
         )
         if result.rowcount == 0:
             db.rollback()
@@ -256,8 +298,8 @@ def deliver_order(
                 product_id=product.id,
                 product_name=product.name,
                 kind="vente",
-                quantity=-item.quantity,
-                stock_before=product.quantity + item.quantity,
+                quantity=-quantity,
+                stock_before=product.quantity + quantity,
                 stock_after=product.quantity,
                 reason=f"Livraison {order.reference}",
                 created_by_id=current_user.id,
@@ -267,17 +309,35 @@ def deliver_order(
             SaleItem(
                 product_id=product.id,
                 product_name=product.name,
-                quantity=item.quantity,
+                quantity=quantity,
                 unit_price=item.unit_price,
-                subtotal=item.subtotal,
+                subtotal=item.unit_price * quantity,
             )
         )
+        lines.append(
+            DeliveryItem(
+                product_id=product.id,
+                product_name=product.name,
+                reference=item.reference or product.sku,
+                unit=item.unit or "u",
+                ordered_quantity=item.quantity,
+                previously_delivered=item.delivered_quantity or 0,
+                quantity=quantity,
+                unit_price=item.unit_price,
+                subtotal=item.unit_price * quantity,
+            )
+        )
+        item.delivered_quantity = (item.delivered_quantity or 0) + quantity
     db.add(sale)
     db.flush()
 
     delivery = Delivery(
-        reference=_delivery_reference(db),
+        reference=delivery_reference(db),
         order_id=order.id,
+        customer_id=order.customer_id,
+        customer_name=order.customer_name,
+        status="Validé",
+        validated_at=datetime.now(timezone.utc),
         sale_id=sale.id,
         address=payload.address or order.delivery_address,
         carrier=payload.carrier,
@@ -285,7 +345,8 @@ def deliver_order(
         note=payload.note,
         created_by_id=current_user.id,
     )
-    order.status = "Livrée"
+    delivery.items.extend(lines)
+    refresh_order_status(order)
     if payload.paid:
         order.deposit = order.total
     else:

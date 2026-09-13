@@ -49,6 +49,17 @@ PERMISSIONS: dict[str, tuple[str, str]] = {
         "Créer, réceptionner et supprimer un approvisionnement",
         "Actions",
     ),
+    "commandes_annuler": ("Annuler un bon de commande", "Actions"),
+    "commandes_imprimer": ("Imprimer un bon de commande", "Actions"),
+    "livraisons_gerer": ("Créer et modifier un bon de livraison", "Actions"),
+    "livraisons_valider": ("Valider un bon de livraison (sortie de stock)", "Actions"),
+    "livraisons_annuler": ("Annuler un bon de livraison", "Actions"),
+    "livraisons_imprimer": ("Imprimer un bon de livraison", "Actions"),
+    "livraisons_prix": ("Voir les prix sur un bon de livraison", "Actions"),
+    "documents_transformer": (
+        "Transformer un bon de commande en livraison ou en facture",
+        "Actions",
+    ),
 }
 
 CONFIGURABLE_ROLES = ("vendeur", "gestionnaire")

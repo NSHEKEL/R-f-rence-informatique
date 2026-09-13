@@ -393,9 +393,12 @@ class Order(Base):
     # En attente, Confirmée, Livrée, Annulée
     status = Column(String, default="En attente", index=True)
     total = Column(Float, default=0)
+    discount = Column(Float, default=0)  # granted on the whole document
     deposit = Column(Float, default=0)  # advance already paid
     price_mode = Column(String, default="detail")
     delivery_address = Column(String, default="")
+    payment_terms = Column(String, default="")
+    delivery_terms = Column(String, default="")
     note = Column(Text, default="")
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
@@ -420,12 +423,21 @@ class OrderItem(Base):
     order_id = Column(Integer, ForeignKey("orders.id"), nullable=False)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
     product_name = Column(String, default="")
+    reference = Column(String, default="")
+    unit = Column(String, default="u")
     quantity = Column(Integer, default=1)
+    # Quantity handed over by the validated delivery notes of this order.
+    delivered_quantity = Column(Integer, default=0, nullable=False)
     unit_price = Column(Float, default=0)
+    discount = Column(Float, default=0)
     subtotal = Column(Float, default=0)
 
     order = relationship("Order", back_populates="items")
     product = relationship("Product")
+
+    @property
+    def remaining_quantity(self) -> int:
+        return max(self.quantity - (self.delivered_quantity or 0), 0)
 
 
 class Delivery(Base):
@@ -435,9 +447,15 @@ class Delivery(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     reference = Column(String, unique=True, index=True, nullable=False)
-    order_id = Column(Integer, ForeignKey("orders.id"), nullable=False)
+    # A delivery note may stand alone, without any order behind it.
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True)
+    customer_name = Column(String, default="")
     sale_id = Column(Integer, ForeignKey("sales.id"), nullable=True)
     date = Column(DateTime, default=utcnow)
+    # Brouillon, Validé, Annulé
+    status = Column(String, default="Validé", index=True)
+    validated_at = Column(DateTime, nullable=True)
     address = Column(String, default="")
     carrier = Column(String, default="")  # person or company delivering
     recipient = Column(String, default="")  # who signed for the goods
@@ -445,12 +463,38 @@ class Delivery(Base):
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     order = relationship("Order", back_populates="deliveries")
+    customer = relationship("Customer")
     sale = relationship("Sale")
     created_by = relationship("User")
+    items = relationship(
+        "DeliveryItem", back_populates="delivery", cascade="all, delete-orphan"
+    )
 
     @property
     def order_reference(self) -> str:
         return self.order.reference if self.order else ""
+
+
+class DeliveryItem(Base):
+    """One line of a delivery note: what was ordered and what really left."""
+
+    __tablename__ = "delivery_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    delivery_id = Column(Integer, ForeignKey("deliveries.id"), nullable=False)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
+    product_name = Column(String, default="")
+    reference = Column(String, default="")
+    unit = Column(String, default="u")
+    ordered_quantity = Column(Integer, default=0)
+    previously_delivered = Column(Integer, default=0)
+    quantity = Column(Integer, default=0)  # handed over by this note
+    unit_price = Column(Float, default=0)
+    subtotal = Column(Float, default=0)
+    observation = Column(String, default="")
+
+    delivery = relationship("Delivery", back_populates="items")
+    product = relationship("Product")
 
 
 class ActionLog(Base):
