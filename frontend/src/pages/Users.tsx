@@ -33,7 +33,7 @@ const empty = {
 };
 
 export default function Users() {
-  const { user: current } = useAuth();
+  const { user: current, refreshUser } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -105,6 +105,7 @@ export default function Users() {
       }
       setOpen(false);
       await load();
+      if (editing && editing.id === current?.id) await refreshUser();
     } catch (err) {
       if (axios.isAxiosError(err)) {
         setError(err.response?.data?.detail ?? "Erreur lors de l'enregistrement");

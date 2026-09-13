@@ -19,6 +19,8 @@ interface AuthContextValue {
   can: (permission: string) => boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
+  /** Re-read the account (after changing one's own picture, for instance). */
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -77,6 +79,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await loadRights();
   }
 
+  async function refreshUser() {
+    try {
+      const me = await api.get<User>("/auth/me");
+      setUser(me.data);
+    } catch {
+      /* keep the account currently in memory */
+    }
+  }
+
   function logout() {
     localStorage.removeItem("ri_token");
     setUser(null);
@@ -95,6 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           user?.role === "admin" || rights.includes(permission),
         login,
         logout,
+        refreshUser,
       }}
     >
       {children}

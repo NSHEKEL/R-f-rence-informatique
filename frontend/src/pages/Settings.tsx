@@ -30,6 +30,7 @@ import type {
   Workstation,
 } from "../types";
 import { useAuth } from "../context/AuthContext";
+import PhotoPicker from "../components/PhotoPicker";
 import { useCompany } from "../context/CompanyContext";
 import { useLicense } from "../context/LicenseContext";
 
@@ -96,7 +97,8 @@ function nativeApi(): { choose_folder?: () => Promise<string> } | undefined {
 }
 
 export default function Settings() {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
+  const [photoMessage, setPhotoMessage] = useState("");
   const { setCompany: setBranding } = useCompany();
   const { hasFeature } = useLicense();
   const [company, setCompany] = useState<CompanyForm>(emptyCompany);
@@ -1157,6 +1159,25 @@ export default function Settings() {
           <h3 className="text-base font-bold text-slate-900">Mon compte</h3>
         </div>
         <div className="space-y-4">
+          <PhotoPicker
+            label="Ma photo"
+            value={user?.photo ?? ""}
+            rounded="rounded-full"
+            onError={setPhotoMessage}
+            onChange={async (photo) => {
+              setPhotoMessage("");
+              try {
+                await api.put("/users/me/photo", { photo });
+                await refreshUser();
+                setPhotoMessage("Photo enregistrée");
+              } catch {
+                setPhotoMessage("Impossible d'enregistrer la photo");
+              }
+            }}
+          />
+          {photoMessage && (
+            <p className="text-sm text-slate-500">{photoMessage}</p>
+          )}
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
               <User size={18} />

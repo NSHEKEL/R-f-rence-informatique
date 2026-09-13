@@ -3,11 +3,11 @@ import secrets
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from ..auth import hash_password, require_admin
+from ..auth import get_current_user, hash_password, require_admin
 from ..database import get_db
 from ..licensing import has_feature
 from ..models import User
-from ..schemas import UserCreate, UserOut, UserUpdate
+from ..schemas import UserCreate, UserOut, UserPhoto, UserUpdate
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -53,6 +53,19 @@ def create_user(
     db.commit()
     db.refresh(user)
     return user
+
+
+@router.put("/me/photo", response_model=UserOut)
+def update_my_photo(
+    payload: UserPhoto,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Everyone may change their own picture, whatever their role."""
+    current_user.photo = payload.photo
+    db.commit()
+    db.refresh(current_user)
+    return current_user
 
 
 @router.put("/{user_id}", response_model=UserOut)

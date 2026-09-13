@@ -474,9 +474,17 @@ export default function Layout() {
               collapsed ? "lg:flex-col lg:gap-2 lg:px-0" : ""
             }`}
           >
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-600 text-sm font-bold text-white">
-              {initials}
-            </div>
+            {user?.photo ? (
+              <img
+                src={user.photo}
+                alt={user.name}
+                className="h-10 w-10 shrink-0 rounded-full object-cover"
+              />
+            ) : (
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-600 text-sm font-bold text-white">
+                {initials}
+              </div>
+            )}
             <div className={`min-w-0 flex-1 ${collapsed ? "lg:hidden" : ""}`}>
               <p className="truncate text-sm font-semibold text-slate-900">
                 {user?.name ?? "Administrateur"}

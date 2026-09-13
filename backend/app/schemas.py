@@ -42,6 +42,10 @@ class UserUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 
+class UserPhoto(BaseModel):
+    photo: str = ""
+
+
 # ---------- Company settings ----------
 class CompanySettingsOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
