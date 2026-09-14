@@ -988,13 +988,37 @@ class DebtPaymentCreate(BaseModel):
     amount: float
     method: str = "Espèces"
     note: str = ""
+    reference: str = ""
+    date: Optional[datetime] = None
 
 
-class DebtPaymentOut(DebtPaymentCreate):
+class DebtPaymentCancel(BaseModel):
+    reason: str
+
+
+class DebtPaymentOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
+    debt_id: int
+    amount: float
+    method: str
+    note: str
+    reference: str
+    receipt_reference: str
+    cancelled: bool
+    cancel_reason: str
+    cancelled_at: Optional[datetime] = None
     date: datetime
     created_by: Optional[UserOut] = None
+    cancelled_by: Optional[UserOut] = None
+
+
+class SettlementOut(DebtPaymentOut):
+    """A settlement seen from the history screen, with its counterpart."""
+
+    kind: str = "creance"
+    party: str = ""
+    document: str = ""
 
 
 class DebtCreate(BaseModel):
@@ -1025,6 +1049,11 @@ class DebtOut(BaseModel):
     remaining: float
     settled: bool
     overdue: bool
+    status: str = "Non payé"
+    days_late: int = 0
+    customer: Optional[CustomerOut] = None
+    supplier: Optional[SupplierOut] = None
+    created_by: Optional[UserOut] = None
     payments: List[DebtPaymentOut] = []
 
 
@@ -1035,3 +1064,27 @@ class DebtSummary(BaseModel):
     payable_total: float = 0
     payable_overdue: float = 0
     payable_count: int = 0
+    collected: float = 0
+    disbursed: float = 0
+
+
+class DebtAlert(BaseModel):
+    """One sentence shown to the shop about a term coming or missed."""
+
+    level: str = "info"
+    message: str = ""
+
+
+class PartyBalance(BaseModel):
+    """Totals of one customer or supplier, for the ranking screens."""
+
+    party: str = ""
+    customer_id: Optional[int] = None
+    supplier_id: Optional[int] = None
+    phone: str = ""
+    total: float = 0
+    paid: float = 0
+    remaining: float = 0
+    overdue: float = 0
+    days_late: int = 0
+    next_due: Optional[datetime] = None

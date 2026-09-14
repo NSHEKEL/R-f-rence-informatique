@@ -648,7 +648,10 @@ class Debt(Base):
 
     @property
     def paid(self) -> float:
-        return sum(payment.amount for payment in self.payments)
+        """Only the settlements still standing; a cancelled one pays nothing."""
+        return round(
+            sum(p.amount for p in self.payments if not p.cancelled), 2
+        )
 
     @property
     def remaining(self) -> float:
@@ -667,6 +670,25 @@ class Debt(Base):
             due = due.replace(tzinfo=timezone.utc)
         return due < utcnow()
 
+    @property
+    def days_late(self) -> int:
+        """Days past the due date, zero while the term is not reached."""
+        if not self.overdue or self.due_date is None:
+            return 0
+        due = self.due_date
+        if due.tzinfo is None:
+            due = due.replace(tzinfo=timezone.utc)
+        return (utcnow() - due).days
+
+    @property
+    def status(self) -> str:
+        """Single source of truth for the four states shown everywhere."""
+        if self.settled:
+            return "Payé"
+        if self.overdue:
+            return "En retard"
+        return "Partiellement payé" if self.paid > 0.009 else "Non payé"
+
 
 class DebtPayment(Base):
     """A settlement, total or partial, of a debt or of a receivable."""
@@ -679,10 +701,17 @@ class DebtPayment(Base):
     date = Column(DateTime, default=utcnow)
     method = Column(String, default="Espèces")
     note = Column(Text, default="")
+    reference = Column(String, default="")
+    receipt_reference = Column(String, default="", index=True)
+    cancelled = Column(Boolean, default=False)
+    cancel_reason = Column(Text, default="")
+    cancelled_at = Column(DateTime, nullable=True)
+    cancelled_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     debt = relationship("Debt", back_populates="payments")
-    created_by = relationship("User")
+    created_by = relationship("User", foreign_keys=[created_by_id])
+    cancelled_by = relationship("User", foreign_keys=[cancelled_by_id])
 
 
 class RolePermission(Base):

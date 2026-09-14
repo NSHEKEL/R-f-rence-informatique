@@ -82,6 +82,14 @@ COLUMNS: dict[str, dict[str, str]] = {
         "status": "VARCHAR DEFAULT 'Validé'",
         "validated_at": "TIMESTAMP",
     },
+    "debt_payments": {
+        "reference": "VARCHAR DEFAULT ''",
+        "receipt_reference": "VARCHAR DEFAULT ''",
+        "cancelled": f"BOOLEAN DEFAULT {FALSE_LITERAL}",
+        "cancel_reason": "TEXT DEFAULT ''",
+        "cancelled_at": "TIMESTAMP",
+        "cancelled_by_id": "INTEGER",
+    },
     "cash_sessions": {
         "business_day": "VARCHAR DEFAULT ''",
     },
@@ -119,7 +127,13 @@ def _relax_delivery_order(conn, insp) -> None:
         return
     names = [c["name"] for c in insp.get_columns("deliveries")]
     columns = ", ".join(names)
+    # SQLite index names stay global and follow the renamed table, so they are
+    # dropped before the new table recreates them.
+    old_indexes = [index["name"] for index in insp.get_indexes("deliveries")]
     conn.execute(text("ALTER TABLE deliveries RENAME TO deliveries_old"))
+    for name in old_indexes:
+        if name:
+            conn.execute(text(f'DROP INDEX IF EXISTS "{name}"'))
     Delivery.__table__.create(bind=conn)
     conn.execute(
         text(

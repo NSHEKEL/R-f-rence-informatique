@@ -45,6 +45,10 @@ PERMISSIONS: dict[str, tuple[str, str]] = {
     "inventaire_appliquer": ("Appliquer un inventaire (ajuster le stock)", "Actions"),
     "dettes_gerer": ("Créer et modifier une dette ou une créance", "Actions"),
     "dettes_regler": ("Enregistrer un règlement de dette ou de créance", "Actions"),
+    "dettes_annuler": ("Annuler un règlement (avec motif)", "Actions"),
+    "dettes_recu": ("Imprimer un reçu de paiement", "Actions"),
+    "rapports_financiers": ("Voir les états des créances et des dettes", "Actions"),
+    "rapports_exporter": ("Exporter ou imprimer les rapports", "Actions"),
     "approvisionnements_gerer": (
         "Créer, réceptionner et supprimer un approvisionnement",
         "Actions",

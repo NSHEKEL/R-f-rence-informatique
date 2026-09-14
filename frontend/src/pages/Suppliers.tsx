@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { Pencil, Plus, Search, Trash2 } from "lucide-react";
-import api from "../api/client";
+import api, { formatMoney } from "../api/client";
 import type { Supplier } from "../types";
 import Modal from "../components/Modal";
 import PhotoPicker from "../components/PhotoPicker";
@@ -17,6 +18,13 @@ const empty = {
   logo: "",
 };
 
+/** What the shop still owes one supplier, taken from the debts module. */
+interface Balance {
+  party: string;
+  remaining: number;
+  overdue: number;
+}
+
 export default function Suppliers() {
   const { can } = useAuth();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -25,10 +33,26 @@ export default function Suppliers() {
   const [editing, setEditing] = useState<Supplier | null>(null);
   const [form, setForm] = useState({ ...empty });
   const [saving, setSaving] = useState(false);
+  const [balances, setBalances] = useState<Balance[]>([]);
 
   async function load() {
     const res = await api.get<Supplier[]>("/suppliers");
     setSuppliers(res.data);
+    if (can("dettes")) {
+      try {
+        const owed = await api.get<Balance[]>("/debts/soldes", {
+          params: { kind: "dette" },
+        });
+        setBalances(owed.data);
+      } catch {
+        setBalances([]);
+      }
+    }
+  }
+
+  /** Balance of a supplier, matched on the name kept with the debt. */
+  function balanceOf(name: string): Balance | undefined {
+    return balances.find((row) => row.party === name);
   }
 
   useEffect(() => {
@@ -130,6 +154,7 @@ export default function Suppliers() {
                 <th className="px-5 py-3">Contact</th>
                 <th className="px-5 py-3">Email</th>
                 <th className="px-5 py-3">Téléphone</th>
+                <th className="px-5 py-3">Reste à payer</th>
                 <th className="px-5 py-3 text-right">Actions</th>
               </tr>
             </thead>
@@ -166,6 +191,24 @@ export default function Suppliers() {
                   <td className="px-5 py-3.5 text-slate-600">{s.email || "—"}</td>
                   <td className="px-5 py-3.5 text-slate-600">{s.phone || "—"}</td>
                   <td className="px-5 py-3.5">
+                    {balanceOf(s.name) ? (
+                      <Link
+                        to="/dettes"
+                        className="font-semibold text-amber-700 hover:underline"
+                        title="Voir la situation financière"
+                      >
+                        {formatMoney(balanceOf(s.name)!.remaining)}
+                        {balanceOf(s.name)!.overdue > 0 && (
+                          <span className="ml-1 text-xs text-red-600">
+                            en retard
+                          </span>
+                        )}
+                      </Link>
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    )}
+                  </td>
+                  <td className="px-5 py-3.5">
                     <div className="flex justify-end gap-1">
                       {can("fournisseurs_gerer") ? (
                         <>
@@ -194,7 +237,7 @@ export default function Suppliers() {
               {filtered.length === 0 && (
                 <tr>
                   <td
-                    colSpan={can("fournisseurs_gerer") ? 6 : 5}
+                    colSpan={can("fournisseurs_gerer") ? 7 : 6}
                     className="px-5 py-10 text-center text-slate-400"
                   >
                     Aucun fournisseur trouvé.

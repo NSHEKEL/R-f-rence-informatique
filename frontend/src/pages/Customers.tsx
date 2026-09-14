@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Mail, Pencil, Phone, Plus, Search, Trash2 } from "lucide-react";
-import api from "../api/client";
+import { Link } from "react-router-dom";
+import { Mail, Pencil, Phone, Plus, Search, Trash2, Wallet } from "lucide-react";
+import api, { formatMoney } from "../api/client";
 import type { Customer } from "../types";
 import Modal from "../components/Modal";
 import BulkDelete, { SelectBox } from "../components/BulkDelete";
@@ -9,6 +10,14 @@ import { useAuth } from "../context/AuthContext";
 import { useSyncVersion } from "../context/SyncContext";
 
 const empty = { name: "", email: "", phone: "", address: "" };
+
+/** What one customer still owes, taken from the debts module. */
+interface Balance {
+  party: string;
+  remaining: number;
+  overdue: number;
+  next_due: string | null;
+}
 
 export default function Customers() {
   const { can } = useAuth();
@@ -19,10 +28,26 @@ export default function Customers() {
   const [editing, setEditing] = useState<Customer | null>(null);
   const [form, setForm] = useState({ ...empty });
   const [saving, setSaving] = useState(false);
+  const [balances, setBalances] = useState<Balance[]>([]);
 
   async function load() {
     const res = await api.get<Customer[]>("/customers");
     setCustomers(res.data);
+    if (can("dettes")) {
+      try {
+        const owed = await api.get<Balance[]>("/debts/soldes", {
+          params: { kind: "creance" },
+        });
+        setBalances(owed.data);
+      } catch {
+        setBalances([]);
+      }
+    }
+  }
+
+  /** Balance of a customer, matched on the name kept with the receivable. */
+  function balanceOf(name: string): Balance | undefined {
+    return balances.find((row) => row.party === name);
   }
 
   useEffect(() => {
@@ -158,6 +183,21 @@ export default function Customers() {
               <p className="flex items-center gap-2">
                 <Phone size={15} className="text-slate-400" /> {c.phone || "—"}
               </p>
+              {balanceOf(c.name) && (
+                <Link
+                  to="/dettes"
+                  className="flex items-center gap-2 font-medium text-amber-700 hover:underline"
+                  title="Voir la situation financière"
+                >
+                  <Wallet size={15} className="text-amber-500" />
+                  Reste dû : {formatMoney(balanceOf(c.name)!.remaining)}
+                  {balanceOf(c.name)!.overdue > 0 && (
+                    <span className="text-red-600">
+                      (dont {formatMoney(balanceOf(c.name)!.overdue)} en retard)
+                    </span>
+                  )}
+                </Link>
+              )}
             </div>
           </div>
         ))}
