@@ -7,6 +7,7 @@ import type {
 import { DEFAULT_PRINTING } from "../types";
 import { barcodeDataUrl } from "./barcode";
 import { cacheRead } from "./offline";
+import { ticketLines } from "./ticketText";
 
 const PAGE_STYLE_ID = "receipt-page-style";
 const PRINT_ROOT_ID = "receipt-print-root";
@@ -57,6 +58,20 @@ function desktopPrint():
       };
     }
   ).pywebview?.api?.print_page;
+}
+
+/**
+ * Counter printer of the desktop window: it prints the ticket itself, so no
+ * print preview and no browser header ever reach the paper.
+ */
+function desktopTicket():
+  | ((payload: string) => Promise<string>)
+  | undefined {
+  return (
+    window as unknown as {
+      pywebview?: { api?: { print_ticket?: (payload: string) => Promise<string> } };
+    }
+  ).pywebview?.api?.print_ticket;
 }
 
 function pageRule(format: ReceiptFormat, marginMm: number): string {
@@ -239,6 +254,22 @@ export function printReceipt(
       root.appendChild(copy);
       extras.push(copy);
     }
+  }
+  const direct = desktopTicket();
+  if (direct && thermal && root) {
+    const payload = JSON.stringify({
+      printer: config.printer_name,
+      copies,
+      cut: config.cut_paper,
+      lines: ticketLines(root, format),
+    });
+    extras.forEach((copy) => copy.remove());
+    extras.length = 0;
+    direct(payload).then((problem) => {
+      // No thermal printer on this computer: fall back on the page printer.
+      if (problem) window.print();
+    });
+    return;
   }
   const native = desktopPrint();
   if (native) {

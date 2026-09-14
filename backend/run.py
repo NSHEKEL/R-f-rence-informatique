@@ -16,6 +16,7 @@ Modes:
                         build to prove the packaged executable really runs).
 """
 
+import json
 import os
 import socket
 import sys
@@ -32,6 +33,7 @@ import uvicorn
 # settings below already see EASYGEST_HOST/EASYGEST_PORT when they are set
 # there rather than in the system environment.
 import app.database  # noqa: F401
+from app import escpos
 from app.paths import data_dir
 from app.version import APP_NAME, APP_VERSION
 
@@ -157,6 +159,35 @@ class DesktopApi:
         path = Path(target[0] if isinstance(target, (list, tuple)) else str(target))
         path.write_text(content, encoding="utf-8-sig")
         return str(path)
+
+    def print_ticket(self, payload: str) -> str:
+        """Print a receipt straight on the counter printer.
+
+        The lines come from the ticket shown on screen; sending them as
+        ESC/POS bytes avoids the browser print preview, which stamps the date,
+        the window title, the local address and a page number around the
+        receipt. Returns an empty string on success, the reason otherwise, so
+        the page can fall back on the browser printer.
+        """
+        try:
+            data = json.loads(payload)
+            lines = [
+                escpos.Line(
+                    text=str(item.get("text", "")),
+                    align=str(item.get("align", "left")),
+                    bold=bool(item.get("bold", False)),
+                    big=bool(item.get("big", False)),
+                    barcode=str(item.get("barcode", "")),
+                )
+                for item in data.get("lines", [])
+            ]
+            copies = min(max(int(data.get("copies", 1)), 1), 5)
+            stream = escpos.build(lines, bool(data.get("cut", True))) * copies
+            escpos.send(stream, str(data.get("printer", "")))
+        except Exception as error:  # noqa: BLE001 - no printer, bad driver...
+            traceback.print_exc()
+            return str(error) or "Impression directe indisponible"
+        return ""
 
     def print_page(
         self, width_mm: float, height_mm: float, margin_mm: float
