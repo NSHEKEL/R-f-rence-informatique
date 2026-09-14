@@ -172,25 +172,40 @@ class DesktopApi:
         if self.window is None:
             return False
         try:
+            from System import Action
             from webview.platforms.winforms import BrowserView
 
-            browser = BrowserView.instances[self.window.uid]
-            core = browser.web_view.CoreWebView2
-            settings = core.Environment.CreatePrintSettings()
-            settings.ShouldPrintHeaderAndFooter = False
-            settings.ShouldPrintBackgrounds = True
-            settings.PageWidth = max(width_mm, 20.0) / 25.4
-            settings.PageHeight = max(height_mm, 20.0) / 25.4
-            inches = max(margin_mm, 0.0) / 25.4
-            settings.MarginTop = inches
-            settings.MarginBottom = inches
-            settings.MarginLeft = inches
-            settings.MarginRight = inches
-            core.PrintAsync(settings)
-            return True
-        except Exception:  # noqa: BLE001 - older runtime, Linux, no printer
+            form = BrowserView.instances[self.window.uid]
+            core = form.browser.webview.CoreWebView2
+        except Exception:  # noqa: BLE001 - Linux, older runtime, no window
             traceback.print_exc()
             return False
+
+        done = {"ok": False}
+
+        def send() -> None:
+            try:
+                settings = core.Environment.CreatePrintSettings()
+                settings.ShouldPrintHeaderAndFooter = False
+                settings.ShouldPrintBackgrounds = True
+                settings.PageWidth = max(width_mm, 20.0) / 25.4
+                settings.PageHeight = max(height_mm, 20.0) / 25.4
+                inches = max(margin_mm, 0.0) / 25.4
+                settings.MarginTop = inches
+                settings.MarginBottom = inches
+                settings.MarginLeft = inches
+                settings.MarginRight = inches
+                core.PrintAsync(settings)
+                done["ok"] = True
+            except Exception:  # noqa: BLE001 - printing API missing, no printer
+                traceback.print_exc()
+
+        try:
+            # The browser control only accepts calls from the window thread.
+            form.Invoke(Action(send))
+        except Exception:  # noqa: BLE001 - already on that thread
+            send()
+        return done["ok"]
 
     def toggle_fullscreen(self) -> bool:
         """Full screen for the counter: the web API alone cannot resize the
