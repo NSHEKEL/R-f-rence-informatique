@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 
 from .auth import get_current_user
 from .database import get_db
-from .features import FEATURE_CODES, FEATURE_LABELS
+from .features import FEATURE_CODES, FEATURE_LABELS, LEGACY_FEATURE_CODES
 from .models import CompanySettings, LicenseState, User
 from .paths import data_dir
 from .version import APP_VERSION
@@ -120,6 +120,7 @@ class LicenseView:
     status: str = ""
     message: str = ""
     features: set[str] = field(default_factory=set)
+    catalog: set[str] = field(default_factory=set)
     client_name: str = ""
     license_key: str = ""
     ends_at: Optional[datetime] = None
@@ -139,7 +140,11 @@ class LicenseView:
             return True
         if self.blocked:
             return False
-        return code in self.features
+        if code in self.features:
+            return True
+        # A capability the console that signed this licence did not know yet
+        # was never switched off: keep the screen open until the next sync.
+        return code not in (self.catalog or LEGACY_FEATURE_CODES)
 
 
 def state(db: Session) -> Optional[LicenseState]:
@@ -201,6 +206,9 @@ def current(db: Session) -> LicenseView:
     features = {
         code for code in payload.get("features", []) if isinstance(code, str)
     }
+    catalog = {
+        code for code in payload.get("catalog", []) if isinstance(code, str)
+    }
     last_sync = _aware(row.last_sync)
 
     if status == "revoked":
@@ -226,6 +234,7 @@ def current(db: Session) -> LicenseView:
         status=status,
         message=MESSAGES.get(mode, ""),
         features=features,
+        catalog=catalog,
         client_name=str(payload.get("client", "")),
         license_key=str(payload.get("license_key", "")),
         ends_at=ends_at,

@@ -41,7 +41,7 @@ import { useCompany } from "../context/CompanyContext";
 import { useLicense } from "../context/LicenseContext";
 import { useTheme } from "../context/ThemeContext";
 import { TILL_GATED, useTill } from "../context/TillContext";
-import { PLAN_FEATURE } from "../lib/planFeatures";
+import { ADMIN_FEATURE, PLAN_FEATURE } from "../lib/planFeatures";
 import { isFullscreen, toggleFullscreen } from "../lib/fullscreen";
 import LicenseBanner from "./LicenseBanner";
 import NetworkBanner from "./NetworkBanner";
@@ -308,7 +308,7 @@ export default function Layout() {
     const isActive = item.end
       ? location.pathname === item.to
       : location.pathname.startsWith(item.to);
-    const feature = PLAN_FEATURE[item.access];
+    const feature = ADMIN_FEATURE[item.to] ?? PLAN_FEATURE[item.access];
     const planLocked = Boolean(feature) && !hasFeature(feature);
     // Nothing is sold — nor even browsed — before the till is opened.
     const tillLocked = TILL_GATED.has(item.access) && !selling;

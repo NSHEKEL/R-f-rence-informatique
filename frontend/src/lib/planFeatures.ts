@@ -3,25 +3,34 @@
  *
  * The key is the access right the administrator grants role by role, the
  * value the feature code the Global Administrator switches ON or OFF for the
- * plan. Screens missing from this map (settings, access rights, about) never
- * depend on the plan.
+ * plan. The administration screens share the same "admin" right, so they name
+ * their feature on the menu entry itself (see ADMIN_FEATURE). Only "Mon
+ * abonnement" stays out: it is the screen that shows the plan.
  */
 export const PLAN_FEATURE: Record<string, string> = {
   tableau_bord: "tableau_bord",
   caisse: "versements",
   ventes: "ventes",
   vente_nouvelle: "ventes",
-  retours: "fonctions_avancees",
+  retours: "retours",
   clients: "clients",
-  commandes: "dettes",
-  livraisons: "dettes",
+  commandes: "commandes",
+  livraisons: "livraisons",
   produits: "produits",
-  inventaire: "stock",
+  inventaire: "inventaire",
   rapports: "rapports",
-  proformas: "fonctions_avancees",
-  comptabilite: "dettes",
+  proformas: "proformas",
+  comptabilite: "comptabilite",
   dettes: "dettes",
   fournisseurs: "fournisseurs",
   approvisionnements: "achats",
   categories: "categories",
+  apropos: "apropos",
+};
+
+/** Feature of the pages the administrator alone reaches, keyed by path. */
+export const ADMIN_FEATURE: Record<string, string> = {
+  "/utilisateurs": "gestion_utilisateurs",
+  "/droits": "droits_acces",
+  "/parametres": "parametres",
 };

@@ -87,6 +87,25 @@ def _seed_plans(db: Session) -> None:
                 )
             )
     db.commit()
+    _fill_missing_rights(db)
+
+
+def _fill_missing_rights(db: Session) -> None:
+    """Open a newly published capability on the plans already sold.
+
+    A shop that paid for a formula must not lose a screen the day EasyGest
+    makes it switchable; the owner turns it off in the console if needed.
+    """
+    features = db.query(Feature).all()
+    for plan in db.query(Plan).all():
+        known = {row.feature_id for row in plan.rights}
+        for feature in features:
+            if feature.id in known:
+                continue
+            db.add(
+                PlanFeature(plan_id=plan.id, feature_id=feature.id, allowed=True)
+            )
+    db.commit()
 
 
 def _seed_admin(db: Session) -> None:

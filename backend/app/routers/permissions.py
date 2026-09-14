@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import get_current_user, require_admin
 from ..database import get_db
+from ..licensing import require_feature
 from ..models import User
 from ..permissions import (
     CONFIGURABLE_ROLES,
@@ -27,7 +28,11 @@ def my_permissions(
     )
 
 
-@router.get("", response_model=PermissionMatrix)
+@router.get(
+    "",
+    response_model=PermissionMatrix,
+    dependencies=[Depends(require_feature("droits_acces"))],
+)
 def get_matrix(db: Session = Depends(get_db), _: User = Depends(require_admin)):
     return PermissionMatrix(
         definitions=[
@@ -39,7 +44,11 @@ def get_matrix(db: Session = Depends(get_db), _: User = Depends(require_admin)):
     )
 
 
-@router.put("", response_model=PermissionMatrix)
+@router.put(
+    "",
+    response_model=PermissionMatrix,
+    dependencies=[Depends(require_feature("droits_acces"))],
+)
 def update_matrix(
     payload: PermissionUpdate,
     db: Session = Depends(get_db),

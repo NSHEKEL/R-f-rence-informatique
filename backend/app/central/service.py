@@ -48,6 +48,16 @@ def new_installation_token() -> str:
     return secrets.token_urlsafe(32)
 
 
+def catalog_codes(db: Session) -> list[str]:
+    """Every capability this console knows, allowed or not.
+
+    A shop compares it with its own list: a screen the console never heard of
+    cannot have been refused, so the workstation keeps it.
+    """
+    rows = db.query(Feature.code).filter(Feature.is_active.is_(True)).all()
+    return sorted(code for (code,) in rows)
+
+
 def plan_feature_codes(db: Session, plan: Plan) -> list[str]:
     rows = (
         db.query(Feature.code)
@@ -178,6 +188,7 @@ def license_answer(
         "plan_name": plan.name,
         "status": STATUS_REVOKED if installation.is_revoked else status,
         "features": plan_feature_codes(db, plan),
+        "catalog": catalog_codes(db),
         "starts_at": aware(license_.starts_at).isoformat()
         if license_.starts_at
         else None,

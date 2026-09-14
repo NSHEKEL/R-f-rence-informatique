@@ -2,7 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./context/AuthContext";
 import { useLicense } from "./context/LicenseContext";
 import { TILL_GATED, useTill } from "./context/TillContext";
-import { PLAN_FEATURE } from "./lib/planFeatures";
+import { ADMIN_FEATURE, PLAN_FEATURE } from "./lib/planFeatures";
 import Layout from "./components/Layout";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
@@ -64,10 +64,20 @@ function useFallbackPath(): string {
   return HOME_PAGES.find(([right]) => can(right))?.[1] ?? "/a-propos";
 }
 
-function AdminRoute({ children }: { children: React.ReactNode }) {
+function AdminRoute({
+  children,
+  feature,
+}: {
+  children: React.ReactNode;
+  feature?: string;
+}) {
   const { isAdmin } = useAuth();
+  const { hasFeature } = useLicense();
   const fallback = useFallbackPath();
   if (!isAdmin) return <Navigate to={fallback} replace />;
+  if (feature && !hasFeature(feature)) {
+    return <Navigate to="/mon-abonnement" replace />;
+  }
   return <>{children}</>;
 }
 
@@ -268,7 +278,7 @@ export default function App() {
         <Route
           path="/utilisateurs"
           element={
-            <AdminRoute>
+            <AdminRoute feature={ADMIN_FEATURE["/utilisateurs"]}>
               <Users />
             </AdminRoute>
           }
@@ -276,7 +286,7 @@ export default function App() {
         <Route
           path="/parametres"
           element={
-            <AdminRoute>
+            <AdminRoute feature={ADMIN_FEATURE["/parametres"]}>
               <Settings />
             </AdminRoute>
           }
@@ -284,7 +294,7 @@ export default function App() {
         <Route
           path="/droits"
           element={
-            <AdminRoute>
+            <AdminRoute feature={ADMIN_FEATURE["/droits"]}>
               <Droits />
             </AdminRoute>
           }

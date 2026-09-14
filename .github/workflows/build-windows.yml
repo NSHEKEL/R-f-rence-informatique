@@ -56,6 +56,7 @@ jobs:
           python packaging/make_version_info.py
           pyinstaller packaging/EasyGest.spec
           pyinstaller packaging/EasyGestAdmin.spec
+          pyinstaller packaging/EasyGestRecuperation.spec
 
       - name: Check the executable really starts
         shell: pwsh
@@ -85,6 +86,15 @@ jobs:
             throw "EasyGestAdmin.exe ne démarre pas (code $($run.ExitCode))"
           }
 
+      - name: Check the recovery tool really opens a database
+        shell: pwsh
+        run: |
+          $run = Start-Process -FilePath dist\EasyGestRecuperation.exe `
+            -ArgumentList '--selftest' -PassThru -Wait -NoNewWindow
+          if ($run.ExitCode -ne 0) {
+            throw "EasyGestRecuperation.exe ne démarre pas (code $($run.ExitCode))"
+          }
+
       - name: Download the WebView2 bootstrapper
         shell: pwsh
         run: |
@@ -110,6 +120,7 @@ jobs:
             dist/EasyGest_Setup.exe
             dist/EasyGestAdmin.exe
             dist/EasyGestAdmin_Setup.exe
+            dist/EasyGestRecuperation.exe
 
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/')
@@ -120,6 +131,7 @@ jobs:
             dist/EasyGest.exe
             dist/EasyGestAdmin_Setup.exe
             dist/EasyGestAdmin.exe
+            dist/EasyGestRecuperation.exe
           name: EasyGest ${{ github.ref_name }}
           body: |
             **EasyGest — gestion de vente et de stock.**
@@ -146,6 +158,13 @@ jobs:
             jour, désinstallations et réinstallations. Une base créée par une
             version précédente dans `%APPDATA%\EasyGest` est reprise
             automatiquement au premier démarrage.
+
+            - `EasyGestRecuperation.exe` : outil de dépannage à lancer sur le
+              poste quand plus personne ne peut se connecter (identifiant
+              oublié, compte désactivé, mot de passe perdu). Il sauvegarde la
+              base, liste les comptes, permet de changer un identifiant et/ou
+              un mot de passe, puis teste la connexion. Aucune donnée métier
+              n'est modifiée et aucun accès permanent n'est laissé.
 
             **Mise à jour d'un poste existant :** Paramètres → Mise à jour de
             l'application → Rechercher → Installer.
