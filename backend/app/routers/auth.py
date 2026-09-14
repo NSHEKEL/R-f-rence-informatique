@@ -18,8 +18,10 @@ from ..auth import (
     verify_password,
 )
 from ..database import get_db
+from ..licensing import installation_uid
 from ..mailer import is_configured, send_mail
 from ..models import CompanySettings, PasswordResetToken, RecoveryKey, User
+from ..rescue import RescueError, read_key
 from ..schemas import (
     ChangePasswordRequest,
     ForgotPasswordRequest,
@@ -239,17 +241,7 @@ def administrator_recovery(
         .first()
     )
     if not entry:
-        log_event(
-            db,
-            "recuperation_admin",
-            identifier=payload.identifier,
-            station=station,
-            success=False,
-            detail="Clé de récupération invalide",
-        )
-        raise HTTPException(
-            status_code=400, detail="Clé de récupération invalide ou déjà utilisée"
-        )
+        entry = _publisher_key(db, payload.key, station, payload.identifier)
 
     user = find_user(db, payload.identifier) if payload.identifier else None
     if user is None:
@@ -279,6 +271,46 @@ def administrator_recovery(
         sent=True,
         message=f"Accès rétabli pour « {user.email} ». Connectez-vous.",
     )
+
+
+def _publisher_key(
+    db: Session, key: str, station: str, identifier: str
+) -> RecoveryKey:
+    """Accept a one-shot key signed by the publisher for this computer.
+
+    Used when no local recovery key was generated before the incident: the
+    owner issues one from the console for this installation only.
+    """
+    try:
+        reference = read_key(key, installation_uid())
+    except RescueError as error:
+        log_event(
+            db,
+            "recuperation_admin",
+            identifier=identifier,
+            station=station,
+            success=False,
+            detail=str(error),
+        )
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    marker = _hash_token(f"editeur:{reference}")
+    already = db.query(RecoveryKey).filter(RecoveryKey.key_hash == marker).first()
+    if already is not None:
+        log_event(
+            db,
+            "recuperation_admin",
+            identifier=identifier,
+            station=station,
+            success=False,
+            detail="Clé de secours déjà utilisée",
+        )
+        raise HTTPException(
+            status_code=400, detail="Clé de secours déjà utilisée"
+        )
+    entry = RecoveryKey(key_hash=marker)
+    db.add(entry)
+    db.flush()
+    return entry
 
 
 @router.get("/me", response_model=UserOut)

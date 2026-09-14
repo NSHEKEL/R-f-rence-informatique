@@ -158,6 +158,40 @@ class DesktopApi:
         path.write_text(content, encoding="utf-8-sig")
         return str(path)
 
+    def print_page(
+        self, width_mm: float, height_mm: float, margin_mm: float
+    ) -> bool:
+        """Print the receipt without the browser header and footer.
+
+        The web printing dialog stamps the date, the window title, the local
+        address and a page number around the ticket, and pads it to a full
+        page. Driving the embedded WebView2 printer directly removes them and
+        sets the exact roll geometry. Returns False when the native printer is
+        not reachable, so the page falls back on ``window.print()``.
+        """
+        if self.window is None:
+            return False
+        try:
+            from webview.platforms.winforms import BrowserView
+
+            browser = BrowserView.instances[self.window.uid]
+            core = browser.web_view.CoreWebView2
+            settings = core.Environment.CreatePrintSettings()
+            settings.ShouldPrintHeaderAndFooter = False
+            settings.ShouldPrintBackgrounds = True
+            settings.PageWidth = max(width_mm, 20.0) / 25.4
+            settings.PageHeight = max(height_mm, 20.0) / 25.4
+            inches = max(margin_mm, 0.0) / 25.4
+            settings.MarginTop = inches
+            settings.MarginBottom = inches
+            settings.MarginLeft = inches
+            settings.MarginRight = inches
+            core.PrintAsync(settings)
+            return True
+        except Exception:  # noqa: BLE001 - older runtime, Linux, no printer
+            traceback.print_exc()
+            return False
+
     def toggle_fullscreen(self) -> bool:
         """Full screen for the counter: the web API alone cannot resize the
         native window."""

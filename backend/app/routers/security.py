@@ -153,6 +153,13 @@ def diagnostic(db: Session = Depends(get_db)):
     items.append(
         DiagnosticItem(label="Configuration locale", status="ok", detail=where)
     )
+    items.append(
+        DiagnosticItem(
+            label="Code d'installation",
+            status="ok",
+            detail=licensing.installation_uid(),
+        )
+    )
 
     try:
         users = db.query(User).count()

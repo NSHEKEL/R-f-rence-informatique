@@ -36,6 +36,29 @@ function ticketHeightMm(): number {
   );
 }
 
+/**
+ * Native printer of the desktop window. The web dialog always stamps the
+ * date, the window title, the local address and a page number around the
+ * ticket; the native bridge prints the same styled page without them.
+ */
+function desktopPrint():
+  | ((width: number, height: number, margin: number) => Promise<boolean>)
+  | undefined {
+  return (
+    window as unknown as {
+      pywebview?: {
+        api?: {
+          print_page?: (
+            width: number,
+            height: number,
+            margin: number
+          ) => Promise<boolean>;
+        };
+      };
+    }
+  ).pywebview?.api?.print_page;
+}
+
 function pageRule(format: ReceiptFormat, marginMm: number): string {
   if (format === "80mm" || format === "58mm") {
     // Thermal roll: `auto` is invalid next to a length, so the exact ticket
@@ -202,6 +225,9 @@ export function printReceipt(
     document.head.appendChild(style);
   }
   style.textContent = pageRule(format, config.margin_mm);
+  const thermal = format === "80mm" || format === "58mm";
+  // Measured before the copies are added, so every copy gets its own page.
+  const pageHeight = thermal ? ticketHeightMm() : 297;
   const root = document.getElementById(PRINT_ROOT_ID);
   const copies = Math.min(Math.max(Math.round(config.copies) || 1, 1), 5);
   const extras: HTMLElement[] = [];
@@ -213,6 +239,17 @@ export function printReceipt(
       root.appendChild(copy);
       extras.push(copy);
     }
+  }
+  const native = desktopPrint();
+  if (native) {
+    const width = thermal ? widthMm(format) : 210;
+    native(width, pageHeight, 0)
+      .then((done) => {
+        if (!done) window.print();
+      })
+      .catch(() => window.print())
+      .finally(() => extras.forEach((copy) => copy.remove()));
+    return;
   }
   window.print();
   extras.forEach((copy) => copy.remove());
