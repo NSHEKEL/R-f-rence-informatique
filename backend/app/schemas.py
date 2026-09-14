@@ -442,6 +442,58 @@ class ForgotPasswordResult(BaseModel):
     message: str
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    password: str
+    confirm: str
+
+
+class RecoveryRequest(BaseModel):
+    """Administrator recovery: a key, the account to reopen, a new password."""
+
+    key: str
+    identifier: str = ""
+    password: str
+    confirm: str
+
+
+class RecoveryKeyOut(BaseModel):
+    """The clear key is returned once, right after it has been generated."""
+
+    key: str
+    created_at: datetime
+
+
+class SecurityLogOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    at: datetime
+    event: str
+    identifier: str
+    detail: str
+    station: str
+    success: bool
+    user: Optional[UserOut] = None
+
+
+class DiagnosticItem(BaseModel):
+    """One line of the connection diagnostic; never holds a secret."""
+
+    label: str
+    status: str = "ok"  # ok, avertissement, erreur
+    detail: str = ""
+
+
+class DiagnosticOut(BaseModel):
+    items: list[DiagnosticItem] = []
+
+
+class AuthRepairResult(BaseModel):
+    message: str
+    unlocked: int = 0
+    tokens_cleared: int = 0
+
+
 # ---------- Reports ----------
 class ReportRow(BaseModel):
     label: str

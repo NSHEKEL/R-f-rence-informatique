@@ -311,8 +311,10 @@ export default function Mobile() {
           />
           <input
             className="input w-full"
-            type="email"
-            placeholder="E-mail"
+            type="text"
+            autoCapitalize="none"
+            spellCheck={false}
+            placeholder="Identifiant"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required

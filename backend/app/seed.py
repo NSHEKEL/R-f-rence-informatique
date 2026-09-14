@@ -28,10 +28,11 @@ def seed():
     try:
         if db.query(User).first():
             return
+        # Plain "admin": the identifier is a name, never an email address.
         db.add(
             User(
                 name="Administrateur",
-                email="admin@reference.ci",
+                email="admin",
                 hashed_password=hash_password("admin123"),
                 role="admin",
             )

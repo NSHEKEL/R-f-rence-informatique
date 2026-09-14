@@ -268,7 +268,7 @@ export default function ConsoleClient() {
           <thead className="text-left text-xs uppercase text-slate-500">
             <tr>
               <th className="py-2">Nom</th>
-              <th className="py-2">E-mail</th>
+              <th className="py-2">Identifiant</th>
               <th className="py-2">État</th>
               <th className="py-2">Modifié le</th>
               <th className="py-2"></th>
@@ -360,9 +360,12 @@ export default function ConsoleClient() {
             />
           </div>
           <div>
-            <label className="block text-xs text-slate-500">E-mail</label>
+            <label className="block text-xs text-slate-500">Identifiant</label>
             <input
               value={adminEmail}
+              placeholder="admin"
+              autoCapitalize="none"
+              spellCheck={false}
               onChange={(e) => setAdminEmail(e.target.value)}
               className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
             />

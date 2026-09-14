@@ -60,8 +60,11 @@ L'application démarre sur http://localhost:5173 (proxy `/api` → backend).
 Une installation neuve démarre sur une base vide (aucun produit, aucune vente) avec
 le seul compte administrateur :
 
-- Email : `admin@reference.ci`
+- Identifiant : `admin` (un simple nom suffit, le « @ » n'est pas exigé)
 - Mot de passe : `admin123` (à changer immédiatement dans Paramètres → Mon compte)
+
+Les installations existantes gardent leurs identifiants actuels, y compris ceux
+au format `utilisateur@domaine`.
 
 Pour charger le catalogue de démonstration (uniquement sur une base de test) :
 

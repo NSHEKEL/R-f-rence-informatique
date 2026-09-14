@@ -109,10 +109,13 @@ export default function ConsoleLogin() {
         )}
 
         <label className="mb-1 block text-sm font-medium text-slate-700">
-          Adresse e-mail
+          Identifiant
         </label>
         <input
-          type="email"
+          type="text"
+          autoComplete="username"
+          autoCapitalize="none"
+          spellCheck={false}
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}

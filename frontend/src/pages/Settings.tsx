@@ -32,6 +32,7 @@ import type {
 import { useAuth } from "../context/AuthContext";
 import PhotoPicker from "../components/PhotoPicker";
 import PrintingSettings from "../components/PrintingSettings";
+import SecuritySettings from "../components/SecuritySettings";
 import { useCompany } from "../context/CompanyContext";
 
 type CompanyForm = Omit<CompanySettings, "id"> & { smtp_password?: string };
@@ -46,6 +47,7 @@ const TABS = [
   { key: "sauvegarde", label: "Sauvegarde", icon: Database },
   { key: "maj", label: "Mise à jour", icon: DownloadCloud },
   { key: "emails", label: "E-mails", icon: Mail },
+  { key: "securite", label: "Sécurité", icon: ShieldCheck, admin: true },
   { key: "compte", label: "Mon compte", icon: User },
 ] as const;
 
@@ -126,7 +128,31 @@ export default function Settings() {
       : "entreprise";
   });
   const [workstations, setWorkstations] = useState<Workstation[]>([]);
+  const [passwordForm, setPasswordForm] = useState({
+    current_password: "",
+    password: "",
+    confirm: "",
+  });
+  const [passwordMessage, setPasswordMessage] = useState("");
   const restoreInput = useRef<HTMLInputElement>(null);
+
+  async function changeMyPassword() {
+    setPasswordMessage("Enregistrement...");
+    try {
+      const { data } = await api.post<{ message: string }>(
+        "/auth/changer-mot-de-passe",
+        passwordForm
+      );
+      setPasswordMessage(data.message);
+      setPasswordForm({ current_password: "", password: "", confirm: "" });
+    } catch (err) {
+      setPasswordMessage(
+        axios.isAxiosError(err)
+          ? err.response?.data?.detail ?? "Changement impossible"
+          : "Changement impossible"
+      );
+    }
+  }
 
   useEffect(() => {
     api
@@ -430,7 +456,9 @@ export default function Settings() {
       </div>
 
       <div className="flex flex-wrap gap-2">
-        {TABS.map((item) => (
+        {TABS.filter(
+          (item) => !("admin" in item) || user?.role === "admin"
+        ).map((item) => (
           <button
             key={item.key}
             type="button"
@@ -1010,6 +1038,8 @@ export default function Settings() {
       </div>
       )}
 
+      {tab === "securite" && user?.role === "admin" && <SecuritySettings />}
+
       {tab === "compte" && (
       <div className="card p-6">
         <div className="mb-4 flex items-center gap-2">
@@ -1050,7 +1080,7 @@ export default function Settings() {
               <Mail size={18} />
             </div>
             <div>
-              <p className="text-xs text-slate-400">Email</p>
+              <p className="text-xs text-slate-400">Identifiant</p>
               <p className="font-medium text-slate-800">{user?.email}</p>
             </div>
           </div>
@@ -1062,6 +1092,50 @@ export default function Settings() {
               <p className="text-xs text-slate-400">Rôle</p>
               <p className="font-medium capitalize text-slate-800">{user?.role}</p>
             </div>
+          </div>
+
+          <div className="border-t border-slate-100 pt-4">
+            <h4 className="mb-3 text-sm font-bold text-slate-900">
+              Changer mon mot de passe
+            </h4>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <input
+                className="input"
+                type="password"
+                placeholder="Ancien mot de passe"
+                value={passwordForm.current_password}
+                onChange={(e) =>
+                  setPasswordForm({
+                    ...passwordForm,
+                    current_password: e.target.value,
+                  })
+                }
+              />
+              <input
+                className="input"
+                type="password"
+                placeholder="Nouveau mot de passe"
+                value={passwordForm.password}
+                onChange={(e) =>
+                  setPasswordForm({ ...passwordForm, password: e.target.value })
+                }
+              />
+              <input
+                className="input"
+                type="password"
+                placeholder="Confirmation"
+                value={passwordForm.confirm}
+                onChange={(e) =>
+                  setPasswordForm({ ...passwordForm, confirm: e.target.value })
+                }
+              />
+            </div>
+            <button className="btn-primary mt-3" onClick={changeMyPassword}>
+              <Check size={16} /> Enregistrer le mot de passe
+            </button>
+            {passwordMessage && (
+              <p className="mt-3 text-sm text-slate-600">{passwordMessage}</p>
+            )}
           </div>
         </div>
       </div>

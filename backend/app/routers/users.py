@@ -3,6 +3,13 @@ import secrets
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from ..accounts import (
+    identifier_error,
+    identifier_taken,
+    log_event,
+    normalize_identifier,
+    password_error,
+)
 from ..auth import get_current_user, hash_password, require_admin
 from ..database import get_db
 from ..licensing import has_feature
@@ -37,11 +44,17 @@ def create_user(
                     "formule : un seul compte est autorisé."
                 ),
             )
-    email = payload.email.strip().lower()
-    if db.query(User).filter(User.email == email).first():
-        raise HTTPException(status_code=400, detail="Cet email est déjà utilisé")
-    if not payload.password:
-        raise HTTPException(status_code=400, detail="Mot de passe requis")
+    email = normalize_identifier(payload.email)
+    problem = identifier_error(email)
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
+    if identifier_taken(db, email):
+        raise HTTPException(
+            status_code=400, detail="Cet identifiant est déjà utilisé"
+        )
+    weak = password_error(payload.password)
+    if weak:
+        raise HTTPException(status_code=400, detail=weak)
     user = User(
         name=payload.name.strip(),
         email=email,
@@ -52,6 +65,7 @@ def create_user(
     db.add(user)
     db.commit()
     db.refresh(user)
+    log_event(db, "utilisateur_cree", user=user, detail=f"Rôle {user.role}")
     return user
 
 
@@ -103,25 +117,47 @@ def update_user(
             detail="Impossible : au moins un administrateur actif est requis",
         )
 
+    changes: list[str] = []
     if payload.name is not None:
         user.name = payload.name.strip()
     if payload.email is not None:
-        email = payload.email.strip().lower()
-        existing = db.query(User).filter(User.email == email).first()
-        if existing and existing.id != user.id:
-            raise HTTPException(status_code=400, detail="Cet email est déjà utilisé")
+        email = normalize_identifier(payload.email)
+        problem = identifier_error(email)
+        if problem:
+            raise HTTPException(status_code=400, detail=problem)
+        if identifier_taken(db, email, keep_id=user.id):
+            raise HTTPException(
+                status_code=400, detail="Cet identifiant est déjà utilisé"
+            )
+        if email != user.email:
+            changes.append(f"identifiant {user.email} → {email}")
         user.email = email
     if payload.role is not None:
+        if payload.role != user.role:
+            changes.append(f"rôle {user.role} → {payload.role}")
         user.role = payload.role
     if payload.photo is not None:
         user.photo = payload.photo
     if payload.is_active is not None:
+        if payload.is_active != user.is_active:
+            changes.append("réactivation" if payload.is_active else "désactivation")
         user.is_active = payload.is_active
     if payload.password:
+        weak = password_error(payload.password)
+        if weak:
+            raise HTTPException(status_code=400, detail=weak)
         user.hashed_password = hash_password(payload.password)
+        changes.append("mot de passe changé")
 
     db.commit()
     db.refresh(user)
+    log_event(
+        db,
+        "utilisateur_modifie",
+        user=user,
+        detail="; ".join(changes) or "aucun changement",
+        station=f"par {current_user.email}",
+    )
     return user
 
 
@@ -129,7 +165,7 @@ def update_user(
 def reset_user_password(
     user_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_admin),
 ):
     """Give a user a temporary password, shown once to the administrator."""
     user = db.query(User).get(user_id)
@@ -138,6 +174,13 @@ def reset_user_password(
     temporary = secrets.token_urlsafe(6)
     user.hashed_password = hash_password(temporary)
     db.commit()
+    log_event(
+        db,
+        "mot_de_passe_reinitialise",
+        user=user,
+        detail="Mot de passe temporaire remis à l'administrateur",
+        station=f"par {current_user.email}",
+    )
     return {"password": temporary}
 
 
@@ -165,5 +208,12 @@ def delete_user(
                 status_code=400,
                 detail="Impossible : au moins un administrateur actif est requis",
             )
+    identifier = user.email
     db.delete(user)
     db.commit()
+    log_event(
+        db,
+        "utilisateur_supprime",
+        identifier=identifier,
+        detail=f"Supprimé par {current_user.email}",
+    )

@@ -356,6 +356,35 @@ class PasswordResetToken(Base):
     user = relationship("User")
 
 
+class SecurityLog(Base):
+    """Who did what on the accounts; passwords are never written here."""
+
+    __tablename__ = "security_log"
+
+    id = Column(Integer, primary_key=True, index=True)
+    at = Column(DateTime, default=utcnow, index=True)
+    event = Column(String, default="", index=True)
+    identifier = Column(String, default="")
+    detail = Column(Text, default="")
+    station = Column(String, default="")
+    success = Column(Boolean, default=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    user = relationship("User")
+
+
+class RecoveryKey(Base):
+    """Hashed key letting an administrator regain access to a locked shop."""
+
+    __tablename__ = "recovery_keys"
+
+    id = Column(Integer, primary_key=True, index=True)
+    key_hash = Column(String, nullable=False)
+    created_at = Column(DateTime, default=utcnow)
+    used_at = Column(DateTime, nullable=True)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+
 class Counter(Base):
     """Row-locked sequence, so concurrent tills never pick the same number."""
 

@@ -564,6 +564,20 @@ def _admin_or_404(db: Session, client: Client, admin_id: int) -> ClientAdmin:
     return row
 
 
+def _clean_identifier(raw: str) -> str:
+    """A shop identifier is a name (``admin``); the "@" is never required."""
+    identifier = (raw or "").strip().lower()
+    if len(identifier) < 3 or any(char.isspace() for char in identifier):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Identifiant invalide : au moins 3 caractères, sans espace "
+                "(exemple : admin)"
+            ),
+        )
+    return identifier
+
+
 @router.post(
     "/clients/{client_id}/admins", response_model=ClientDetail, status_code=201
 )
@@ -575,9 +589,7 @@ def create_client_admin(
 ):
     """Administrator account the shop receives at its next synchronisation."""
     client = _client_or_404(db, client_id)
-    email = payload.email.strip().lower()
-    if not email or "@" not in email:
-        raise HTTPException(status_code=400, detail="Adresse e-mail invalide")
+    email = _clean_identifier(payload.email)
     if len(payload.password) < 6:
         raise HTTPException(
             status_code=400, detail="Mot de passe trop court (6 caractères minimum)"
@@ -615,10 +627,7 @@ def update_client_admin(
     if payload.name is not None:
         row.name = payload.name.strip() or row.name
     if payload.email is not None:
-        email = payload.email.strip().lower()
-        if not email or "@" not in email:
-            raise HTTPException(status_code=400, detail="Adresse e-mail invalide")
-        row.email = email
+        row.email = _clean_identifier(payload.email)
     if payload.password:
         if len(payload.password) < 6:
             raise HTTPException(

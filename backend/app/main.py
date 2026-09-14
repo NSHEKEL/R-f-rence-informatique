@@ -40,6 +40,7 @@ from .routers import (
     reports,
     returns,
     sales,
+    security,
     settings,
     suppliers,
     sync,
@@ -93,6 +94,7 @@ app.include_router(settings.router)
 app.include_router(users.router, dependencies=feature("gestion_utilisateurs"))
 app.include_router(notifications.router)
 app.include_router(permissions.router)
+app.include_router(security.router)
 app.include_router(cash.router, dependencies=feature("versements"))
 app.include_router(inventory.router, dependencies=feature("stock"))
 app.include_router(accounting.router, dependencies=feature("dettes"))

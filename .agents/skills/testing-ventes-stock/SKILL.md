@@ -12,7 +12,8 @@ the showroom catalogue explicitly when a test needs data:
 `cd backend && ./venv/bin/python -m app.seed --demo`.
 
 ## Devin Secrets Needed
-None. Login with the first-run administrator: `admin@reference.ci` / `admin123`.
+None. Login with the first-run administrator: `admin` / `admin123` (older
+installations still sign in with their historical `admin@reference.ci`).
 
 ## Start the services
 Both are killed on any VM/process restart — always re-check and restart before testing:

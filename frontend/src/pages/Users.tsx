@@ -312,13 +312,19 @@ export default function Users() {
             />
           </div>
           <div>
-            <label className="label">Email</label>
+            <label className="label">Identifiant de connexion</label>
             <input
               className="input"
-              type="email"
+              type="text"
+              placeholder="admin, vendeur, caissier…"
+              autoCapitalize="none"
+              spellCheck={false}
               value={form.email}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
             />
+            <p className="mt-1 text-xs text-slate-400">
+              Un simple nom suffit ; une adresse e-mail reste acceptée.
+            </p>
           </div>
           <div>
             <label className="label">
