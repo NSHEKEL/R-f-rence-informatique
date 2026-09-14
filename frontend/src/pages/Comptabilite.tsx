@@ -20,6 +20,7 @@ import {
 import api, { formatXOF } from "../api/client";
 import type { AccountingSummary, CashSession, Expense } from "../types";
 import Modal from "../components/Modal";
+import { useSyncVersion } from "../context/SyncContext";
 
 const EXPENSE_CATEGORIES = [
   "Achat marchandise",
@@ -40,6 +41,7 @@ function firstOfMonth(): string {
 }
 
 export default function Comptabilite() {
+  const version = useSyncVersion();
   const [start, setStart] = useState(firstOfMonth());
   const [end, setEnd] = useState(today());
   const [summary, setSummary] = useState<AccountingSummary | null>(null);
@@ -75,7 +77,7 @@ export default function Comptabilite() {
 
   useEffect(() => {
     load();
-  }, [load]);
+  }, [load, version]);
 
   async function addExpense() {
     setSaving(true);
@@ -313,7 +315,7 @@ export default function Comptabilite() {
                   <button
                     className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
                     onClick={() => removeExpense(e)}
-                    title="Supprimer"
+                    aria-label="Supprimer la dépense"
                   >
                     <Trash2 size={16} />
                   </button>

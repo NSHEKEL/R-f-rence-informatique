@@ -1,0 +1,11 @@
+backend/venv
+backend/*.db
+backend/*.db-*
+frontend/node_modules
+frontend/src
+frontend/public
+mobile
+packaging
+test-screenshots
+*.png
+test-*.md

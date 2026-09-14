@@ -4,9 +4,9 @@ from datetime import datetime, time, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from ..auth import require_admin
 from ..database import get_db
-from ..models import Expense, Product, Sale, User
+from ..models import Expense, Product, Sale, SaleReturn, User
+from ..permissions import require_permission
 from ..schemas import (
     AccountingCategory,
     AccountingSummary,
@@ -43,7 +43,7 @@ def summary(
     start: str | None = None,
     end: str | None = None,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_permission("comptabilite")),
 ):
     period_start, period_end = _parse_range(start, end)
 
@@ -70,6 +70,20 @@ def summary(
         by_day[sale.date.strftime("%d/%m")] += sale.total
         for item in sale.items:
             cost += purchase_prices.get(item.product_id, 0) * item.quantity
+
+    # Credit notes reduce both the revenue and the cost of goods sold.
+    credits = (
+        db.query(SaleReturn)
+        .filter(SaleReturn.date >= period_start, SaleReturn.date <= period_end)
+        .all()
+    )
+    returns_total = sum(c.total for c in credits)
+    for credit in credits:
+        revenue -= credit.total
+        by_payment["Retours"] -= credit.total
+        by_day[credit.date.strftime("%d/%m")] -= credit.total
+        for item in credit.items:
+            cost -= purchase_prices.get(item.product_id, 0) * item.quantity
 
     expenses = (
         db.query(Expense)
@@ -98,6 +112,7 @@ def summary(
         expenses_total=expenses_total,
         net_profit=gross_margin - expenses_total,
         sales_count=len(sales),
+        returns_total=returns_total,
         revenue_by_payment=[
             AccountingCategory(name=k, amount=v) for k, v in by_payment.items()
         ],
@@ -112,7 +127,7 @@ def summary(
 def list_expenses(
     limit: int = 100,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_permission("comptabilite")),
 ):
     return db.query(Expense).order_by(Expense.date.desc()).limit(limit).all()
 
@@ -121,7 +136,7 @@ def list_expenses(
 def create_expense(
     payload: ExpenseCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_permission("comptabilite")),
 ):
     if payload.amount <= 0:
         raise HTTPException(status_code=400, detail="Montant invalide")
@@ -143,7 +158,7 @@ def create_expense(
 def delete_expense(
     expense_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_permission("comptabilite")),
 ):
     expense = db.query(Expense).get(expense_id)
     if not expense:
