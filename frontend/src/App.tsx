@@ -13,6 +13,7 @@ import Returns from "./pages/Returns";
 import Caisse from "./pages/Caisse";
 import Inventaire from "./pages/Inventaire";
 import Comptabilite from "./pages/Comptabilite";
+import Paie from "./pages/Paie";
 import Dettes from "./pages/Dettes";
 import Rapports from "./pages/Rapports";
 import Proformas from "./pages/Proformas";
@@ -248,6 +249,14 @@ export default function App() {
           element={
             <PermRoute right="comptabilite">
               <Comptabilite />
+            </PermRoute>
+          }
+        />
+        <Route
+          path="/paie"
+          element={
+            <PermRoute right="paie">
+              <Paie />
             </PermRoute>
           }
         />

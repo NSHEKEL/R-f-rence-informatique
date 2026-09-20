@@ -743,6 +743,130 @@ class DebtPayment(Base):
     cancelled_by = relationship("User", foreign_keys=[cancelled_by_id])
 
 
+class Employee(Base):
+    """A worker of the shop, paid every month through the payroll module."""
+
+    __tablename__ = "employees"
+
+    id = Column(Integer, primary_key=True, index=True)
+    matricule = Column(String, unique=True, index=True, nullable=False)
+    last_name = Column(String, nullable=False)
+    first_name = Column(String, default="")
+    gender = Column(String, default="")  # M, F
+    birth_date = Column(DateTime, nullable=True)
+    phone = Column(String, default="")
+    address = Column(String, default="")
+    job = Column(String, default="")
+    department = Column(String, default="")
+    hired_at = Column(DateTime, nullable=True)
+    contract = Column(String, default="CDI")  # configurable list
+    status = Column(String, default="En poste")
+    base_salary = Column(Float, default=0, nullable=False)
+    payment_method = Column(String, default="Espèces")
+    bank = Column(String, default="")
+    account_number = Column(String, default="")
+    social_number = Column(String, default="")  # CNPS
+    email = Column(String, default="")
+    note = Column(Text, default="")
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+    payslips = relationship("Payslip", back_populates="employee")
+
+    @property
+    def full_name(self) -> str:
+        return f"{self.last_name} {self.first_name}".strip()
+
+
+class PayrollElement(Base):
+    """A pay line the administrator configures: a gain or a deduction.
+
+    Nothing legal is written in the code: the rate, the ceiling and the base
+    are set from Paie → Paramètres, and a rule that changed keeps its old
+    payslips untouched because every payslip stores its own computed lines.
+    """
+
+    __tablename__ = "payroll_elements"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    kind = Column(String, default="gain", index=True)  # gain, retenue
+    mode = Column(String, default="fixe")  # fixe, pourcentage
+    value = Column(Float, default=0, nullable=False)  # amount or percentage
+    base = Column(String, default="base")  # base, brut, manuel
+    ceiling = Column(Float, default=0, nullable=False)  # 0 = no ceiling
+    # Applied to every worker unless the payslip drops the line.
+    automatic = Column(Boolean, default=True, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    starts_on = Column(DateTime, nullable=True)
+    ends_on = Column(DateTime, nullable=True)
+    position = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime, default=utcnow)
+
+
+class Payslip(Base):
+    """Payroll of one worker for one month, with its own frozen lines."""
+
+    __tablename__ = "payslips"
+
+    id = Column(Integer, primary_key=True, index=True)
+    reference = Column(String, unique=True, index=True, nullable=False)
+    employee_id = Column(Integer, ForeignKey("employees.id"), nullable=False)
+    year = Column(Integer, default=0, nullable=False, index=True)
+    month = Column(Integer, default=0, nullable=False, index=True)
+    base_salary = Column(Float, default=0, nullable=False)
+    gross = Column(Float, default=0, nullable=False)
+    deductions = Column(Float, default=0, nullable=False)
+    net = Column(Float, default=0, nullable=False)
+    # Brouillon, Validée, Payée, Annulée
+    status = Column(String, default="Brouillon", index=True)
+    worked_days = Column(Float, default=0, nullable=False)
+    absence_days = Column(Float, default=0, nullable=False)
+    overtime_hours = Column(Float, default=0, nullable=False)
+    overtime_rate = Column(Float, default=0, nullable=False)
+    validated_at = Column(DateTime, nullable=True)
+    paid_at = Column(DateTime, nullable=True)
+    payment_method = Column(String, default="")
+    cancel_reason = Column(Text, default="")
+    note = Column(Text, default="")
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    employee = relationship("Employee", back_populates="payslips")
+    created_by = relationship("User")
+    lines = relationship(
+        "PayslipLine",
+        back_populates="payslip",
+        cascade="all, delete-orphan",
+        order_by="PayslipLine.position",
+    )
+
+    @property
+    def period(self) -> str:
+        return f"{self.month:02d}/{self.year}"
+
+
+class PayslipLine(Base):
+    """One gain or deduction printed on a payslip, with how it was computed."""
+
+    __tablename__ = "payslip_lines"
+
+    id = Column(Integer, primary_key=True, index=True)
+    payslip_id = Column(Integer, ForeignKey("payslips.id"), nullable=False)
+    element_id = Column(Integer, ForeignKey("payroll_elements.id"), nullable=True)
+    kind = Column(String, default="gain")  # gain, retenue
+    label = Column(String, default="")
+    quantity = Column(Float, default=0, nullable=False)
+    rate = Column(Float, default=0, nullable=False)
+    base = Column(Float, default=0, nullable=False)
+    amount = Column(Float, default=0, nullable=False)
+    position = Column(Integer, default=0, nullable=False)
+
+    payslip = relationship("Payslip", back_populates="lines")
+
+
 class RolePermission(Base):
     """Right granted by the administrator to a role (seller, stock manager)."""
 

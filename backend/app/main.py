@@ -33,6 +33,7 @@ from .routers import (
     license as license_router,
     notifications,
     orders,
+    payroll,
     permissions,
     products,
     purchases,
@@ -100,6 +101,7 @@ app.include_router(security.router)
 app.include_router(cash.router, dependencies=feature("versements"))
 app.include_router(inventory.router, dependencies=feature("inventaire"))
 app.include_router(accounting.router, dependencies=feature("comptabilite"))
+app.include_router(payroll.router, dependencies=feature("paie"))
 app.include_router(debts.router, dependencies=feature("dettes"))
 app.include_router(returns.router, dependencies=feature("retours"))
 app.include_router(proformas.router, dependencies=feature("proformas"))

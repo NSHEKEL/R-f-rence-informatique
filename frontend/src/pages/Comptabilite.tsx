@@ -17,7 +17,9 @@ import {
   TrendingUp,
   Wallet,
 } from "lucide-react";
+import { Link } from "react-router-dom";
 import api, { formatXOF } from "../api/client";
+import { useAuth } from "../context/AuthContext";
 import type { AccountingSummary, CashSession, Expense } from "../types";
 import Modal from "../components/Modal";
 import { useSyncVersion } from "../context/SyncContext";
@@ -42,6 +44,7 @@ function firstOfMonth(): string {
 
 export default function Comptabilite() {
   const version = useSyncVersion();
+  const { can } = useAuth();
   const [start, setStart] = useState(firstOfMonth());
   const [end, setEnd] = useState(today());
   const [summary, setSummary] = useState<AccountingSummary | null>(null);
@@ -158,9 +161,16 @@ export default function Comptabilite() {
             onChange={(e) => setEnd(e.target.value)}
           />
         </div>
-        <button className="btn-primary ml-auto" onClick={() => setAddOpen(true)}>
-          <Plus size={16} /> Ajouter une dépense
-        </button>
+        <div className="ml-auto flex flex-wrap gap-2">
+          {can("paie") && (
+            <Link className="btn-ghost" to="/paie">
+              <Wallet size={16} /> Paie & bulletins
+            </Link>
+          )}
+          <button className="btn-primary" onClick={() => setAddOpen(true)}>
+            <Plus size={16} /> Ajouter une dépense
+          </button>
+        </div>
       </div>
 
       {error && (

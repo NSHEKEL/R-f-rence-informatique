@@ -32,6 +32,7 @@ PERMISSIONS: dict[str, tuple[str, str]] = {
     "approvisionnements": ("Approvisionnement", "Pages"),
     "categories": ("Catégories", "Pages"),
     "apropos": ("À propos de nous", "Pages"),
+    "paie": ("Paie & bulletins de salaire", "Pages"),
     "produits_gerer": ("Créer, modifier et supprimer des produits", "Actions"),
     "categories_gerer": ("Créer, modifier et supprimer des catégories", "Actions"),
     "fournisseurs_gerer": (
@@ -60,6 +61,16 @@ PERMISSIONS: dict[str, tuple[str, str]] = {
     "livraisons_annuler": ("Annuler un bon de livraison", "Actions"),
     "livraisons_imprimer": ("Imprimer un bon de livraison", "Actions"),
     "livraisons_prix": ("Voir les prix sur un bon de livraison", "Actions"),
+    "paie_travailleurs": (
+        "Créer, modifier et archiver un travailleur",
+        "Actions",
+    ),
+    "paie_gerer": ("Préparer et modifier une paie", "Actions"),
+    "paie_valider": ("Valider une paie", "Actions"),
+    "paie_payer": ("Marquer une paie comme payée", "Actions"),
+    "paie_annuler": ("Annuler une paie (avec motif)", "Actions"),
+    "paie_imprimer": ("Imprimer ou exporter un bulletin", "Actions"),
+    "paie_parametres": ("Modifier les paramètres de paie", "Actions"),
     "documents_transformer": (
         "Transformer un bon de commande en livraison ou en facture",
         "Actions",

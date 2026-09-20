@@ -72,6 +72,10 @@ FEATURES: tuple[FeatureSpec, ...] = (
         "comptabilite", "Comptabilité", "Pilotage",
         "Journal des encaissements et dépenses",
     ),
+    FeatureSpec(
+        "paie", "Paie & bulletins de salaire", "Pilotage",
+        "Travailleurs, paie mensuelle et bulletins A4",
+    ),
     FeatureSpec("tableau_bord", "Tableau de bord", "Pilotage", "Chiffres du jour"),
     FeatureSpec("export_excel", "Export Excel", "Pilotage", "Export CSV/Excel"),
     FeatureSpec("export_pdf", "Export PDF", "Pilotage", "Impression et export PDF"),

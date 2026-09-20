@@ -135,6 +135,12 @@ const navItems: NavItem[] = [
     access: "comptabilite",
   },
   {
+    to: "/paie",
+    label: "Paie & salaires",
+    icon: Wallet,
+    access: "paie",
+  },
+  {
     to: "/dettes",
     label: "Dettes & créances",
     icon: HandCoins,
@@ -203,7 +209,7 @@ const navGroups: NavGroup[] = [
   {
     label: "Clients & finances",
     icon: HandCoins,
-    items: pick("/clients", "/dettes", "/comptabilite", "/rapports"),
+    items: pick("/clients", "/dettes", "/comptabilite", "/paie", "/rapports"),
   },
   {
     label: "Comptes",
@@ -239,6 +245,7 @@ const pageTitles: Record<string, string> = {
   "/rapports": "Rapports",
   "/proformas": "Factures proforma",
   "/comptabilite": "Comptabilité",
+  "/paie": "Paie & bulletins de salaire",
   "/dettes": "Dettes & créances",
   "/ventes": "Ventes",
   "/commandes": "Commandes",
