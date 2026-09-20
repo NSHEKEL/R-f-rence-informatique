@@ -1140,3 +1140,152 @@ class PartyBalance(BaseModel):
     overdue: float = 0
     days_late: int = 0
     next_due: Optional[datetime] = None
+
+
+# ---------- Paie ----------
+class EmployeeBase(BaseModel):
+    matricule: str = ""
+    last_name: str
+    first_name: str = ""
+    gender: str = ""
+    birth_date: Optional[datetime] = None
+    phone: str = ""
+    address: str = ""
+    job: str = ""
+    department: str = ""
+    hired_at: Optional[datetime] = None
+    contract: str = "CDI"
+    status: str = "En poste"
+    base_salary: float = 0
+    payment_method: str = "Espèces"
+    bank: str = ""
+    account_number: str = ""
+    social_number: str = ""
+    email: str = ""
+    note: str = ""
+    is_active: bool = True
+
+
+class EmployeeOut(EmployeeBase):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    full_name: str = ""
+    created_at: datetime
+
+
+class PayrollElementBase(BaseModel):
+    name: str
+    kind: str = "gain"  # gain, retenue
+    mode: str = "fixe"  # fixe, pourcentage
+    value: float = 0
+    base: str = "base"  # base, brut
+    ceiling: float = 0
+    automatic: bool = True
+    is_active: bool = True
+    starts_on: Optional[datetime] = None
+    ends_on: Optional[datetime] = None
+    position: int = 0
+
+
+class PayrollElementOut(PayrollElementBase):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+
+
+class PayslipLineIn(BaseModel):
+    kind: str = "gain"
+    label: str = ""
+    quantity: float = 0
+    rate: float = 0
+    base: float = 0
+    amount: float = 0
+    element_id: Optional[int] = None
+
+
+class PayslipLineOut(PayslipLineIn):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    position: int = 0
+
+
+class PayslipCreate(BaseModel):
+    employee_id: int
+    year: int
+    month: int
+    absence_days: float = 0
+    overtime_hours: float = 0
+    overtime_rate: float = 0
+    payment_method: str = ""
+    note: str = ""
+    # Exceptional lines typed for this month only.
+    extra_lines: List[PayslipLineIn] = []
+    # Lines shown on screen, kept as they are when the user corrected them.
+    lines: Optional[List[PayslipLineIn]] = None
+
+
+class PayslipOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    reference: str
+    employee_id: int
+    year: int
+    month: int
+    period: str = ""
+    base_salary: float = 0
+    gross: float = 0
+    deductions: float = 0
+    net: float = 0
+    net_in_words: str = ""
+    status: str = "Brouillon"
+    absence_days: float = 0
+    overtime_hours: float = 0
+    overtime_rate: float = 0
+    validated_at: Optional[datetime] = None
+    paid_at: Optional[datetime] = None
+    payment_method: str = ""
+    cancel_reason: str = ""
+    note: str = ""
+    created_at: datetime
+    employee: Optional[EmployeeOut] = None
+    created_by: Optional[UserOut] = None
+    lines: List[PayslipLineOut] = []
+
+
+class PayslipDraft(BaseModel):
+    """Computed payslip shown before anything is written down."""
+
+    employee_id: int
+    year: int
+    month: int
+    base_salary: float = 0
+    gross: float = 0
+    deductions: float = 0
+    net: float = 0
+    net_in_words: str = ""
+    lines: List[PayslipLineIn] = []
+
+
+class PayslipCancel(BaseModel):
+    reason: str = ""
+
+
+class PayrollSummaryRow(BaseModel):
+    matricule: str = ""
+    employee: str = ""
+    job: str = ""
+    gross: float = 0
+    deductions: float = 0
+    net: float = 0
+    status: str = ""
+
+
+class PayrollSummary(BaseModel):
+    year: int = 0
+    month: int = 0
+    employees: int = 0
+    base_total: float = 0
+    gains_total: float = 0
+    gross_total: float = 0
+    deductions_total: float = 0
+    net_total: float = 0
+    rows: List[PayrollSummaryRow] = []
