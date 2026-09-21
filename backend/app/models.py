@@ -316,10 +316,18 @@ class Proforma(Base):
     date = Column(DateTime, default=utcnow)
     valid_until = Column(DateTime, nullable=True)
     total = Column(Float, default=0)
+    discount = Column(Float, default=0)
     note = Column(Text, default="")
+    # A quote and a proforma share this table: only the wording differs.
+    kind = Column(String, default="devis", index=True)
+    status = Column(String, default="Brouillon", index=True)
+    # Where the document went: its proforma, then its order.
+    converted_from_id = Column(Integer, ForeignKey("proformas.id"), nullable=True)
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     customer = relationship("Customer")
+    order = relationship("Order")
     created_by = relationship("User")
     items = relationship(
         "ProformaItem", back_populates="proforma", cascade="all, delete-orphan"
@@ -333,8 +341,11 @@ class ProformaItem(Base):
     proforma_id = Column(Integer, ForeignKey("proformas.id"), nullable=False)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
     product_name = Column(String, default="")
+    reference = Column(String, default="")
+    unit = Column(String, default="u")
     quantity = Column(Integer, default=1)
     unit_price = Column(Float, default=0)
+    discount = Column(Float, default=0)
     subtotal = Column(Float, default=0)
 
     proforma = relationship("Proforma", back_populates="items")
@@ -439,10 +450,50 @@ class Order(Base):
     deliveries = relationship(
         "Delivery", back_populates="order", cascade="all, delete-orphan"
     )
+    # The receivable opened on delivery, read-only: it carries the settlements
+    # booked in Dettes & créances for this order.
+    receivables = relationship(
+        "Debt",
+        primaryjoin=(
+            "and_(foreign(Debt.reference) == Order.reference,"
+            " Debt.kind == 'creance')"
+        ),
+        viewonly=True,
+    )
+
+    @property
+    def paid(self) -> float:
+        """Money really received: the deposit plus the settlements booked."""
+        settled = sum(debt.paid for debt in self.receivables)
+        return round((self.deposit or 0) + settled, 2)
 
     @property
     def balance(self) -> float:
-        return max(self.total - (self.deposit or 0), 0)
+        """What the customer still owes; a delivery never pays anything."""
+        return max(round((self.total or 0) - self.paid, 2), 0)
+
+    @property
+    def delivery_status(self) -> str:
+        """Where the goods are, regardless of the money."""
+        if self.status == "Annulée":
+            return "Annulé"
+        delivered = sum((item.delivered_quantity or 0) for item in self.items)
+        ordered = sum(item.quantity for item in self.items)
+        if delivered <= 0:
+            return "En attente"
+        return "Livré" if delivered >= ordered else "Partiellement livré"
+
+    @property
+    def payment_status(self) -> str:
+        """Where the money is, regardless of the goods."""
+        if self.status == "Annulée":
+            return "Annulé"
+        paid = self.paid
+        if paid <= 0.009:
+            return "Non payé"
+        if self.balance <= 0.009:
+            return "Payé"
+        return "Partiellement payé"
 
 
 class OrderItem(Base):

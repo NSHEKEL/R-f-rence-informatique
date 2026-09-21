@@ -70,6 +70,19 @@ COLUMNS: dict[str, dict[str, str]] = {
         "payment_terms": "VARCHAR DEFAULT ''",
         "delivery_terms": "VARCHAR DEFAULT ''",
     },
+    "proformas": {
+        "discount": "FLOAT DEFAULT 0",
+        # Documents written before quotes existed were all proformas.
+        "kind": "VARCHAR DEFAULT 'proforma'",
+        "status": "VARCHAR DEFAULT 'Brouillon'",
+        "converted_from_id": "INTEGER",
+        "order_id": "INTEGER",
+    },
+    "proforma_items": {
+        "reference": "VARCHAR DEFAULT ''",
+        "unit": "VARCHAR DEFAULT 'u'",
+        "discount": "FLOAT DEFAULT 0",
+    },
     "order_items": {
         "reference": "VARCHAR DEFAULT ''",
         "unit": "VARCHAR DEFAULT 'u'",

@@ -407,8 +407,10 @@ class ReturnOut(BaseModel):
 class ProformaItemCreate(BaseModel):
     product_id: Optional[int] = None
     product_name: str = ""
+    unit: str = "u"
     quantity: int = 1
     unit_price: float = 0
+    discount: float = 0
 
 
 class ProformaCreate(BaseModel):
@@ -416,7 +418,28 @@ class ProformaCreate(BaseModel):
     customer_name: str = ""
     valid_until: Optional[datetime] = None
     note: str = ""
+    # "devis" (commercial offer) or "proforma" (forecast invoice).
+    kind: str = "devis"
+    status: str = "Brouillon"
+    discount: float = 0
     items: List[ProformaItemCreate]
+
+
+class ProformaUpdate(BaseModel):
+    customer_id: Optional[int] = None
+    customer_name: Optional[str] = None
+    valid_until: Optional[datetime] = None
+    note: Optional[str] = None
+    status: Optional[str] = None
+    discount: Optional[float] = None
+    items: Optional[List[ProformaItemCreate]] = None
+
+
+class ProformaConvert(BaseModel):
+    """Turn a quote into a proforma, or either of them into an order."""
+
+    target: str = "proforma"
+    deposit: float = 0
 
 
 class ProformaItemOut(BaseModel):
@@ -424,8 +447,11 @@ class ProformaItemOut(BaseModel):
     id: int
     product_id: Optional[int]
     product_name: str
+    reference: str = ""
+    unit: str = "u"
     quantity: int
     unit_price: float
+    discount: float = 0
     subtotal: float
 
 
@@ -439,6 +465,11 @@ class ProformaOut(BaseModel):
     date: datetime
     valid_until: Optional[datetime] = None
     total: float
+    discount: float = 0
+    kind: str = "proforma"
+    status: str = "Brouillon"
+    converted_from_id: Optional[int] = None
+    order_id: Optional[int] = None
     note: str = ""
     created_by: Optional[UserOut] = None
     items: List[ProformaItemOut] = []
@@ -858,7 +889,12 @@ class OrderOut(BaseModel):
     total: float
     discount: float = 0
     deposit: float = 0
+    # Money really received, and what is still due after it.
+    paid: float = 0
     balance: float = 0
+    # Goods and money followed apart: a delivery never settles anything.
+    delivery_status: str = "En attente"
+    payment_status: str = "Non payé"
     price_mode: str = "detail"
     delivery_address: str = ""
     payment_terms: str = ""

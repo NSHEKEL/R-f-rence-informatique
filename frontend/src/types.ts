@@ -290,7 +290,11 @@ export interface Order {
   total: number;
   discount: number;
   deposit: number;
+  /** Money really received: deposit plus the settlements booked. */
+  paid: number;
   balance: number;
+  delivery_status: string;
+  payment_status: string;
   price_mode: string;
   delivery_address: string;
   payment_terms: string;
@@ -417,8 +421,11 @@ export interface ProformaItem {
   id: number;
   product_id: number | null;
   product_name: string;
+  reference: string;
+  unit: string;
   quantity: number;
   unit_price: number;
+  discount: number;
   subtotal: number;
 }
 
@@ -431,6 +438,12 @@ export interface Proforma {
   date: string;
   valid_until: string | null;
   total: number;
+  discount: number;
+  /** "devis" (commercial offer) or "proforma" (forecast invoice). */
+  kind: string;
+  status: string;
+  converted_from_id: number | null;
+  order_id: number | null;
   note: string;
   created_by?: User | null;
   items: ProformaItem[];

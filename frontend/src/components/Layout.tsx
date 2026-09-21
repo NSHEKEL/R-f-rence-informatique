@@ -124,7 +124,7 @@ const navItems: NavItem[] = [
   },
   {
     to: "/proformas",
-    label: "Factures proforma",
+    label: "Devis & proforma",
     icon: FileText,
     access: "proformas",
   },
@@ -243,7 +243,7 @@ const pageTitles: Record<string, string> = {
   "/produits": "Produits & Stock",
   "/inventaire": "Inventaire",
   "/rapports": "Rapports",
-  "/proformas": "Factures proforma",
+  "/proformas": "Devis & factures proforma",
   "/comptabilite": "Comptabilité",
   "/paie": "Paie & bulletins de salaire",
   "/dettes": "Dettes & créances",
