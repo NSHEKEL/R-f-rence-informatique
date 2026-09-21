@@ -8,12 +8,22 @@ which keeps bases written by older versions readable.
 
 from __future__ import annotations
 
+import ctypes
 import json
 import shutil
 import subprocess
+import sys
 
 from .models import CompanySettings
-from .schemas import PrintingConfig, ReceiptPrinterConfig
+from .schemas import PrinterDevice, PrintingConfig, ReceiptPrinterConfig
+
+# Windows printer status bits that mean the queue cannot print right now.
+PRINTER_STATUS_ERROR = 0x00000002
+PRINTER_STATUS_OFFLINE = 0x00000080
+PRINTER_STATUS_PAPER_OUT = 0x00000010
+PRINTER_STATUS_NOT_AVAILABLE = 0x00001000
+PRINTER_ENUM_LOCAL = 0x00000002
+PRINTER_ENUM_CONNECTIONS = 0x00000004
 
 
 def read_config(settings: CompanySettings) -> PrintingConfig:
@@ -56,14 +66,127 @@ def write_config(settings: CompanySettings, config: PrintingConfig) -> None:
     settings.drawer_open_after_sale = config.receipt.open_drawer
 
 
+class _PrinterInfo2(ctypes.Structure):
+    """PRINTER_INFO_2W: the name, the port and the live status of a queue."""
+
+    _fields_ = [
+        ("pServerName", ctypes.c_wchar_p),
+        ("pPrinterName", ctypes.c_wchar_p),
+        ("pShareName", ctypes.c_wchar_p),
+        ("pPortName", ctypes.c_wchar_p),
+        ("pDriverName", ctypes.c_wchar_p),
+        ("pComment", ctypes.c_wchar_p),
+        ("pLocation", ctypes.c_wchar_p),
+        ("pDevMode", ctypes.c_void_p),
+        ("pSepFile", ctypes.c_wchar_p),
+        ("pPrintProcessor", ctypes.c_wchar_p),
+        ("pDatatype", ctypes.c_wchar_p),
+        ("pParameters", ctypes.c_wchar_p),
+        ("pSecurityDescriptor", ctypes.c_void_p),
+        ("Attributes", ctypes.c_uint32),
+        ("Priority", ctypes.c_uint32),
+        ("DefaultPriority", ctypes.c_uint32),
+        ("StartTime", ctypes.c_uint32),
+        ("UntilTime", ctypes.c_uint32),
+        ("Status", ctypes.c_uint32),
+        ("cJobs", ctypes.c_uint32),
+        ("AveragePPM", ctypes.c_uint32),
+    ]
+
+
+def _status_label(status: int) -> str:
+    """Plain French reason why a queue is not ready, empty when it is."""
+    if status & PRINTER_STATUS_OFFLINE:
+        return "Hors ligne"
+    if status & PRINTER_STATUS_PAPER_OUT:
+        return "Plus de papier"
+    if status & PRINTER_STATUS_NOT_AVAILABLE:
+        return "Indisponible"
+    if status & PRINTER_STATUS_ERROR:
+        return "En erreur"
+    return ""
+
+
+def _windows_devices() -> list[PrinterDevice]:
+    """Queues declared in Windows, read straight from the print spooler.
+
+    The spooler is asked through ctypes rather than through pywin32: the
+    packaged executable does not ship that extension, so the selection list
+    used to come back empty and the shop had to type the printer name.
+    """
+    spooler = ctypes.windll.winspool
+    flags = PRINTER_ENUM_LOCAL | PRINTER_ENUM_CONNECTIONS
+    needed = ctypes.c_uint32(0)
+    returned = ctypes.c_uint32(0)
+    spooler.EnumPrintersW(
+        flags, None, 2, None, 0, ctypes.byref(needed), ctypes.byref(returned)
+    )
+    if needed.value == 0:
+        return []
+    buffer = ctypes.create_string_buffer(needed.value)
+    if not spooler.EnumPrintersW(
+        flags,
+        None,
+        2,
+        buffer,
+        needed.value,
+        ctypes.byref(needed),
+        ctypes.byref(returned),
+    ):
+        return []
+    entries = ctypes.cast(
+        buffer, ctypes.POINTER(_PrinterInfo2 * returned.value)
+    ).contents
+    default = default_printer()
+    devices: list[PrinterDevice] = []
+    for entry in entries:
+        name = entry.pPrinterName or ""
+        if not name:
+            continue
+        problem = _status_label(int(entry.Status))
+        devices.append(
+            PrinterDevice(
+                name=name,
+                port=entry.pPortName or "",
+                is_default=name == default,
+                available=not problem,
+                status=problem or "Disponible",
+            )
+        )
+    return devices
+
+
+def default_printer() -> str:
+    """Printer Windows prints on when none is chosen, empty elsewhere."""
+    if sys.platform != "win32":
+        return ""
+    size = ctypes.c_uint32(0)
+    ctypes.windll.winspool.GetDefaultPrinterW(None, ctypes.byref(size))
+    buffer = ctypes.create_unicode_buffer(size.value)
+    if not ctypes.windll.winspool.GetDefaultPrinterW(
+        buffer, ctypes.byref(size)
+    ):
+        return ""
+    return buffer.value
+
+
+def printer_devices() -> list[PrinterDevice]:
+    """Printers installed on this computer, with their availability."""
+    if sys.platform == "win32":
+        try:
+            return _windows_devices()
+        except OSError:
+            return []
+    return [
+        PrinterDevice(name=name, port="", is_default=False, available=True,
+                      status="Disponible")
+        for name in _cups_printers()
+    ]
+
+
 def installed_printers() -> list[str]:
-    """Printers known to the operating system, empty list when unavailable."""
-    try:
-        import win32print  # type: ignore[import-not-found]
-    except ImportError:
-        return _cups_printers()
-    flags = win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS
-    return [p[2] for p in win32print.EnumPrinters(flags)]
+    """Printer names only, kept for the callers that just need the list."""
+    return [device.name for device in printer_devices()]
 
 
 def _cups_printers() -> list[str]:

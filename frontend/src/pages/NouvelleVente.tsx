@@ -326,15 +326,27 @@ export default function NouvelleVente() {
     }
   }
 
+  /** True when the till must open by itself once the sale is cashed in. */
+  function drawerWanted(): boolean {
+    return Boolean(
+      company?.drawer_enabled &&
+        company.drawer_open_after_sale &&
+        printing.receipt.open_drawer
+    );
+  }
+
+  /** Kick code of the drawer, sent along with the ticket when possible. */
+  function drawerKick(): number[] {
+    if (!drawerWanted()) return [];
+    return (company?.drawer_code || "27,112,0,25,250")
+      .split(",")
+      .map((part) => Number(part.trim()))
+      .filter((value) => Number.isInteger(value) && value >= 0 && value <= 255);
+  }
+
   /** Electronic drawer: opening it must never hold back the next customer. */
   function openDrawer() {
-    if (
-      !company?.drawer_enabled ||
-      !company.drawer_open_after_sale ||
-      !printing.receipt.open_drawer
-    ) {
-      return;
-    }
+    if (!drawerWanted()) return;
     api.post("/settings/company/open-drawer").catch(() => {
       setFlash("Caisse électronique : ouverture impossible.");
     });
@@ -350,8 +362,14 @@ export default function NouvelleVente() {
     if (printing.receipt.auto_print) {
       // Let the hidden print copy mount before calling the printer.
       window.setTimeout(() => {
-        printReceipt(printing.receipt.width, printing.receipt);
-        openDrawer();
+        printReceipt(
+          printing.receipt.width,
+          printing.receipt,
+          drawerKick()
+        ).then((drawerOpened) => {
+          // The ticket carried the kick code: no second order to the till.
+          if (!drawerOpened) openDrawer();
+        });
       }, 400);
       return;
     }

@@ -7,7 +7,12 @@ from ..database import get_db
 from ..licensing import has_feature
 from ..mailer import is_configured, send_mail
 from ..models import CompanySettings, User
-from ..schemas import CompanySettingsOut, CompanySettingsUpdate, PrintingConfig
+from ..schemas import (
+    CompanySettingsOut,
+    CompanySettingsUpdate,
+    PrinterList,
+    PrintingConfig,
+)
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -88,10 +93,15 @@ def update_printing(
     return printing.read_config(settings)
 
 
-@router.get("/printers")
+@router.get("/printers", response_model=PrinterList)
 def list_printers(_: User = Depends(get_current_user)):
     """Printers installed on this computer, for the selection lists."""
-    return {"printers": printing.installed_printers()}
+    devices = printing.printer_devices()
+    return PrinterList(
+        devices=devices,
+        printers=[device.name for device in devices],
+        default=printing.default_printer(),
+    )
 
 
 @router.post("/company/open-drawer")
@@ -101,7 +111,7 @@ def open_cash_drawer(
     """Open the electronic cash drawer wired to this counter."""
     settings = _get_or_create(db)
     try:
-        target = drawer.open_drawer(settings)
+        target = drawer.open_drawer(settings, printing.read_config(settings))
     except drawer.DrawerError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return {"opened": True, "port": target}

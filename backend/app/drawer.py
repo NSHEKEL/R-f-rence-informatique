@@ -8,7 +8,9 @@ only makes sense on the machine the drawer is attached to — the counter.
 
 from __future__ import annotations
 
+from . import escpos
 from .models import CompanySettings
+from .schemas import PrintingConfig
 
 DEFAULT_CODE = "27,112,0,25,250"  # ESC p 0 25 250, the usual ESC/POS kick
 
@@ -32,22 +34,39 @@ def kick_bytes(code: str) -> bytes:
     return bytes(values)
 
 
-def open_drawer(settings: CompanySettings) -> str:
-    """Open the drawer; returns the target it was sent to."""
+def is_port(target: str) -> bool:
+    """True for a serial, parallel or shared path, false for a printer name."""
+    value = target.strip().upper()
+    return value.startswith(("COM", "LPT", "\\\\", "/DEV/")) or value.endswith(":")
+
+
+def open_drawer(
+    settings: CompanySettings, config: PrintingConfig | None = None
+) -> str:
+    """Open the drawer; returns the target it was sent to.
+
+    The drawer is nearly always wired to the receipt printer, so the kick code
+    goes through the spooler to that printer when no port is given: the shop
+    has one setting less to fill in. Drawers plugged straight into a serial or
+    parallel port are still written to directly.
+    """
     if not settings.drawer_enabled:
         raise DrawerError("La caisse électronique n'est pas activée.")
     target = (settings.drawer_port or "").strip()
-    if not target:
-        raise DrawerError(
-            "Indiquez le port de la caisse électronique (COM1, LPT1 ou le "
-            "partage de l'imprimante, par exemple \\\\CAISSE\\TICKET)."
-        )
+    if not target and config is not None:
+        target = config.receipt.printer_name.strip()
     payload = kick_bytes(settings.drawer_code)
+    if target and is_port(target):
+        try:
+            with open(target, "wb") as port:
+                port.write(payload)
+        except OSError as exc:
+            raise DrawerError(
+                f"Impossible d'ouvrir la caisse sur « {target} » : {exc}"
+            ) from exc
+        return target
+    # A printer name, or nothing at all: the default printer then takes it.
     try:
-        with open(target, "wb") as port:
-            port.write(payload)
-    except OSError as exc:
-        raise DrawerError(
-            f"Impossible d'ouvrir la caisse sur « {target} » : {exc}"
-        ) from exc
-    return target
+        return escpos.send(payload, target)
+    except escpos.PrintError as exc:
+        raise DrawerError(str(exc)) from exc

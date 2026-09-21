@@ -9,6 +9,15 @@ export interface User {
 
 export type ReceiptFormat = "A4" | "80mm" | "58mm";
 
+/** A printer installed on this computer, as Windows reports it. */
+export interface PrinterDevice {
+  name: string;
+  port: string;
+  is_default: boolean;
+  available: boolean;
+  status: string;
+}
+
 /** Receipt printer: hardware, layout and contents of the ticket. */
 export interface ReceiptPrinterConfig {
   printer_name: string;

@@ -178,11 +178,22 @@ class DesktopApi:
                     bold=bool(item.get("bold", False)),
                     big=bool(item.get("big", False)),
                     barcode=str(item.get("barcode", "")),
+                    image=str(item.get("image", "")),
+                    image_width=int(item.get("image_width", 0)),
+                    image_height=int(item.get("image_height", 0)),
                 )
                 for item in data.get("lines", [])
             ]
             copies = min(max(int(data.get("copies", 1)), 1), 5)
+            # The drawer is wired to this printer: its kick code travels with
+            # the ticket, so the till opens without a second trip.
+            kick = bytes(
+                value & 0xFF for value in data.get("kick", []) if
+                isinstance(value, int)
+            )
             stream = escpos.build(lines, bool(data.get("cut", True))) * copies
+            if kick:
+                stream += kick
             escpos.send(stream, str(data.get("printer", "")))
         except Exception as error:  # noqa: BLE001 - no printer, bad driver...
             traceback.print_exc()

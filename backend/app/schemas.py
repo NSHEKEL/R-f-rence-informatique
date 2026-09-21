@@ -117,6 +117,23 @@ class CompanySettingsUpdate(BaseModel):
 
 
 # ---------- Printing ----------
+class PrinterDevice(BaseModel):
+    """A printer installed on this computer, as the spooler describes it."""
+
+    name: str
+    port: str = ""
+    is_default: bool = False
+    available: bool = True
+    status: str = "Disponible"
+
+
+class PrinterList(BaseModel):
+    devices: list[PrinterDevice] = Field(default_factory=list)
+    # Names only, for the callers written before the status was reported.
+    printers: list[str] = Field(default_factory=list)
+    default: str = ""
+
+
 class ReceiptPrinterConfig(BaseModel):
     """Thermal receipt printer: hardware, layout and ticket contents."""
 
