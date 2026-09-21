@@ -421,8 +421,11 @@ export interface ProformaItem {
   id: number;
   product_id: number | null;
   product_name: string;
+  reference: string;
+  unit: string;
   quantity: number;
   unit_price: number;
+  discount: number;
   subtotal: number;
 }
 
@@ -435,6 +438,12 @@ export interface Proforma {
   date: string;
   valid_until: string | null;
   total: number;
+  discount: number;
+  /** "devis" (commercial offer) or "proforma" (forecast invoice). */
+  kind: string;
+  status: string;
+  converted_from_id: number | null;
+  order_id: number | null;
   note: string;
   created_by?: User | null;
   items: ProformaItem[];

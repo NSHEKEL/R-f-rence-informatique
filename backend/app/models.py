@@ -316,10 +316,18 @@ class Proforma(Base):
     date = Column(DateTime, default=utcnow)
     valid_until = Column(DateTime, nullable=True)
     total = Column(Float, default=0)
+    discount = Column(Float, default=0)
     note = Column(Text, default="")
+    # A quote and a proforma share this table: only the wording differs.
+    kind = Column(String, default="devis", index=True)
+    status = Column(String, default="Brouillon", index=True)
+    # Where the document went: its proforma, then its order.
+    converted_from_id = Column(Integer, ForeignKey("proformas.id"), nullable=True)
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     customer = relationship("Customer")
+    order = relationship("Order")
     created_by = relationship("User")
     items = relationship(
         "ProformaItem", back_populates="proforma", cascade="all, delete-orphan"
@@ -333,8 +341,11 @@ class ProformaItem(Base):
     proforma_id = Column(Integer, ForeignKey("proformas.id"), nullable=False)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
     product_name = Column(String, default="")
+    reference = Column(String, default="")
+    unit = Column(String, default="u")
     quantity = Column(Integer, default=1)
     unit_price = Column(Float, default=0)
+    discount = Column(Float, default=0)
     subtotal = Column(Float, default=0)
 
     proforma = relationship("Proforma", back_populates="items")
