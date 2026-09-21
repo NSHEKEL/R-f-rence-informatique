@@ -858,7 +858,12 @@ class OrderOut(BaseModel):
     total: float
     discount: float = 0
     deposit: float = 0
+    # Money really received, and what is still due after it.
+    paid: float = 0
     balance: float = 0
+    # Goods and money followed apart: a delivery never settles anything.
+    delivery_status: str = "En attente"
+    payment_status: str = "Non payé"
     price_mode: str = "detail"
     delivery_address: str = ""
     payment_terms: str = ""

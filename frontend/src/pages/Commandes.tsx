@@ -44,6 +44,14 @@ const statusStyles: Record<string, string> = {
   Annulée: "bg-slate-100 text-slate-500",
 };
 
+/** Money side of an order, followed apart from the goods. */
+const paymentStyles: Record<string, string> = {
+  "Non payé": "bg-rose-50 text-rose-700",
+  "Partiellement payé": "bg-amber-50 text-amber-700",
+  Payé: "bg-emerald-50 text-emerald-700",
+  Annulé: "bg-slate-100 text-slate-500",
+};
+
 const STATUSES = [
   "Brouillon",
   "Confirmée",
@@ -402,7 +410,9 @@ export default function Commandes() {
               <th className="px-5 py-3 text-right">Articles</th>
               <th className="px-5 py-3 text-right">Livré</th>
               <th className="px-5 py-3 text-right">Total</th>
+              <th className="px-5 py-3 text-right">Payé</th>
               <th className="px-5 py-3 text-right">Reste</th>
+              <th className="px-5 py-3">Paiement</th>
               <th className="px-5 py-3 text-right">Actions</th>
             </tr>
           </thead>
@@ -457,7 +467,21 @@ export default function Commandes() {
                   {formatXOF(o.total)}
                 </td>
                 <td className="px-5 py-3.5 text-right text-slate-600">
+                  {formatXOF(o.paid)}
+                </td>
+                <td className="px-5 py-3.5 text-right text-slate-600">
                   {formatXOF(o.balance)}
+                </td>
+                <td className="px-5 py-3.5">
+                  <span
+                    className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                      paymentStyles[o.payment_status] ??
+                      "bg-slate-100 text-slate-500"
+                    }`}
+                    title="Reste à payer = total − paiements enregistrés"
+                  >
+                    {o.payment_status}
+                  </span>
                 </td>
                 <td className="px-5 py-3.5">
                   <div className="flex justify-end gap-1">

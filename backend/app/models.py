@@ -439,10 +439,50 @@ class Order(Base):
     deliveries = relationship(
         "Delivery", back_populates="order", cascade="all, delete-orphan"
     )
+    # The receivable opened on delivery, read-only: it carries the settlements
+    # booked in Dettes & créances for this order.
+    receivables = relationship(
+        "Debt",
+        primaryjoin=(
+            "and_(foreign(Debt.reference) == Order.reference,"
+            " Debt.kind == 'creance')"
+        ),
+        viewonly=True,
+    )
+
+    @property
+    def paid(self) -> float:
+        """Money really received: the deposit plus the settlements booked."""
+        settled = sum(debt.paid for debt in self.receivables)
+        return round((self.deposit or 0) + settled, 2)
 
     @property
     def balance(self) -> float:
-        return max(self.total - (self.deposit or 0), 0)
+        """What the customer still owes; a delivery never pays anything."""
+        return max(round((self.total or 0) - self.paid, 2), 0)
+
+    @property
+    def delivery_status(self) -> str:
+        """Where the goods are, regardless of the money."""
+        if self.status == "Annulée":
+            return "Annulé"
+        delivered = sum((item.delivered_quantity or 0) for item in self.items)
+        ordered = sum(item.quantity for item in self.items)
+        if delivered <= 0:
+            return "En attente"
+        return "Livré" if delivered >= ordered else "Partiellement livré"
+
+    @property
+    def payment_status(self) -> str:
+        """Where the money is, regardless of the goods."""
+        if self.status == "Annulée":
+            return "Annulé"
+        paid = self.paid
+        if paid <= 0.009:
+            return "Non payé"
+        if self.balance <= 0.009:
+            return "Payé"
+        return "Partiellement payé"
 
 
 class OrderItem(Base):

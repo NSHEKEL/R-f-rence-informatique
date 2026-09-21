@@ -290,7 +290,11 @@ export interface Order {
   total: number;
   discount: number;
   deposit: number;
+  /** Money really received: deposit plus the settlements booked. */
+  paid: number;
   balance: number;
+  delivery_status: string;
+  payment_status: string;
   price_mode: string;
   delivery_address: string;
   payment_terms: string;
