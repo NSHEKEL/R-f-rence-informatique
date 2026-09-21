@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import {
   Check,
   FileText,
   Printer,
   Receipt as ReceiptIcon,
+  RefreshCw,
   Tags,
 } from "lucide-react";
 import api from "../api/client";
@@ -18,6 +19,7 @@ import type {
   CompanySettings,
   DocumentConfig,
   LabelPrinterConfig,
+  PrinterDevice,
   PrintingConfig,
   ReceiptPrinterConfig,
   Sale,
@@ -29,6 +31,87 @@ interface Props {
   update: (patch: Partial<CompanySettings>) => void;
   /** Saves the company form, so the drawer test uses the typed values. */
   saveCompany: () => Promise<void>;
+}
+
+/** Serial, parallel or shared path, as opposed to a printer name. */
+function isPortPath(target: string): boolean {
+  const value = (target || "").trim().toUpperCase();
+  return (
+    value.startsWith("COM") ||
+    value.startsWith("LPT") ||
+    value.startsWith("\\\\") ||
+    value.endsWith(":")
+  );
+}
+
+/**
+ * Printer picker: the queues declared in Windows are listed with their
+ * availability, so the counter chooses instead of typing a name. A printer
+ * configured on another computer stays selectable, otherwise saving the
+ * settings from a back office would silently clear it.
+ */
+function PrinterSelect({
+  value,
+  devices,
+  loading,
+  onChange,
+  onRefresh,
+  label,
+  hint,
+}: {
+  value: string;
+  devices: PrinterDevice[];
+  loading: boolean;
+  onChange: (name: string) => void;
+  onRefresh: () => void;
+  label: string;
+  hint?: string;
+}) {
+  const known = devices.some((device) => device.name === value);
+  const chosen = devices.find((device) => device.name === value);
+  return (
+    <div>
+      <label className="label">{label}</label>
+      <div className="flex items-center gap-2">
+        <select
+          className="input"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          title={label}
+        >
+          <option value="">Imprimante Windows par défaut</option>
+          {devices.map((device) => (
+            <option key={device.name} value={device.name}>
+              {device.name}
+              {device.is_default ? " (par défaut)" : ""}
+              {device.available ? "" : ` — ${device.status}`}
+            </option>
+          ))}
+          {value && !known && (
+            <option value={value}>{value} — non installée ici</option>
+          )}
+        </select>
+        <button
+          type="button"
+          className="btn-ghost shrink-0"
+          onClick={onRefresh}
+          disabled={loading}
+          title="Actualiser la liste des imprimantes installées"
+        >
+          <RefreshCw size={16} />
+        </button>
+      </div>
+      <p className="mt-1 text-xs text-slate-400">
+        {loading
+          ? "Lecture des imprimantes installées..."
+          : value
+            ? chosen
+              ? `${chosen.status}${chosen.port ? ` · ${chosen.port}` : ""}`
+              : "Cette imprimante n'est pas installée sur ce poste."
+            : hint ?? "Choisissez une imprimante installée sur ce poste."}
+      </p>
+    </div>
+  );
 }
 
 /** Ticket used by the preview and the test print, never stored. */
@@ -145,11 +228,14 @@ export default function PrintingSettings({
   const { hasFeature } = useLicense();
   const thermal = hasFeature("impression_thermique");
   const [form, setForm] = useState<PrintingConfig>(printing);
-  const [printers, setPrinters] = useState<string[]>([]);
+  const [devices, setDevices] = useState<PrinterDevice[]>([]);
+  const [loadingPrinters, setLoadingPrinters] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
   const [preview, setPreview] = useState(false);
+  // A drawer wired straight into a COM/LPT port is typed, not picked.
+  const drawerPort = isPortPath(company.drawer_port);
   const [drawerTesting, setDrawerTesting] = useState(false);
   const [drawerMessage, setDrawerMessage] = useState("");
 
@@ -157,12 +243,16 @@ export default function PrintingSettings({
     setForm(printing);
   }, [printing]);
 
-  useEffect(() => {
+  const loadPrinters = useCallback(() => {
+    setLoadingPrinters(true);
     api
-      .get<{ printers: string[] }>("/settings/printers")
-      .then((res) => setPrinters(res.data.printers))
-      .catch(() => setPrinters([]));
+      .get<{ devices: PrinterDevice[] }>("/settings/printers")
+      .then((res) => setDevices(res.data.devices))
+      .catch(() => setDevices([]))
+      .finally(() => setLoadingPrinters(false));
   }, []);
+
+  useEffect(loadPrinters, [loadPrinters]);
 
   function patchReceipt(patch: Partial<ReceiptPrinterConfig>) {
     setForm((f) => ({ ...f, receipt: { ...f.receipt, ...patch } }));
@@ -256,26 +346,14 @@ export default function PrintingSettings({
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="label">Imprimante installée</label>
-            <input
-              className="input"
-              list="easygest-printers"
-              value={form.receipt.printer_name}
-              onChange={(e) => patchReceipt({ printer_name: e.target.value })}
-              placeholder="Ex. EPSON TM-T20"
-            />
-            <datalist id="easygest-printers">
-              {printers.map((p) => (
-                <option key={p} value={p} />
-              ))}
-            </datalist>
-            <p className="mt-1 text-xs text-slate-400">
-              {printers.length > 0
-                ? "Choisissez l'imprimante dans la liste proposée."
-                : "Saisissez le nom exact de l'imprimante Windows."}
-            </p>
-          </div>
+          <PrinterSelect
+            label="Imprimante de reçus"
+            value={form.receipt.printer_name}
+            devices={devices}
+            loading={loadingPrinters}
+            onRefresh={loadPrinters}
+            onChange={(name) => patchReceipt({ printer_name: name })}
+          />
           <div>
             <label className="label">Format du papier</label>
             <select
@@ -503,17 +581,44 @@ export default function PrintingSettings({
           {company.drawer_enabled && (
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <div>
-                <label className="label">Port ou imprimante du tiroir</label>
-                <input
-                  className="input"
-                  value={company.drawer_port}
-                  onChange={(e) => update({ drawer_port: e.target.value })}
-                  placeholder="Ex. COM1, LPT1 ou \\CAISSE\TICKET"
-                />
-                <p className="mt-1 text-xs text-slate-400">
-                  Toutes les imprimantes n'ouvrent pas un tiroir : utilisez le
-                  test ci-dessous pour vérifier avant de l'activer en caisse.
-                </p>
+                {drawerPort ? (
+                  <>
+                    <label className="label">Port du tiroir</label>
+                    <input
+                      className="input"
+                      value={company.drawer_port}
+                      onChange={(e) => update({ drawer_port: e.target.value })}
+                      placeholder="Ex. COM1, LPT1 ou \\CAISSE\TICKET"
+                      title="Port série ou parallèle du tiroir-caisse"
+                    />
+                    <button
+                      type="button"
+                      className="mt-1 text-xs text-brand-600 underline"
+                      onClick={() => update({ drawer_port: "" })}
+                    >
+                      Le tiroir est branché sur une imprimante
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <PrinterSelect
+                      label="Imprimante qui commande le tiroir"
+                      value={company.drawer_port}
+                      devices={devices}
+                      loading={loadingPrinters}
+                      onRefresh={loadPrinters}
+                      onChange={(name) => update({ drawer_port: name })}
+                      hint="Vide : l'imprimante de reçus ouvre le tiroir."
+                    />
+                    <button
+                      type="button"
+                      className="mt-1 text-xs text-brand-600 underline"
+                      onClick={() => update({ drawer_port: "COM1" })}
+                    >
+                      Le tiroir est branché sur un port série ou parallèle
+                    </button>
+                  </>
+                )}
               </div>
               <div>
                 <label className="label">Code d'ouverture</label>
@@ -546,8 +651,11 @@ export default function PrintingSettings({
                   className="btn-ghost"
                   onClick={testDrawer}
                   disabled={drawerTesting}
+                  title="Envoyer le code d'ouverture au tiroir-caisse"
                 >
-                  {drawerTesting ? "Ouverture..." : "Tester l'ouverture"}
+                  {drawerTesting
+                    ? "Ouverture..."
+                    : "Tester le tiroir-caisse"}
                 </button>
                 {drawerMessage && (
                   <span className="text-sm text-slate-600">
@@ -566,8 +674,12 @@ export default function PrintingSettings({
           <button className="btn-ghost" onClick={() => setPreview(true)}>
             Aperçu
           </button>
-          <button className="btn-ghost" onClick={testTicket}>
-            <Printer size={16} /> Imprimer un ticket test
+          <button
+            className="btn-ghost"
+            onClick={testTicket}
+            title="Imprimer un ticket de test avec ces réglages"
+          >
+            <Printer size={16} /> Tester l'impression
           </button>
           {saved && (
             <span className="flex items-center gap-1 text-sm font-medium text-emerald-600">
@@ -588,13 +700,13 @@ export default function PrintingSettings({
         </div>
         <div className="grid gap-4 sm:grid-cols-3">
           <div className="sm:col-span-3">
-            <label className="label">Imprimante installée</label>
-            <input
-              className="input"
-              list="easygest-printers"
+            <PrinterSelect
+              label="Imprimante d'étiquettes"
               value={form.label.printer_name}
-              onChange={(e) => patchLabel({ printer_name: e.target.value })}
-              placeholder="Ex. Brother QL-800"
+              devices={devices}
+              loading={loadingPrinters}
+              onRefresh={loadPrinters}
+              onChange={(name) => patchLabel({ printer_name: name })}
             />
           </div>
           <div>
