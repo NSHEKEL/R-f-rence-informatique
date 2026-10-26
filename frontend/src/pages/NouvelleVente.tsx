@@ -538,6 +538,7 @@ export default function NouvelleVente() {
               <button
                 className="text-slate-400 hover:text-slate-600"
                 onClick={() => setQuery("")}
+                title="Effacer la recherche"
               >
                 <X size={16} />
               </button>
@@ -627,6 +628,7 @@ export default function NouvelleVente() {
                   <button
                     className="rounded-lg bg-slate-100 p-1 text-slate-600 hover:bg-slate-200"
                     onClick={() => setQuantity(l.product.id, l.quantity - 1)}
+                    title="Diminuer la quantité"
                   >
                     <Minus size={13} />
                   </button>
@@ -640,12 +642,14 @@ export default function NouvelleVente() {
                   <button
                     className="rounded-lg bg-slate-100 p-1 text-slate-600 hover:bg-slate-200"
                     onClick={() => setQuantity(l.product.id, l.quantity + 1)}
+                    title="Augmenter la quantité"
                   >
                     <Plus size={13} />
                   </button>
                   <button
                     className="rounded-lg p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"
                     onClick={() => setQuantity(l.product.id, 0)}
+                    title="Retirer l'article"
                   >
                     <Trash2 size={13} />
                   </button>
@@ -680,6 +684,7 @@ export default function NouvelleVente() {
                     <button
                       className="ml-auto text-slate-400 hover:text-slate-600"
                       onClick={() => setCustomer(null)}
+                      title="Retirer le client"
                     >
                       <X size={14} />
                     </button>

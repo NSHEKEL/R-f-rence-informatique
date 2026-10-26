@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session
 from .. import fne
 from ..auth import require_admin
 from ..database import get_db
-from ..models import CompanySettings, FneInvoice, Sale, User
-from ..permissions import require_permission
+from ..models import FneInvoice, Sale, User
+from .settings import _get_or_create
 from ..schemas import (
     FneInvoiceOut,
     FneSettingsOut,
@@ -57,7 +57,7 @@ def put_settings(
 @router.get("/invoices", response_model=list[FneInvoiceOut])
 def list_invoices(
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("ventes")),
+    _: User = Depends(require_admin),
 ):
     return (
         db.query(FneInvoice).order_by(FneInvoice.updated_at.desc()).limit(200).all()
@@ -68,7 +68,7 @@ def list_invoices(
 def certify_sale(
     sale_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permission("vente_nouvelle")),
+    current_user: User = Depends(require_admin),
 ):
     sale = db.query(Sale).filter(Sale.id == sale_id).first()
     if not sale:

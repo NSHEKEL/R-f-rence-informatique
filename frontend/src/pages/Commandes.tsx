@@ -465,7 +465,7 @@ export default function Commandes() {
                       <button
                         className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
                         onClick={() => edit(o)}
-                        aria-label="Modifier la commande"
+                        title="Modifier la commande" aria-label="Modifier la commande"
                       >
                         <Pencil size={16} />
                       </button>
@@ -476,7 +476,7 @@ export default function Commandes() {
                         <button
                           className="rounded-lg p-2 text-slate-400 hover:bg-emerald-50 hover:text-emerald-600"
                           onClick={() => navigate(`/livraisons?bc=${o.id}`)}
-                          aria-label="Transformer en bon de livraison"
+                          title="Transformer en bon de livraison" aria-label="Transformer en bon de livraison"
                         >
                           <Truck size={16} />
                         </button>
@@ -485,7 +485,7 @@ export default function Commandes() {
                       <button
                         className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
                         onClick={() => print(o)}
-                        aria-label="Imprimer le bon de commande"
+                        title="Imprimer le bon de commande" aria-label="Imprimer le bon de commande"
                       >
                         <Printer size={16} />
                       </button>
@@ -494,7 +494,7 @@ export default function Commandes() {
                       <button
                         className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
                         onClick={() => duplicate(o)}
-                        aria-label="Dupliquer le bon de commande"
+                        title="Dupliquer le bon de commande" aria-label="Dupliquer le bon de commande"
                       >
                         <Copy size={16} />
                       </button>
@@ -503,7 +503,7 @@ export default function Commandes() {
                       <button
                         className="rounded-lg p-2 text-slate-400 hover:bg-amber-50 hover:text-amber-600"
                         onClick={() => cancelOrder(o)}
-                        aria-label="Annuler le bon de commande"
+                        title="Annuler le bon de commande" aria-label="Annuler le bon de commande"
                       >
                         <Ban size={16} />
                       </button>
@@ -512,7 +512,7 @@ export default function Commandes() {
                       <button
                         className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
                         onClick={() => cancel(o)}
-                        aria-label="Supprimer la commande"
+                        title="Supprimer la commande" aria-label="Supprimer la commande"
                       >
                         <Trash2 size={16} />
                       </button>
@@ -721,7 +721,7 @@ export default function Commandes() {
                   onClick={() =>
                     setLines((prev) => prev.filter((_, i) => i !== index))
                   }
-                  aria-label="Retirer la ligne"
+                  title="Retirer la ligne" aria-label="Retirer la ligne"
                 >
                   <X size={16} />
                 </button>

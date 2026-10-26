@@ -410,7 +410,7 @@ export default function Layout() {
           <button
             className="ml-auto rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 lg:hidden"
             onClick={() => setMobileOpen(false)}
-            aria-label="Fermer le menu"
+            title="Fermer le menu" aria-label="Fermer le menu"
           >
             <X size={20} />
           </button>
@@ -502,7 +502,7 @@ export default function Layout() {
             </div>
             <button
               onClick={logout}
-              aria-label="Se déconnecter"
+              title="Se déconnecter" aria-label="Se déconnecter"
               className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
             >
               <LogOut size={18} />
@@ -525,13 +525,14 @@ export default function Layout() {
           <button
             className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 lg:hidden"
             onClick={() => setMobileOpen(true)}
-            aria-label="Ouvrir le menu"
+            title="Ouvrir le menu" aria-label="Ouvrir le menu"
           >
             <Menu size={22} />
           </button>
           <button
             className="hidden rounded-lg p-2 text-slate-500 hover:bg-slate-100 lg:block"
             onClick={() => setCollapsed((v) => !v)}
+            title={collapsed ? "Déplier le menu" : "Replier le menu"}
             aria-label={collapsed ? "Déplier le menu" : "Replier le menu"}
           >
             {collapsed ? (

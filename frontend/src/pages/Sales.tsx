@@ -44,7 +44,7 @@ const PAYMENTS = [
 ];
 
 export default function Sales() {
-  const { can } = useAuth();
+  const { can, user } = useAuth();
   const { company, printing } = useCompany();
   const { hasFeature } = useLicense();
   const version = useSyncVersion();
@@ -86,14 +86,16 @@ export default function Sales() {
       api.get<Customer[]>("/customers"),
       api.get<CashSessionDetail | null>("/cash-sessions/current"),
       api.get<CashSessionDetail | null>("/cash-sessions/today"),
-      api.get<FneInvoice[]>("/fne/invoices").catch(() => ({ data: [] })),
+      user?.role === "admin"
+        ? api.get<FneInvoice[]>("/fne/invoices").catch(() => ({ data: [] }))
+        : Promise.resolve({ data: [] }),
     ]);
     setSales(s.data);
     setCustomers(c.data);
     setSession(current.data);
     setDaySession(today.data);
     setFneInvoices(fne.data as FneInvoice[]);
-  }, []);
+  }, [user?.role]);
 
   useEffect(() => {
     load().catch(() => setError("Impossible de charger les ventes"));
@@ -311,7 +313,9 @@ export default function Sales() {
                 <th className="px-5 py-3">Paiement</th>
                 <th className="px-5 py-3 text-center">Statut</th>
                 <th className="px-5 py-3 text-center">Reçu</th>
-                <th className="px-5 py-3 text-center">FNE</th>
+                {user?.role === "admin" && (
+                  <th className="px-5 py-3 text-center">FNE</th>
+                )}
                 <th className="px-5 py-3 text-right">Total</th>
                 <th className="px-5 py-3 text-right">Actions</th>
               </tr>
@@ -352,13 +356,15 @@ export default function Sales() {
                       <span className="text-slate-300">—</span>
                     )}
                   </td>
-                  <td className="px-5 py-3.5 text-center text-xs">
-                    {fneBySale.has(s.id) ? (
-                      fneBadge(fneBySale.get(s.id)!.status)
-                    ) : (
-                      <span className="text-slate-300">—</span>
-                    )}
-                  </td>
+                  {user?.role === "admin" && (
+                    <td className="px-5 py-3.5 text-center text-xs">
+                      {fneBySale.has(s.id) ? (
+                        fneBadge(fneBySale.get(s.id)!.status)
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
+                    </td>
+                  )}
                   <td className="px-5 py-3.5 text-right font-semibold text-slate-800">
                     {formatXOF(s.total)}
                     {s.returned_total > 0 && (
@@ -371,7 +377,7 @@ export default function Sales() {
                     <div className="flex justify-end gap-1">
                       <button
                         onClick={() => setDetail(s)}
-                        aria-label="Détails de la vente"
+                        title="Détails de la vente" aria-label="Détails de la vente"
                         className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
                       >
                         <Eye size={16} />
@@ -389,7 +395,7 @@ export default function Sales() {
                           <ReceiptIcon size={16} />
                         </button>
                       )}
-                      {can("vente_nouvelle") &&
+                      {user?.role === "admin" &&
                         fneBySale.get(s.id)?.status !== "certified" && (
                           <button
                             onClick={() => certify(s)}
@@ -414,7 +420,10 @@ export default function Sales() {
               {filtered.length === 0 && (
                 <tr>
                   <td
-                    colSpan={can("ventes_supprimer") ? 10 : 9}
+                    colSpan={
+                      (can("ventes_supprimer") ? 9 : 8) +
+                      (user?.role === "admin" ? 1 : 0)
+                    }
                     className="px-5 py-10 text-center text-slate-400"
                   >
                     Aucune vente trouvée.

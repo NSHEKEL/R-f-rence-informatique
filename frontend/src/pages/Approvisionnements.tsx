@@ -421,7 +421,7 @@ export default function Approvisionnements() {
                       <button
                         className="rounded-lg p-2 text-slate-400 hover:bg-emerald-50 hover:text-emerald-600"
                         onClick={() => startReceive(p)}
-                        aria-label="Réceptionner"
+                        title="Réceptionner" aria-label="Réceptionner"
                       >
                         <TruckIcon size={16} />
                       </button>
@@ -430,7 +430,7 @@ export default function Approvisionnements() {
                       <button
                         className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
                         onClick={() => edit(p)}
-                        aria-label="Modifier l'approvisionnement"
+                        title="Modifier l'approvisionnement" aria-label="Modifier l'approvisionnement"
                       >
                         <Pencil size={16} />
                       </button>
@@ -438,7 +438,7 @@ export default function Approvisionnements() {
                     <button
                       className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
                       onClick={() => print(p)}
-                      aria-label="Imprimer le bon"
+                      title="Imprimer le bon" aria-label="Imprimer le bon"
                     >
                       <Printer size={16} />
                     </button>
@@ -446,7 +446,7 @@ export default function Approvisionnements() {
                       <button
                         className="rounded-lg p-2 text-slate-400 hover:bg-amber-50 hover:text-amber-600"
                         onClick={() => cancel(p)}
-                        aria-label="Annuler"
+                        title="Annuler" aria-label="Annuler"
                       >
                         <Ban size={16} />
                       </button>
@@ -455,7 +455,7 @@ export default function Approvisionnements() {
                       <button
                         className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
                         onClick={() => remove(p)}
-                        aria-label="Supprimer"
+                        title="Supprimer" aria-label="Supprimer"
                       >
                         <Trash2 size={16} />
                       </button>
@@ -590,7 +590,7 @@ export default function Approvisionnements() {
                   onClick={() =>
                     setLines((prev) => prev.filter((_, i) => i !== index))
                   }
-                  aria-label="Retirer la ligne"
+                  title="Retirer la ligne" aria-label="Retirer la ligne"
                 >
                   <X size={16} />
                 </button>

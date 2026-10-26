@@ -214,14 +214,14 @@ export default function Suppliers() {
                         <>
                           <button
                             onClick={() => openEdit(s)}
-                            aria-label="Modifier le fournisseur"
+                            title="Modifier le fournisseur" aria-label="Modifier le fournisseur"
                             className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
                           >
                             <Pencil size={16} />
                           </button>
                           <button
                             onClick={() => remove(s)}
-                            aria-label="Supprimer le fournisseur"
+                            title="Supprimer le fournisseur" aria-label="Supprimer le fournisseur"
                             className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
                           >
                             <Trash2 size={16} />

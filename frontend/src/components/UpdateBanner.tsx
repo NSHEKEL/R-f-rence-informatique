@@ -85,7 +85,7 @@ export default function UpdateBanner() {
       <button
         className="ml-auto rounded-lg p-1 text-brand-700 hover:bg-brand-100"
         onClick={dismiss}
-        aria-label="Masquer"
+        title="Masquer" aria-label="Masquer"
       >
         <X size={16} />
       </button>

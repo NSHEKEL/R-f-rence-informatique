@@ -103,14 +103,14 @@ export default function Categories() {
                   />
                   <button
                     onClick={() => openEdit(c)}
-                    aria-label="Modifier la catégorie"
+                    title="Modifier la catégorie" aria-label="Modifier la catégorie"
                     className="rounded-lg p-1.5 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
                   >
                     <Pencil size={15} />
                   </button>
                   <button
                     onClick={() => remove(c)}
-                    aria-label="Supprimer la catégorie"
+                    title="Supprimer la catégorie" aria-label="Supprimer la catégorie"
                     className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
                   >
                     <Trash2 size={15} />

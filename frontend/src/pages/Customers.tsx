@@ -162,6 +162,7 @@ export default function Customers() {
                 )}
                 <button
                   onClick={() => openEdit(c)}
+                  title="Modifier le client"
                   className="rounded-lg p-1.5 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
                 >
                   <Pencil size={15} />
@@ -169,6 +170,7 @@ export default function Customers() {
                 {can("clients_gerer") && (
                   <button
                     onClick={() => remove(c)}
+                    title="Supprimer le client"
                     className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
                   >
                     <Trash2 size={15} />

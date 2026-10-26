@@ -325,7 +325,7 @@ export default function Comptabilite() {
                   <button
                     className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
                     onClick={() => removeExpense(e)}
-                    aria-label="Supprimer la dépense"
+                    title="Supprimer la dépense" aria-label="Supprimer la dépense"
                   >
                     <Trash2 size={16} />
                   </button>
