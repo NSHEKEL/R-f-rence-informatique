@@ -3,11 +3,13 @@ import axios from "axios";
 import {
   BadgeInfo,
   Calculator,
+  ChevronRight,
   DownloadCloud,
   Home,
   LogOut,
   Moon,
   RefreshCw,
+  RotateCcw,
   Search,
   Settings2,
   ShoppingBag,
@@ -124,6 +126,14 @@ const api = axios.create({ baseURL: "/api/central/mobile" });
 
 function money(value: number): string {
   return new Intl.NumberFormat("fr-FR").format(Math.round(value || 0));
+}
+
+function initials(value: string): string {
+  const parts = value.trim().split(/\s+/).filter(Boolean);
+  return parts
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
 }
 
 function when(value: string): string {
@@ -406,15 +416,26 @@ export default function Mobile() {
       <div className="space-y-3 p-4">
         {tab === "accueil" && (
           <div className="space-y-4">
-            <section className="rounded-xl bg-white p-4 shadow-sm dark:bg-slate-900">
-              <p className="text-sm font-semibold">{session.name}</p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                {session.company}
-                {update?.current_version
-                  ? ` · version ${update.current_version}`
-                  : ""}
-              </p>
-            </section>
+            <button
+              onClick={() => setTab("parametres")}
+              className="flex w-full items-center gap-3 rounded-xl bg-white p-3 text-left shadow-sm dark:bg-slate-900"
+            >
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-brand-100 text-base font-semibold text-brand-700 dark:bg-brand-950 dark:text-brand-200">
+                {initials(session.name)}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-semibold">
+                  {session.name}
+                </span>
+                <span className="block truncate text-xs text-slate-500 dark:text-slate-400">
+                  {session.company}
+                  {update?.current_version
+                    ? ` · version ${update.current_version}`
+                    : ""}
+                </span>
+              </span>
+              <ChevronRight size={20} className="shrink-0 text-slate-400" />
+            </button>
 
             {update?.available && (
               <button
@@ -438,56 +459,114 @@ export default function Mobile() {
             <div className="grid grid-cols-3 gap-3">
               {[
                 {
-                  tab: "ventes" as Tab,
-                  label: "Ventes",
-                  Icon: ShoppingBag,
-                  cls: "bg-blue-50 text-blue-600 dark:bg-blue-950",
+                  label: "Rechercher",
+                  Icon: Search,
+                  action: () => setTab("ventes"),
                 },
                 {
-                  tab: "comptabilite" as Tab,
-                  label: "Comptabilité",
-                  Icon: Calculator,
-                  cls: "bg-emerald-50 text-emerald-600 dark:bg-emerald-950",
-                },
-                ...(session.full_view
-                  ? [
-                      {
-                        tab: "utilisateurs" as Tab,
-                        label: "Équipe",
-                        Icon: Users,
-                        cls: "bg-violet-50 text-violet-600 dark:bg-violet-950",
-                      },
-                    ]
-                  : []),
-                {
-                  tab: "parametres" as Tab,
-                  label: "Réglages",
-                  Icon: Settings2,
-                  cls: "bg-slate-100 text-slate-600 dark:bg-slate-800",
+                  label: "Actualiser",
+                  Icon: RefreshCw,
+                  action: () => void load(),
                 },
                 {
-                  tab: "apropos" as Tab,
-                  label: "À propos",
-                  Icon: BadgeInfo,
-                  cls: "bg-orange-50 text-orange-600 dark:bg-orange-950",
+                  label: "Thème",
+                  Icon: theme === "dark" ? Sun : Moon,
+                  action: toggle,
                 },
-              ].map(({ tab: key, label, Icon, cls }) => (
+              ].map(({ label, Icon, action }) => (
                 <button
-                  key={key}
-                  onClick={() => setTab(key)}
+                  key={label}
+                  onClick={action}
                   title={label}
-                  className="flex flex-col items-center gap-2 rounded-2xl bg-white p-4 shadow-sm transition hover:bg-slate-50 dark:bg-slate-900"
+                  className="flex flex-col items-center gap-2 rounded-xl bg-white p-3 shadow-sm dark:bg-slate-900"
                 >
-                  <span
-                    className={`flex h-12 w-12 items-center justify-center rounded-xl ${cls}`}
-                  >
-                    <Icon size={24} />
-                  </span>
+                  <Icon size={20} className="text-slate-600 dark:text-slate-300" />
                   <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
                     {label}
                   </span>
                 </button>
               ))}
+            </div>
+
+            <div className="overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-slate-900">
+              <div className="grid grid-cols-3 gap-px bg-slate-200 dark:bg-slate-700">
+                {[
+                  {
+                    label: "Ventes",
+                    Icon: ShoppingBag,
+                    cls: "bg-blue-100 text-blue-600 dark:bg-blue-950",
+                    action: () => {
+                      setShowReturns(false);
+                      setTab("ventes");
+                    },
+                  },
+                  {
+                    label: "Retours",
+                    Icon: RotateCcw,
+                    cls: "bg-teal-100 text-teal-600 dark:bg-teal-950",
+                    action: () => {
+                      setShowReturns(true);
+                      setTab("ventes");
+                    },
+                  },
+                  {
+                    label: "Comptabilité",
+                    Icon: Calculator,
+                    cls: "bg-emerald-100 text-emerald-600 dark:bg-emerald-950",
+                    action: () => setTab("comptabilite"),
+                  },
+                  ...(session.full_view
+                    ? [
+                        {
+                          label: "Équipe",
+                          Icon: Users,
+                          cls: "bg-violet-100 text-violet-600 dark:bg-violet-950",
+                          action: () => setTab("utilisateurs"),
+                        },
+                      ]
+                    : []),
+                  {
+                    label: "Réglages",
+                    Icon: Settings2,
+                    cls: "bg-sky-100 text-sky-600 dark:bg-sky-950",
+                    action: () => setTab("parametres"),
+                  },
+                  {
+                    label: "Mise à jour",
+                    Icon: DownloadCloud,
+                    cls: "bg-amber-100 text-amber-600 dark:bg-amber-950",
+                    action: () => setTab("parametres"),
+                  },
+                  {
+                    label: "À propos",
+                    Icon: BadgeInfo,
+                    cls: "bg-orange-100 text-orange-600 dark:bg-orange-950",
+                    action: () => setTab("apropos"),
+                  },
+                  {
+                    label: "Déconnexion",
+                    Icon: LogOut,
+                    cls: "bg-rose-100 text-rose-600 dark:bg-rose-950",
+                    action: signOut,
+                  },
+                ].map(({ label, Icon, cls, action }) => (
+                  <button
+                    key={label}
+                    onClick={action}
+                    title={label}
+                    className="flex flex-col items-center gap-2 bg-white py-5 transition hover:bg-slate-50 dark:bg-slate-900 dark:hover:bg-slate-800"
+                  >
+                    <span
+                      className={`flex h-12 w-12 items-center justify-center rounded-xl ${cls}`}
+                    >
+                      <Icon size={24} />
+                    </span>
+                    <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                      {label}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
 
             {summary && (
