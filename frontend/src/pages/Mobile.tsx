@@ -3,6 +3,8 @@ import axios from "axios";
 import {
   BadgeInfo,
   Calculator,
+  DownloadCloud,
+  Home,
   LogOut,
   Moon,
   RefreshCw,
@@ -54,6 +56,15 @@ interface MobileReturn {
   items: { name: string; quantity: number; unit_price: number }[];
 }
 
+interface MobileUpdate {
+  current_version: string;
+  latest_version: string;
+  available: boolean;
+  download_url: string;
+  notes: string;
+  error: string;
+}
+
 interface Summary {
   company: string;
   today_total: number;
@@ -93,7 +104,12 @@ interface About {
 }
 
 type Tab =
-  "ventes" | "comptabilite" | "utilisateurs" | "parametres" | "apropos";
+  | "accueil"
+  | "ventes"
+  | "comptabilite"
+  | "utilisateurs"
+  | "parametres"
+  | "apropos";
 
 const SESSION_KEY = "easygest_mobile_session";
 const AUTO_KEY = "easygest_mobile_auto";
@@ -154,9 +170,10 @@ export default function Mobile() {
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [accounting, setAccounting] = useState<Accounting | null>(null);
   const [about, setAbout] = useState<About | null>(null);
+  const [update, setUpdate] = useState<MobileUpdate | null>(null);
   const [search, setSearch] = useState("");
   const [opened, setOpened] = useState("");
-  const [tab, setTab] = useState<Tab>("ventes");
+  const [tab, setTab] = useState<Tab>("accueil");
   const [auto, setAuto] = useState(
     () => localStorage.getItem(AUTO_KEY) !== "0",
   );
@@ -252,6 +269,12 @@ export default function Mobile() {
         .then((res) => setAbout(res.data))
         .catch(() => setAbout(null));
     }
+    if (tab === "accueil") {
+      api
+        .get<MobileUpdate>("/update", { headers })
+        .then((res) => setUpdate(res.data))
+        .catch(() => setUpdate(null));
+    }
   }, [tab, session, sales.length]);
 
   async function submit(event: React.FormEvent) {
@@ -339,6 +362,7 @@ export default function Mobile() {
   }
 
   const tabs: [Tab, string, typeof ShoppingBag][] = [
+    ["accueil", "Accueil", Home],
     ["ventes", "Ventes", ShoppingBag],
     ["comptabilite", "Compta", Calculator],
     ...(session.full_view
@@ -380,6 +404,121 @@ export default function Mobile() {
       )}
 
       <div className="space-y-3 p-4">
+        {tab === "accueil" && (
+          <div className="space-y-4">
+            <section className="rounded-xl bg-white p-4 shadow-sm dark:bg-slate-900">
+              <p className="text-sm font-semibold">{session.name}</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {session.company}
+                {update?.current_version
+                  ? ` · version ${update.current_version}`
+                  : ""}
+              </p>
+            </section>
+
+            {update?.available && (
+              <button
+                onClick={() =>
+                  update.download_url &&
+                  window.open(update.download_url, "_blank")
+                }
+                className="flex w-full items-center gap-3 rounded-xl bg-amber-50 p-3 text-left shadow-sm dark:bg-amber-950"
+              >
+                <DownloadCloud
+                  size={22}
+                  className="shrink-0 text-amber-600 dark:text-amber-300"
+                />
+                <span className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                  Mise à jour {update.latest_version} disponible — toucher pour
+                  télécharger
+                </span>
+              </button>
+            )}
+
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                {
+                  tab: "ventes" as Tab,
+                  label: "Ventes",
+                  Icon: ShoppingBag,
+                  cls: "bg-blue-50 text-blue-600 dark:bg-blue-950",
+                },
+                {
+                  tab: "comptabilite" as Tab,
+                  label: "Comptabilité",
+                  Icon: Calculator,
+                  cls: "bg-emerald-50 text-emerald-600 dark:bg-emerald-950",
+                },
+                ...(session.full_view
+                  ? [
+                      {
+                        tab: "utilisateurs" as Tab,
+                        label: "Équipe",
+                        Icon: Users,
+                        cls: "bg-violet-50 text-violet-600 dark:bg-violet-950",
+                      },
+                    ]
+                  : []),
+                {
+                  tab: "parametres" as Tab,
+                  label: "Réglages",
+                  Icon: Settings2,
+                  cls: "bg-slate-100 text-slate-600 dark:bg-slate-800",
+                },
+                {
+                  tab: "apropos" as Tab,
+                  label: "À propos",
+                  Icon: BadgeInfo,
+                  cls: "bg-orange-50 text-orange-600 dark:bg-orange-950",
+                },
+              ].map(({ tab: key, label, Icon, cls }) => (
+                <button
+                  key={key}
+                  onClick={() => setTab(key)}
+                  title={label}
+                  className="flex flex-col items-center gap-2 rounded-2xl bg-white p-4 shadow-sm transition hover:bg-slate-50 dark:bg-slate-900"
+                >
+                  <span
+                    className={`flex h-12 w-12 items-center justify-center rounded-xl ${cls}`}
+                  >
+                    <Icon size={24} />
+                  </span>
+                  <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                    {label}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {summary && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl bg-white p-3 shadow-sm dark:bg-slate-900">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Aujourd'hui
+                  </p>
+                  <p className="text-lg font-semibold">
+                    {money(summary.today_total)}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {summary.today_count} vente(s)
+                  </p>
+                </div>
+                <div className="rounded-xl bg-white p-3 shadow-sm dark:bg-slate-900">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Ce mois
+                  </p>
+                  <p className="text-lg font-semibold">
+                    {money(summary.month_total)}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {summary.month_count} vente(s)
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {tab === "ventes" && (
           <>
             {summary && (
@@ -703,6 +842,62 @@ export default function Mobile() {
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 Les ventes du comptoir apparaissent ici en quelques secondes.
               </p>
+            </section>
+            <section className="rounded-xl bg-white p-3 shadow-sm dark:bg-slate-900">
+              <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold">
+                <DownloadCloud size={16} /> Mise à jour
+              </h2>
+              {update ? (
+                <>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    Version installée : {update.current_version || "—"}
+                  </p>
+                  {update.available ? (
+                    <button
+                      onClick={() =>
+                        update.download_url &&
+                        window.open(update.download_url, "_blank")
+                      }
+                      className="btn-primary mt-2 w-full"
+                    >
+                      Télécharger la version {update.latest_version}
+                    </button>
+                  ) : update.latest_version ? (
+                    <p className="mt-1 text-sm text-emerald-600">
+                      À jour (dernière : {update.latest_version})
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-sm text-slate-400">
+                      {update.error || "Aucune information de version."}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-slate-400">Vérification…</p>
+              )}
+              <button
+                onClick={() => {
+                  if (!session) return;
+                  api
+                    .get<MobileUpdate>("/update", {
+                      headers: { Authorization: `Bearer ${session.token}` },
+                    })
+                    .then((res) => setUpdate(res.data))
+                    .catch(() =>
+                      setUpdate({
+                        current_version: update?.current_version ?? "",
+                        latest_version: "",
+                        available: false,
+                        download_url: "",
+                        notes: "",
+                        error: "Vérification impossible.",
+                      }),
+                    );
+                }}
+                className="btn-ghost mt-2 w-full text-sm"
+              >
+                Vérifier maintenant
+              </button>
             </section>
             <button onClick={signOut} className="btn-danger w-full py-3">
               Déconnexion
