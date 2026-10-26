@@ -3,9 +3,9 @@ import axios from "axios";
 import {
   BadgeInfo,
   Calculator,
+  ChevronLeft,
   ChevronRight,
   DownloadCloud,
-  Home,
   LogOut,
   Moon,
   RefreshCw,
@@ -371,27 +371,23 @@ export default function Mobile() {
     );
   }
 
-  const tabs: [Tab, string, typeof ShoppingBag][] = [
-    ["accueil", "Accueil", Home],
-    ["ventes", "Ventes", ShoppingBag],
-    ["comptabilite", "Compta", Calculator],
-    ...(session.full_view
-      ? ([["utilisateurs", "Équipe", Users]] as [
-          Tab,
-          string,
-          typeof ShoppingBag,
-        ][])
-      : []),
-    ["parametres", "Réglages", Settings2],
-    ["apropos", "À propos", BadgeInfo],
-  ];
-
   return (
-    <div className="min-h-screen bg-slate-100 pb-24 dark:bg-slate-950 dark:text-slate-100">
+    <div className="min-h-screen bg-slate-100 pb-6 dark:bg-slate-950 dark:text-slate-100">
       <header className="sticky top-0 z-10 flex items-center justify-between bg-brand-600 px-4 py-3 text-white">
-        <div>
-          <p className="text-sm font-semibold">{session.company}</p>
-          <p className="text-xs opacity-80">{session.name}</p>
+        <div className="flex items-center gap-2">
+          {tab !== "accueil" && (
+            <button
+              onClick={() => setTab("accueil")}
+              title="Accueil"
+              className="-ml-1 p-1"
+            >
+              <ChevronLeft size={22} />
+            </button>
+          )}
+          <div>
+            <p className="text-sm font-semibold">{session.company}</p>
+            <p className="text-xs opacity-80">{session.name}</p>
+          </div>
         </div>
         <div className="flex items-center gap-4">
           <button
@@ -1024,22 +1020,6 @@ export default function Mobile() {
         )}
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-10 flex border-t border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
-        {tabs.map(([key, label, Icon]) => (
-          <button
-            key={key}
-            onClick={() => setTab(key)}
-            className={`flex flex-1 flex-col items-center gap-1 py-2 text-[11px] ${
-              tab === key
-                ? "text-brand-600 dark:text-brand-300"
-                : "text-slate-500 dark:text-slate-400"
-            }`}
-          >
-            <Icon size={20} />
-            {label}
-          </button>
-        ))}
-      </nav>
     </div>
   );
 }
