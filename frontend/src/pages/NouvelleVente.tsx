@@ -335,13 +335,40 @@ export default function NouvelleVente() {
     );
   }
 
-  /** Kick code of the drawer, sent along with the ticket when possible. */
+  /**
+   * Kick code of the drawer, sent along with the ticket when possible.
+   * All fields must parse as bytes: a malformed code returns an empty kick so
+   * the drawer API reports the bad configuration instead of sending a
+   * truncated command.
+   */
   function drawerKick(): number[] {
     if (!drawerWanted()) return [];
-    return (company?.drawer_code || "27,112,0,25,250")
+    const parts = (company?.drawer_code || "27,112,0,25,250")
       .split(",")
-      .map((part) => Number(part.trim()))
-      .filter((value) => Number.isInteger(value) && value >= 0 && value <= 255);
+      .map((part) => part.trim())
+      .filter(Boolean);
+    const values = parts.map((part) => Number(part));
+    return values.length > 0 &&
+      values.every(
+        (value) => Number.isInteger(value) && value >= 0 && value <= 255
+      )
+      ? values
+      : [];
+  }
+
+  /**
+   * Kick code embedded in the receipt job: only when the drawer hangs off the
+   * receipt printer itself (no dedicated port/printer configured). A drawer
+   * configured on another COM/LPT port or another printer is left to
+   * openDrawer(), which routes the kick to drawer_port.
+   */
+  function receiptKick(): number[] {
+    const target = (company?.drawer_port || "").trim().toLowerCase();
+    const receiptPrinter = (printing.receipt.printer_name || "")
+      .trim()
+      .toLowerCase();
+    if (target && target !== receiptPrinter) return [];
+    return drawerKick();
   }
 
   /** Electronic drawer: opening it must never hold back the next customer. */
@@ -365,9 +392,11 @@ export default function NouvelleVente() {
         printReceipt(
           printing.receipt.width,
           printing.receipt,
-          drawerKick()
+          receiptKick()
         ).then((drawerOpened) => {
           // The ticket carried the kick code: no second order to the till.
+          // A drawer on another target (port or printer) still gets its kick
+          // here, routed by the backend to drawer_port.
           if (!drawerOpened) openDrawer();
         });
       }, 400);

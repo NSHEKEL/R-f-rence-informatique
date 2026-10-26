@@ -36,12 +36,15 @@ interface Props {
 /** Serial, parallel or shared path, as opposed to a printer name. */
 function isPortPath(target: string): boolean {
   const value = (target || "").trim().toUpperCase();
-  return (
-    value.startsWith("COM") ||
-    value.startsWith("LPT") ||
+  if (
     value.startsWith("\\\\") ||
+    value.startsWith("/DEV/") ||
     value.endsWith(":")
-  );
+  ) {
+    return true;
+  }
+  // Only full COM/LPT names are ports: a queue named COMPTOIR is a printer.
+  return /^(COM|LPT)\d+:?$/.test(value);
 }
 
 /**
