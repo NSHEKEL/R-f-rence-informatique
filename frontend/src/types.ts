@@ -601,3 +601,26 @@ export interface PurchaseSummary {
   total: number;
   unpaid: number;
 }
+
+export interface FneSettings {
+  enabled: boolean;
+  environment: string;
+  api_url: string;
+  token_url: string;
+  client_id: string;
+  credentials_configured: boolean;
+  configured: boolean;
+}
+
+export interface FneInvoice {
+  id: number;
+  sale_id: number;
+  status: string;
+  fne_reference: string;
+  fne_number: string;
+  fne_token: string;
+  last_error: string;
+  attempts: number;
+  submitted_at: string | null;
+  certified_at: string | null;
+}

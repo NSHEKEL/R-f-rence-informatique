@@ -28,6 +28,7 @@ from .routers import (
     dashboard,
     debts,
     deliveries,
+    fne,
     history as history_router,
     inventory,
     license as license_router,
@@ -94,6 +95,7 @@ app.include_router(sales.router, dependencies=feature("ventes"))
 # Settings and permissions answer before the menu is even drawn (logo, rights
 # of the signed-in user): the plan gates their screens, never their reading.
 app.include_router(settings.router)
+app.include_router(fne.router)
 app.include_router(users.router, dependencies=feature("gestion_utilisateurs"))
 app.include_router(notifications.router)
 app.include_router(permissions.router)

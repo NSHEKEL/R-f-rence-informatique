@@ -6,6 +6,7 @@ import {
   Database,
   Download,
   DownloadCloud,
+  FileCheck2,
   FolderOpen,
   HardDriveUpload,
   ImagePlus,
@@ -33,6 +34,7 @@ import { useAuth } from "../context/AuthContext";
 import PhotoPicker from "../components/PhotoPicker";
 import PrintingSettings from "../components/PrintingSettings";
 import SecuritySettings from "../components/SecuritySettings";
+import FneSettings from "../components/FneSettings";
 import { useCompany } from "../context/CompanyContext";
 
 type CompanyForm = Omit<CompanySettings, "id"> & { smtp_password?: string };
@@ -47,6 +49,7 @@ const TABS = [
   { key: "sauvegarde", label: "Sauvegarde", icon: Database },
   { key: "maj", label: "Mise à jour", icon: DownloadCloud },
   { key: "emails", label: "E-mails", icon: Mail },
+  { key: "fne", label: "FNE", icon: FileCheck2, admin: true },
   { key: "securite", label: "Sécurité", icon: ShieldCheck, admin: true },
   { key: "compte", label: "Mon compte", icon: User },
 ] as const;
@@ -1038,6 +1041,7 @@ export default function Settings() {
       </div>
       )}
 
+      {tab === "fne" && user?.role === "admin" && <FneSettings />}
       {tab === "securite" && user?.role === "admin" && <SecuritySettings />}
 
       {tab === "compte" && (

@@ -64,6 +64,13 @@ COLUMNS: dict[str, dict[str, str]] = {
         "drawer_code": "VARCHAR DEFAULT '27,112,0,25,250'",
         "drawer_open_after_sale": f"BOOLEAN DEFAULT {TRUE_LITERAL}",
         "printing_config": "TEXT DEFAULT ''",
+        "fne_enabled": f"BOOLEAN DEFAULT {FALSE_LITERAL}",
+        "fne_environment": "VARCHAR DEFAULT 'test'",
+        "fne_api_url": "VARCHAR DEFAULT ''",
+        "fne_token_url": "VARCHAR DEFAULT ''",
+        "fne_client_id": "VARCHAR DEFAULT ''",
+        "fne_client_secret": "VARCHAR DEFAULT ''",
+        "fne_api_key": "VARCHAR DEFAULT ''",
     },
     "orders": {
         "discount": "FLOAT DEFAULT 0",

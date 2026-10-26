@@ -76,6 +76,16 @@ class CompanySettings(Base):
     # Mirror the database into that folder after every sale.
     backup_on_sale = Column(Boolean, default=False, nullable=False)
     last_backup_at = Column(DateTime, nullable=True)
+    # FNE (Facture Normalisée Électronique, DGI Côte d'Ivoire) : connexion à
+    # l'API officielle de l'entreprise. Les secrets ne sont jamais renvoyés par
+    # l'API de lecture — seul le drapeau fne_secret_configured le dit.
+    fne_enabled = Column(Boolean, default=False, nullable=False)
+    fne_environment = Column(String, default="test")  # test, production
+    fne_api_url = Column(String, default="")
+    fne_token_url = Column(String, default="")
+    fne_client_id = Column(String, default="")
+    fne_client_secret = Column(String, default="")
+    fne_api_key = Column(String, default="")
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
 
@@ -876,3 +886,38 @@ class RolePermission(Base):
     role = Column(String, index=True, nullable=False)
     permission = Column(String, index=True, nullable=False)
     allowed = Column(Boolean, default=False, nullable=False)
+
+
+class FneInvoice(Base):
+    """Facture normalisée électronique rattachée à une vente.
+
+    Le cycle de vie suit l'API officielle : une demande part en ``pending``,
+    devient ``submitted`` quand la plateforme l'a acceptée pour traitement,
+    ``certified`` quand la réponse officielle apporte la preuve (référence,
+    numéro, sticker/QR), et ``rejected``/``error`` sinon. Une facture n'est
+    jamais présentée comme normalisée sans la confirmation officielle.
+    """
+
+    __tablename__ = "fne_invoices"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sale_id = Column(
+        Integer, ForeignKey("sales.id"), unique=True, nullable=False
+    )
+    # pending, submitted, certified, rejected, error
+    status = Column(String, default="pending", nullable=False, index=True)
+    fne_reference = Column(String, default="")
+    fne_number = Column(String, default="")
+    fne_token = Column(String, default="")  # sticker / preuve renvoyée
+    request_payload = Column(Text, default="")
+    response_payload = Column(Text, default="")
+    last_error = Column(Text, default="")
+    attempts = Column(Integer, default=0, nullable=False)
+    submitted_at = Column(DateTime, nullable=True)
+    certified_at = Column(DateTime, nullable=True)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+    sale = relationship("Sale")
+    created_by = relationship("User")

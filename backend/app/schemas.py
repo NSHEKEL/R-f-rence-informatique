@@ -1306,3 +1306,40 @@ class PayrollSummary(BaseModel):
     deductions_total: float = 0
     net_total: float = 0
     rows: List[PayrollSummaryRow] = []
+
+
+# ---------- FNE ----------
+class FneSettingsOut(BaseModel):
+    """Configuration FNE vue par l'admin : jamais les secrets eux-mêmes."""
+
+    enabled: bool = False
+    environment: str = "test"
+    api_url: str = ""
+    token_url: str = ""
+    client_id: str = ""
+    credentials_configured: bool = False
+    configured: bool = False
+
+
+class FneSettingsUpdate(BaseModel):
+    enabled: Optional[bool] = None
+    environment: Optional[str] = None  # test, production
+    api_url: Optional[str] = None
+    token_url: Optional[str] = None
+    client_id: Optional[str] = None
+    client_secret: Optional[str] = None
+    api_key: Optional[str] = None
+
+
+class FneInvoiceOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    sale_id: int
+    status: str
+    fne_reference: str = ""
+    fne_number: str = ""
+    fne_token: str = ""
+    last_error: str = ""
+    attempts: int = 0
+    submitted_at: Optional[datetime] = None
+    certified_at: Optional[datetime] = None
