@@ -7,7 +7,7 @@ export default defineConfig({
   // Older Android WebViews still run in the field: keep the bundle readable
   // by them, otherwise the phone shows a blank page.
   build: {
-    target: ['es2017', 'chrome64', 'safari12'],
+    target: ['es2015', 'chrome49'],
   },
   server: {
     host: true,
