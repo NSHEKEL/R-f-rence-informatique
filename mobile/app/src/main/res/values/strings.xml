@@ -7,6 +7,7 @@
     <string name="server_test">Tester et enregistrer</string>
     <string name="server_change">Changer de serveur</string>
     <string name="reload">Actualiser</string>
+    <string name="open_browser">Ouvrir dans le navigateur</string>
     <string name="testing">Connexion au serveur…</string>
     <string name="server_ok">Serveur trouvé</string>
     <string name="server_ko">Serveur injoignable : vérifiez l\'adresse et votre connexion (en local, EasyGest doit être lancé sur l\'ordinateur et sur le même Wi-Fi).</string>
