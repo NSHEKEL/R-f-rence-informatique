@@ -72,6 +72,10 @@ FEATURES: tuple[FeatureSpec, ...] = (
         "comptabilite", "Comptabilité", "Pilotage",
         "Journal des encaissements et dépenses",
     ),
+    FeatureSpec(
+        "paie", "Paie & bulletins de salaire", "Pilotage",
+        "Travailleurs, paie mensuelle et bulletins A4",
+    ),
     FeatureSpec("tableau_bord", "Tableau de bord", "Pilotage", "Chiffres du jour"),
     FeatureSpec("export_excel", "Export Excel", "Pilotage", "Export CSV/Excel"),
     FeatureSpec("export_pdf", "Export PDF", "Pilotage", "Impression et export PDF"),
@@ -108,6 +112,10 @@ FEATURES: tuple[FeatureSpec, ...] = (
         "apropos", "À propos de nous", "Administration",
         "Page de présentation de l'éditeur",
     ),
+    FeatureSpec(
+        "assistance", "Assistance et support", "Administration",
+        "WhatsApp, e-mail et formulaire de contact",
+    ),
 )
 
 # Catalogue of the releases before these menu entries became switchable.
@@ -138,6 +146,7 @@ LEGACY_FEATURE_CODES: frozenset[str] = frozenset(
         "restauration",
         "synchronisation",
         "fonctions_avancees",
+        "assistance",
     }
 )
 
@@ -165,5 +174,6 @@ BASE_FEATURES: frozenset[str] = frozenset(
         "droits_acces",
         "parametres",
         "apropos",
+        "assistance",
     }
 )

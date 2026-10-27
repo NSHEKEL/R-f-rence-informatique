@@ -22,6 +22,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import unquote
 
 from .version import (
     APP_VERSION,
@@ -32,6 +33,12 @@ from .version import (
 )
 
 RELEASE_API = "https://api.github.com/repos/{repo}/releases/latest"
+# Public release page: redirects to /releases/tag/vX.Y.Z and, unlike the API,
+# is not subject to the 60 requests per hour per IP address limit — several
+# workstations of a shop share one address and emptied that quota.
+RELEASE_PAGE = "https://github.com/{repo}/releases/latest"
+RELEASE_TAG_MARKER = "/releases/tag/"
+DOWNLOAD_URL = "https://github.com/{repo}/releases/download/{tag}/{asset}"
 TIMEOUT = 30
 ATTEMPTS = 4
 CHUNK = 256 * 1024
@@ -58,6 +65,11 @@ def _urlopen(request: urllib.request.Request, timeout: int):
 def _friendly(exc: Exception) -> str:
     """Say what the user can act on, not what OpenSSL printed."""
     text = str(exc)
+    if isinstance(exc, urllib.error.HTTPError) and exc.code in (403, 429):
+        return (
+            "le serveur de mise à jour limite les demandes depuis cette "
+            "connexion Internet. Réessayez dans une heure."
+        )
     if "EOF" in text or "SSL" in text.upper():
         return (
             "la connexion sécurisée a été coupée (Internet instable, pare-feu "
@@ -100,14 +112,64 @@ def is_installed() -> bool:
     return any(folder.glob("unins*.exe"))
 
 
-def latest_release() -> Release:
-    url = RELEASE_API.format(repo=_repo())
+def _headers() -> dict[str, str]:
+    return {"User-Agent": f"EasyGest/{APP_VERSION}"}
+
+
+def _latest_tag() -> str:
+    """Tag of the latest release, read from the redirect of the release page."""
     request = urllib.request.Request(
-        url,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "User-Agent": f"EasyGest/{APP_VERSION}",
-        },
+        RELEASE_PAGE.format(repo=_repo()), headers=_headers(), method="HEAD"
+    )
+    last: Exception | None = None
+    for attempt in range(ATTEMPTS):
+        try:
+            with _urlopen(request, TIMEOUT) as response:
+                final = response.geturl()
+            break
+        except (urllib.error.URLError, ssl.SSLError, TimeoutError, OSError) as exc:
+            last = exc
+            time.sleep(1.5 * (attempt + 1))
+    else:
+        raise UpdateError(
+            f"Serveur de mise à jour injoignable : {_friendly(last or OSError())}"
+        ) from last
+    if RELEASE_TAG_MARKER not in final:
+        raise UpdateError("Aucune version publiée.")
+    tag = final.split(RELEASE_TAG_MARKER, 1)[1].split("?", 1)[0].split("/", 1)[0]
+    return unquote(tag).strip()
+
+
+def _release_details(tag: str) -> tuple[str, str]:
+    """Release notes and date, best effort: the API may be rate limited."""
+    request = urllib.request.Request(
+        RELEASE_API.format(repo=_repo()),
+        headers={"Accept": "application/vnd.github+json", **_headers()},
+    )
+    try:
+        with _urlopen(request, TIMEOUT) as response:
+            payload = json.load(response)
+    except (
+        urllib.error.URLError,
+        ssl.SSLError,
+        TimeoutError,
+        OSError,
+        json.JSONDecodeError,
+    ):
+        return "", ""
+    if str(payload.get("tag_name", "")) != tag:
+        return "", ""
+    return (
+        str(payload.get("body", "") or ""),
+        str(payload.get("published_at", "") or ""),
+    )
+
+
+def _latest_release_from_api() -> Release:
+    """Fallback on the REST API when the release page cannot be read."""
+    request = urllib.request.Request(
+        RELEASE_API.format(repo=_repo()),
+        headers={"Accept": "application/vnd.github+json", **_headers()},
     )
     last: Exception | None = None
     payload = None
@@ -119,7 +181,6 @@ def latest_release() -> Release:
         except (
             urllib.error.URLError,
             ssl.SSLError,
-            socket.timeout,
             TimeoutError,
             OSError,
             json.JSONDecodeError,
@@ -147,6 +208,35 @@ def latest_release() -> Release:
         installer_url=url_of(UPDATE_INSTALLER_ASSET),
         notes=str(payload.get("body", "") or ""),
         published_at=str(payload.get("published_at", "") or ""),
+    )
+
+
+def latest_release() -> Release:
+    """Latest published release, without depending on the API quota.
+
+    The version comes from the release page redirect and the files from the
+    stable ``releases/download/<tag>/<asset>`` addresses; the API is only
+    asked for the notes, and used as a whole only if the page is unreachable.
+    """
+    try:
+        tag = _latest_tag()
+    except UpdateError as page_error:
+        try:
+            return _latest_release_from_api()
+        except UpdateError:
+            raise page_error from None
+    repo = _repo()
+    notes, published_at = _release_details(tag)
+    return Release(
+        version=tag,
+        download_url=DOWNLOAD_URL.format(
+            repo=repo, tag=tag, asset=os.getenv("UPDATE_ASSET", UPDATE_ASSET)
+        ),
+        installer_url=DOWNLOAD_URL.format(
+            repo=repo, tag=tag, asset=UPDATE_INSTALLER_ASSET
+        ),
+        notes=notes,
+        published_at=published_at,
     )
 
 

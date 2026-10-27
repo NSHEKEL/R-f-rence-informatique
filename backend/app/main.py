@@ -28,11 +28,13 @@ from .routers import (
     dashboard,
     debts,
     deliveries,
+    fne,
     history as history_router,
     inventory,
     license as license_router,
     notifications,
     orders,
+    payroll,
     permissions,
     products,
     purchases,
@@ -43,6 +45,7 @@ from .routers import (
     security,
     settings,
     suppliers,
+    support,
     sync,
     updates,
     users,
@@ -93,6 +96,7 @@ app.include_router(sales.router, dependencies=feature("ventes"))
 # Settings and permissions answer before the menu is even drawn (logo, rights
 # of the signed-in user): the plan gates their screens, never their reading.
 app.include_router(settings.router)
+app.include_router(fne.router)
 app.include_router(users.router, dependencies=feature("gestion_utilisateurs"))
 app.include_router(notifications.router)
 app.include_router(permissions.router)
@@ -100,10 +104,12 @@ app.include_router(security.router)
 app.include_router(cash.router, dependencies=feature("versements"))
 app.include_router(inventory.router, dependencies=feature("inventaire"))
 app.include_router(accounting.router, dependencies=feature("comptabilite"))
+app.include_router(payroll.router, dependencies=feature("paie"))
 app.include_router(debts.router, dependencies=feature("dettes"))
 app.include_router(returns.router, dependencies=feature("retours"))
 app.include_router(proformas.router, dependencies=feature("proformas"))
 app.include_router(reports.router, dependencies=feature("rapports"))
+app.include_router(support.router)
 app.include_router(sync.router)
 app.include_router(updates.router)
 app.include_router(orders.router, dependencies=feature("commandes"))

@@ -14,11 +14,82 @@ export interface TicketLine {
   bold?: boolean;
   big?: boolean;
   barcode?: string;
+  /** Logo, as base64 rows of packed black-and-white pixels. */
+  image?: string;
+  image_width?: number;
+  image_height?: number;
 }
 
 /** Characters per line, at the printer's standard font. */
 function columns(format: ReceiptFormat): number {
   return format === "58mm" ? 32 : 42;
+}
+
+/** Printing dots across the paper, at the usual 203 dpi. */
+function dots(format: ReceiptFormat): number {
+  return format === "58mm" ? 384 : 576;
+}
+
+/**
+ * Logo turned into the bitmap the thermal printer understands: it prints
+ * text and dots only, so the picture is drawn on a canvas, reduced to black
+ * or white and packed eight pixels per byte.
+ */
+function logoLine(
+  image: HTMLImageElement,
+  format: ReceiptFormat
+): TicketLine | null {
+  const natural = image.naturalWidth;
+  if (!natural || !image.naturalHeight || !image.complete) return null;
+  // Half the paper width keeps the logo readable without eating the roll.
+  const width = Math.floor(dots(format) / 2 / 8) * 8;
+  const height = Math.max(
+    8,
+    Math.round((image.naturalHeight / natural) * width)
+  );
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (!context) return null;
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, width, height);
+  try {
+    context.drawImage(image, 0, 0, width, height);
+  } catch {
+    return null; // Logo served from elsewhere: the canvas refuses to read it.
+  }
+  let pixels: Uint8ClampedArray;
+  try {
+    pixels = context.getImageData(0, 0, width, height).data;
+  } catch {
+    return null;
+  }
+  const bytesPerRow = width / 8;
+  const packed = new Uint8Array(bytesPerRow * height);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const at = (y * width + x) * 4;
+      const alpha = pixels[at + 3] / 255;
+      // Transparent areas are paper, not ink.
+      const grey =
+        (0.299 * pixels[at] + 0.587 * pixels[at + 1] + 0.114 * pixels[at + 2]) *
+          alpha +
+        255 * (1 - alpha);
+      if (grey < 160) {
+        packed[y * bytesPerRow + (x >> 3)] |= 0x80 >> (x & 7);
+      }
+    }
+  }
+  let binary = "";
+  packed.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return {
+    image: btoa(binary),
+    image_width: width,
+    image_height: height,
+  };
 }
 
 function clean(value: string | null | undefined): string {
@@ -81,6 +152,11 @@ export function ticketLines(
   };
   // Kept in the order of the ticket on screen, so the printed copy reads the
   // same: letterhead, references, items, totals, barcode, thanks.
+  const logo = root.querySelector<HTMLImageElement>("img.receipt-logo");
+  if (logo) {
+    const line = logoLine(logo, format);
+    if (line) lines.push(line);
+  }
   const blocks = root.querySelectorAll(
     ".receipt-company,.receipt-slogan,.receipt-contact p,.receipt-title," +
       ".receipt-duplicate,.receipt-meta,.receipt-items,.receipt-total," +

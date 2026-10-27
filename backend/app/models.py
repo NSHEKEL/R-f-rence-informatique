@@ -48,6 +48,7 @@ class CompanySettings(Base):
     # VAT shown on receipts; prices are already tax inclusive.
     vat_rate = Column(Float, default=0.0, nullable=False)
     about = Column(Text, default="")  # free text shown on the "À propos" page
+    city = Column(String, default="")  # magasin's city (multi-magasins)
     receipt_header = Column(Text, default="")
     receipt_footer = Column(Text, default="Merci de votre confiance !")
     receipt_format = Column(String, default="A4")  # A4, 80mm
@@ -76,6 +77,20 @@ class CompanySettings(Base):
     # Mirror the database into that folder after every sale.
     backup_on_sale = Column(Boolean, default=False, nullable=False)
     last_backup_at = Column(DateTime, nullable=True)
+    # FNE (Facture Normalisée Électronique, DGI Côte d'Ivoire) : connexion à
+    # l'API officielle de l'entreprise. Les secrets ne sont jamais renvoyés par
+    # l'API de lecture — seul le drapeau fne_secret_configured le dit.
+    fne_enabled = Column(Boolean, default=False, nullable=False)
+    fne_environment = Column(String, default="test")  # test, production
+    fne_api_url = Column(String, default="")
+    fne_token_url = Column(String, default="")
+    fne_client_id = Column(String, default="")
+    fne_client_secret = Column(String, default="")
+    fne_api_key = Column(String, default="")
+    # "Assistance et support" contact points shown to every logged-in user.
+    # Editable from the settings page; nothing here is a secret.
+    support_whatsapp = Column(String, default="0710069059")
+    support_email = Column(String, default="ankouame022@gmail.com")
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
 
@@ -743,6 +758,130 @@ class DebtPayment(Base):
     cancelled_by = relationship("User", foreign_keys=[cancelled_by_id])
 
 
+class Employee(Base):
+    """A worker of the shop, paid every month through the payroll module."""
+
+    __tablename__ = "employees"
+
+    id = Column(Integer, primary_key=True, index=True)
+    matricule = Column(String, unique=True, index=True, nullable=False)
+    last_name = Column(String, nullable=False)
+    first_name = Column(String, default="")
+    gender = Column(String, default="")  # M, F
+    birth_date = Column(DateTime, nullable=True)
+    phone = Column(String, default="")
+    address = Column(String, default="")
+    job = Column(String, default="")
+    department = Column(String, default="")
+    hired_at = Column(DateTime, nullable=True)
+    contract = Column(String, default="CDI")  # configurable list
+    status = Column(String, default="En poste")
+    base_salary = Column(Float, default=0, nullable=False)
+    payment_method = Column(String, default="Espèces")
+    bank = Column(String, default="")
+    account_number = Column(String, default="")
+    social_number = Column(String, default="")  # CNPS
+    email = Column(String, default="")
+    note = Column(Text, default="")
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+    payslips = relationship("Payslip", back_populates="employee")
+
+    @property
+    def full_name(self) -> str:
+        return f"{self.last_name} {self.first_name}".strip()
+
+
+class PayrollElement(Base):
+    """A pay line the administrator configures: a gain or a deduction.
+
+    Nothing legal is written in the code: the rate, the ceiling and the base
+    are set from Paie → Paramètres, and a rule that changed keeps its old
+    payslips untouched because every payslip stores its own computed lines.
+    """
+
+    __tablename__ = "payroll_elements"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    kind = Column(String, default="gain", index=True)  # gain, retenue
+    mode = Column(String, default="fixe")  # fixe, pourcentage
+    value = Column(Float, default=0, nullable=False)  # amount or percentage
+    base = Column(String, default="base")  # base, brut, manuel
+    ceiling = Column(Float, default=0, nullable=False)  # 0 = no ceiling
+    # Applied to every worker unless the payslip drops the line.
+    automatic = Column(Boolean, default=True, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    starts_on = Column(DateTime, nullable=True)
+    ends_on = Column(DateTime, nullable=True)
+    position = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime, default=utcnow)
+
+
+class Payslip(Base):
+    """Payroll of one worker for one month, with its own frozen lines."""
+
+    __tablename__ = "payslips"
+
+    id = Column(Integer, primary_key=True, index=True)
+    reference = Column(String, unique=True, index=True, nullable=False)
+    employee_id = Column(Integer, ForeignKey("employees.id"), nullable=False)
+    year = Column(Integer, default=0, nullable=False, index=True)
+    month = Column(Integer, default=0, nullable=False, index=True)
+    base_salary = Column(Float, default=0, nullable=False)
+    gross = Column(Float, default=0, nullable=False)
+    deductions = Column(Float, default=0, nullable=False)
+    net = Column(Float, default=0, nullable=False)
+    # Brouillon, Validée, Payée, Annulée
+    status = Column(String, default="Brouillon", index=True)
+    worked_days = Column(Float, default=0, nullable=False)
+    absence_days = Column(Float, default=0, nullable=False)
+    overtime_hours = Column(Float, default=0, nullable=False)
+    overtime_rate = Column(Float, default=0, nullable=False)
+    validated_at = Column(DateTime, nullable=True)
+    paid_at = Column(DateTime, nullable=True)
+    payment_method = Column(String, default="")
+    cancel_reason = Column(Text, default="")
+    note = Column(Text, default="")
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    employee = relationship("Employee", back_populates="payslips")
+    created_by = relationship("User")
+    lines = relationship(
+        "PayslipLine",
+        back_populates="payslip",
+        cascade="all, delete-orphan",
+        order_by="PayslipLine.position",
+    )
+
+    @property
+    def period(self) -> str:
+        return f"{self.month:02d}/{self.year}"
+
+
+class PayslipLine(Base):
+    """One gain or deduction printed on a payslip, with how it was computed."""
+
+    __tablename__ = "payslip_lines"
+
+    id = Column(Integer, primary_key=True, index=True)
+    payslip_id = Column(Integer, ForeignKey("payslips.id"), nullable=False)
+    element_id = Column(Integer, ForeignKey("payroll_elements.id"), nullable=True)
+    kind = Column(String, default="gain")  # gain, retenue
+    label = Column(String, default="")
+    quantity = Column(Float, default=0, nullable=False)
+    rate = Column(Float, default=0, nullable=False)
+    base = Column(Float, default=0, nullable=False)
+    amount = Column(Float, default=0, nullable=False)
+    position = Column(Integer, default=0, nullable=False)
+
+    payslip = relationship("Payslip", back_populates="lines")
+
+
 class RolePermission(Base):
     """Right granted by the administrator to a role (seller, stock manager)."""
 
@@ -752,3 +891,65 @@ class RolePermission(Base):
     role = Column(String, index=True, nullable=False)
     permission = Column(String, index=True, nullable=False)
     allowed = Column(Boolean, default=False, nullable=False)
+
+
+class FneInvoice(Base):
+    """Facture normalisée électronique rattachée à une vente.
+
+    Le cycle de vie suit l'API officielle : une demande part en ``pending``,
+    devient ``submitted`` quand la plateforme l'a acceptée pour traitement,
+    ``certified`` quand la réponse officielle apporte la preuve (référence,
+    numéro, sticker/QR), et ``rejected``/``error`` sinon. Une facture n'est
+    jamais présentée comme normalisée sans la confirmation officielle.
+    """
+
+    __tablename__ = "fne_invoices"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sale_id = Column(
+        Integer, ForeignKey("sales.id"), unique=True, nullable=False
+    )
+    # pending, submitted, certified, rejected, error
+    status = Column(String, default="pending", nullable=False, index=True)
+    fne_reference = Column(String, default="")
+    fne_number = Column(String, default="")
+    fne_token = Column(String, default="")  # sticker / preuve renvoyée
+    request_payload = Column(Text, default="")
+    response_payload = Column(Text, default="")
+    last_error = Column(Text, default="")
+    attempts = Column(Integer, default=0, nullable=False)
+    submitted_at = Column(DateTime, nullable=True)
+    certified_at = Column(DateTime, nullable=True)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+    sale = relationship("Sale")
+    created_by = relationship("User")
+
+
+class SupportRequest(Base):
+    """Help request sent through the "Assistance et support" page.
+
+    The row is stored locally first so the form only confirms after a real
+    write, then mirrored to the owner's console at the next push (and right
+    away through remote_sales.schedule()). Status and internal notes are
+    managed on the console; the shop keeps the sent copy as history.
+    """
+
+    __tablename__ = "support_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    email = Column(String, default="", index=True)
+    subject = Column(String, nullable=False)
+    category = Column(String, default="assistance", index=True)
+    message = Column(Text, nullable=False)
+    status = Column(String, default="nouvelle", nullable=False, index=True)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+
+    created_by = relationship("User")
+
+
+SUPPORT_CATEGORIES = ("assistance", "bug", "suggestion", "critique", "autre")

@@ -241,6 +241,28 @@ Le mot de passe SMTP n'est jamais renvoyé par l'API : l'interface indique
 seulement si l'envoi est configuré. Sans SMTP, la réinitialisation reste
 possible depuis **Utilisateurs**.
 
+## Alertes e-mail de la console (serveur central)
+
+La console notifie l'administrateur global par e-mail à chaque nouvelle
+demande « Assistance et support ». Le SMTP se configure uniquement par
+variables d'environnement du **serveur central** — jamais dans le code ni en
+base :
+
+```env
+CENTRAL_SMTP_HOST=smtp.gmail.com
+CENTRAL_SMTP_PORT=587          # 465 = SSL direct
+CENTRAL_SMTP_USER=adresse@gmail.com
+CENTRAL_SMTP_PASSWORD=mot-de-passe-d-application   # Gmail : myaccount.google.com/apppasswords
+CENTRAL_SMTP_FROM=adresse@gmail.com
+CENTRAL_SMTP_TLS=1             # 0 pour désactiver STARTTLS
+CENTRAL_ALERT_EMAIL=adresse@gmail.com   # sinon : e-mail de l'admin global
+```
+
+Sans ces variables, les demandes sont quand même enregistrées et visibles
+dans *Suggestions et critiques* : le détail d'une demande indique
+« alerte e-mail non envoyée » avec l'erreur — rien n'est jamais présenté
+comme envoyé.
+
 ## Sécurité
 
 - Mots de passe hachés (bcrypt), jamais stockés en clair.

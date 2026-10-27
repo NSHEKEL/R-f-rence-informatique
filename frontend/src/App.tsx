@@ -13,6 +13,7 @@ import Returns from "./pages/Returns";
 import Caisse from "./pages/Caisse";
 import Inventaire from "./pages/Inventaire";
 import Comptabilite from "./pages/Comptabilite";
+import Paie from "./pages/Paie";
 import Dettes from "./pages/Dettes";
 import Rapports from "./pages/Rapports";
 import Proformas from "./pages/Proformas";
@@ -22,6 +23,7 @@ import Categories from "./pages/Categories";
 import Users from "./pages/Users";
 import Settings from "./pages/Settings";
 import APropos from "./pages/APropos";
+import Assistance from "./pages/Assistance";
 import Approvisionnements from "./pages/Approvisionnements";
 import Commandes from "./pages/Commandes";
 import Livraisons from "./pages/Livraisons";
@@ -34,6 +36,7 @@ import ConsoleClients from "./pages/console/ConsoleClients";
 import ConsoleClient from "./pages/console/ConsoleClient";
 import ConsolePlans from "./pages/console/ConsolePlans";
 import ConsoleJournal from "./pages/console/ConsoleJournal";
+import ConsoleSuggestions from "./pages/console/ConsoleSuggestions";
 import Mobile from "./pages/Mobile";
 
 /** Home screens, in the order a user falls back to them. */
@@ -137,6 +140,7 @@ export default function App() {
         <Route path="clients" element={<ConsoleClients />} />
         <Route path="clients/:id" element={<ConsoleClient />} />
         <Route path="formules" element={<ConsolePlans />} />
+        <Route path="suggestions" element={<ConsoleSuggestions />} />
         <Route path="journal" element={<ConsoleJournal />} />
       </Route>
       <Route
@@ -252,6 +256,14 @@ export default function App() {
           }
         />
         <Route
+          path="/paie"
+          element={
+            <PermRoute right="paie">
+              <Paie />
+            </PermRoute>
+          }
+        />
+        <Route
           path="/dettes"
           element={
             <PermRoute right="dettes">
@@ -305,6 +317,14 @@ export default function App() {
             <AdminRoute>
               <MonAbonnement />
             </AdminRoute>
+          }
+        />
+        <Route
+          path="/assistance"
+          element={
+            <PermRoute right="assistance">
+              <Assistance />
+            </PermRoute>
           }
         />
         <Route

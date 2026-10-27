@@ -55,13 +55,21 @@ def verify_password(plain: str, hashed: str) -> bool:
     return bcrypt.checkpw(plain.encode("utf-8")[:72], hashed.encode("utf-8"))
 
 
-def create_access_token(data: dict) -> str:
-    to_encode = data.copy()
+def _password_version(user: User) -> str:
+    """Fingerprint of the password hash: a changed password revokes old tokens."""
+    return user.hashed_password[:16]
+
+
+def create_access_token(user: User) -> str:
     expire = datetime.now(timezone.utc) + timedelta(
         minutes=ACCESS_TOKEN_EXPIRE_MINUTES
     )
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    claims = {
+        "sub": str(user.id),
+        "pwv": _password_version(user),
+        "exp": expire,
+    }
+    return jwt.encode(claims, SECRET_KEY, algorithm=ALGORITHM)
 
 
 def get_current_user(
@@ -81,6 +89,10 @@ def get_current_user(
         raise credentials_exception
     user = db.query(User).filter(User.id == int(user_id)).first()
     if user is None:
+        raise credentials_exception
+    # Session revocation: a password changed (by the user or an admin reset)
+    # invalidates every token issued before it.
+    if payload.get("pwv") != _password_version(user):
         raise credentials_exception
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Compte désactivé")
