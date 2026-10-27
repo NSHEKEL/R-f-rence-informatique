@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ---------- Auth ----------
@@ -21,6 +21,7 @@ class UserOut(BaseModel):
     name: str
     email: str
     role: str
+    photo: str = ""
     is_active: bool = True
 
 
@@ -29,6 +30,7 @@ class UserCreate(BaseModel):
     email: str
     password: str
     role: str = "vendeur"
+    photo: str = ""
 
 
 class UserUpdate(BaseModel):
@@ -36,7 +38,12 @@ class UserUpdate(BaseModel):
     email: Optional[str] = None
     password: Optional[str] = None
     role: Optional[str] = None
+    photo: Optional[str] = None
     is_active: Optional[bool] = None
+
+
+class UserPhoto(BaseModel):
+    photo: str = ""
 
 
 # ---------- Company settings ----------
@@ -45,29 +52,152 @@ class CompanySettingsOut(BaseModel):
     id: int
     name: str
     slogan: str = ""
+    logo: str = ""
     address: str = ""
     phone: str = ""
     email: str = ""
     website: str = ""
     tax_id: str = ""
     currency: str = "FCFA"
+    vat_rate: float = 0.0
+    about: str = ""
     receipt_header: str = ""
     receipt_footer: str = ""
     receipt_format: str = "A4"
+    printer_name: str = ""
+    auto_print_cash: bool = True
+    drawer_enabled: bool = False
+    drawer_port: str = ""
+    drawer_code: str = "27,112,0,25,250"
+    drawer_open_after_sale: bool = True
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_from: str = ""
+    smtp_tls: bool = True
+    smtp_configured: bool = False
+    backup_dir: str = ""
+    backup_auto: bool = True
+    backup_keep: int = 30
+    backup_on_sale: bool = False
+    last_backup_at: Optional[datetime] = None
 
 
 class CompanySettingsUpdate(BaseModel):
     name: Optional[str] = None
     slogan: Optional[str] = None
+    logo: Optional[str] = None
     address: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
     website: Optional[str] = None
     tax_id: Optional[str] = None
     currency: Optional[str] = None
+    vat_rate: Optional[float] = None
+    # "about" is intentionally absent: the page is read-only.
     receipt_header: Optional[str] = None
     receipt_footer: Optional[str] = None
     receipt_format: Optional[str] = None
+    printer_name: Optional[str] = None
+    auto_print_cash: Optional[bool] = None
+    drawer_enabled: Optional[bool] = None
+    drawer_port: Optional[str] = None
+    drawer_code: Optional[str] = None
+    drawer_open_after_sale: Optional[bool] = None
+    smtp_host: Optional[str] = None
+    smtp_port: Optional[int] = None
+    smtp_user: Optional[str] = None
+    smtp_password: Optional[str] = None
+    smtp_from: Optional[str] = None
+    smtp_tls: Optional[bool] = None
+    backup_dir: Optional[str] = None
+    backup_auto: Optional[bool] = None
+    backup_keep: Optional[int] = None
+    backup_on_sale: Optional[bool] = None
+
+
+# ---------- Printing ----------
+class ReceiptPrinterConfig(BaseModel):
+    """Thermal receipt printer: hardware, layout and ticket contents."""
+
+    printer_name: str = ""
+    width: str = "80mm"  # 80mm, 58mm, A4
+    copies: int = 1
+    auto_print: bool = True
+    cut_paper: bool = True
+    open_drawer: bool = True
+    font_family: str = "Arial"
+    font_size: int = 11
+    line_height: float = 1.35
+    align: str = "left"
+    margin_mm: float = 3.0
+    logo_size_mm: float = 18.0
+    logo_align: str = "center"
+    show_logo: bool = True
+    show_company: bool = True
+    show_address: bool = True
+    show_phone: bool = True
+    show_email: bool = True
+    show_website: bool = True
+    show_tax_id: bool = True
+    show_header: bool = True
+    show_footer: bool = True
+    show_number: bool = True
+    show_datetime: bool = True
+    show_seller: bool = True
+    show_customer: bool = True
+    show_qty: bool = True
+    show_unit_price: bool = True
+    show_discount: bool = True
+    show_vat: bool = True
+    show_total_ht: bool = True
+    show_total_ttc: bool = True
+    show_paid: bool = True
+    show_change: bool = True
+    show_payment: bool = True
+    show_barcode: bool = True
+
+
+class LabelPrinterConfig(BaseModel):
+    """Price labels: a different printer, a different set of settings."""
+
+    printer_name: str = ""
+    width_mm: float = 60.0
+    height_mm: float = 40.0
+    columns: int = 3
+    font_size: int = 12
+    show_logo: bool = True
+    show_shop: bool = True
+    show_name: bool = True
+    show_price: bool = True
+    show_wholesale: bool = False
+    show_code: bool = True
+    show_barcode: bool = True
+
+
+class DocumentConfig(BaseModel):
+    """A4/A5 commercial documents: purchase orders and delivery notes."""
+
+    format: str = "A4"  # A4, A5
+    order_prefix: str = "BC"
+    delivery_prefix: str = "BL"
+    show_logo: bool = True
+    show_address: bool = True
+    show_phone: bool = True
+    show_whatsapp: bool = True
+    show_email: bool = True
+    show_website: bool = True
+    show_vat: bool = True
+    show_discount: bool = True
+    show_prices_on_delivery: bool = False
+    show_customer_signature: bool = True
+    show_company_signature: bool = True
+
+
+class PrintingConfig(BaseModel):
+    receipt: ReceiptPrinterConfig = Field(default_factory=ReceiptPrinterConfig)
+    label: LabelPrinterConfig = Field(default_factory=LabelPrinterConfig)
+    documents: DocumentConfig = Field(default_factory=DocumentConfig)
 
 
 # ---------- Category ----------
@@ -92,6 +222,7 @@ class SupplierBase(BaseModel):
     email: str = ""
     phone: str = ""
     address: str = ""
+    logo: str = ""
 
 
 class SupplierCreate(SupplierBase):
@@ -129,8 +260,12 @@ class ProductBase(BaseModel):
     supplier_id: Optional[int] = None
     purchase_price: float = 0
     sale_price: float = 0
+    wholesale_price: float = 0
     quantity: int = 0
     min_stock: int = 5
+    qr_code: str = ""
+    barcode: str = ""
+    image: str = ""
 
 
 class ProductCreate(ProductBase):
@@ -147,12 +282,18 @@ class ProductOut(ProductBase):
     created_at: datetime
     category: Optional[CategoryOut] = None
     supplier: Optional[SupplierOut] = None
+    # Filled by the "jamais vendu / plus vendus" filters.
+    sold_quantity: int = 0
+    last_sold_at: Optional[datetime] = None
 
 
 # ---------- Sales ----------
 class SaleItemCreate(BaseModel):
     product_id: int
     quantity: int
+    # Price agreed at the counter; ignored unless the seller holds the right
+    # to change a price, and never written back to the product sheet.
+    unit_price: Optional[float] = None
 
 
 class SaleCreate(BaseModel):
@@ -160,7 +301,15 @@ class SaleCreate(BaseModel):
     payment_method: str = "Espèces"
     status: str = "Payée"
     note: str = ""
+    price_mode: str = "detail"  # detail, gros
+    # Cash handed over at the counter, so the ticket can print the change.
+    paid_amount: float = 0
+    # Discount granted on the whole ticket, deducted from the total.
+    discount: float = 0
     items: List[SaleItemCreate]
+    # Idempotency key set by tills recording offline; replaying the same key
+    # returns the existing ticket instead of duplicating it.
+    client_id: Optional[str] = None
 
 
 class SaleUpdate(BaseModel):
@@ -178,6 +327,7 @@ class SaleItemOut(BaseModel):
     quantity: int
     unit_price: float
     subtotal: float
+    returned_quantity: int = 0
 
 
 class SaleOut(BaseModel):
@@ -192,8 +342,178 @@ class SaleOut(BaseModel):
     payment_method: str
     note: str = ""
     receipt_footer: str = ""
+    price_mode: str = "detail"
     created_by: Optional[UserOut] = None
     items: List[SaleItemOut] = []
+    print_count: int = 0
+    returned_total: float = 0
+    paid_amount: float = 0
+    discount: float = 0
+
+
+# ---------- Returns (avoirs) ----------
+class ReturnLine(BaseModel):
+    product_id: int
+    quantity: int
+
+
+class ReturnCreate(BaseModel):
+    sale_reference: str
+    reason: str = ""
+    lines: List[ReturnLine]
+
+
+class ReturnItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    product_id: Optional[int]
+    product_name: str
+    quantity: int
+    unit_price: float
+    subtotal: float
+
+
+class ReturnOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    reference: str
+    sale_id: int
+    sale_reference: str = ""
+    date: datetime
+    total: float
+    reason: str = ""
+    created_by: Optional[UserOut] = None
+    items: List[ReturnItemOut] = []
+
+
+# ---------- Proforma ----------
+class ProformaItemCreate(BaseModel):
+    product_id: Optional[int] = None
+    product_name: str = ""
+    quantity: int = 1
+    unit_price: float = 0
+
+
+class ProformaCreate(BaseModel):
+    customer_id: Optional[int] = None
+    customer_name: str = ""
+    valid_until: Optional[datetime] = None
+    note: str = ""
+    items: List[ProformaItemCreate]
+
+
+class ProformaItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    product_id: Optional[int]
+    product_name: str
+    quantity: int
+    unit_price: float
+    subtotal: float
+
+
+class ProformaOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    reference: str
+    customer_id: Optional[int]
+    customer: Optional[CustomerOut] = None
+    customer_name: str = ""
+    date: datetime
+    valid_until: Optional[datetime] = None
+    total: float
+    note: str = ""
+    created_by: Optional[UserOut] = None
+    items: List[ProformaItemOut] = []
+
+
+# ---------- Password reset ----------
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    password: str
+
+
+class ForgotPasswordResult(BaseModel):
+    sent: bool
+    message: str
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    password: str
+    confirm: str
+
+
+class RecoveryRequest(BaseModel):
+    """Administrator recovery: a key, the account to reopen, a new password."""
+
+    key: str
+    identifier: str = ""
+    password: str
+    confirm: str
+
+
+class RecoveryKeyOut(BaseModel):
+    """The clear key is returned once, right after it has been generated."""
+
+    key: str
+    created_at: datetime
+
+
+class SecurityLogOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    at: datetime
+    event: str
+    identifier: str
+    detail: str
+    station: str
+    success: bool
+    user: Optional[UserOut] = None
+
+
+class DiagnosticItem(BaseModel):
+    """One line of the connection diagnostic; never holds a secret."""
+
+    label: str
+    status: str = "ok"  # ok, avertissement, erreur
+    detail: str = ""
+
+
+class DiagnosticOut(BaseModel):
+    items: list[DiagnosticItem] = []
+
+
+class AuthRepairResult(BaseModel):
+    message: str
+    unlocked: int = 0
+    tokens_cleared: int = 0
+
+
+# ---------- Reports ----------
+class ReportRow(BaseModel):
+    label: str
+    quantity: float = 0
+    amount: float = 0
+
+
+class SalesReport(BaseModel):
+    period_start: datetime
+    period_end: datetime
+    sales_count: int
+    revenue: float
+    returns_total: float
+    net_revenue: float
+    average_ticket: float
+    by_day: List[ReportRow]
+    by_payment: List[ReportRow]
+    by_seller: List[ReportRow]
+    by_category: List[ReportRow]
+    by_product: List[ReportRow]
 
 
 # ---------- Dashboard ----------
@@ -205,6 +525,12 @@ class MonthlyRevenue(BaseModel):
 class TopProduct(BaseModel):
     name: str
     quantity: int
+    revenue: float
+
+
+class TopSeller(BaseModel):
+    name: str
+    sales_count: int
     revenue: float
 
 
@@ -220,7 +546,16 @@ class DashboardStats(BaseModel):
     monthly_revenue: List[MonthlyRevenue]
     recent_sales: List[SaleOut]
     top_products: List[TopProduct]
+    top_sellers: List[TopSeller] = []
     low_stock_products: List[ProductOut]
+    period_start: Optional[datetime] = None
+    period_end: Optional[datetime] = None
+
+
+# ---------- Sync ----------
+class SyncVersion(BaseModel):
+    version: int
+    entities: str = ""
 
 
 # ---------- Notifications ----------
@@ -251,6 +586,7 @@ class CashSessionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     opened_at: datetime
+    business_day: str = ""
     opened_by: Optional[UserOut] = None
     opening_balance: float
     closed_at: Optional[datetime] = None
@@ -330,6 +666,477 @@ class AccountingSummary(BaseModel):
     expenses_total: float
     net_profit: float
     sales_count: int
+    returns_total: float = 0
     revenue_by_payment: List[AccountingCategory]
     expenses_by_category: List[AccountingCategory]
     daily_revenue: List[AccountingCategory]
+
+
+# ---------- Remote update ----------
+class UpdateStatus(BaseModel):
+    current_version: str
+    latest_version: str = ""
+    available: bool = False
+    packaged: bool = False
+    notes: str = ""
+    published_at: str = ""
+    error: str = ""
+
+
+class UpdateInstallResult(BaseModel):
+    started: bool = True
+    version: str
+
+
+# ---------- Orders and deliveries ----------
+class OrderItemCreate(BaseModel):
+    product_id: int
+    quantity: int
+    unit_price: Optional[float] = None
+    unit: str = "u"
+    discount: float = 0
+
+
+class OrderCreate(BaseModel):
+    customer_id: Optional[int] = None
+    customer_name: str = ""
+    expected_date: Optional[datetime] = None
+    deposit: float = 0
+    discount: float = 0
+    price_mode: str = "detail"
+    delivery_address: str = ""
+    payment_terms: str = ""
+    delivery_terms: str = ""
+    status: str = "Brouillon"
+    note: str = ""
+    items: List[OrderItemCreate] = []
+
+
+class OrderUpdate(BaseModel):
+    customer_id: Optional[int] = None
+    customer_name: Optional[str] = None
+    expected_date: Optional[datetime] = None
+    deposit: Optional[float] = None
+    discount: Optional[float] = None
+    price_mode: Optional[str] = None
+    delivery_address: Optional[str] = None
+    payment_terms: Optional[str] = None
+    delivery_terms: Optional[str] = None
+    note: Optional[str] = None
+    status: Optional[str] = None
+    items: Optional[List[OrderItemCreate]] = None
+
+
+class OrderItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    product_id: Optional[int] = None
+    product_name: str
+    reference: str = ""
+    unit: str = "u"
+    quantity: int
+    delivered_quantity: int = 0
+    remaining_quantity: int = 0
+    unit_price: float
+    discount: float = 0
+    subtotal: float
+
+
+class DeliveryCreate(BaseModel):
+    address: str = ""
+    carrier: str = ""
+    recipient: str = ""
+    note: str = ""
+    paid: bool = True
+    payment_method: str = "Espèces"
+
+
+class DeliveryUpdate(BaseModel):
+    address: Optional[str] = None
+    carrier: Optional[str] = None
+    recipient: Optional[str] = None
+    note: Optional[str] = None
+
+
+class DeliveryItemCreate(BaseModel):
+    product_id: int
+    quantity: int
+    unit: str = "u"
+    observation: str = ""
+    unit_price: Optional[float] = None
+
+
+class DeliveryNoteCreate(BaseModel):
+    """Delivery note, either standalone or drawn from a purchase order."""
+
+    order_id: Optional[int] = None
+    customer_id: Optional[int] = None
+    customer_name: str = ""
+    address: str = ""
+    carrier: str = ""
+    recipient: str = ""
+    note: str = ""
+    items: List[DeliveryItemCreate] = []
+
+
+class DeliveryNoteUpdate(BaseModel):
+    customer_id: Optional[int] = None
+    customer_name: Optional[str] = None
+    address: Optional[str] = None
+    carrier: Optional[str] = None
+    recipient: Optional[str] = None
+    note: Optional[str] = None
+    items: Optional[List[DeliveryItemCreate]] = None
+
+
+class DeliveryValidate(BaseModel):
+    paid: bool = True
+    payment_method: str = "Espèces"
+
+
+class DeliveryItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    product_id: Optional[int] = None
+    product_name: str = ""
+    reference: str = ""
+    unit: str = "u"
+    ordered_quantity: int = 0
+    previously_delivered: int = 0
+    quantity: int = 0
+    unit_price: float = 0
+    subtotal: float = 0
+    observation: str = ""
+
+
+class DeliveryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    reference: str
+    order_id: Optional[int] = None
+    order_reference: str = ""
+    customer_id: Optional[int] = None
+    customer_name: str = ""
+    status: str = "Validé"
+    validated_at: Optional[datetime] = None
+    sale_id: Optional[int] = None
+    date: datetime
+    address: str = ""
+    carrier: str = ""
+    recipient: str = ""
+    note: str = ""
+    items: List[DeliveryItemOut] = []
+    created_by: Optional[UserOut] = None
+
+
+class OrderOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    reference: str
+    customer_id: Optional[int] = None
+    customer_name: str = ""
+    date: datetime
+    expected_date: Optional[datetime] = None
+    status: str
+    total: float
+    discount: float = 0
+    deposit: float = 0
+    balance: float = 0
+    price_mode: str = "detail"
+    delivery_address: str = ""
+    payment_terms: str = ""
+    delivery_terms: str = ""
+    note: str = ""
+    items: List[OrderItemOut] = []
+    deliveries: List[DeliveryOut] = []
+    created_by: Optional[UserOut] = None
+
+
+# ---------- Undo / redo ----------
+class ActionLogOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    label: str
+    at: datetime
+    user: Optional[UserOut] = None
+
+
+class HistoryState(BaseModel):
+    undo: Optional[ActionLogOut] = None
+    redo: Optional[ActionLogOut] = None
+
+
+# ---------- Backups ----------
+class BackupFile(BaseModel):
+    name: str
+    size: int
+    created_at: datetime
+
+
+class BackupResult(BaseModel):
+    name: str
+    size: int
+
+
+# ---------- Access rights ----------
+class PermissionDefinition(BaseModel):
+    key: str
+    label: str
+    section: str
+
+
+class PermissionMatrix(BaseModel):
+    definitions: list[PermissionDefinition]
+    roles: list[str]
+    matrix: dict[str, dict[str, bool]]
+
+
+class PermissionUpdate(BaseModel):
+    matrix: dict[str, dict[str, bool]]
+
+
+class UserPermissions(BaseModel):
+    role: str
+    allowed: list[str]
+
+
+# ---------- Supply orders (approvisionnement) ----------
+class PurchaseItemCreate(BaseModel):
+    product_id: int
+    quantity: int
+    unit_cost: Optional[float] = None
+
+
+class PurchaseCreate(BaseModel):
+    supplier_id: Optional[int] = None
+    supplier_name: str = ""
+    expected_date: Optional[datetime] = None
+    paid: float = 0
+    invoice_number: str = ""
+    note: str = ""
+    items: List[PurchaseItemCreate] = []
+
+
+class PurchaseUpdate(BaseModel):
+    supplier_id: Optional[int] = None
+    supplier_name: Optional[str] = None
+    expected_date: Optional[datetime] = None
+    paid: Optional[float] = None
+    invoice_number: Optional[str] = None
+    note: Optional[str] = None
+    status: Optional[str] = None
+    items: Optional[List[PurchaseItemCreate]] = None
+
+
+class PurchaseReceiveItem(BaseModel):
+    item_id: int
+    quantity: int
+
+
+class PurchaseReceive(BaseModel):
+    """Quantities actually delivered; empty means "everything ordered"."""
+
+    items: List[PurchaseReceiveItem] = []
+    update_cost: bool = True  # refresh the product purchase price
+    note: str = ""
+
+
+class PurchaseItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    product_id: Optional[int] = None
+    product_name: str
+    quantity: int
+    received_quantity: int = 0
+    unit_cost: float
+    subtotal: float
+
+
+class PurchaseOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    reference: str
+    supplier_id: Optional[int] = None
+    supplier_name: str = ""
+    date: datetime
+    expected_date: Optional[datetime] = None
+    received_at: Optional[datetime] = None
+    status: str
+    total: float
+    paid: float = 0
+    balance: float = 0
+    invoice_number: str = ""
+    note: str = ""
+    items: List[PurchaseItemOut] = []
+    created_by: Optional[UserOut] = None
+
+
+class PurchaseSummary(BaseModel):
+    """Figures shown on top of the supply page."""
+
+    count: int = 0
+    pending: int = 0
+    total: float = 0
+    unpaid: float = 0
+
+
+class LicenseFeature(BaseModel):
+    """One capability, as shown on "Mon abonnement"."""
+
+    code: str
+    name: str
+    section: str = ""
+    allowed: bool
+
+
+class LicenseStatus(BaseModel):
+    """Licence of this installation, read by the app and by the client."""
+
+    mode: str
+    plan_code: str = ""
+    plan_name: str = ""
+    status: str = ""
+    message: str = ""
+    blocked: bool = False
+    registered: bool = False
+    client_name: str = ""
+    license_key: str = ""
+    ends_at: Optional[datetime] = None
+    days_left: Optional[int] = None
+    grace_days: int = 0
+    last_sync: Optional[datetime] = None
+    last_error: str = ""
+    central_url: str = ""
+    installation_uid: str = ""
+    features: List[str] = []
+    catalogue: List[LicenseFeature] = []
+
+
+class LicenseRegister(BaseModel):
+    """First configuration: "Choisissez votre formule"."""
+
+    central_url: str = ""
+    plan_code: str
+    company: str
+    manager: str = ""
+    phone: str = ""
+    email: str = ""
+    address: str = ""
+    city: str = ""
+
+
+class OfferedPlan(BaseModel):
+    code: str
+    name: str
+    description: str = ""
+    price: float = 0
+    currency: str = "FCFA"
+    duration_days: int = 0
+    features: List[str] = []
+
+
+# ---------- Debts and receivables ----------
+class DebtPaymentCreate(BaseModel):
+    amount: float
+    method: str = "Espèces"
+    note: str = ""
+    reference: str = ""
+    date: Optional[datetime] = None
+
+
+class DebtPaymentCancel(BaseModel):
+    reason: str
+
+
+class DebtPaymentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    debt_id: int
+    amount: float
+    method: str
+    note: str
+    reference: str
+    receipt_reference: str
+    cancelled: bool
+    cancel_reason: str
+    cancelled_at: Optional[datetime] = None
+    date: datetime
+    created_by: Optional[UserOut] = None
+    cancelled_by: Optional[UserOut] = None
+
+
+class SettlementOut(DebtPaymentOut):
+    """A settlement seen from the history screen, with its counterpart."""
+
+    kind: str = "creance"
+    party: str = ""
+    document: str = ""
+
+
+class DebtCreate(BaseModel):
+    kind: str = "creance"  # creance (client) or dette (fournisseur)
+    party: str = ""
+    customer_id: Optional[int] = None
+    supplier_id: Optional[int] = None
+    reference: str = ""
+    amount: float
+    due_date: Optional[datetime] = None
+    note: str = ""
+
+
+class DebtOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    kind: str
+    party: str
+    customer_id: Optional[int] = None
+    supplier_id: Optional[int] = None
+    sale_id: Optional[int] = None
+    reference: str
+    amount: float
+    due_date: Optional[datetime] = None
+    note: str
+    created_at: datetime
+    paid: float
+    remaining: float
+    settled: bool
+    overdue: bool
+    status: str = "Non payé"
+    days_late: int = 0
+    customer: Optional[CustomerOut] = None
+    supplier: Optional[SupplierOut] = None
+    created_by: Optional[UserOut] = None
+    payments: List[DebtPaymentOut] = []
+
+
+class DebtSummary(BaseModel):
+    receivable_total: float = 0
+    receivable_overdue: float = 0
+    receivable_count: int = 0
+    payable_total: float = 0
+    payable_overdue: float = 0
+    payable_count: int = 0
+    collected: float = 0
+    disbursed: float = 0
+
+
+class DebtAlert(BaseModel):
+    """One sentence shown to the shop about a term coming or missed."""
+
+    level: str = "info"
+    message: str = ""
+
+
+class PartyBalance(BaseModel):
+    """Totals of one customer or supplier, for the ranking screens."""
+
+    party: str = ""
+    customer_id: Optional[int] = None
+    supplier_id: Optional[int] = None
+    phone: str = ""
+    total: float = 0
+    paid: float = 0
+    remaining: float = 0
+    overdue: float = 0
+    days_late: int = 0
+    next_due: Optional[datetime] = None

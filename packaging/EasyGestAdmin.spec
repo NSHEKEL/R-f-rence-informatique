@@ -1,25 +1,37 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for the Référence Informatique Windows package.
+"""PyInstaller spec for EasyGestAdmin.exe — the owner's console.
 
-Run from the repository root (after building the frontend into frontend/dist):
+Same runtime as the shop application, but the entry point starts the central
+server and opens the Global Administrator console:
 
-    pyinstaller packaging/ReferenceInformatique.spec
+    pyinstaller packaging/EasyGestAdmin.spec
 """
 
 import os
 
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
-# Paths in a .spec are resolved relative to the spec's directory, so anchor
-# everything to the repository root (the parent of packaging/).
 ROOT = os.path.dirname(SPECPATH)
 BACKEND = os.path.join(ROOT, "backend")
 
+ICON = os.path.join(SPECPATH, "EasyGest.ico")
+
+# The console is a route of the same React build, so it travels with the
+# executable: no development checkout is needed on the owner's computer.
 datas = [(os.path.join(ROOT, "frontend", "dist"), "frontend_dist")]
 binaries = []
 hiddenimports = collect_submodules("uvicorn")
+hiddenimports += collect_submodules("webview") + ["clr", "pythonnet"]
 
-for pkg in ("uvicorn", "bcrypt", "jose", "anyio"):
+for pkg in (
+    "uvicorn",
+    "bcrypt",
+    "jose",
+    "anyio",
+    "webview",
+    "clr_loader",
+    "pythonnet",
+):
     try:
         pkg_datas, pkg_binaries, pkg_hidden = collect_all(pkg)
         datas += pkg_datas
@@ -30,7 +42,7 @@ for pkg in ("uvicorn", "bcrypt", "jose", "anyio"):
 
 
 a = Analysis(
-    [os.path.join(BACKEND, "run.py")],
+    [os.path.join(BACKEND, "admin.py")],
     pathex=[BACKEND],
     binaries=binaries,
     datas=datas,
@@ -50,17 +62,19 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name="ReferenceInformatique",
+    name="EasyGestAdmin",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=ICON,
+    version=os.path.join(SPECPATH, "version_info.txt"),
 )

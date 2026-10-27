@@ -1,22 +1,58 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { Pencil, Plus, Search, Trash2 } from "lucide-react";
-import api from "../api/client";
+import api, { formatMoney } from "../api/client";
 import type { Supplier } from "../types";
 import Modal from "../components/Modal";
+import PhotoPicker from "../components/PhotoPicker";
+import BulkDelete, { SelectBox } from "../components/BulkDelete";
+import { useSelection } from "../lib/selection";
+import { useAuth } from "../context/AuthContext";
 
-const empty = { name: "", contact: "", email: "", phone: "", address: "" };
+const empty = {
+  name: "",
+  contact: "",
+  email: "",
+  phone: "",
+  address: "",
+  logo: "",
+};
+
+/** What the shop still owes one supplier, taken from the debts module. */
+interface Balance {
+  party: string;
+  remaining: number;
+  overdue: number;
+}
 
 export default function Suppliers() {
+  const { can } = useAuth();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Supplier | null>(null);
   const [form, setForm] = useState({ ...empty });
   const [saving, setSaving] = useState(false);
+  const [balances, setBalances] = useState<Balance[]>([]);
 
   async function load() {
     const res = await api.get<Supplier[]>("/suppliers");
     setSuppliers(res.data);
+    if (can("dettes")) {
+      try {
+        const owed = await api.get<Balance[]>("/debts/soldes", {
+          params: { kind: "dette" },
+        });
+        setBalances(owed.data);
+      } catch {
+        setBalances([]);
+      }
+    }
+  }
+
+  /** Balance of a supplier, matched on the name kept with the debt. */
+  function balanceOf(name: string): Balance | undefined {
+    return balances.find((row) => row.party === name);
   }
 
   useEffect(() => {
@@ -30,6 +66,8 @@ export default function Suppliers() {
         s.name.toLowerCase().includes(q) || s.contact.toLowerCase().includes(q)
     );
   }, [suppliers, query]);
+
+  const selection = useSelection(filtered);
 
   function openCreate() {
     setEditing(null);
@@ -45,6 +83,7 @@ export default function Suppliers() {
       email: s.email,
       phone: s.phone,
       address: s.address,
+      logo: s.logo ?? "",
     });
     setOpen(true);
   }
@@ -87,49 +126,120 @@ export default function Suppliers() {
         </button>
       </div>
 
+      {can("fournisseurs_gerer") && (
+        <BulkDelete
+          ids={selection.ids}
+          path="/suppliers"
+          noun={["fournisseur", "fournisseurs"]}
+          onDone={load}
+          onClear={selection.clear}
+        />
+      )}
+
       <div className="card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50/60 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                {can("fournisseurs_gerer") && (
+                  <th className="px-4 py-3">
+                    <SelectBox
+                      checked={selection.allSelected}
+                      onChange={selection.toggleAll}
+                      label="Tout sélectionner"
+                    />
+                  </th>
+                )}
                 <th className="px-5 py-3">Fournisseur</th>
                 <th className="px-5 py-3">Contact</th>
                 <th className="px-5 py-3">Email</th>
                 <th className="px-5 py-3">Téléphone</th>
+                <th className="px-5 py-3">Reste à payer</th>
                 <th className="px-5 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filtered.map((s) => (
                 <tr key={s.id} className="hover:bg-slate-50/60">
+                  {can("fournisseurs_gerer") && (
+                    <td className="px-4 py-3.5">
+                      <SelectBox
+                        checked={selection.isSelected(s.id)}
+                        onChange={() => selection.toggle(s.id)}
+                        label={`Sélectionner ${s.name}`}
+                      />
+                    </td>
+                  )}
                   <td className="px-5 py-3.5">
-                    <p className="font-semibold text-slate-800">{s.name}</p>
-                    <p className="text-xs text-slate-400">{s.address || "—"}</p>
+                    <div className="flex items-center gap-3">
+                      {s.logo && (
+                        <img
+                          src={s.logo}
+                          alt=""
+                          className="h-9 w-9 rounded-lg object-cover"
+                        />
+                      )}
+                      <div>
+                        <p className="font-semibold text-slate-800">{s.name}</p>
+                        <p className="text-xs text-slate-400">
+                          {s.address || "—"}
+                        </p>
+                      </div>
+                    </div>
                   </td>
                   <td className="px-5 py-3.5 text-slate-600">{s.contact || "—"}</td>
                   <td className="px-5 py-3.5 text-slate-600">{s.email || "—"}</td>
                   <td className="px-5 py-3.5 text-slate-600">{s.phone || "—"}</td>
                   <td className="px-5 py-3.5">
+                    {balanceOf(s.name) ? (
+                      <Link
+                        to="/dettes"
+                        className="font-semibold text-amber-700 hover:underline"
+                        title="Voir la situation financière"
+                      >
+                        {formatMoney(balanceOf(s.name)!.remaining)}
+                        {balanceOf(s.name)!.overdue > 0 && (
+                          <span className="ml-1 text-xs text-red-600">
+                            en retard
+                          </span>
+                        )}
+                      </Link>
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    )}
+                  </td>
+                  <td className="px-5 py-3.5">
                     <div className="flex justify-end gap-1">
-                      <button
-                        onClick={() => openEdit(s)}
-                        className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
-                      >
-                        <Pencil size={16} />
-                      </button>
-                      <button
-                        onClick={() => remove(s)}
-                        className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                      {can("fournisseurs_gerer") ? (
+                        <>
+                          <button
+                            onClick={() => openEdit(s)}
+                            aria-label="Modifier le fournisseur"
+                            className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
+                          >
+                            <Pencil size={16} />
+                          </button>
+                          <button
+                            onClick={() => remove(s)}
+                            aria-label="Supprimer le fournisseur"
+                            className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </>
+                      ) : (
+                        <span className="text-xs text-slate-400">—</span>
+                      )}
                     </div>
                   </td>
                 </tr>
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-5 py-10 text-center text-slate-400">
+                  <td
+                    colSpan={can("fournisseurs_gerer") ? 7 : 6}
+                    className="px-5 py-10 text-center text-slate-400"
+                  >
                     Aucun fournisseur trouvé.
                   </td>
                 </tr>
@@ -195,6 +305,11 @@ export default function Suppliers() {
               onChange={(e) => setForm({ ...form, address: e.target.value })}
             />
           </div>
+          <PhotoPicker
+            label="Logo du fournisseur (sinon le logo de l'entreprise)"
+            value={form.logo}
+            onChange={(logo) => setForm({ ...form, logo })}
+          />
         </div>
       </Modal>
     </div>

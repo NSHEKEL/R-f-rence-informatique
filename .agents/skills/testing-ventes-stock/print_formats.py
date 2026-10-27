@@ -8,7 +8,7 @@ def main() -> None:
         browser = p.chromium.connect_over_cdp("http://localhost:29229")
         page = browser.contexts[0].new_page()
         page.goto("http://localhost:5173/login")
-        page.fill('input[type="email"]', "admin@reference.ci")
+        page.fill('input[autocomplete="username"]', "admin")
         page.fill('input[type="password"]', "admin123")
         page.click('button[type="submit"]')
         page.wait_for_url("http://localhost:5173/")

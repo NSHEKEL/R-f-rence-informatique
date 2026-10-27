@@ -1,29 +1,58 @@
 import { useEffect, useMemo, useState } from "react";
-import { Mail, Pencil, Phone, Plus, Search, Trash2 } from "lucide-react";
-import api from "../api/client";
+import { Link } from "react-router-dom";
+import { Mail, Pencil, Phone, Plus, Search, Trash2, Wallet } from "lucide-react";
+import api, { formatMoney } from "../api/client";
 import type { Customer } from "../types";
 import Modal from "../components/Modal";
+import BulkDelete, { SelectBox } from "../components/BulkDelete";
+import { useSelection } from "../lib/selection";
 import { useAuth } from "../context/AuthContext";
+import { useSyncVersion } from "../context/SyncContext";
 
 const empty = { name: "", email: "", phone: "", address: "" };
 
+/** What one customer still owes, taken from the debts module. */
+interface Balance {
+  party: string;
+  remaining: number;
+  overdue: number;
+  next_due: string | null;
+}
+
 export default function Customers() {
-  const { isAdmin } = useAuth();
+  const { can } = useAuth();
+  const version = useSyncVersion();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Customer | null>(null);
   const [form, setForm] = useState({ ...empty });
   const [saving, setSaving] = useState(false);
+  const [balances, setBalances] = useState<Balance[]>([]);
 
   async function load() {
     const res = await api.get<Customer[]>("/customers");
     setCustomers(res.data);
+    if (can("dettes")) {
+      try {
+        const owed = await api.get<Balance[]>("/debts/soldes", {
+          params: { kind: "creance" },
+        });
+        setBalances(owed.data);
+      } catch {
+        setBalances([]);
+      }
+    }
+  }
+
+  /** Balance of a customer, matched on the name kept with the receivable. */
+  function balanceOf(name: string): Balance | undefined {
+    return balances.find((row) => row.party === name);
   }
 
   useEffect(() => {
     load();
-  }, []);
+  }, [version]);
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
@@ -32,6 +61,8 @@ export default function Customers() {
         c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q)
     );
   }, [customers, query]);
+
+  const selection = useSelection(filtered);
 
   function openCreate() {
     setEditing(null);
@@ -78,10 +109,32 @@ export default function Customers() {
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
-        <button className="btn-primary" onClick={openCreate}>
-          <Plus size={18} /> Nouveau client
-        </button>
+        <div className="flex items-center gap-3">
+          {can("clients_gerer") && filtered.length > 0 && (
+            <label className="flex items-center gap-2 text-sm text-slate-500">
+              <SelectBox
+                checked={selection.allSelected}
+                onChange={selection.toggleAll}
+                label="Tout sélectionner"
+              />
+              Tout sélectionner
+            </label>
+          )}
+          <button className="btn-primary" onClick={openCreate}>
+            <Plus size={18} /> Nouveau client
+          </button>
+        </div>
       </div>
+
+      {can("clients_gerer") && (
+        <BulkDelete
+          ids={selection.ids}
+          path="/customers"
+          noun={["client", "clients"]}
+          onDone={load}
+          onClear={selection.clear}
+        />
+      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {filtered.map((c) => (
@@ -99,14 +152,21 @@ export default function Customers() {
                 <p className="truncate font-semibold text-slate-900">{c.name}</p>
                 <p className="truncate text-xs text-slate-400">{c.address || "—"}</p>
               </div>
-              <div className="flex gap-1">
+              <div className="flex items-center gap-1">
+                {can("clients_gerer") && (
+                  <SelectBox
+                    checked={selection.isSelected(c.id)}
+                    onChange={() => selection.toggle(c.id)}
+                    label={`Sélectionner ${c.name}`}
+                  />
+                )}
                 <button
                   onClick={() => openEdit(c)}
                   className="rounded-lg p-1.5 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
                 >
                   <Pencil size={15} />
                 </button>
-                {isAdmin && (
+                {can("clients_gerer") && (
                   <button
                     onClick={() => remove(c)}
                     className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
@@ -123,6 +183,21 @@ export default function Customers() {
               <p className="flex items-center gap-2">
                 <Phone size={15} className="text-slate-400" /> {c.phone || "—"}
               </p>
+              {balanceOf(c.name) && (
+                <Link
+                  to="/dettes"
+                  className="flex items-center gap-2 font-medium text-amber-700 hover:underline"
+                  title="Voir la situation financière"
+                >
+                  <Wallet size={15} className="text-amber-500" />
+                  Reste dû : {formatMoney(balanceOf(c.name)!.remaining)}
+                  {balanceOf(c.name)!.overdue > 0 && (
+                    <span className="text-red-600">
+                      (dont {formatMoney(balanceOf(c.name)!.overdue)} en retard)
+                    </span>
+                  )}
+                </Link>
+              )}
             </div>
           </div>
         ))}
