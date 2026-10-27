@@ -26,7 +26,7 @@ from ..models import (
     User,
 )
 from ..permissions import require_permission
-from ..receivables import open_order_receivable
+from ..receivables import open_order_receivable, settle_order_receivable
 from ..schemas import (
     DeliveryNoteCreate,
     DeliveryNoteUpdate,
@@ -293,12 +293,13 @@ def validate_note(
     delivery.validated_at = datetime.now(timezone.utc)
     if order is not None:
         refresh_order_status(order)
+        # Goods leaving never settle anything: the balance becomes a
+        # receivable, and money paid at the door a settlement of it.
+        open_order_receivable(db, order, current_user)
         if payload.paid:
-            order.deposit = min(
-                (order.deposit or 0) + sale.total, order.total
+            settle_order_receivable(
+                db, order, payload.payment_method, current_user, sale.total
             )
-        elif order.status == "Livrée":
-            open_order_receivable(db, order, current_user)
     db.add(
         Notification(
             kind="livraison",

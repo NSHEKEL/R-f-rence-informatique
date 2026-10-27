@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import Customer, Debt, DebtPayment, Supplier, User, utcnow
 from ..permissions import require_permission
+from ..receivables import receipt_reference
 from ..schemas import (
     DebtAlert,
     DebtCreate,
@@ -24,7 +25,6 @@ from ..schemas import (
     PartyBalance,
     SettlementOut,
 )
-from ..sequences import next_reference
 
 router = APIRouter(prefix="/api/debts", tags=["debts"])
 
@@ -33,14 +33,6 @@ KINDS = ("creance", "dette")
 
 def _aware(moment: datetime) -> datetime:
     return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
-
-
-def _receipt_reference(db: Session) -> str:
-    """Payment receipts are numbered RP-YYYY-000001, once and for all."""
-    year = utcnow().year
-    return next_reference(
-        db, DebtPayment.receipt_reference, f"RP-{year}-", 6
-    )
 
 
 def _in_period(moment: datetime, start: str, end: str) -> bool:
@@ -199,7 +191,7 @@ def add_payment(
         method=payload.method,
         note=payload.note,
         reference=payload.reference,
-        receipt_reference=_receipt_reference(db),
+        receipt_reference=receipt_reference(db),
         created_by_id=current_user.id,
     )
     if payload.date is not None:

@@ -32,7 +32,7 @@ from ..models import (
     User,
 )
 from ..permissions import require_permission
-from ..receivables import open_order_receivable
+from ..receivables import open_order_receivable, settle_order_receivable
 from ..schemas import (
     DeliveryCreate,
     DeliveryOut,
@@ -126,6 +126,18 @@ def update_order(
             status_code=400, detail="Une commande livrée ne peut plus changer"
         )
     data = payload.model_dump(exclude_unset=True)
+    if (
+        order.receivables
+        and data.get("deposit") is not None
+        and float(data["deposit"]) != float(order.deposit or 0)
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Commande livrée : le reste à payer se règle dans "
+                "Dettes & créances"
+            ),
+        )
     for field in (
         "customer_id",
         "customer_name",
@@ -347,10 +359,11 @@ def deliver_order(
     )
     delivery.items.extend(lines)
     refresh_order_status(order)
+    # The delivery moves goods, never money: what is left due becomes a
+    # receivable, and a payment made at the door is booked as a settlement.
+    open_order_receivable(db, order, current_user)
     if payload.paid:
-        order.deposit = order.total
-    else:
-        open_order_receivable(db, order, current_user)
+        settle_order_receivable(db, order, payload.payment_method, current_user)
     db.add(delivery)
     db.add(
         Notification(

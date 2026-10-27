@@ -8,6 +8,8 @@ interface ModalProps {
   children: ReactNode;
   footer?: ReactNode;
   wide?: boolean;
+  /** Documents with many lines open on the whole screen. */
+  fullscreen?: boolean;
 }
 
 export default function Modal({
@@ -17,6 +19,7 @@ export default function Modal({
   children,
   footer,
   wide,
+  fullscreen,
 }: ModalProps) {
   if (!open) return null;
   return (
@@ -26,9 +29,11 @@ export default function Modal({
         onClick={onClose}
       />
       <div
-        className={`relative z-10 w-full ${
-          wide ? "max-w-3xl" : "max-w-lg"
-        } max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-soft`}
+        className={`relative z-10 w-full overflow-y-auto bg-white shadow-soft ${
+          fullscreen
+            ? "h-[96vh] max-h-[96vh] max-w-[98vw] rounded-2xl"
+            : `${wide ? "max-w-3xl" : "max-w-lg"} max-h-[90vh] rounded-2xl`
+        }`}
       >
         <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
           <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
