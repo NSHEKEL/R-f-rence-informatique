@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from . import licensing
 from .database import SessionLocal
-from .models import Sale, SaleReturn, SupportRequest, User
+from .models import CompanySettings, Sale, SaleReturn, SupportRequest, User
 
 # Window of sales kept on the central server for the phone.
 MIRROR_DAYS = 120
