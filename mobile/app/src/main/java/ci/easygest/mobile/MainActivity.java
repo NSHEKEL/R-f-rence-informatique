@@ -146,13 +146,9 @@ public class MainActivity extends AppCompatActivity {
                     if (!empty) {
                         return;
                     }
-                    if (outdatedWebView()) {
-                        offerOpenInBrowser();
-                        return;
-                    }
-                    Toast.makeText(this,
-                            pageFailed ? R.string.webview_old : R.string.page_error,
-                            Toast.LENGTH_LONG).show();
+                    // Whatever the cause (old engine, console error, network),
+                    // the browser remains the reliable way out — always offer it.
+                    offerOpenInBrowser();
                 });
     }
 
@@ -165,9 +161,14 @@ public class MainActivity extends AppCompatActivity {
         if (server == null) {
             return;
         }
+        int major = webViewMajor();
+        String detail = getString(
+                outdatedWebView() ? R.string.webview_old : R.string.page_error)
+                + getString(R.string.webview_version,
+                        major > 0 ? "Chrome " + major : getString(R.string.unknown));
         new AlertDialog.Builder(this)
                 .setTitle(R.string.app_name)
-                .setMessage(R.string.webview_old)
+                .setMessage(detail)
                 .setPositiveButton(R.string.open_browser, (dialog, which) ->
                         startActivity(new Intent(Intent.ACTION_VIEW,
                                 android.net.Uri.parse(server))))
