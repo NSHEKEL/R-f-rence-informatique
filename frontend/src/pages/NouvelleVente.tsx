@@ -2,12 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import { Link } from "react-router-dom";
 import {
+  Barcode,
   Flame,
   Image as ImageIcon,
   Minus,
   Plus,
   Printer,
-  Search,
   ShoppingCart,
   Trash2,
   UserPlus,
@@ -210,6 +210,16 @@ export default function NouvelleVente() {
   useEffect(() => {
     setFormat(printing.receipt.width);
   }, [printing.receipt.width]);
+
+  const categoryById = useMemo(
+    () => new Map(categories.map((c) => [c.id, c.name])),
+    [categories]
+  );
+  const categoryName = useCallback(
+    (id: number | null | undefined) =>
+      id ? (categoryById.get(id) ?? "") : "Sans catégorie",
+    [categoryById]
+  );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -574,39 +584,34 @@ export default function NouvelleVente() {
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 p-4 lg:grid-cols-[3fr_2fr]">
         {/* Ticket in progress */}
         <div className="card flex min-h-0 flex-col overflow-hidden p-0">
-          <div className="flex items-center gap-2 border-b border-slate-200 px-3 py-2.5">
-            <input
-              ref={searchRef}
-              autoFocus
-              className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
-              placeholder="Scanner ou taper un article"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  submitSearch();
-                }
-              }}
-            />
-            {query && (
+          <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 px-4 py-3">
+            <span className="flex items-center gap-2 text-base font-bold text-slate-900">
+              <ShoppingCart size={18} className="text-brand-600" />
+              Panier / Ticket
+            </span>
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-500">
+              {itemCount} article(s)
+            </span>
+            <div className="ml-auto flex gap-2">
               <button
-                className="text-slate-400 hover:text-slate-600"
-                onClick={() => setQuery("")}
-                title="Effacer la recherche"
+                className="btn-ghost border border-brand-200 py-1.5 text-sm font-semibold text-brand-700 hover:bg-brand-50"
+                onClick={() => searchRef.current?.focus()}
               >
-                <X size={16} />
+                <Plus size={15} /> Ajouter un article
               </button>
-            )}
-            <button className="btn-primary shrink-0 py-1.5" onClick={submitSearch}>
-              <Search size={15} /> Scan
-            </button>
+              <button
+                className="btn-ghost border border-red-200 py-1.5 text-sm font-semibold text-red-600 hover:bg-red-50"
+                onClick={clearCart}
+                disabled={cart.length === 0}
+              >
+                <Trash2 size={15} /> Vider le panier
+              </button>
+            </div>
           </div>
 
           <div className="flex items-center gap-2 bg-slate-100 px-4 py-2">
-            <ShoppingCart size={15} className="text-slate-500" />
             <span className="text-xs font-bold uppercase tracking-wide text-slate-500">
-              Ticket · {cart.length} ligne(s)
+              Mode de prix
             </span>
             <div className="ml-auto flex rounded-lg bg-white p-0.5 text-[11px] font-semibold">
               {(["detail", "gros"] as PriceMode[]).map((mode) => (
@@ -623,15 +628,6 @@ export default function NouvelleVente() {
                 </button>
               ))}
             </div>
-            {cart.length > 0 && (
-              <button
-                className="ml-1 flex shrink-0 items-center gap-1 rounded-lg bg-white px-2 py-1 text-[11px] font-semibold text-red-600 hover:bg-red-50"
-                onClick={clearCart}
-                title="Vider le panier (avec confirmation)"
-              >
-                <Trash2 size={12} /> Vider
-              </button>
-            )}
           </div>
 
           {flash && (
@@ -667,12 +663,28 @@ export default function NouvelleVente() {
                         {index + 1}
                       </td>
                       <td className="px-1 py-2.5">
-                        <p className="font-semibold text-slate-800">
-                          {l.product.name}
-                        </p>
-                        <p className="text-xs text-slate-400">
-                          Stock : {l.product.quantity}
-                        </p>
+                        <div className="flex items-center gap-2.5">
+                          {l.product.image ? (
+                            <img
+                              src={l.product.image}
+                              alt=""
+                              className="h-10 w-10 shrink-0 rounded-lg bg-slate-50 object-contain"
+                            />
+                          ) : (
+                            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-300">
+                              <ImageIcon size={16} />
+                            </span>
+                          )}
+                          <div className="min-w-0">
+                            <p className="truncate font-semibold text-slate-800">
+                              {l.product.name}
+                            </p>
+                            <p className="truncate text-xs text-slate-400">
+                              {categoryName(l.product.category_id)} · Stock :{" "}
+                              {l.product.quantity}
+                            </p>
+                          </div>
+                        </div>
                       </td>
                       <td className="px-1 py-2.5 text-right">
                         {canChangePrice ? (
@@ -744,6 +756,19 @@ export default function NouvelleVente() {
                 </tbody>
               </table>
             )}
+            {cart.length > 0 && (
+              <div className="flex items-center justify-between border-t border-slate-200 bg-brand-50 px-4 py-2.5">
+                <span className="text-sm font-bold text-slate-600">
+                  Articles : {itemCount}
+                </span>
+                <span className="text-sm font-semibold text-slate-500">
+                  Sous-total{" "}
+                  <span className="text-lg font-extrabold text-brand-700">
+                    {formatXOF(subtotal)}
+                  </span>
+                </span>
+              </div>
+            )}
           </div>
 
           {error && (
@@ -753,7 +778,7 @@ export default function NouvelleVente() {
           )}
 
           <div className="space-y-2 border-t border-slate-100 px-4 py-3">
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
               <div>
                 <div className="flex items-center justify-between">
                   <label className="label">Client</label>
@@ -819,19 +844,8 @@ export default function NouvelleVente() {
                   ))}
                 </select>
               </div>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-              <div className="sm:col-span-2 xl:col-span-1">
-                <label className="label">Note sur le reçu</label>
-                <input
-                  className="input"
-                  placeholder="Facultatif"
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                />
-              </div>
               <div>
-                <label className="label">Remise</label>
+                <label className="label">Remise globale</label>
                 <input
                   className="input"
                   type="number"
@@ -843,6 +857,8 @@ export default function NouvelleVente() {
                   placeholder="0"
                 />
               </div>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
               <div>
                 <label className="label">Montant reçu</label>
                 <input
@@ -856,16 +872,30 @@ export default function NouvelleVente() {
                   placeholder="0"
                 />
               </div>
+              <div>
+                <label className="label">Note sur le reçu</label>
+                <input
+                  className="input"
+                  placeholder="Facultatif"
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="label">
+                  {change > 0 ? "Monnaie à rendre" : "Reste à payer"}
+                </label>
+                <div
+                  className={`input flex items-center justify-end font-bold ${
+                    change > 0
+                      ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                      : "border-red-200 bg-red-50 text-red-600"
+                  }`}
+                >
+                  {formatXOF(change > 0 ? change : total - paidAmount)}
+                </div>
+              </div>
             </div>
-            {paidAmount > 0 && (
-              <p className="rounded-lg bg-emerald-50 px-3 py-1.5 text-sm font-bold text-emerald-700">
-                {change > 0
-                  ? `Monnaie à rendre : ${formatXOF(change)}`
-                  : paidAmount < total
-                    ? `Reste à payer : ${formatXOF(total - paidAmount)}`
-                    : "Montant exact reçu"}
-              </p>
-            )}
           </div>
 
           <div className="bg-slate-800 px-4 py-3 text-white">
@@ -923,7 +953,7 @@ export default function NouvelleVente() {
               </button>
             )}
             <button
-              className="btn-primary flex-[2] justify-center py-3 text-base"
+              className="flex flex-[2] items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 text-base font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
               onClick={checkout}
               disabled={saving || cart.length === 0}
             >
@@ -934,6 +964,40 @@ export default function NouvelleVente() {
 
         {/* Article picker */}
         <div className="card flex min-h-0 flex-col p-4">
+          <div className="mb-3 flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2">
+            <input
+              ref={searchRef}
+              autoFocus
+              className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
+              placeholder="Rechercher un article, un code ou une catégorie..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  submitSearch();
+                }
+              }}
+            />
+            {query && (
+              <button
+                className="shrink-0 text-slate-400 hover:text-slate-600"
+                onClick={() => setQuery("")}
+                title="Effacer la recherche"
+                aria-label="Effacer la recherche"
+              >
+                <X size={16} />
+              </button>
+            )}
+            <button
+              className="shrink-0 rounded-lg border border-brand-200 p-2 text-brand-600 transition hover:bg-brand-50"
+              onClick={submitSearch}
+              title="Scanner un code-barres ou ajouter l'article trouvé"
+              aria-label="Scanner un code-barres ou ajouter l'article trouvé"
+            >
+              <Barcode size={16} />
+            </button>
+          </div>
           {!query && (
             <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
               <button
