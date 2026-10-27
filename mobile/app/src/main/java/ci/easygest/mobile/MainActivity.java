@@ -177,18 +177,35 @@ public class MainActivity extends AppCompatActivity {
 
     /** Very old system WebViews cannot run the EasyGest scripts. */
     private boolean outdatedWebView() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-            return true;
+        int major = webViewMajor();
+        // Version unknown: let the page try; a blank render is reported as a
+        // plain page error instead of wrongly blaming the engine.
+        return major >= 0 && major < MINIMUM_WEBVIEW;
+    }
+
+    /**
+     * The engine's real version. On API < 26 there is no
+     * getCurrentWebViewPackage(), but Android 7 devices can still use an
+     * up-to-date Chrome as their WebView: read the version from the user
+     * agent ("… Chrome/120.0.0.0 …") instead of assuming the engine is old.
+     */
+    private int webViewMajor() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            PackageInfo info = WebView.getCurrentWebViewPackage();
+            if (info != null && info.versionName != null) {
+                try {
+                    return Integer.parseInt(info.versionName.split("\\.")[0]);
+                } catch (NumberFormatException ignored) {
+                }
+            }
         }
-        PackageInfo info = WebView.getCurrentWebViewPackage();
-        if (info == null) {
-            return true;
-        }
-        String major = info.versionName.split("\\.")[0];
+        String agent = webView.getSettings().getUserAgentString();
+        java.util.regex.Matcher matcher =
+                java.util.regex.Pattern.compile("Chrome/(\\d+)").matcher(agent);
         try {
-            return Integer.parseInt(major) < MINIMUM_WEBVIEW;
+            return matcher.find() ? Integer.parseInt(matcher.group(1)) : -1;
         } catch (NumberFormatException error) {
-            return false;
+            return -1;
         }
     }
 
