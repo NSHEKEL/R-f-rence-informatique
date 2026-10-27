@@ -21,13 +21,21 @@ def seed():
         if db.query(User).first():
             return
 
-        db.add(
-            User(
-                name="Administrateur",
-                email="admin@reference.ci",
-                hashed_password=hash_password("admin123"),
-                role="admin",
-            )
+        db.add_all(
+            [
+                User(
+                    name="Administrateur",
+                    email="admin@reference.ci",
+                    hashed_password=hash_password("admin123"),
+                    role="admin",
+                ),
+                User(
+                    name="Vendeur Démo",
+                    email="vendeur@reference.ci",
+                    hashed_password=hash_password("vendeur123"),
+                    role="vendeur",
+                ),
+            ]
         )
 
         categories = [

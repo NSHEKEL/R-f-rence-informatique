@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from sqlalchemy import (
+    Boolean,
     Column,
     DateTime,
     Float,
@@ -25,7 +26,8 @@ class User(Base):
     name = Column(String, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
-    role = Column(String, default="admin")
+    role = Column(String, default="admin")  # admin, vendeur
+    is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=utcnow)
 
 
@@ -95,8 +97,10 @@ class Sale(Base):
     total = Column(Float, default=0)
     status = Column(String, default="Payée")  # Payée, En attente, Annulée
     payment_method = Column(String, default="Espèces")
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     customer = relationship("Customer", back_populates="sales")
+    created_by = relationship("User")
     items = relationship(
         "SaleItem", back_populates="sale", cascade="all, delete-orphan"
     )

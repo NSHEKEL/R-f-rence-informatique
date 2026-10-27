@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from ..auth import get_current_user
+from ..auth import get_current_user, require_admin
 from ..database import get_db
 from ..models import Product, User
 from ..schemas import ProductCreate, ProductOut, ProductUpdate
@@ -30,7 +30,7 @@ def get_product(
 def create_product(
     payload: ProductCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_admin),
 ):
     if db.query(Product).filter(Product.sku == payload.sku).first():
         raise HTTPException(status_code=400, detail="Cette référence (SKU) existe déjà")
@@ -46,7 +46,7 @@ def update_product(
     product_id: int,
     payload: ProductUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_admin),
 ):
     product = db.query(Product).get(product_id)
     if not product:
@@ -65,7 +65,7 @@ def update_product(
 def delete_product(
     product_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_admin),
 ):
     product = db.query(Product).get(product_id)
     if not product:

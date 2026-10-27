@@ -3,10 +3,12 @@ import { Mail, Pencil, Phone, Plus, Search, Trash2 } from "lucide-react";
 import api from "../api/client";
 import type { Customer } from "../types";
 import Modal from "../components/Modal";
+import { useAuth } from "../context/AuthContext";
 
 const empty = { name: "", email: "", phone: "", address: "" };
 
 export default function Customers() {
+  const { isAdmin } = useAuth();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -104,12 +106,14 @@ export default function Customers() {
                 >
                   <Pencil size={15} />
                 </button>
-                <button
-                  onClick={() => remove(c)}
-                  className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                >
-                  <Trash2 size={15} />
-                </button>
+                {isAdmin && (
+                  <button
+                    onClick={() => remove(c)}
+                    className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                )}
               </div>
             </div>
             <div className="mt-4 space-y-1.5 text-sm text-slate-600">
