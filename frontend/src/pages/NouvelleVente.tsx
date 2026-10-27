@@ -2,12 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import { Link } from "react-router-dom";
 import {
+  Barcode,
   Flame,
   Image as ImageIcon,
   Minus,
   Plus,
   Printer,
-  Search,
   ShoppingCart,
   Trash2,
   UserPlus,
@@ -118,6 +118,7 @@ function offlineSale(
 export default function NouvelleVente() {
   const { user, isAdmin, can } = useAuth();
   const canChangePrice = can("prix_modifier");
+  const canQuote = can("proformas");
   const { company, printing } = useCompany();
   const { online } = useNetwork();
   const version = useSyncVersion();
@@ -209,6 +210,16 @@ export default function NouvelleVente() {
   useEffect(() => {
     setFormat(printing.receipt.width);
   }, [printing.receipt.width]);
+
+  const categoryById = useMemo(
+    () => new Map(categories.map((c) => [c.id, c.name])),
+    [categories]
+  );
+  const categoryName = useCallback(
+    (id: number | null | undefined) =>
+      id ? (categoryById.get(id) ?? "") : "Sans catégorie",
+    [categoryById]
+  );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -475,6 +486,60 @@ export default function NouvelleVente() {
     searchRef.current?.focus();
   }
 
+  /** Empties the ticket after the cashier confirms — never silently. */
+  function clearCart() {
+    if (cart.length === 0) return;
+    if (
+      !window.confirm(
+        "Vider le panier ? Toutes les lignes du ticket seront supprimées."
+      )
+    ) {
+      return;
+    }
+    resetCart();
+  }
+
+  /**
+   * Saves the current ticket as a commercial offer ("devis") instead of
+   * cashing it in — same lines and prices, the sale happens later from the
+   * proformas page.
+   */
+  async function saveQuote() {
+    if (cart.length === 0) {
+      setError("Le panier est vide.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const res = await api.post<{ reference: string }>("/proformas", {
+        kind: "devis",
+        status: "Brouillon",
+        customer_id: customer?.id ?? null,
+        customer_name: customer?.name ?? customerQuery.trim(),
+        note,
+        discount,
+        items: cart.map((l) => ({
+          product_id: l.product.id,
+          product_name: l.product.name,
+          quantity: l.quantity,
+          unit_price: linePrice(l, priceMode),
+        })),
+      });
+      resetCart();
+      setFlash(`Devis ${res.data.reference} enregistré`);
+      window.setTimeout(() => setFlash(""), 3000);
+    } catch (err) {
+      setError(
+        axios.isAxiosError(err)
+          ? err.response?.data?.detail ?? "Impossible d'enregistrer le devis"
+          : "Impossible d'enregistrer le devis"
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
   if (tillLoaded && !session) {
     return (
       <div className="flex h-full items-center justify-center p-8">
@@ -516,42 +581,37 @@ export default function NouvelleVente() {
         </Link>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 p-4 lg:grid-cols-[380px_1fr]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 p-4 lg:grid-cols-[3fr_2fr]">
         {/* Ticket in progress */}
-        <div className="card flex min-h-0 flex-col overflow-hidden p-0">
-          <div className="flex items-center gap-2 border-b border-slate-200 px-3 py-2.5">
-            <input
-              ref={searchRef}
-              autoFocus
-              className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
-              placeholder="Scanner ou taper un article"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  submitSearch();
-                }
-              }}
-            />
-            {query && (
+        <div className="card flex min-h-0 flex-col overflow-y-auto p-0">
+          <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 px-4 py-3">
+            <span className="flex items-center gap-2 text-base font-bold text-slate-900">
+              <ShoppingCart size={18} className="text-brand-600" />
+              Panier / Ticket
+            </span>
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-500">
+              {itemCount} article(s)
+            </span>
+            <div className="ml-auto flex gap-2">
               <button
-                className="text-slate-400 hover:text-slate-600"
-                onClick={() => setQuery("")}
-                title="Effacer la recherche"
+                className="btn-ghost border border-brand-200 py-1.5 text-sm font-semibold text-brand-700 hover:bg-brand-50"
+                onClick={() => searchRef.current?.focus()}
               >
-                <X size={16} />
+                <Plus size={15} /> Ajouter un article
               </button>
-            )}
-            <button className="btn-primary shrink-0 py-1.5" onClick={submitSearch}>
-              <Search size={15} /> Scan
-            </button>
+              <button
+                className="btn-ghost border border-red-200 py-1.5 text-sm font-semibold text-red-600 hover:bg-red-50"
+                onClick={clearCart}
+                disabled={cart.length === 0}
+              >
+                <Trash2 size={15} /> Vider le panier
+              </button>
+            </div>
           </div>
 
           <div className="flex items-center gap-2 bg-slate-100 px-4 py-2">
-            <ShoppingCart size={15} className="text-slate-500" />
             <span className="text-xs font-bold uppercase tracking-wide text-slate-500">
-              Ticket · {cart.length} ligne(s)
+              Mode de prix
             </span>
             <div className="ml-auto flex rounded-lg bg-white p-0.5 text-[11px] font-semibold">
               {(["detail", "gros"] as PriceMode[]).map((mode) => (
@@ -576,86 +636,139 @@ export default function NouvelleVente() {
             </p>
           )}
 
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            {cart.length === 0 && (
+          <div className="min-h-[330px] flex-1 overflow-y-auto">
+            {cart.length === 0 ? (
               <p className="px-4 py-10 text-center text-sm text-slate-400">
                 Scannez un code ou cliquez sur un article.
               </p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 z-[1] bg-white">
+                  <tr className="border-b border-slate-200 text-left text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                    <th className="w-8 px-3 py-2">#</th>
+                    <th className="px-1 py-2">Produit</th>
+                    <th className="w-28 px-1 py-2 text-right">Prix unit.</th>
+                    <th className="w-36 px-1 py-2 text-center">Quantité</th>
+                    <th className="w-28 px-1 py-2 text-right">Total</th>
+                    <th className="w-10 px-1 py-2" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {cart.map((l, index) => (
+                    <tr
+                      key={l.product.id}
+                      className="border-b border-slate-100 last:border-0"
+                    >
+                      <td className="px-3 py-2.5 text-slate-400">
+                        {index + 1}
+                      </td>
+                      <td className="px-1 py-2.5">
+                        <div className="flex items-center gap-2.5">
+                          {l.product.image ? (
+                            <img
+                              src={l.product.image}
+                              alt=""
+                              className="h-10 w-10 shrink-0 rounded-lg bg-slate-50 object-contain"
+                            />
+                          ) : (
+                            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-300">
+                              <ImageIcon size={16} />
+                            </span>
+                          )}
+                          <div className="min-w-0">
+                            <p className="truncate font-semibold text-slate-800">
+                              {l.product.name}
+                            </p>
+                            <p className="truncate text-xs text-slate-400">
+                              {categoryName(l.product.category_id)} · Stock :{" "}
+                              {l.product.quantity}
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-1 py-2.5 text-right">
+                        {canChangePrice ? (
+                          <input
+                            className="w-24 rounded-lg border border-slate-200 px-1.5 py-1 text-right text-sm text-slate-700"
+                            value={l.price ?? unitPrice(l.product, priceMode)}
+                            onChange={(e) =>
+                              setLinePrice(l.product.id, e.target.value)
+                            }
+                            title="Prix de vente pour cette ligne"
+                            aria-label={`Prix de ${l.product.name}`}
+                          />
+                        ) : (
+                          <span className="text-slate-600">
+                            {formatXOF(linePrice(l, priceMode))}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-1 py-2.5">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            className="rounded-lg bg-slate-100 p-1.5 text-slate-600 hover:bg-slate-200"
+                            onClick={() =>
+                              setQuantity(l.product.id, l.quantity - 1)
+                            }
+                            title="Diminuer la quantité"
+                            aria-label={`Diminuer la quantité de ${l.product.name}`}
+                          >
+                            <Minus size={14} />
+                          </button>
+                          <input
+                            className="w-12 rounded-lg border border-slate-200 py-1 text-center text-sm"
+                            value={l.quantity}
+                            onChange={(e) =>
+                              setQuantity(
+                                l.product.id,
+                                Number(e.target.value) || 0
+                              )
+                            }
+                            aria-label={`Quantité de ${l.product.name}`}
+                          />
+                          <button
+                            className="rounded-lg bg-slate-100 p-1.5 text-slate-600 hover:bg-slate-200"
+                            onClick={() =>
+                              setQuantity(l.product.id, l.quantity + 1)
+                            }
+                            title="Augmenter la quantité"
+                            aria-label={`Augmenter la quantité de ${l.product.name}`}
+                          >
+                            <Plus size={14} />
+                          </button>
+                        </div>
+                      </td>
+                      <td className="whitespace-nowrap px-1 py-2.5 text-right font-bold text-slate-900">
+                        {formatXOF(linePrice(l, priceMode) * l.quantity)}
+                      </td>
+                      <td className="px-1 py-2.5 text-center">
+                        <button
+                          className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                          onClick={() => setQuantity(l.product.id, 0)}
+                          title="Retirer l'article"
+                          aria-label={`Retirer ${l.product.name}`}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             )}
-            {cart.map((l) => (
-              <div
-                key={l.product.id}
-                className="border-b border-slate-100 px-4 py-2.5"
-              >
-                <div className="flex items-start gap-2">
-                  <p className="min-w-0 flex-1 truncate text-sm font-bold text-slate-800">
-                    {l.product.name}
-                  </p>
-                  <span className="w-8 text-center text-sm text-slate-600">
-                    {l.quantity}
+            {cart.length > 0 && (
+              <div className="flex items-center justify-between border-t border-slate-200 bg-brand-50 px-4 py-2.5">
+                <span className="text-sm font-bold text-slate-600">
+                  Articles : {itemCount}
+                </span>
+                <span className="text-sm font-semibold text-slate-500">
+                  Sous-total{" "}
+                  <span className="text-lg font-extrabold text-brand-700">
+                    {formatXOF(subtotal)}
                   </span>
-                  <span className="shrink-0 whitespace-nowrap text-right text-sm font-bold text-slate-900">
-                    {formatXOF(linePrice(l, priceMode) * l.quantity)}
-                  </span>
-                  <button
-                    className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                    onClick={() => setQuantity(l.product.id, 0)}
-                    title="Retirer cet article du panier"
-                    aria-label={`Retirer ${l.product.name}`}
-                  >
-                    <Trash2 size={15} />
-                  </button>
-                </div>
-                <div className="mt-1.5 flex items-center gap-1">
-                  {canChangePrice ? (
-                    <span className="mr-auto flex items-center gap-1 text-xs text-slate-400">
-                      <input
-                        className="w-20 rounded-lg border border-slate-200 px-1.5 py-0.5 text-right text-sm text-slate-700"
-                        value={l.price ?? unitPrice(l.product, priceMode)}
-                        onChange={(e) =>
-                          setLinePrice(l.product.id, e.target.value)
-                        }
-                        title="Prix de vente pour cette ligne"
-                        aria-label={`Prix de ${l.product.name}`}
-                      />
-                      l'unité
-                    </span>
-                  ) : (
-                    <span className="mr-auto text-xs text-slate-400">
-                      {formatXOF(unitPrice(l.product, priceMode))} l'unité
-                    </span>
-                  )}
-                  <button
-                    className="rounded-lg bg-slate-100 p-1 text-slate-600 hover:bg-slate-200"
-                    onClick={() => setQuantity(l.product.id, l.quantity - 1)}
-                    title="Diminuer la quantité"
-                  >
-                    <Minus size={13} />
-                  </button>
-                  <input
-                    className="w-11 rounded-lg border border-slate-200 py-0.5 text-center text-sm"
-                    value={l.quantity}
-                    onChange={(e) =>
-                      setQuantity(l.product.id, Number(e.target.value) || 0)
-                    }
-                  />
-                  <button
-                    className="rounded-lg bg-slate-100 p-1 text-slate-600 hover:bg-slate-200"
-                    onClick={() => setQuantity(l.product.id, l.quantity + 1)}
-                    title="Augmenter la quantité"
-                  >
-                    <Plus size={13} />
-                  </button>
-                  <button
-                    className="rounded-lg p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                    onClick={() => setQuantity(l.product.id, 0)}
-                    title="Retirer l'article"
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
+                </span>
               </div>
-            ))}
+            )}
           </div>
 
           {error && (
@@ -664,8 +777,8 @@ export default function NouvelleVente() {
             </p>
           )}
 
-          <div className="space-y-2 border-t border-slate-100 px-4 py-3">
-            <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1.5 border-t border-slate-100 px-4 py-2.5">
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
               <div>
                 <div className="flex items-center justify-between">
                   <label className="label">Client</label>
@@ -731,16 +844,8 @@ export default function NouvelleVente() {
                   ))}
                 </select>
               </div>
-            </div>
-            <input
-              className="input"
-              placeholder="Note sur le reçu (facultatif)"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-            />
-            <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="label">Remise</label>
+                <label className="label">Remise globale</label>
                 <input
                   className="input"
                   type="number"
@@ -752,6 +857,8 @@ export default function NouvelleVente() {
                   placeholder="0"
                 />
               </div>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
               <div>
                 <label className="label">Montant reçu</label>
                 <input
@@ -765,10 +872,33 @@ export default function NouvelleVente() {
                   placeholder="0"
                 />
               </div>
+              <div>
+                <label className="label">Note sur le reçu</label>
+                <input
+                  className="input"
+                  placeholder="Facultatif"
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="label">
+                  {change > 0 ? "Monnaie à rendre" : "Reste à payer"}
+                </label>
+                <div
+                  className={`input flex items-center justify-end font-bold ${
+                    change > 0
+                      ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                      : "border-red-200 bg-red-50 text-red-600"
+                  }`}
+                >
+                  {formatXOF(change > 0 ? change : total - paidAmount)}
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="bg-slate-800 px-4 py-3 text-white">
+          <div className="bg-slate-800 px-4 py-2.5 text-white">
             <div className="flex items-center justify-between text-sm text-slate-300">
               <span>Articles</span>
               <span>{itemCount}</span>
@@ -805,16 +935,25 @@ export default function NouvelleVente() {
             </div>
           </div>
 
-          <div className="flex gap-2 p-3">
+          <div className="flex gap-2 p-2.5">
             <button
               className="btn-ghost flex-1 justify-center py-3"
-              onClick={resetCart}
+              onClick={clearCart}
               disabled={cart.length === 0}
             >
               Vider
             </button>
+            {canQuote && (
+              <button
+                className="btn-ghost flex-1 justify-center py-3"
+                onClick={saveQuote}
+                disabled={saving || cart.length === 0}
+              >
+                Devis
+              </button>
+            )}
             <button
-              className="btn-primary flex-[2] justify-center py-3 text-base"
+              className="flex flex-[2] items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 text-base font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
               onClick={checkout}
               disabled={saving || cart.length === 0}
             >
@@ -825,6 +964,40 @@ export default function NouvelleVente() {
 
         {/* Article picker */}
         <div className="card flex min-h-0 flex-col p-4">
+          <div className="mb-3 flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2">
+            <input
+              ref={searchRef}
+              autoFocus
+              className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
+              placeholder="Rechercher un article, un code ou une catégorie..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  submitSearch();
+                }
+              }}
+            />
+            {query && (
+              <button
+                className="shrink-0 text-slate-400 hover:text-slate-600"
+                onClick={() => setQuery("")}
+                title="Effacer la recherche"
+                aria-label="Effacer la recherche"
+              >
+                <X size={16} />
+              </button>
+            )}
+            <button
+              className="shrink-0 rounded-lg border border-brand-200 p-2 text-brand-600 transition hover:bg-brand-50"
+              onClick={submitSearch}
+              title="Scanner un code-barres ou ajouter l'article trouvé"
+              aria-label="Scanner un code-barres ou ajouter l'article trouvé"
+            >
+              <Barcode size={16} />
+            </button>
+          </div>
           {!query && (
             <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
               <button
@@ -852,7 +1025,7 @@ export default function NouvelleVente() {
               ))}
             </div>
           )}
-          <div className="grid min-h-0 flex-1 grid-cols-2 gap-3 overflow-y-auto sm:grid-cols-3 xl:grid-cols-4">
+          <div className="grid min-h-0 flex-1 grid-cols-2 gap-3 overflow-y-auto xl:grid-cols-3">
             {filtered.map((p) => (
               <button
                 key={p.id}
@@ -863,10 +1036,10 @@ export default function NouvelleVente() {
                   <img
                     src={p.image}
                     alt=""
-                    className="mb-2 h-24 w-full rounded-xl object-contain"
+                    className="mb-2 h-20 w-full rounded-xl object-contain"
                   />
                 ) : (
-                  <span className="mb-2 flex h-24 w-full items-center justify-center rounded-xl bg-slate-100 text-slate-300">
+                  <span className="mb-2 flex h-20 w-full items-center justify-center rounded-xl bg-slate-100 text-slate-300">
                     <ImageIcon size={22} />
                   </span>
                 )}
