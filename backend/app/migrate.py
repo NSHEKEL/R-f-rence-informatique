@@ -36,3 +36,11 @@ def migrate() -> None:
                 conn.execute(
                     text("ALTER TABLE sales ADD COLUMN created_by_id INTEGER")
                 )
+            if "note" not in sale_cols:
+                conn.execute(
+                    text("ALTER TABLE sales ADD COLUMN note TEXT DEFAULT ''")
+                )
+            if "receipt_footer" not in sale_cols:
+                conn.execute(
+                    text("ALTER TABLE sales ADD COLUMN receipt_footer TEXT DEFAULT ''")
+                )

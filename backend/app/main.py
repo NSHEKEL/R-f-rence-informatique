@@ -10,6 +10,7 @@ from .routers import (
     dashboard,
     products,
     sales,
+    settings,
     suppliers,
     users,
 )
@@ -35,6 +36,7 @@ app.include_router(categories.router)
 app.include_router(suppliers.router)
 app.include_router(customers.router)
 app.include_router(sales.router)
+app.include_router(settings.router)
 app.include_router(users.router)
 
 

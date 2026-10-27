@@ -1,9 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import { Eye, Plus, Search, Trash2, X } from "lucide-react";
+import {
+  Eye,
+  Pencil,
+  Plus,
+  Printer,
+  Receipt as ReceiptIcon,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react";
 import api, { formatDate, formatXOF } from "../api/client";
-import type { Customer, Product, Sale } from "../types";
+import type { CompanySettings, Customer, Product, Sale } from "../types";
 import Modal from "../components/Modal";
+import Receipt from "../components/Receipt";
 import { statusBadge } from "../components/badges";
 import { useAuth } from "../context/AuthContext";
 
@@ -20,6 +30,7 @@ export default function Sales() {
   const [sales, setSales] = useState<Sale[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [company, setCompany] = useState<CompanySettings | null>(null);
   const [query, setQuery] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [detail, setDetail] = useState<Sale | null>(null);
@@ -29,7 +40,17 @@ export default function Sales() {
   const [customerId, setCustomerId] = useState<string>("");
   const [payment, setPayment] = useState(PAYMENTS[0]);
   const [status, setStatus] = useState(STATUSES[0]);
+  const [note, setNote] = useState("");
   const [lines, setLines] = useState<Line[]>([]);
+
+  // Receipt modal
+  const [receiptSale, setReceiptSale] = useState<Sale | null>(null);
+  const [editingReceipt, setEditingReceipt] = useState(false);
+  const [rCustomerId, setRCustomerId] = useState<string>("");
+  const [rPayment, setRPayment] = useState(PAYMENTS[0]);
+  const [rNote, setRNote] = useState("");
+  const [rFooter, setRFooter] = useState("");
+  const [rSaving, setRSaving] = useState(false);
 
   async function load() {
     const [s, p, c] = await Promise.all([
@@ -44,6 +65,10 @@ export default function Sales() {
 
   useEffect(() => {
     load();
+    api
+      .get<CompanySettings>("/settings/company")
+      .then((res) => setCompany(res.data))
+      .catch(() => setCompany(null));
   }, []);
 
   const filtered = useMemo(() => {
@@ -73,6 +98,7 @@ export default function Sales() {
     setCustomerId("");
     setPayment(PAYMENTS[0]);
     setStatus(STATUSES[0]);
+    setNote("");
     setLines([]);
     setError("");
     setCreateOpen(true);
@@ -104,6 +130,7 @@ export default function Sales() {
         customer_id: customerId === "" ? null : Number(customerId),
         payment_method: payment,
         status,
+        note,
         items: lines,
       });
       setCreateOpen(false);
@@ -122,6 +149,41 @@ export default function Sales() {
       return;
     await api.delete(`/sales/${s.id}`);
     await load();
+  }
+
+  function openReceipt(s: Sale) {
+    setReceiptSale(s);
+    setEditingReceipt(false);
+    setError("");
+    setRCustomerId(s.customer_id ? String(s.customer_id) : "");
+    setRPayment(s.payment_method);
+    setRNote(s.note ?? "");
+    setRFooter(s.receipt_footer ?? "");
+  }
+
+  async function saveReceipt() {
+    if (!receiptSale) return;
+    setRSaving(true);
+    setError("");
+    try {
+      const res = await api.put<Sale>(`/sales/${receiptSale.id}`, {
+        customer_id: rCustomerId === "" ? null : Number(rCustomerId),
+        payment_method: rPayment,
+        note: rNote,
+        receipt_footer: rFooter,
+      });
+      setReceiptSale(res.data);
+      setSales((prev) =>
+        prev.map((x) => (x.id === res.data.id ? res.data : x))
+      );
+      setEditingReceipt(false);
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        setError(err.response?.data?.detail ?? "Erreur lors de l'enregistrement");
+      }
+    } finally {
+      setRSaving(false);
+    }
   }
 
   return (
@@ -177,9 +239,17 @@ export default function Sales() {
                     <div className="flex justify-end gap-1">
                       <button
                         onClick={() => setDetail(s)}
+                        title="Détails"
                         className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
                       >
                         <Eye size={16} />
+                      </button>
+                      <button
+                        onClick={() => openReceipt(s)}
+                        title="Reçu de caisse"
+                        className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
+                      >
+                        <ReceiptIcon size={16} />
                       </button>
                       {isAdmin && (
                         <button
@@ -328,6 +398,16 @@ export default function Sales() {
             </span>
           </div>
         </div>
+
+        <div className="mt-5">
+          <label className="label">Note (facultatif, imprimée sur le reçu)</label>
+          <textarea
+            className="input min-h-[60px]"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Ex. Garantie 12 mois, livraison incluse..."
+          />
+        </div>
       </Modal>
 
       {/* Detail modal */}
@@ -336,6 +416,20 @@ export default function Sales() {
         onClose={() => setDetail(null)}
         title={detail ? `Vente ${detail.reference}` : ""}
         wide
+        footer={
+          detail && (
+            <button
+              className="btn-primary"
+              onClick={() => {
+                const s = detail;
+                setDetail(null);
+                openReceipt(s);
+              }}
+            >
+              <ReceiptIcon size={16} /> Voir le reçu
+            </button>
+          )
+        }
       >
         {detail && (
           <div>
@@ -401,6 +495,123 @@ export default function Sales() {
                 {formatXOF(detail.total)}
               </span>
             </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Receipt modal */}
+      <Modal
+        open={receiptSale !== null}
+        onClose={() => setReceiptSale(null)}
+        title={receiptSale ? `Reçu — ${receiptSale.reference}` : ""}
+        footer={
+          receiptSale && (
+            <div className="no-print flex w-full items-center justify-between">
+              <button
+                className="btn-ghost"
+                onClick={() => setEditingReceipt((v) => !v)}
+              >
+                <Pencil size={16} /> {editingReceipt ? "Fermer" : "Modifier"}
+              </button>
+              <div className="flex gap-3">
+                {editingReceipt && (
+                  <button
+                    className="btn-primary"
+                    onClick={saveReceipt}
+                    disabled={rSaving}
+                  >
+                    {rSaving ? "Enregistrement..." : "Enregistrer"}
+                  </button>
+                )}
+                <button className="btn-primary" onClick={() => window.print()}>
+                  <Printer size={16} /> Imprimer
+                </button>
+              </div>
+            </div>
+          )
+        }
+      >
+        {receiptSale && (
+          <div>
+            {error && (
+              <div className="no-print mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-600">
+                {error}
+              </div>
+            )}
+
+            {editingReceipt && (
+              <div className="no-print mb-5 space-y-4 rounded-xl bg-slate-50 p-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="label">Client</label>
+                    <select
+                      className="input"
+                      value={rCustomerId}
+                      onChange={(e) => setRCustomerId(e.target.value)}
+                    >
+                      <option value="">Client de passage</option>
+                      {customers.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label">Paiement</label>
+                    <select
+                      className="input"
+                      value={rPayment}
+                      onChange={(e) => setRPayment(e.target.value)}
+                    >
+                      {PAYMENTS.map((p) => (
+                        <option key={p}>{p}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="label">Note</label>
+                  <textarea
+                    className="input min-h-[60px]"
+                    value={rNote}
+                    onChange={(e) => setRNote(e.target.value)}
+                    placeholder="Note affichée sur le reçu"
+                  />
+                </div>
+                <div>
+                  <label className="label">Message de pied de reçu</label>
+                  <textarea
+                    className="input min-h-[50px]"
+                    value={rFooter}
+                    onChange={(e) => setRFooter(e.target.value)}
+                    placeholder={
+                      company?.receipt_footer || "Merci de votre confiance !"
+                    }
+                  />
+                </div>
+              </div>
+            )}
+
+            <Receipt
+              sale={
+                editingReceipt
+                  ? {
+                      ...receiptSale,
+                      customer:
+                        rCustomerId === ""
+                          ? null
+                          : customers.find(
+                              (c) => c.id === Number(rCustomerId)
+                            ) ?? receiptSale.customer,
+                      payment_method: rPayment,
+                      note: rNote,
+                      receipt_footer: rFooter,
+                    }
+                  : receiptSale
+              }
+              company={company}
+            />
           </div>
         )}
       </Modal>

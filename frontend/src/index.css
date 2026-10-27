@@ -49,6 +49,28 @@ body {
   }
 }
 
+/* Print: only the receipt is sent to the printer */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #receipt-print,
+  #receipt-print * {
+    visibility: visible;
+  }
+  #receipt-print {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    box-shadow: none;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from ..auth import get_current_user, require_admin
 from ..database import get_db
 from ..models import Product, Sale, SaleItem, User
-from ..schemas import SaleCreate, SaleOut
+from ..schemas import SaleCreate, SaleOut, SaleUpdate
 
 router = APIRouter(prefix="/api/sales", tags=["sales"])
 
@@ -46,6 +46,7 @@ def create_sale(
         customer_id=payload.customer_id,
         status=payload.status,
         payment_method=payload.payment_method,
+        note=payload.note,
         created_by_id=current_user.id,
         total=0,
     )
@@ -80,6 +81,34 @@ def create_sale(
 
     sale.total = total
     db.add(sale)
+    db.commit()
+    db.refresh(sale)
+    return sale
+
+
+@router.put("/{sale_id}", response_model=SaleOut)
+def update_sale(
+    sale_id: int,
+    payload: SaleUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Update editable receipt metadata (customer, payment, note, footer).
+
+    Does not touch the sale items or stock.
+    """
+    sale = db.query(Sale).get(sale_id)
+    if not sale:
+        raise HTTPException(status_code=404, detail="Vente introuvable")
+    data = payload.model_dump(exclude_unset=True)
+    if "customer_id" in data:
+        sale.customer_id = data["customer_id"]
+    if "payment_method" in data and data["payment_method"] is not None:
+        sale.payment_method = data["payment_method"]
+    if "note" in data and data["note"] is not None:
+        sale.note = data["note"]
+    if "receipt_footer" in data and data["receipt_footer"] is not None:
+        sale.receipt_footer = data["receipt_footer"]
     db.commit()
     db.refresh(sale)
     return sale

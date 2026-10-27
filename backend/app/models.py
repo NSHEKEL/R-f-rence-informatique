@@ -31,6 +31,23 @@ class User(Base):
     created_at = Column(DateTime, default=utcnow)
 
 
+class CompanySettings(Base):
+    __tablename__ = "company_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, default="Référence Informatique", nullable=False)
+    slogan = Column(String, default="")
+    address = Column(String, default="")
+    phone = Column(String, default="")
+    email = Column(String, default="")
+    website = Column(String, default="")
+    tax_id = Column(String, default="")  # NCC / RCCM
+    currency = Column(String, default="FCFA")
+    receipt_header = Column(Text, default="")
+    receipt_footer = Column(Text, default="Merci de votre confiance !")
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
 class Category(Base):
     __tablename__ = "categories"
 
@@ -97,6 +114,8 @@ class Sale(Base):
     total = Column(Float, default=0)
     status = Column(String, default="Payée")  # Payée, En attente, Annulée
     payment_method = Column(String, default="Espèces")
+    note = Column(Text, default="")
+    receipt_footer = Column(Text, default="")
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     customer = relationship("Customer", back_populates="sales")
