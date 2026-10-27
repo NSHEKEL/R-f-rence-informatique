@@ -2,10 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import axios from "axios";
 import {
   BadgeInfo,
+  Bell,
   Calculator,
   ChevronLeft,
   ChevronRight,
   DownloadCloud,
+  LifeBuoy,
   LogOut,
   Moon,
   RefreshCw,
@@ -188,6 +190,7 @@ export default function Mobile() {
     () => localStorage.getItem(AUTO_KEY) !== "0",
   );
   const [fresh, setFresh] = useState("");
+  const [showNotifs, setShowNotifs] = useState(false);
   const known = useRef<string>("");
 
   const signOut = useCallback(() => {
@@ -424,9 +427,9 @@ export default function Mobile() {
                   {session.name}
                 </span>
                 <span className="block truncate text-xs text-slate-500 dark:text-slate-400">
-                  {session.company}
+                  {session.company} · {session.role}
                   {update?.current_version
-                    ? ` · version ${update.current_version}`
+                    ? ` · v${update.current_version}`
                     : ""}
                 </span>
               </span>
@@ -460,9 +463,9 @@ export default function Mobile() {
                   action: () => setTab("ventes"),
                 },
                 {
-                  label: "Actualiser",
-                  Icon: RefreshCw,
-                  action: () => void load(),
+                  label: "Notifications",
+                  Icon: Bell,
+                  action: () => setShowNotifs((v) => !v),
                 },
                 {
                   label: "Thème",
@@ -483,6 +486,39 @@ export default function Mobile() {
                 </button>
               ))}
             </div>
+
+            {showNotifs && (
+              <div className="rounded-xl bg-white p-3 shadow-sm dark:bg-slate-900">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  Dernières ventes
+                </p>
+                {sales.length === 0 && (
+                  <p className="py-2 text-sm text-slate-400">
+                    Aucune notification récente.
+                  </p>
+                )}
+                {sales.slice(0, 5).map((s) => (
+                  <button
+                    key={s.reference}
+                    onClick={() => {
+                      setShowNotifs(false);
+                      setTab("ventes");
+                    }}
+                    className="flex w-full items-center justify-between border-t border-slate-100 py-2 text-left first:border-0 dark:border-slate-800"
+                  >
+                    <span className="text-sm font-medium">
+                      {s.reference}
+                      <span className="ml-2 text-xs font-normal text-slate-400">
+                        {when(s.date)}
+                      </span>
+                    </span>
+                    <span className="text-sm font-semibold text-brand-600 dark:text-brand-300">
+                      {money(s.total)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
 
             <div className="overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-slate-900">
               <div className="grid grid-cols-3 gap-px bg-slate-200 dark:bg-slate-700">
@@ -532,6 +568,13 @@ export default function Mobile() {
                     Icon: DownloadCloud,
                     cls: "bg-amber-100 text-amber-600 dark:bg-amber-950",
                     action: () => setTab("parametres"),
+                  },
+                  {
+                    label: "Aide & avis",
+                    Icon: LifeBuoy,
+                    cls: "bg-rose-100 text-rose-600 dark:bg-rose-950",
+                    action: () =>
+                      window.open("https://wa.me/225710069059", "_blank"),
                   },
                   {
                     label: "À propos",
