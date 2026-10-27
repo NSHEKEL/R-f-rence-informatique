@@ -39,6 +39,8 @@ export default function Modal({
           <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
           <button
             onClick={onClose}
+            title="Fermer"
+            aria-label="Fermer"
             className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
           >
             <X size={20} />

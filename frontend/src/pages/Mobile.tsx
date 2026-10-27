@@ -3,9 +3,13 @@ import axios from "axios";
 import {
   BadgeInfo,
   Calculator,
+  ChevronLeft,
+  ChevronRight,
+  DownloadCloud,
   LogOut,
   Moon,
   RefreshCw,
+  RotateCcw,
   Search,
   Settings2,
   ShoppingBag,
@@ -54,6 +58,15 @@ interface MobileReturn {
   items: { name: string; quantity: number; unit_price: number }[];
 }
 
+interface MobileUpdate {
+  current_version: string;
+  latest_version: string;
+  available: boolean;
+  download_url: string;
+  notes: string;
+  error: string;
+}
+
 interface Summary {
   company: string;
   today_total: number;
@@ -93,7 +106,12 @@ interface About {
 }
 
 type Tab =
-  "ventes" | "comptabilite" | "utilisateurs" | "parametres" | "apropos";
+  | "accueil"
+  | "ventes"
+  | "comptabilite"
+  | "utilisateurs"
+  | "parametres"
+  | "apropos";
 
 const SESSION_KEY = "easygest_mobile_session";
 const AUTO_KEY = "easygest_mobile_auto";
@@ -108,6 +126,14 @@ const api = axios.create({ baseURL: "/api/central/mobile" });
 
 function money(value: number): string {
   return new Intl.NumberFormat("fr-FR").format(Math.round(value || 0));
+}
+
+function initials(value: string): string {
+  const parts = value.trim().split(/\s+/).filter(Boolean);
+  return parts
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
 }
 
 function when(value: string): string {
@@ -154,9 +180,10 @@ export default function Mobile() {
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [accounting, setAccounting] = useState<Accounting | null>(null);
   const [about, setAbout] = useState<About | null>(null);
+  const [update, setUpdate] = useState<MobileUpdate | null>(null);
   const [search, setSearch] = useState("");
   const [opened, setOpened] = useState("");
-  const [tab, setTab] = useState<Tab>("ventes");
+  const [tab, setTab] = useState<Tab>("accueil");
   const [auto, setAuto] = useState(
     () => localStorage.getItem(AUTO_KEY) !== "0",
   );
@@ -252,6 +279,12 @@ export default function Mobile() {
         .then((res) => setAbout(res.data))
         .catch(() => setAbout(null));
     }
+    if (tab === "accueil") {
+      api
+        .get<MobileUpdate>("/update", { headers })
+        .then((res) => setUpdate(res.data))
+        .catch(() => setUpdate(null));
+    }
   }, [tab, session, sales.length]);
 
   async function submit(event: React.FormEvent) {
@@ -338,26 +371,23 @@ export default function Mobile() {
     );
   }
 
-  const tabs: [Tab, string, typeof ShoppingBag][] = [
-    ["ventes", "Ventes", ShoppingBag],
-    ["comptabilite", "Compta", Calculator],
-    ...(session.full_view
-      ? ([["utilisateurs", "Équipe", Users]] as [
-          Tab,
-          string,
-          typeof ShoppingBag,
-        ][])
-      : []),
-    ["parametres", "Réglages", Settings2],
-    ["apropos", "À propos", BadgeInfo],
-  ];
-
   return (
-    <div className="min-h-screen bg-slate-100 pb-24 dark:bg-slate-950 dark:text-slate-100">
+    <div className="min-h-screen bg-slate-100 pb-6 dark:bg-slate-950 dark:text-slate-100">
       <header className="sticky top-0 z-10 flex items-center justify-between bg-brand-600 px-4 py-3 text-white">
-        <div>
-          <p className="text-sm font-semibold">{session.company}</p>
-          <p className="text-xs opacity-80">{session.name}</p>
+        <div className="flex items-center gap-2">
+          {tab !== "accueil" && (
+            <button
+              onClick={() => setTab("accueil")}
+              title="Accueil"
+              className="-ml-1 p-1"
+            >
+              <ChevronLeft size={22} />
+            </button>
+          )}
+          <div>
+            <p className="text-sm font-semibold">{session.company}</p>
+            <p className="text-xs opacity-80">{session.name}</p>
+          </div>
         </div>
         <div className="flex items-center gap-4">
           <button
@@ -380,6 +410,190 @@ export default function Mobile() {
       )}
 
       <div className="space-y-3 p-4">
+        {tab === "accueil" && (
+          <div className="space-y-4">
+            <button
+              onClick={() => setTab("parametres")}
+              className="flex w-full items-center gap-3 rounded-xl bg-white p-3 text-left shadow-sm dark:bg-slate-900"
+            >
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-brand-100 text-base font-semibold text-brand-700 dark:bg-brand-950 dark:text-brand-200">
+                {initials(session.name)}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-semibold">
+                  {session.name}
+                </span>
+                <span className="block truncate text-xs text-slate-500 dark:text-slate-400">
+                  {session.company}
+                  {update?.current_version
+                    ? ` · version ${update.current_version}`
+                    : ""}
+                </span>
+              </span>
+              <ChevronRight size={20} className="shrink-0 text-slate-400" />
+            </button>
+
+            {update?.available && (
+              <button
+                onClick={() =>
+                  update.download_url &&
+                  window.open(update.download_url, "_blank")
+                }
+                className="flex w-full items-center gap-3 rounded-xl bg-amber-50 p-3 text-left shadow-sm dark:bg-amber-950"
+              >
+                <DownloadCloud
+                  size={22}
+                  className="shrink-0 text-amber-600 dark:text-amber-300"
+                />
+                <span className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                  Mise à jour {update.latest_version} disponible — toucher pour
+                  télécharger
+                </span>
+              </button>
+            )}
+
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                {
+                  label: "Rechercher",
+                  Icon: Search,
+                  action: () => setTab("ventes"),
+                },
+                {
+                  label: "Actualiser",
+                  Icon: RefreshCw,
+                  action: () => void load(),
+                },
+                {
+                  label: "Thème",
+                  Icon: theme === "dark" ? Sun : Moon,
+                  action: toggle,
+                },
+              ].map(({ label, Icon, action }) => (
+                <button
+                  key={label}
+                  onClick={action}
+                  title={label}
+                  className="flex flex-col items-center gap-2 rounded-xl bg-white p-3 shadow-sm dark:bg-slate-900"
+                >
+                  <Icon size={20} className="text-slate-600 dark:text-slate-300" />
+                  <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                    {label}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <div className="overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-slate-900">
+              <div className="grid grid-cols-3 gap-px bg-slate-200 dark:bg-slate-700">
+                {[
+                  {
+                    label: "Ventes",
+                    Icon: ShoppingBag,
+                    cls: "bg-blue-100 text-blue-600 dark:bg-blue-950",
+                    action: () => {
+                      setShowReturns(false);
+                      setTab("ventes");
+                    },
+                  },
+                  {
+                    label: "Retours",
+                    Icon: RotateCcw,
+                    cls: "bg-teal-100 text-teal-600 dark:bg-teal-950",
+                    action: () => {
+                      setShowReturns(true);
+                      setTab("ventes");
+                    },
+                  },
+                  {
+                    label: "Comptabilité",
+                    Icon: Calculator,
+                    cls: "bg-emerald-100 text-emerald-600 dark:bg-emerald-950",
+                    action: () => setTab("comptabilite"),
+                  },
+                  ...(session.full_view
+                    ? [
+                        {
+                          label: "Équipe",
+                          Icon: Users,
+                          cls: "bg-violet-100 text-violet-600 dark:bg-violet-950",
+                          action: () => setTab("utilisateurs"),
+                        },
+                      ]
+                    : []),
+                  {
+                    label: "Réglages",
+                    Icon: Settings2,
+                    cls: "bg-sky-100 text-sky-600 dark:bg-sky-950",
+                    action: () => setTab("parametres"),
+                  },
+                  {
+                    label: "Mise à jour",
+                    Icon: DownloadCloud,
+                    cls: "bg-amber-100 text-amber-600 dark:bg-amber-950",
+                    action: () => setTab("parametres"),
+                  },
+                  {
+                    label: "À propos",
+                    Icon: BadgeInfo,
+                    cls: "bg-orange-100 text-orange-600 dark:bg-orange-950",
+                    action: () => setTab("apropos"),
+                  },
+                  {
+                    label: "Déconnexion",
+                    Icon: LogOut,
+                    cls: "bg-rose-100 text-rose-600 dark:bg-rose-950",
+                    action: signOut,
+                  },
+                ].map(({ label, Icon, cls, action }) => (
+                  <button
+                    key={label}
+                    onClick={action}
+                    title={label}
+                    className="flex flex-col items-center gap-2 bg-white py-5 transition hover:bg-slate-50 dark:bg-slate-900 dark:hover:bg-slate-800"
+                  >
+                    <span
+                      className={`flex h-12 w-12 items-center justify-center rounded-xl ${cls}`}
+                    >
+                      <Icon size={24} />
+                    </span>
+                    <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                      {label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {summary && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl bg-white p-3 shadow-sm dark:bg-slate-900">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Aujourd'hui
+                  </p>
+                  <p className="text-lg font-semibold">
+                    {money(summary.today_total)}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {summary.today_count} vente(s)
+                  </p>
+                </div>
+                <div className="rounded-xl bg-white p-3 shadow-sm dark:bg-slate-900">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Ce mois
+                  </p>
+                  <p className="text-lg font-semibold">
+                    {money(summary.month_total)}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {summary.month_count} vente(s)
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {tab === "ventes" && (
           <>
             {summary && (
@@ -704,6 +918,62 @@ export default function Mobile() {
                 Les ventes du comptoir apparaissent ici en quelques secondes.
               </p>
             </section>
+            <section className="rounded-xl bg-white p-3 shadow-sm dark:bg-slate-900">
+              <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold">
+                <DownloadCloud size={16} /> Mise à jour
+              </h2>
+              {update ? (
+                <>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    Version installée : {update.current_version || "—"}
+                  </p>
+                  {update.available ? (
+                    <button
+                      onClick={() =>
+                        update.download_url &&
+                        window.open(update.download_url, "_blank")
+                      }
+                      className="btn-primary mt-2 w-full"
+                    >
+                      Télécharger la version {update.latest_version}
+                    </button>
+                  ) : update.latest_version ? (
+                    <p className="mt-1 text-sm text-emerald-600">
+                      À jour (dernière : {update.latest_version})
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-sm text-slate-400">
+                      {update.error || "Aucune information de version."}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-slate-400">Vérification…</p>
+              )}
+              <button
+                onClick={() => {
+                  if (!session) return;
+                  api
+                    .get<MobileUpdate>("/update", {
+                      headers: { Authorization: `Bearer ${session.token}` },
+                    })
+                    .then((res) => setUpdate(res.data))
+                    .catch(() =>
+                      setUpdate({
+                        current_version: update?.current_version ?? "",
+                        latest_version: "",
+                        available: false,
+                        download_url: "",
+                        notes: "",
+                        error: "Vérification impossible.",
+                      }),
+                    );
+                }}
+                className="btn-ghost mt-2 w-full text-sm"
+              >
+                Vérifier maintenant
+              </button>
+            </section>
             <button onClick={signOut} className="btn-danger w-full py-3">
               Déconnexion
             </button>
@@ -750,22 +1020,6 @@ export default function Mobile() {
         )}
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-10 flex border-t border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
-        {tabs.map(([key, label, Icon]) => (
-          <button
-            key={key}
-            onClick={() => setTab(key)}
-            className={`flex flex-1 flex-col items-center gap-1 py-2 text-[11px] ${
-              tab === key
-                ? "text-brand-600 dark:text-brand-300"
-                : "text-slate-500 dark:text-slate-400"
-            }`}
-          >
-            <Icon size={20} />
-            {label}
-          </button>
-        ))}
-      </nav>
     </div>
   );
 }

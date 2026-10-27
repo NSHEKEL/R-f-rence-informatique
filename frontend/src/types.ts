@@ -204,6 +204,11 @@ export interface CompanySettings {
   backup_keep: number;
   backup_on_sale: boolean;
   last_backup_at: string | null;
+  /** Magasin's city (multi-magasins supervision). */
+  city: string;
+  /** Contact shown on "Assistance et support". */
+  support_whatsapp: string;
+  support_email: string;
 }
 
 export interface BackupFile {
@@ -613,4 +618,27 @@ export interface PurchaseSummary {
   pending: number;
   total: number;
   unpaid: number;
+}
+
+export interface FneSettings {
+  enabled: boolean;
+  environment: string;
+  api_url: string;
+  token_url: string;
+  client_id: string;
+  credentials_configured: boolean;
+  configured: boolean;
+}
+
+export interface FneInvoice {
+  id: number;
+  sale_id: number;
+  status: string;
+  fne_reference: string;
+  fne_number: string;
+  fne_token: string;
+  last_error: string;
+  attempts: number;
+  submitted_at: string | null;
+  certified_at: string | null;
 }

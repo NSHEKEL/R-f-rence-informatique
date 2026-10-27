@@ -16,6 +16,8 @@ from jose import JWTError, jwt
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from ... import updater
+from ...version import is_newer
 from ..database import get_db
 from ..models import (
     Client,
@@ -338,3 +340,57 @@ def summary(
         if installation and installation.last_sync
         else "",
     }
+
+
+class MobileUpdateOut(BaseModel):
+    current_version: str = ""
+    latest_version: str = ""
+    available: bool = False
+    download_url: str = ""
+    notes: str = ""
+    error: str = ""
+
+
+@router.get("/update", response_model=MobileUpdateOut)
+def mobile_update(
+    session: tuple[MirrorUser, Client] = Depends(current_mobile),
+    db: Session = Depends(get_db),
+):
+    """Latest published release, for the update banner on the phone.
+
+    The page is served by the server itself, so once EasyGest is updated on
+    the computer the phone picks the new version by itself — the banner is a
+    pointer that an update exists, with a link to the release (APK asset when
+    one is published under ``EasyGest.apk``, the release page otherwise).
+    """
+    _, client = session
+    installation = (
+        db.query(Installation)
+        .filter(Installation.client_id == client.id)
+        .order_by(Installation.last_seen.desc().nullslast())
+        .first()
+    )
+    current = installation.version if installation else ""
+    try:
+        release = updater.latest_release()
+    except updater.UpdateError as exc:
+        return MobileUpdateOut(
+            current_version=current, error=friendly_update_error(exc)
+        )
+    apk_url = updater.DOWNLOAD_URL.format(
+        repo=updater._repo(), tag=release.version, asset="EasyGest.apk"
+    )
+    return MobileUpdateOut(
+        current_version=current,
+        latest_version=release.version,
+        available=is_newer(release.version, current) if current else False,
+        download_url=apk_url,
+        notes=release.notes,
+    )
+
+
+def friendly_update_error(exc: Exception) -> str:
+    text = str(exc)
+    if "403" in text or "429" in text:
+        return "Trop de requêtes vers GitHub, réessayez plus tard."
+    return f"Vérification impossible : {text}"

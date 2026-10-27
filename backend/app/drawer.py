@@ -8,6 +8,8 @@ only makes sense on the machine the drawer is attached to — the counter.
 
 from __future__ import annotations
 
+import re
+
 from . import escpos
 from .models import CompanySettings
 from .schemas import PrintingConfig
@@ -37,7 +39,10 @@ def kick_bytes(code: str) -> bytes:
 def is_port(target: str) -> bool:
     """True for a serial, parallel or shared path, false for a printer name."""
     value = target.strip().upper()
-    return value.startswith(("COM", "LPT", "\\\\", "/DEV/")) or value.endswith(":")
+    if value.startswith(("\\\\", "/DEV/")) or value.endswith(":"):
+        return True
+    # Only full COM/LPT names are ports: a queue named COMPTOIR is a printer.
+    return re.fullmatch(r"(COM|LPT)\d+:?", value) is not None
 
 
 def open_drawer(

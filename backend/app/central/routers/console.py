@@ -1,12 +1,16 @@
 """Everything the global administrator does from the console."""
 
+import json
+import queue
 from datetime import datetime, timedelta
 from typing import Callable, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
+from .. import events
 from ..database import get_db
 from ..models import (
     STATUS_ACTIVE,
@@ -20,6 +24,8 @@ from ..models import (
     GlobalAdmin,
     Installation,
     License,
+    MirrorSale,
+    MirrorSupportRequest,
     Plan,
     PlanFeature,
 )
@@ -40,12 +46,16 @@ from ..schemas import (
     LicenseOut,
     LicenseRenew,
     LogOut,
+    MagasinStats,
+    MagasinUpdate,
     PlanChange,
     PlanCreate,
     PlanOut,
     PlanRight,
     PlanRightUpdate,
     PlanUpdate,
+    SupportRequestOut,
+    SupportRequestUpdate,
 )
 from ..security import current_admin, hash_password
 from ..service import (
@@ -824,3 +834,221 @@ def logs(
     if client_id:
         query = query.filter(AdminLog.client_id == client_id)
     return query.limit(limit).all()
+
+
+# ---------- Magasins (installations d'un client) ----------
+@router.put("/clients/{client_id}/magasins/{installation_id}", response_model=InstallationOut)
+def update_magasin(
+    client_id: int,
+    installation_id: int,
+    payload: MagasinUpdate,
+    db: Session = Depends(get_db),
+    admin: GlobalAdmin = Depends(current_admin),
+):
+    installation = (
+        db.query(Installation)
+        .filter(
+            Installation.id == installation_id,
+            Installation.client_id == client_id,
+        )
+        .first()
+    )
+    if installation is None:
+        raise HTTPException(status_code=404, detail="Magasin introuvable")
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(installation, key, value.strip() if isinstance(value, str) else value)
+    log(db, admin, installation.client, "Mise à jour magasin",
+        new_value=f"{installation.shop_name} ({installation.city})")
+    db.commit()
+    db.refresh(installation)
+    return installation
+
+
+@router.get("/clients/{client_id}/magasins/stats", response_model=list[MagasinStats])
+def magasins_stats(
+    client_id: int,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
+    db: Session = Depends(get_db),
+    _: GlobalAdmin = Depends(current_admin),
+):
+    """Per-shop figures computed from the mirrored sales (real data only)."""
+    client = _client_or_404(db, client_id)
+    installations = (
+        db.query(Installation).filter(Installation.client_id == client.id).all()
+    )
+    sales_query = db.query(MirrorSale).filter(MirrorSale.client_id == client.id)
+    if date_from:
+        sales_query = sales_query.filter(MirrorSale.date >= date_from)
+    if date_to:
+        sales_query = sales_query.filter(MirrorSale.date <= date_to)
+    sales = sales_query.all()
+
+    today = datetime.utcnow().date()
+    stats = []
+    for inst in installations:
+        own = [s for s in sales if s.installation_uid == inst.uid]
+        paid = [s for s in own if (s.status or "").lower() not in ("annulée", "annulee")]
+        day = [s for s in paid if s.date and s.date.date() == today]
+        tops: dict[str, float] = {}
+        for sale in paid:
+            try:
+                for item in json.loads(sale.items or "[]"):
+                    tops[item.get("name", "?")] = (
+                        tops.get(item.get("name", "?"), 0) + (item.get("quantity") or 0)
+                    )
+            except Exception:
+                continue
+        top = sorted(tops.items(), key=lambda kv: kv[1], reverse=True)[:5]
+        stats.append(
+            MagasinStats(
+                installation_uid=inst.uid,
+                shop_name=inst.shop_name or inst.hostname,
+                city=inst.city or "",
+                manager=inst.manager or "",
+                is_active=bool(inst.is_active),
+                ventes=len(paid),
+                chiffre_affaires=sum(s.total or 0 for s in paid),
+                ventes_jour=len(day),
+                ca_jour=sum(s.total or 0 for s in day),
+                top_produits=[{"name": n, "quantity": q} for n, q in top],
+                derniere_vente=max((s.date for s in own if s.date), default=None),
+            )
+        )
+    return stats
+
+
+# ---------- Suggestions et critiques ----------
+def _support_out(db: Session, row: MirrorSupportRequest) -> SupportRequestOut:
+    client = db.query(Client).get(row.client_id)
+    inst = (
+        db.query(Installation)
+        .filter(Installation.uid == row.installation_uid)
+        .first()
+    )
+    out = SupportRequestOut.model_validate(row)
+    out.client_name = client.company if client else ""
+    out.shop_name = (inst.shop_name or inst.hostname) if inst else ""
+    return out
+
+
+@router.get("/support-requests", response_model=list[SupportRequestOut])
+def support_requests(
+    status: Optional[str] = None,
+    category: Optional[str] = None,
+    client_id: Optional[int] = None,
+    q: Optional[str] = None,
+    db: Session = Depends(get_db),
+    _: GlobalAdmin = Depends(current_admin),
+):
+    query = db.query(MirrorSupportRequest)
+    if status:
+        query = query.filter(MirrorSupportRequest.status == status)
+    if category:
+        query = query.filter(MirrorSupportRequest.category == category)
+    if client_id:
+        query = query.filter(MirrorSupportRequest.client_id == client_id)
+    if q:
+        like = f"%{q}%"
+        query = query.filter(
+            or_(
+                MirrorSupportRequest.subject.ilike(like),
+                MirrorSupportRequest.message.ilike(like),
+                MirrorSupportRequest.name.ilike(like),
+                MirrorSupportRequest.email.ilike(like),
+            )
+        )
+    rows = query.order_by(MirrorSupportRequest.created_at.desc()).limit(500).all()
+    return [_support_out(db, row) for row in rows]
+
+
+@router.get("/support-requests/unread-count")
+def support_unread_count(
+    db: Session = Depends(get_db), _: GlobalAdmin = Depends(current_admin)
+):
+    count = (
+        db.query(MirrorSupportRequest)
+        .filter(MirrorSupportRequest.status == "nouvelle")
+        .count()
+    )
+    return {"count": count}
+
+
+@router.get("/support-requests/{request_id}", response_model=SupportRequestOut)
+def support_request_detail(
+    request_id: int,
+    db: Session = Depends(get_db),
+    _: GlobalAdmin = Depends(current_admin),
+):
+    row = db.query(MirrorSupportRequest).get(request_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Demande introuvable")
+    return _support_out(db, row)
+
+
+@router.put("/support-requests/{request_id}", response_model=SupportRequestOut)
+def update_support_request(
+    request_id: int,
+    payload: SupportRequestUpdate,
+    db: Session = Depends(get_db),
+    admin: GlobalAdmin = Depends(current_admin),
+):
+    row = db.query(MirrorSupportRequest).get(request_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Demande introuvable")
+    if payload.status is not None:
+        if payload.status not in MirrorSupportRequest.STATUSES:
+            raise HTTPException(status_code=400, detail="Statut inconnu")
+        row.status = payload.status
+    if payload.internal_note is not None:
+        row.internal_note = payload.internal_note[:5000]
+    log(db, admin, db.query(Client).get(row.client_id), "Demande support",
+        new_value=f"#{row.id} → {row.status}")
+    db.commit()
+    db.refresh(row)
+    return _support_out(db, row)
+
+
+# ---------- Real-time stream (SSE) ----------
+@router.get("/events")
+def console_events(token: str = Query(...)):
+    """Server-Sent Events for the console: a message per new sale or demand.
+
+    EventSource cannot send an Authorization header, so the session token is
+    passed as a query parameter; it is verified exactly like the header.
+    """
+    from jose import JWTError, jwt
+
+    from ..database import SessionLocal as _SessionLocal
+    from ..security import ALGORITHM, session_key
+
+    db = _SessionLocal()
+    try:
+        try:
+            payload = jwt.decode(token, session_key(), algorithms=[ALGORITHM])
+            admin = (
+                db.query(GlobalAdmin)
+                .filter(GlobalAdmin.id == int(payload.get("sub") or 0))
+                .first()
+            ) if payload.get("scope") == "global_admin" else None
+        except (JWTError, ValueError):
+            admin = None
+    finally:
+        db.close()
+    if admin is None or not admin.is_active:
+        raise HTTPException(status_code=401, detail="Session invalide")
+
+    def _stream():
+        q = events.subscribe()
+        try:
+            yield ": connecté\n\n"
+            while True:
+                try:
+                    event = q.get(timeout=25)
+                    yield events.encode(event)
+                except queue.Empty:
+                    yield ": ping\n\n"
+        finally:
+            events.unsubscribe(q)
+
+    return StreamingResponse(_stream(), media_type="text/event-stream")

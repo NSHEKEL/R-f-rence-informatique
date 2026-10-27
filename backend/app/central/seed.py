@@ -129,6 +129,15 @@ def _seed_admin(db: Session) -> None:
 # table the deployed database already has.
 ADDED_COLUMNS: dict[str, dict[str, str]] = {
     "clients": {"about": "TEXT DEFAULT ''", "mobile_code": "VARCHAR"},
+    "installations": {
+        "shop_name": "VARCHAR DEFAULT ''",
+        "city": "VARCHAR DEFAULT ''",
+        "address": "VARCHAR DEFAULT ''",
+        "manager": "VARCHAR DEFAULT ''",
+        "is_active": "BOOLEAN DEFAULT TRUE",
+    },
+    "mirror_sales": {"installation_uid": "VARCHAR DEFAULT ''"},
+    "mirror_returns": {"installation_uid": "VARCHAR DEFAULT ''"},
 }
 
 

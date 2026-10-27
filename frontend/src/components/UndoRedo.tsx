@@ -61,6 +61,11 @@ export default function UndoRedo() {
         type="button"
         onClick={() => run("undo")}
         disabled={busy || !state.undo}
+        title={
+          state.undo
+            ? `Annuler : ${state.undo.label} (${formatDateTime(state.undo.at)})`
+            : "Aucune action à annuler"
+        }
         aria-label={
           state.undo
             ? `Annuler : ${state.undo.label} (${formatDateTime(state.undo.at)})`
@@ -74,6 +79,11 @@ export default function UndoRedo() {
         type="button"
         onClick={() => run("redo")}
         disabled={busy || !state.redo}
+        title={
+          state.redo
+            ? `Rétablir : ${state.redo.label}`
+            : "Aucune action à rétablir"
+        }
         aria-label={
           state.redo
             ? `Rétablir : ${state.redo.label}`

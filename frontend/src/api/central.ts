@@ -117,7 +117,27 @@ export interface Installation {
   last_sync: string | null;
   last_ip: string;
   is_revoked: boolean;
+  /** Magasin identity (multi-magasins). */
+  shop_name: string;
+  city: string;
+  address: string;
+  manager: string;
+  is_active: boolean;
   online: boolean;
+}
+
+export interface MagasinStats {
+  installation_uid: string;
+  shop_name: string;
+  city: string;
+  manager: string;
+  is_active: boolean;
+  ventes: number;
+  chiffre_affaires: number;
+  ventes_jour: number;
+  ca_jour: number;
+  top_produits: { name: string; quantity: number }[];
+  derniere_vente: string | null;
 }
 
 export interface License {

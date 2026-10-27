@@ -398,8 +398,7 @@ export default function Proformas() {
                     <button
                       className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
                       onClick={() => print(p)}
-                      title="Imprimer"
-                      aria-label="Imprimer le document"
+                      title="Imprimer la proforma" aria-label="Imprimer la proforma"
                     >
                       <Printer size={16} />
                     </button>
@@ -412,6 +411,13 @@ export default function Proformas() {
                       aria-label="Dupliquer le document"
                     >
                       <Copy size={16} />
+                    </button>
+                    <button
+                      className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                      onClick={() => remove(p)}
+                      title="Supprimer la proforma" aria-label="Supprimer la proforma"
+                    >
+                      <Trash2 size={16} />
                     </button>
                     {can("documents_transformer") && !p.order_id && (
                       <>

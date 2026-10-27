@@ -335,13 +335,40 @@ export default function NouvelleVente() {
     );
   }
 
-  /** Kick code of the drawer, sent along with the ticket when possible. */
+  /**
+   * Kick code of the drawer, sent along with the ticket when possible.
+   * All fields must parse as bytes: a malformed code returns an empty kick so
+   * the drawer API reports the bad configuration instead of sending a
+   * truncated command.
+   */
   function drawerKick(): number[] {
     if (!drawerWanted()) return [];
-    return (company?.drawer_code || "27,112,0,25,250")
+    const parts = (company?.drawer_code || "27,112,0,25,250")
       .split(",")
-      .map((part) => Number(part.trim()))
-      .filter((value) => Number.isInteger(value) && value >= 0 && value <= 255);
+      .map((part) => part.trim())
+      .filter(Boolean);
+    const values = parts.map((part) => Number(part));
+    return values.length > 0 &&
+      values.every(
+        (value) => Number.isInteger(value) && value >= 0 && value <= 255
+      )
+      ? values
+      : [];
+  }
+
+  /**
+   * Kick code embedded in the receipt job: only when the drawer hangs off the
+   * receipt printer itself (no dedicated port/printer configured). A drawer
+   * configured on another COM/LPT port or another printer is left to
+   * openDrawer(), which routes the kick to drawer_port.
+   */
+  function receiptKick(): number[] {
+    const target = (company?.drawer_port || "").trim().toLowerCase();
+    const receiptPrinter = (printing.receipt.printer_name || "")
+      .trim()
+      .toLowerCase();
+    if (target && target !== receiptPrinter) return [];
+    return drawerKick();
   }
 
   /** Electronic drawer: opening it must never hold back the next customer. */
@@ -365,9 +392,11 @@ export default function NouvelleVente() {
         printReceipt(
           printing.receipt.width,
           printing.receipt,
-          drawerKick()
+          receiptKick()
         ).then((drawerOpened) => {
           // The ticket carried the kick code: no second order to the till.
+          // A drawer on another target (port or printer) still gets its kick
+          // here, routed by the backend to drawer_port.
           if (!drawerOpened) openDrawer();
         });
       }, 400);
@@ -509,6 +538,7 @@ export default function NouvelleVente() {
               <button
                 className="text-slate-400 hover:text-slate-600"
                 onClick={() => setQuery("")}
+                title="Effacer la recherche"
               >
                 <X size={16} />
               </button>
@@ -598,6 +628,7 @@ export default function NouvelleVente() {
                   <button
                     className="rounded-lg bg-slate-100 p-1 text-slate-600 hover:bg-slate-200"
                     onClick={() => setQuantity(l.product.id, l.quantity - 1)}
+                    title="Diminuer la quantité"
                   >
                     <Minus size={13} />
                   </button>
@@ -611,12 +642,14 @@ export default function NouvelleVente() {
                   <button
                     className="rounded-lg bg-slate-100 p-1 text-slate-600 hover:bg-slate-200"
                     onClick={() => setQuantity(l.product.id, l.quantity + 1)}
+                    title="Augmenter la quantité"
                   >
                     <Plus size={13} />
                   </button>
                   <button
                     className="rounded-lg p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"
                     onClick={() => setQuantity(l.product.id, 0)}
+                    title="Retirer l'article"
                   >
                     <Trash2 size={13} />
                   </button>
@@ -651,6 +684,7 @@ export default function NouvelleVente() {
                     <button
                       className="ml-auto text-slate-400 hover:text-slate-600"
                       onClick={() => setCustomer(null)}
+                      title="Retirer le client"
                     >
                       <X size={14} />
                     </button>

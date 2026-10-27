@@ -384,7 +384,7 @@ export default function Products() {
                   <td className="px-5 py-3.5 text-center">
                     <button
                       onClick={() => setQrProduct(p)}
-                      aria-label="Code QR de l'article"
+                      title="Code QR de l'article" aria-label="Code QR de l'article"
                       className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
                     >
                       <QrCode size={16} />
@@ -394,7 +394,7 @@ export default function Products() {
                     <div className="flex justify-end gap-1">
                       <button
                         onClick={() => printPrices([p])}
-                        aria-label="Imprimer l'étiquette de prix"
+                        title="Imprimer l'étiquette de prix" aria-label="Imprimer l'étiquette de prix"
                         className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
                       >
                         <Tag size={16} />
@@ -403,14 +403,14 @@ export default function Products() {
                         <>
                           <button
                             onClick={() => openEdit(p)}
-                            aria-label="Modifier l'article"
+                            title="Modifier l'article" aria-label="Modifier l'article"
                             className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
                           >
                             <Pencil size={16} />
                           </button>
                           <button
                             onClick={() => remove(p)}
-                            aria-label="Supprimer l'article"
+                            title="Supprimer l'article" aria-label="Supprimer l'article"
                             className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
                           >
                             <Trash2 size={16} />

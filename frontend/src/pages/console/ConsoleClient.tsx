@@ -6,6 +6,8 @@ import central, {
   STATUS_STYLES,
   type AdminLogEntry,
   type ClientDetail,
+  type Installation,
+  type MagasinStats,
   type Plan,
 } from "../../api/central";
 
@@ -44,6 +46,7 @@ export default function ConsoleClient() {
   const [adminName, setAdminName] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
+  const [stats, setStats] = useState<MagasinStats[]>([]);
 
   const load = useCallback(async () => {
     try {
@@ -56,6 +59,10 @@ export default function ConsoleClient() {
         params: { client_id: id, limit: 30 },
       });
       setLogs(history.data);
+      const magasins = await central.get<MagasinStats[]>(
+        `/clients/${id}/magasins/stats`
+      );
+      setStats(magasins.data);
     } catch (err) {
       setError(centralError(err, "Client introuvable"));
     }
@@ -432,6 +439,86 @@ export default function ConsoleClient() {
 
       <div className="rounded-2xl bg-white p-4 shadow-sm">
         <p className="mb-3 text-sm font-semibold text-slate-700">
+          Magasins — activité comparée
+        </p>
+        {stats.length > 0 ? (
+          <table className="min-w-full text-sm">
+            <thead className="text-left text-xs uppercase text-slate-500">
+              <tr>
+                <th className="py-2">Magasin</th>
+                <th className="py-2">Ville</th>
+                <th className="py-2">Ventes (période)</th>
+                <th className="py-2">CA (période)</th>
+                <th className="py-2">Ventes du jour</th>
+                <th className="py-2">CA du jour</th>
+                <th className="py-2">Top articles</th>
+                <th className="py-2">Dernière vente</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {stats.map((s) => (
+                <tr key={s.installation_uid} className={s.is_active ? "" : "opacity-50"}>
+                  <td className="py-2 font-semibold">
+                    {s.shop_name || "—"}
+                    {!s.is_active && (
+                      <span className="ml-2 rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-500">
+                        désactivé
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-2">{s.city || "—"}</td>
+                  <td className="py-2">{s.ventes}</td>
+                  <td className="py-2">
+                    {s.chiffre_affaires.toLocaleString("fr-FR")} FCFA
+                  </td>
+                  <td className="py-2">{s.ventes_jour}</td>
+                  <td className="py-2">
+                    {s.ca_jour.toLocaleString("fr-FR")} FCFA
+                  </td>
+                  <td className="max-w-[220px] py-2 text-xs text-slate-600">
+                    {s.top_produits.length
+                      ? s.top_produits
+                          .map((p) => `${p.name} ×${p.quantity}`)
+                          .join(", ")
+                      : "—"}
+                  </td>
+                  <td className="py-2 text-xs text-slate-500">
+                    {moment(s.derniere_vente)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="py-4 text-center text-sm text-slate-500">
+            Aucune vente copiée pour l'instant.
+          </p>
+        )}
+      </div>
+
+      <div className="rounded-2xl bg-white p-4 shadow-sm">
+        <p className="mb-3 text-sm font-semibold text-slate-700">
+          Magasins — fiches (nom, ville, adresse, responsable, actif)
+        </p>
+        <div className="space-y-3">
+          {client.installations.map((inst) => (
+            <MagasinForm
+              key={inst.id}
+              clientId={client.id}
+              installation={inst}
+              onSaved={load}
+            />
+          ))}
+          {client.installations.length === 0 && (
+            <p className="py-2 text-sm text-slate-500">
+              Aucune installation enregistrée.
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="rounded-2xl bg-white p-4 shadow-sm">
+        <p className="mb-3 text-sm font-semibold text-slate-700">
           Installations
         </p>
         <table className="min-w-full text-sm">
@@ -517,6 +604,96 @@ export default function ConsoleClient() {
           )}
         </ul>
       </div>
+    </div>
+  );
+}
+
+/** Editable identity card of one magasin (one installation of the client). */
+function MagasinForm({
+  clientId,
+  installation,
+  onSaved,
+}: {
+  clientId: number;
+  installation: Installation;
+  onSaved: () => void;
+}) {
+  const [form, setForm] = useState({
+    shop_name: installation.shop_name || "",
+    city: installation.city || "",
+    address: installation.address || "",
+    manager: installation.manager || "",
+    is_active: installation.is_active,
+  });
+  const [message, setMessage] = useState("");
+
+  const save = async () => {
+    try {
+      await central.put(
+        `/clients/${clientId}/magasins/${installation.id}`,
+        form
+      );
+      setMessage("Enregistré");
+      setTimeout(() => setMessage(""), 2000);
+      onSaved();
+    } catch (err) {
+      setMessage(centralError(err, "Enregistrement impossible"));
+    }
+  };
+
+  const field =
+    "w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm";
+
+  return (
+    <div className="grid gap-2 rounded-xl border border-slate-200 p-3 sm:grid-cols-6">
+      <input
+        className={`${field} sm:col-span-2`}
+        placeholder="Nom du magasin"
+        value={form.shop_name}
+        onChange={(e) => setForm({ ...form, shop_name: e.target.value })}
+      />
+      <input
+        className={field}
+        placeholder="Ville"
+        value={form.city}
+        onChange={(e) => setForm({ ...form, city: e.target.value })}
+      />
+      <input
+        className={field}
+        placeholder="Adresse"
+        value={form.address}
+        onChange={(e) => setForm({ ...form, address: e.target.value })}
+      />
+      <input
+        className={field}
+        placeholder="Responsable"
+        value={form.manager}
+        onChange={(e) => setForm({ ...form, manager: e.target.value })}
+      />
+      <div className="flex items-center gap-2">
+        <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+          <input
+            type="checkbox"
+            checked={form.is_active}
+            onChange={(e) =>
+              setForm({ ...form, is_active: e.target.checked })
+            }
+          />
+          Actif
+        </label>
+        <button
+          type="button"
+          onClick={save}
+          className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white"
+        >
+          Enregistrer
+        </button>
+      </div>
+      {message && (
+        <p className="sm:col-span-6 text-xs font-semibold text-emerald-600">
+          {message}
+        </p>
+      )}
     </div>
   );
 }

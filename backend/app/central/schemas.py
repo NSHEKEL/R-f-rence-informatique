@@ -119,6 +119,11 @@ class InstallationOut(BaseModel):
     last_sync: Optional[datetime] = None
     last_ip: str = ""
     is_revoked: bool = False
+    shop_name: str = ""
+    city: str = ""
+    address: str = ""
+    manager: str = ""
+    is_active: bool = True
     online: bool = False
 
 
@@ -328,6 +333,16 @@ class MirrorReturnIn(BaseModel):
     items: list = []
 
 
+class MirrorSupportRequestIn(BaseModel):
+    local_id: int
+    name: str = ""
+    email: str = ""
+    subject: str = ""
+    category: str = "assistance"
+    message: str = ""
+    created_at: Optional[datetime] = None
+
+
 class MirrorRequest(BaseModel):
     """Copy a shop pushes so its sales can be read from a phone."""
 
@@ -336,6 +351,11 @@ class MirrorRequest(BaseModel):
     users: list[MirrorUserIn] = []
     sales: list[MirrorSaleIn] = []
     returns: list[MirrorReturnIn] = []
+    support_requests: list[MirrorSupportRequestIn] = []
+    # Magasin identity self-declared by the shop (its own company settings).
+    shop_name: str = ""
+    city: str = ""
+    address: str = ""
 
 
 class LicenseAnswer(BaseModel):
@@ -344,3 +364,53 @@ class LicenseAnswer(BaseModel):
     license: str
     public_key: str = ""
     token: str = ""
+
+
+# ---------- Assistance et support ----------
+class SupportRequestOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    client_id: int
+    client_name: str = ""
+    installation_uid: str = ""
+    shop_name: str = ""
+    local_id: int
+    name: str = ""
+    email: str = ""
+    subject: str = ""
+    category: str = ""
+    message: str = ""
+    status: str = ""
+    internal_note: str = ""
+    email_sent: bool = False
+    email_attempts: int = 0
+    email_error: str = ""
+    created_at: Optional[datetime] = None
+
+
+class SupportRequestUpdate(BaseModel):
+    status: Optional[str] = None
+    internal_note: Optional[str] = None
+
+
+class MagasinUpdate(BaseModel):
+    shop_name: Optional[str] = None
+    city: Optional[str] = None
+    address: Optional[str] = None
+    manager: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class MagasinStats(BaseModel):
+    installation_uid: str
+    shop_name: str = ""
+    city: str = ""
+    manager: str = ""
+    is_active: bool = True
+    ventes: int = 0
+    chiffre_affaires: float = 0
+    ventes_jour: int = 0
+    ca_jour: float = 0
+    top_produits: list = []
+    derniere_vente: Optional[datetime] = None

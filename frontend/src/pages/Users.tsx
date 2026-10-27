@@ -241,14 +241,14 @@ export default function Users() {
                     <div className="flex justify-end gap-1">
                       <button
                         onClick={() => resetPassword(u)}
-                        aria-label="Réinitialiser le mot de passe"
+                        title="Réinitialiser le mot de passe" aria-label="Réinitialiser le mot de passe"
                         className="rounded-lg p-2 text-slate-400 hover:bg-amber-50 hover:text-amber-600"
                       >
                         <KeyRound size={16} />
                       </button>
                       <button
                         onClick={() => openEdit(u)}
-                        aria-label="Modifier"
+                        title="Modifier" aria-label="Modifier"
                         className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
                       >
                         <Pencil size={16} />
