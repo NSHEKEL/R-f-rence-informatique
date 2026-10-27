@@ -111,6 +111,14 @@ jobs:
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
             "/DAppVersion=$version" packaging\EasyGestAdmin.iss
 
+      - name: Build the Android APK
+        shell: pwsh
+        run: |
+          Push-Location mobile
+          .\gradlew.bat assembleRelease --no-daemon
+          Pop-Location
+          Copy-Item mobile\app\build\outputs\apk\release\app-release.apk dist\EasyGest.apk
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -121,6 +129,7 @@ jobs:
             dist/EasyGestAdmin.exe
             dist/EasyGestAdmin_Setup.exe
             dist/EasyGestRecuperation.exe
+            dist/EasyGest.apk
 
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/')
@@ -132,6 +141,7 @@ jobs:
             dist/EasyGestAdmin_Setup.exe
             dist/EasyGestAdmin.exe
             dist/EasyGestRecuperation.exe
+            dist/EasyGest.apk
           name: EasyGest ${{ github.ref_name }}
           body: |
             **EasyGest — gestion de vente et de stock.**

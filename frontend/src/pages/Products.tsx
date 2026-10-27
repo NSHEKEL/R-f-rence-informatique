@@ -63,6 +63,7 @@ export default function Products() {
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState({ ...empty });
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
   const [qrProduct, setQrProduct] = useState<Product | null>(null);
   const imageInput = useRef<HTMLInputElement>(null);
@@ -121,7 +122,15 @@ export default function Products() {
         p.min_stock,
         p.barcode ?? "",
       ])
-    );
+    )
+      .then((saved) =>
+        setNotice(
+          saved
+            ? `Export enregistré : ${saved}`
+            : "Export annulé : aucun fichier enregistré."
+        )
+      )
+      .catch(() => setError("Export impossible : le fichier n'a pas pu être créé."));
   }
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
@@ -285,6 +294,12 @@ export default function Products() {
           )}
         </div>
       </div>
+
+      {notice && (
+        <div className="rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+          {notice}
+        </div>
+      )}
 
       {can("produits_gerer") && (
         <BulkDelete

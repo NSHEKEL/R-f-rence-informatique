@@ -20,19 +20,23 @@ function desktopSave(): ((name: string, body: string) => Promise<string>) | unde
   ).pywebview?.api?.save_file;
 }
 
+/**
+ * Returns where the file went: the path the desktop bridge wrote, the file
+ * name for a browser download, or "" when the user cancelled the save dialog.
+ * Throws when the save itself fails so callers can show the reason.
+ */
 export async function exportCsv(
   filename: string,
   headers: string[],
   rows: (string | number)[][]
-): Promise<void> {
+): Promise<string> {
   const body = [headers, ...rows]
     .map((row) => row.map(cell).join(";"))
     .join("\r\n");
   const name = filename.endsWith(".csv") ? filename : `${filename}.csv`;
   const save = desktopSave();
   if (save) {
-    await save(name, body);
-    return;
+    return (await save(name, body)) || "";
   }
   const blob = new Blob(["\uFEFF" + body], {
     type: "text/csv;charset=utf-8;",
@@ -45,6 +49,7 @@ export async function exportCsv(
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+  return name;
 }
 
 /** File name stamped with the day, so exports never overwrite each other. */

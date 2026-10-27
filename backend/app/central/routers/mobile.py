@@ -380,6 +380,13 @@ def mobile_update(
     apk_url = updater.DOWNLOAD_URL.format(
         repo=updater._repo(), tag=release.version, asset="EasyGest.apk"
     )
+    # Older releases ship no APK asset: pointing the phone at that address was
+    # a raw GitHub 404. Fall back on the release page, which always exists.
+    if not updater.asset_url_exists(apk_url):
+        apk_url = (
+            f"https://github.com/{updater._repo()}"
+            f"/releases/tag/{release.version}"
+        )
     return MobileUpdateOut(
         current_version=current,
         latest_version=release.version,

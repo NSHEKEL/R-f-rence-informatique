@@ -102,6 +102,7 @@ export default function Rapports() {
   const [end, setEnd] = useState(today());
   const [report, setReport] = useState<SalesReport | null>(null);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const requestId = useRef(0);
 
   const load = useCallback(async () => {
@@ -173,7 +174,15 @@ export default function Rapports() {
       stampedName("rapport-ventes"),
       ["Section", "Libellé", "Montant", "Quantité"],
       rows
-    );
+    )
+      .then((saved) =>
+        setNotice(
+          saved
+            ? `Export enregistré : ${saved}`
+            : "Export annulé : aucun fichier enregistré."
+        )
+      )
+      .catch(() => setError("Export impossible : le fichier n'a pas pu être créé."));
   }
 
   const cards = report
@@ -242,6 +251,12 @@ export default function Rapports() {
           </button>
         </div>
       </div>
+
+      {notice && (
+        <div className="rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+          {notice}
+        </div>
+      )}
 
       {error && (
         <div className="rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-600">

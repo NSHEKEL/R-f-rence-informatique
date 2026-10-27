@@ -513,7 +513,15 @@ export default function Paie() {
         row.deductions,
         row.net,
       ])
-    );
+    )
+      .then((saved) =>
+        setNotice(
+          saved
+            ? `Export enregistré : ${saved}`
+            : "Export annulé : aucun fichier enregistré."
+        )
+      )
+      .catch(() => setError("Export impossible : le fichier n'a pas pu être créé."));
   }
 
   function printRecap() {

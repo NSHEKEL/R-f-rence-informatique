@@ -27,7 +27,9 @@ export const PLAN_FEATURE: Record<string, string> = {
   approvisionnements: "achats",
   categories: "categories",
   apropos: "apropos",
-  assistance: "assistance",
+  // "assistance" is deliberately not plan-gated: support must stay reachable
+  // even on a licence signed before the feature existed (the role right still
+  // controls who sees the entry).
 };
 
 /** Feature of the pages the administrator alone reaches, keyed by path. */
