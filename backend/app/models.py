@@ -45,6 +45,7 @@ class CompanySettings(Base):
     currency = Column(String, default="FCFA")
     receipt_header = Column(Text, default="")
     receipt_footer = Column(Text, default="Merci de votre confiance !")
+    receipt_format = Column(String, default="A4")  # A4, 80mm
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
 
@@ -117,6 +118,9 @@ class Sale(Base):
     note = Column(Text, default="")
     receipt_footer = Column(Text, default="")
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    cash_session_id = Column(
+        Integer, ForeignKey("cash_sessions.id"), nullable=True
+    )
 
     customer = relationship("Customer", back_populates="sales")
     created_by = relationship("User")
@@ -138,3 +142,75 @@ class SaleItem(Base):
 
     sale = relationship("Sale", back_populates="items")
     product = relationship("Product")
+
+
+class CashSession(Base):
+    """A till session: opened with a starting balance, closed with a count."""
+
+    __tablename__ = "cash_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    opened_at = Column(DateTime, default=utcnow)
+    opened_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    opening_balance = Column(Float, default=0)
+    closed_at = Column(DateTime, nullable=True)
+    closed_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    closing_balance = Column(Float, nullable=True)  # cash counted at closing
+    expected_balance = Column(Float, nullable=True)  # opening + cash sales
+    difference = Column(Float, nullable=True)  # counted - expected
+    note = Column(Text, default="")
+
+    opened_by = relationship("User", foreign_keys=[opened_by_id])
+    closed_by = relationship("User", foreign_keys=[closed_by_id])
+    sales = relationship("Sale", backref="cash_session")
+
+
+class Expense(Base):
+    """Business expense used by the accounting module."""
+
+    __tablename__ = "expenses"
+
+    id = Column(Integer, primary_key=True, index=True)
+    label = Column(String, nullable=False)
+    category = Column(String, default="Divers")
+    amount = Column(Float, default=0)
+    date = Column(DateTime, default=utcnow)
+    note = Column(Text, default="")
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    created_by = relationship("User")
+
+
+class StockMovement(Base):
+    """Traceability of every stock change (sale, inventory count, manual)."""
+
+    __tablename__ = "stock_movements"
+
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
+    product_name = Column(String, default="")
+    kind = Column(String, default="ajustement")  # vente, inventaire, ajustement
+    quantity = Column(Integer, default=0)  # signed delta
+    stock_before = Column(Integer, default=0)
+    stock_after = Column(Integer, default=0)
+    reason = Column(String, default="")
+    date = Column(DateTime, default=utcnow)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    product = relationship("Product")
+    created_by = relationship("User")
+
+
+class Notification(Base):
+    """In-app notification shown to administrators."""
+
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    kind = Column(String, default="vente")  # vente, stock, caisse
+    title = Column(String, nullable=False)
+    message = Column(Text, default="")
+    link = Column(String, default="")
+    sale_id = Column(Integer, ForeignKey("sales.id"), nullable=True)
+    is_read = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=utcnow)

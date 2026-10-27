@@ -44,3 +44,17 @@ def migrate() -> None:
                 conn.execute(
                     text("ALTER TABLE sales ADD COLUMN receipt_footer TEXT DEFAULT ''")
                 )
+            if "cash_session_id" not in sale_cols:
+                conn.execute(
+                    text("ALTER TABLE sales ADD COLUMN cash_session_id INTEGER")
+                )
+
+        if "company_settings" in tables:
+            company_cols = _columns(insp, "company_settings")
+            if "receipt_format" not in company_cols:
+                conn.execute(
+                    text(
+                        "ALTER TABLE company_settings "
+                        "ADD COLUMN receipt_format VARCHAR DEFAULT 'A4'"
+                    )
+                )

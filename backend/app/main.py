@@ -10,10 +10,14 @@ from fastapi.staticfiles import StaticFiles
 from .database import Base, engine
 from .migrate import migrate
 from .routers import (
+    accounting,
     auth,
+    cash,
     categories,
     customers,
     dashboard,
+    inventory,
+    notifications,
     products,
     sales,
     settings,
@@ -44,6 +48,10 @@ app.include_router(customers.router)
 app.include_router(sales.router)
 app.include_router(settings.router)
 app.include_router(users.router)
+app.include_router(notifications.router)
+app.include_router(cash.router)
+app.include_router(inventory.router)
+app.include_router(accounting.router)
 
 
 @app.on_event("startup")

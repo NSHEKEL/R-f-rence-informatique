@@ -3,6 +3,8 @@ backend/venv/
 __pycache__/
 *.pyc
 backend/reference.db
+backend/reference.db-shm
+backend/reference.db-wal
 
 # Node
 node_modules/

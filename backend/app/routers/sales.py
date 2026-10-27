@@ -1,20 +1,44 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user, require_admin
 from ..database import get_db
-from ..models import Product, Sale, SaleItem, User
+from ..models import (
+    Notification,
+    Product,
+    Sale,
+    SaleItem,
+    StockMovement,
+    User,
+)
 from ..schemas import SaleCreate, SaleOut, SaleUpdate
+from .cash import current_session
 
 router = APIRouter(prefix="/api/sales", tags=["sales"])
 
 
+MAX_REFERENCE_ATTEMPTS = 5
+
+
 def _generate_reference(db: Session) -> str:
-    year = datetime.now(timezone.utc).year
-    count = db.query(Sale).count() + 1
-    return f"VNT-{year}-{count:04d}"
+    """Next reference for the year, based on the highest one already stored."""
+    prefix = f"VNT-{datetime.now(timezone.utc).year}-"
+    last = (
+        db.query(func.max(Sale.reference))
+        .filter(Sale.reference.like(f"{prefix}%"))
+        .scalar()
+    )
+    number = 1
+    if last:
+        try:
+            number = int(last[len(prefix):]) + 1
+        except ValueError:
+            number = db.query(Sale).count() + 1
+    return f"{prefix}{number:04d}"
 
 
 @router.get("", response_model=list[SaleOut])
@@ -41,6 +65,23 @@ def create_sale(
     if not payload.items:
         raise HTTPException(status_code=400, detail="Ajoutez au moins un article")
 
+    # Several workstations may checkout at the same time: retry when two of
+    # them pick the same reference.
+    for attempt in range(MAX_REFERENCE_ATTEMPTS):
+        try:
+            return _persist_sale(db, payload, current_user)
+        except IntegrityError:
+            db.rollback()
+            if attempt == MAX_REFERENCE_ATTEMPTS - 1:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Caisse occupée, veuillez réessayer",
+                )
+    raise HTTPException(status_code=409, detail="Caisse occupée, veuillez réessayer")
+
+
+def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
+    session = current_session(db)
     sale = Sale(
         reference=_generate_reference(db),
         customer_id=payload.customer_id,
@@ -48,9 +89,11 @@ def create_sale(
         payment_method=payload.payment_method,
         note=payload.note,
         created_by_id=current_user.id,
+        cash_session_id=session.id if session else None,
         total=0,
     )
     total = 0.0
+    low_stock: list[Product] = []
     for item in payload.items:
         product = db.query(Product).get(item.product_id)
         if not product:
@@ -77,10 +120,71 @@ def create_sale(
             )
         )
         if payload.status != "Annulée":
-            product.quantity -= item.quantity
+            # Conditional update: keeps stock correct when two tills sell the
+            # same product simultaneously.
+            result = db.execute(
+                update(Product)
+                .where(
+                    Product.id == product.id,
+                    Product.quantity >= item.quantity,
+                )
+                .values(quantity=Product.quantity - item.quantity)
+            )
+            if result.rowcount == 0:
+                db.rollback()
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Stock insuffisant pour {product.name}",
+                )
+            db.refresh(product)
+            before = product.quantity + item.quantity
+            db.add(
+                StockMovement(
+                    product_id=product.id,
+                    product_name=product.name,
+                    kind="vente",
+                    quantity=-item.quantity,
+                    stock_before=before,
+                    stock_after=product.quantity,
+                    reason=sale.reference,
+                    created_by_id=current_user.id,
+                )
+            )
+            if product.quantity <= product.min_stock:
+                low_stock.append(product)
 
     sale.total = total
     db.add(sale)
+    db.flush()
+
+    if current_user.role != "admin":
+        db.add(
+            Notification(
+                kind="vente",
+                title=f"Nouvelle vente — {sale.reference}",
+                message=(
+                    f"{current_user.name} a enregistré une vente de "
+                    f"{total:,.0f} FCFA ({payload.payment_method})".replace(
+                        ",", " "
+                    )
+                ),
+                link="/ventes",
+                sale_id=sale.id,
+            )
+        )
+    for product in low_stock:
+        db.add(
+            Notification(
+                kind="stock",
+                title=f"Stock faible — {product.name}",
+                message=(
+                    f"Il reste {product.quantity} unité(s) "
+                    f"(seuil : {product.min_stock})"
+                ),
+                link="/produits",
+            )
+        )
+
     db.commit()
     db.refresh(sale)
     return sale
@@ -116,7 +220,9 @@ def update_sale(
 
 @router.delete("/{sale_id}", status_code=204)
 def delete_sale(
-    sale_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)
+    sale_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
 ):
     sale = db.query(Sale).get(sale_id)
     if not sale:
@@ -127,6 +233,20 @@ def delete_sale(
             if item.product_id:
                 product = db.query(Product).get(item.product_id)
                 if product:
+                    before = product.quantity
                     product.quantity += item.quantity
+                    db.add(
+                        StockMovement(
+                            product_id=product.id,
+                            product_name=product.name,
+                            kind="ajustement",
+                            quantity=item.quantity,
+                            stock_before=before,
+                            stock_after=product.quantity,
+                            reason=f"Annulation {sale.reference}",
+                            created_by_id=current_user.id,
+                        )
+                    )
+    db.query(Notification).filter(Notification.sale_id == sale.id).delete()
     db.delete(sale)
     db.commit()

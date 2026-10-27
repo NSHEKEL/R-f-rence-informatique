@@ -6,6 +6,8 @@ export interface User {
   is_active: boolean;
 }
 
+export type ReceiptFormat = "A4" | "80mm";
+
 export interface CompanySettings {
   id: number;
   name: string;
@@ -18,6 +20,7 @@ export interface CompanySettings {
   currency: string;
   receipt_header: string;
   receipt_footer: string;
+  receipt_format: ReceiptFormat;
 }
 
 export interface Category {
@@ -107,4 +110,77 @@ export interface DashboardStats {
   recent_sales: Sale[];
   top_products: TopProduct[];
   low_stock_products: Product[];
+}
+
+export interface Notification {
+  id: number;
+  kind: string;
+  title: string;
+  message: string;
+  link: string;
+  sale_id: number | null;
+  is_read: boolean;
+  created_at: string;
+}
+
+export interface CashSession {
+  id: number;
+  opened_at: string;
+  opened_by?: User | null;
+  opening_balance: number;
+  closed_at: string | null;
+  closed_by?: User | null;
+  closing_balance: number | null;
+  expected_balance: number | null;
+  difference: number | null;
+  note: string;
+}
+
+export interface CashSessionDetail extends CashSession {
+  cash_sales: number;
+  other_sales: number;
+  sales_count: number;
+  expected_cash: number;
+}
+
+export interface Expense {
+  id: number;
+  label: string;
+  category: string;
+  amount: number;
+  date: string;
+  note: string;
+  created_by?: User | null;
+}
+
+export interface StockMovement {
+  id: number;
+  product_id: number | null;
+  product_name: string;
+  kind: string;
+  quantity: number;
+  stock_before: number;
+  stock_after: number;
+  reason: string;
+  date: string;
+  created_by?: User | null;
+}
+
+export interface AccountingCategory {
+  name: string;
+  amount: number;
+}
+
+export interface AccountingSummary {
+  period_start: string;
+  period_end: string;
+  revenue: number;
+  cost_of_goods: number;
+  gross_margin: number;
+  expenses_total: number;
+  net_profit: number;
+  sales_count: number;
+  revenue_by_payment: AccountingCategory[];
+  expenses_by_category: AccountingCategory[];
+  daily_revenue: AccountingCategory[];
 }

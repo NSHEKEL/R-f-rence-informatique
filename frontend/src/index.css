@@ -49,22 +49,180 @@ body {
   }
 }
 
-/* Print: only the receipt is sent to the printer */
+/* ---------------- Receipt ---------------- */
+.receipt {
+  background: #fff;
+  color: #0f172a;
+  font-family: "Inter", system-ui, sans-serif;
+}
+.receipt-preview {
+  margin: 0 auto;
+  padding: 1.25rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+}
+.receipt-A4 {
+  width: 100%;
+  max-width: 28rem;
+  font-size: 12px;
+}
+.receipt-80mm {
+  width: 74mm;
+  max-width: 74mm;
+  font-size: 11px;
+}
+#receipt-print-root {
+  display: none;
+}
+
+.receipt-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px dashed #94a3b8;
+}
+.receipt-logo {
+  height: 3.25rem;
+  width: 3.25rem;
+  flex: none;
+  object-fit: contain;
+}
+.receipt-company {
+  margin: 0;
+  font-size: 1.05em;
+  font-weight: 800;
+  text-transform: uppercase;
+  line-height: 1.15;
+}
+.receipt-slogan {
+  margin: 0;
+  font-size: 0.85em;
+  font-style: italic;
+  color: #475569;
+}
+.receipt-contact {
+  margin-top: 0.15rem;
+  font-size: 0.82em;
+  color: #334155;
+  line-height: 1.35;
+}
+.receipt-contact p {
+  margin: 0;
+}
+.receipt-title {
+  margin: 0.6rem 0;
+  text-align: center;
+  font-size: 0.95em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+.receipt-meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.15rem 1rem;
+  padding: 0.6rem 0;
+  border-top: 1px dashed #94a3b8;
+  border-bottom: 1px dashed #94a3b8;
+  font-size: 0.88em;
+}
+.receipt-meta span:nth-child(odd) {
+  color: #64748b;
+}
+.receipt-meta span:nth-child(even) {
+  text-align: right;
+  font-weight: 600;
+}
+.receipt-items {
+  width: 100%;
+  margin-top: 0.6rem;
+  border-collapse: collapse;
+  font-size: 0.88em;
+}
+.receipt-items th {
+  padding: 0.2rem 0;
+  border-bottom: 1px solid #475569;
+  text-align: left;
+  font-size: 0.85em;
+  text-transform: uppercase;
+  color: #475569;
+}
+.receipt-items td {
+  padding: 0.3rem 0.35rem 0.3rem 0;
+  border-bottom: 1px dashed #cbd5e1;
+  vertical-align: top;
+  word-break: break-word;
+}
+.receipt-items .qty {
+  text-align: center;
+  white-space: nowrap;
+}
+.receipt-items .num {
+  text-align: right;
+  white-space: nowrap;
+}
+.receipt-items .strong {
+  font-weight: 600;
+}
+.receipt-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.6rem;
+  padding-top: 0.4rem;
+  border-top: 2px solid #0f172a;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.receipt-total span:last-child {
+  font-size: 1.25em;
+}
+.receipt-note {
+  margin-top: 0.6rem;
+  padding: 0.4rem;
+  border: 1px dashed #cbd5e1;
+  font-size: 0.85em;
+  color: #334155;
+  white-space: pre-line;
+}
+.receipt-footer {
+  margin: 1rem 0 0;
+  padding-top: 0.6rem;
+  border-top: 1px dashed #94a3b8;
+  text-align: center;
+  font-size: 0.85em;
+  font-weight: 500;
+  white-space: pre-line;
+}
+
+/* Print: only the receipt copy portaled to <body> reaches the printer, so it
+   escapes the modal's scroll container and paginates normally. */
 @media print {
-  body * {
-    visibility: hidden;
+  html,
+  body {
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
   }
-  #receipt-print,
-  #receipt-print * {
-    visibility: visible;
+  body > *:not(#receipt-print-root) {
+    display: none !important;
   }
-  #receipt-print {
-    position: absolute;
-    inset: 0;
-    margin: 0;
+  #receipt-print-root {
+    display: block !important;
+    margin: 0 auto;
     padding: 0;
-    width: 100%;
+    border: 0;
     box-shadow: none;
+  }
+  #receipt-print-root * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .receipt-items tr,
+  .receipt-total,
+  .receipt-head {
+    break-inside: avoid;
   }
   .no-print {
     display: none !important;

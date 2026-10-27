@@ -12,17 +12,39 @@ import {
   LogOut,
   Menu,
   X,
-  Bell,
   Search,
+  Calculator,
+  ClipboardList,
+  Wallet,
 } from "lucide-react";
 import logo from "../assets/logo.jpg";
 import { useAuth } from "../context/AuthContext";
+import NotificationBell from "./NotificationBell";
 
 const navItems = [
-  { to: "/", label: "Tableau de bord", icon: LayoutDashboard, end: true },
-  { to: "/produits", label: "Produits & Stock", icon: Package },
+  {
+    to: "/",
+    label: "Tableau de bord",
+    icon: LayoutDashboard,
+    end: true,
+    adminOnly: true,
+  },
+  { to: "/caisse", label: "Caisse", icon: Wallet },
   { to: "/ventes", label: "Ventes", icon: ShoppingCart },
   { to: "/clients", label: "Clients", icon: Users },
+  { to: "/produits", label: "Produits & Stock", icon: Package, adminOnly: true },
+  {
+    to: "/inventaire",
+    label: "Inventaire",
+    icon: ClipboardList,
+    adminOnly: true,
+  },
+  {
+    to: "/comptabilite",
+    label: "Comptabilité",
+    icon: Calculator,
+    adminOnly: true,
+  },
   { to: "/fournisseurs", label: "Fournisseurs", icon: Truck, adminOnly: true },
   { to: "/categories", label: "Catégories", icon: Tags, adminOnly: true },
   { to: "/utilisateurs", label: "Utilisateurs", icon: UserCog, adminOnly: true },
@@ -36,7 +58,10 @@ const roleLabels: Record<string, string> = {
 
 const pageTitles: Record<string, string> = {
   "/": "Tableau de bord",
+  "/caisse": "Caisse",
   "/produits": "Produits & Stock",
+  "/inventaire": "Inventaire",
+  "/comptabilite": "Comptabilité",
   "/ventes": "Ventes",
   "/clients": "Clients",
   "/fournisseurs": "Fournisseurs",
@@ -157,10 +182,7 @@ export default function Layout() {
                 className="w-40 bg-transparent text-sm outline-none placeholder:text-slate-400"
               />
             </div>
-            <button className="relative rounded-xl border border-slate-200 p-2.5 text-slate-500 hover:bg-slate-100">
-              <Bell size={18} />
-              <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-brand-500" />
-            </button>
+            {isAdmin && <NotificationBell />}
           </div>
         </header>
 

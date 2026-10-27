@@ -53,6 +53,7 @@ class CompanySettingsOut(BaseModel):
     currency: str = "FCFA"
     receipt_header: str = ""
     receipt_footer: str = ""
+    receipt_format: str = "A4"
 
 
 class CompanySettingsUpdate(BaseModel):
@@ -66,6 +67,7 @@ class CompanySettingsUpdate(BaseModel):
     currency: Optional[str] = None
     receipt_header: Optional[str] = None
     receipt_footer: Optional[str] = None
+    receipt_format: Optional[str] = None
 
 
 # ---------- Category ----------
@@ -219,3 +221,115 @@ class DashboardStats(BaseModel):
     recent_sales: List[SaleOut]
     top_products: List[TopProduct]
     low_stock_products: List[ProductOut]
+
+
+# ---------- Notifications ----------
+class NotificationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    kind: str
+    title: str
+    message: str = ""
+    link: str = ""
+    sale_id: Optional[int] = None
+    is_read: bool
+    created_at: datetime
+
+
+# ---------- Cash sessions ----------
+class CashSessionOpen(BaseModel):
+    opening_balance: float = 0
+    note: str = ""
+
+
+class CashSessionClose(BaseModel):
+    closing_balance: float = 0
+    note: str = ""
+
+
+class CashSessionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    opened_at: datetime
+    opened_by: Optional[UserOut] = None
+    opening_balance: float
+    closed_at: Optional[datetime] = None
+    closed_by: Optional[UserOut] = None
+    closing_balance: Optional[float] = None
+    expected_balance: Optional[float] = None
+    difference: Optional[float] = None
+    note: str = ""
+
+
+class CashSessionDetail(CashSessionOut):
+    """Open session enriched with live totals."""
+
+    cash_sales: float = 0
+    other_sales: float = 0
+    sales_count: int = 0
+    expected_cash: float = 0
+
+
+# ---------- Expenses ----------
+class ExpenseCreate(BaseModel):
+    label: str
+    category: str = "Divers"
+    amount: float = 0
+    date: Optional[datetime] = None
+    note: str = ""
+
+
+class ExpenseOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    label: str
+    category: str
+    amount: float
+    date: datetime
+    note: str = ""
+    created_by: Optional[UserOut] = None
+
+
+# ---------- Inventory ----------
+class InventoryLine(BaseModel):
+    product_id: int
+    counted_quantity: int
+
+
+class InventoryApply(BaseModel):
+    lines: List[InventoryLine]
+    note: str = ""
+
+
+class StockMovementOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    product_id: Optional[int]
+    product_name: str
+    kind: str
+    quantity: int
+    stock_before: int
+    stock_after: int
+    reason: str = ""
+    date: datetime
+    created_by: Optional[UserOut] = None
+
+
+# ---------- Accounting ----------
+class AccountingCategory(BaseModel):
+    name: str
+    amount: float
+
+
+class AccountingSummary(BaseModel):
+    period_start: datetime
+    period_end: datetime
+    revenue: float
+    cost_of_goods: float
+    gross_margin: float
+    expenses_total: float
+    net_profit: float
+    sales_count: int
+    revenue_by_payment: List[AccountingCategory]
+    expenses_by_category: List[AccountingCategory]
+    daily_revenue: List[AccountingCategory]
