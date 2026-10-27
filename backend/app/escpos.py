@@ -8,7 +8,9 @@ sent to it as raw bytes instead: what comes out is the receipt alone.
 
 from __future__ import annotations
 
+import base64
 import ctypes
+import sys
 from dataclasses import dataclass
 
 ESC = b"\x1b"
@@ -29,6 +31,10 @@ class Line:
     bold: bool = False
     big: bool = False
     barcode: str = ""
+    # Monochrome bitmap of the logo: base64 rows of packed pixels.
+    image: str = ""
+    image_width: int = 0
+    image_height: int = 0
 
 
 def _text(value: str) -> bytes:
@@ -47,11 +53,38 @@ def _barcode(value: str) -> bytes:
     )
 
 
+def _raster(line: Line) -> bytes:
+    """Logo printed as a bitmap (GS v 0), centred on the paper."""
+    try:
+        pixels = base64.b64decode(line.image)
+    except (ValueError, TypeError):
+        return b""
+    bytes_per_row = (line.image_width + 7) // 8
+    rows = line.image_height
+    if bytes_per_row <= 0 or rows <= 0:
+        return b""
+    if len(pixels) < bytes_per_row * rows:
+        return b""
+    header = (
+        GS + b"v0\x00"
+        + bytes([bytes_per_row & 0xFF, bytes_per_row >> 8])
+        + bytes([rows & 0xFF, rows >> 8])
+    )
+    return (
+        ESC + b"a\x01"
+        + header + pixels[: bytes_per_row * rows]
+        + ESC + b"a\x00"
+    )
+
+
 def build(lines: list[Line], cut: bool, kick: bytes = b"") -> bytes:
     """Turn the ticket into the byte stream the printer expects."""
     out = bytearray(ESC + b"@")  # reset: the previous ticket may have left
     out += ESC + b"t\x13"  # select cp858
     for line in lines:
+        if line.image:
+            out += _raster(line)
+            continue
         if line.barcode:
             out += ESC + b"a\x01" + _barcode(line.barcode) + ESC + b"a\x00"
             continue
@@ -69,6 +102,8 @@ def build(lines: list[Line], cut: bool, kick: bytes = b"") -> bytes:
 
 
 def _default_printer() -> str:
+    if sys.platform != "win32":
+        raise PrintError("L'impression directe n'est disponible que sous Windows.")
     # ctypes.wintypes only exists on Windows, where printing happens.
     from ctypes import wintypes
 
@@ -82,6 +117,8 @@ def _default_printer() -> str:
 
 def send(data: bytes, printer_name: str = "") -> str:
     """Write raw bytes to a Windows printer; returns the printer used."""
+    if sys.platform != "win32":
+        raise PrintError("L'impression directe n'est disponible que sous Windows.")
     from ctypes import wintypes
 
     class _DocInfo(ctypes.Structure):

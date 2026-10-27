@@ -84,7 +84,7 @@ export default function NotificationBell() {
     <div className="relative" ref={boxRef}>
       <button
         onClick={() => setOpen((v) => !v)}
-        aria-label="Notifications"
+        title="Notifications" aria-label="Notifications"
         className="relative rounded-xl border border-slate-200 p-2.5 text-slate-500 hover:bg-slate-100"
       >
         <Bell size={18} />

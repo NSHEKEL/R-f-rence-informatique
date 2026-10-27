@@ -32,6 +32,7 @@ PERMISSIONS: dict[str, tuple[str, str]] = {
     "approvisionnements": ("Approvisionnement", "Pages"),
     "categories": ("Catégories", "Pages"),
     "apropos": ("À propos de nous", "Pages"),
+    "assistance": ("Assistance et support", "Pages"),
     "paie": ("Paie & bulletins de salaire", "Pages"),
     "produits_gerer": ("Créer, modifier et supprimer des produits", "Actions"),
     "categories_gerer": ("Créer, modifier et supprimer des catégories", "Actions"),
@@ -81,13 +82,14 @@ CONFIGURABLE_ROLES = ("vendeur", "gestionnaire")
 
 # Rights each role had before they became configurable.
 DEFAULTS: dict[str, set[str]] = {
-    "vendeur": {"caisse", "vente_nouvelle"},
+    "vendeur": {"caisse", "vente_nouvelle", "assistance"},
     "gestionnaire": {
         "produits",
         "inventaire",
         "fournisseurs",
         "categories",
         "approvisionnements",
+        "assistance",
     },
 }
 

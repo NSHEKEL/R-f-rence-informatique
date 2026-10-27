@@ -6,6 +6,7 @@ import {
   Database,
   Download,
   DownloadCloud,
+  FileCheck2,
   FolderOpen,
   HardDriveUpload,
   ImagePlus,
@@ -33,6 +34,7 @@ import { useAuth } from "../context/AuthContext";
 import PhotoPicker from "../components/PhotoPicker";
 import PrintingSettings from "../components/PrintingSettings";
 import SecuritySettings from "../components/SecuritySettings";
+import FneSettings from "../components/FneSettings";
 import { useCompany } from "../context/CompanyContext";
 
 type CompanyForm = Omit<CompanySettings, "id"> & { smtp_password?: string };
@@ -47,6 +49,7 @@ const TABS = [
   { key: "sauvegarde", label: "Sauvegarde", icon: Database },
   { key: "maj", label: "Mise à jour", icon: DownloadCloud },
   { key: "emails", label: "E-mails", icon: Mail },
+  { key: "fne", label: "FNE", icon: FileCheck2, admin: true },
   { key: "securite", label: "Sécurité", icon: ShieldCheck, admin: true },
   { key: "compte", label: "Mon compte", icon: User },
 ] as const;
@@ -88,6 +91,9 @@ const emptyCompany: CompanyForm = {
   backup_keep: 30,
   backup_on_sale: false,
   last_backup_at: null,
+  city: "",
+  support_whatsapp: "0710069059",
+  support_email: "",
 };
 
 /** Native folder picker, only available inside the desktop window. */
@@ -558,6 +564,15 @@ export default function Settings() {
               />
             </div>
             <div>
+              <label className="label">Ville du magasin</label>
+              <input
+                className="input"
+                value={company.city}
+                onChange={(e) => update({ city: e.target.value })}
+                placeholder="Abidjan"
+              />
+            </div>
+            <div>
               <label className="label">Téléphone</label>
               <input
                 className="input"
@@ -591,6 +606,24 @@ export default function Settings() {
                 value={company.tax_id}
                 onChange={(e) => update({ tax_id: e.target.value })}
                 placeholder="CI-ABJ-..."
+              />
+            </div>
+            <div>
+              <label className="label">WhatsApp d'assistance</label>
+              <input
+                className="input"
+                value={company.support_whatsapp}
+                onChange={(e) => update({ support_whatsapp: e.target.value })}
+                placeholder="0710069059"
+              />
+            </div>
+            <div>
+              <label className="label">E-mail d'assistance</label>
+              <input
+                className="input"
+                value={company.support_email}
+                onChange={(e) => update({ support_email: e.target.value })}
+                placeholder="support@exemple.ci"
               />
             </div>
             <div>
@@ -1038,6 +1071,7 @@ export default function Settings() {
       </div>
       )}
 
+      {tab === "fne" && user?.role === "admin" && <FneSettings />}
       {tab === "securite" && user?.role === "admin" && <SecuritySettings />}
 
       {tab === "compte" && (

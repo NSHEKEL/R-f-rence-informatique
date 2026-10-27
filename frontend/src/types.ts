@@ -9,6 +9,15 @@ export interface User {
 
 export type ReceiptFormat = "A4" | "80mm" | "58mm";
 
+/** A printer installed on this computer, as Windows reports it. */
+export interface PrinterDevice {
+  name: string;
+  port: string;
+  is_default: boolean;
+  available: boolean;
+  status: string;
+}
+
 /** Receipt printer: hardware, layout and contents of the ticket. */
 export interface ReceiptPrinterConfig {
   printer_name: string;
@@ -195,6 +204,11 @@ export interface CompanySettings {
   backup_keep: number;
   backup_on_sale: boolean;
   last_backup_at: string | null;
+  /** Magasin's city (multi-magasins supervision). */
+  city: string;
+  /** Contact shown on "Assistance et support". */
+  support_whatsapp: string;
+  support_email: string;
 }
 
 export interface BackupFile {
@@ -591,4 +605,27 @@ export interface PurchaseSummary {
   pending: number;
   total: number;
   unpaid: number;
+}
+
+export interface FneSettings {
+  enabled: boolean;
+  environment: string;
+  api_url: string;
+  token_url: string;
+  client_id: string;
+  credentials_configured: boolean;
+  configured: boolean;
+}
+
+export interface FneInvoice {
+  id: number;
+  sale_id: number;
+  status: string;
+  fne_reference: string;
+  fne_number: string;
+  fne_token: string;
+  last_error: string;
+  attempts: number;
+  submitted_at: string | null;
+  certified_at: string | null;
 }

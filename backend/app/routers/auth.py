@@ -94,7 +94,7 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
         raise HTTPException(status_code=403, detail="Compte désactivé")
     _attempts.pop(key, None)
     log_event(db, "connexion", user=user, station=station)
-    token = create_access_token({"sub": str(user.id)})
+    token = create_access_token(user)
     return Token(access_token=token)
 
 

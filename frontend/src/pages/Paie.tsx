@@ -991,6 +991,7 @@ export default function Paie() {
                     onClick={() =>
                       setExtras(extras.filter((_, other) => other !== index))
                     }
+                    title="Retirer la ligne"
                   >
                     <Trash2 size={16} />
                   </button>
@@ -1342,6 +1343,7 @@ export default function Paie() {
                         <div className="flex justify-end gap-1">
                           <button
                             className="btn-ghost"
+                            title="Modifier l'élément"
                             onClick={() => {
                               setElementEditing(row);
                               setElementForm({
@@ -1358,6 +1360,7 @@ export default function Paie() {
                           <button
                             className="btn-ghost text-red-600"
                             onClick={() => removeElement(row)}
+                            title="Supprimer l'élément"
                           >
                             <Trash2 size={16} />
                           </button>

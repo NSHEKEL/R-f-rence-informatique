@@ -407,7 +407,7 @@ export default function Livraisons() {
                       <button
                         className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
                         onClick={() => edit(d)}
-                        aria-label="Modifier le bon de livraison"
+                        title="Modifier le bon de livraison" aria-label="Modifier le bon de livraison"
                       >
                         <Pencil size={16} />
                       </button>
@@ -422,7 +422,7 @@ export default function Livraisons() {
                             `Valider ${d.reference} ? Le stock sera décrémenté.`
                           )
                         }
-                        aria-label="Valider le bon de livraison"
+                        title="Valider le bon de livraison" aria-label="Valider le bon de livraison"
                       >
                         <CheckCircle2 size={16} />
                       </button>
@@ -431,7 +431,7 @@ export default function Livraisons() {
                       <button
                         className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
                         onClick={() => print(d)}
-                        aria-label="Imprimer le bon de livraison"
+                        title="Imprimer le bon de livraison" aria-label="Imprimer le bon de livraison"
                       >
                         <Printer size={16} />
                       </button>
@@ -442,7 +442,7 @@ export default function Livraisons() {
                         onClick={() =>
                           act(d, "cancel", `Annuler le bon ${d.reference} ?`)
                         }
-                        aria-label="Annuler le bon de livraison"
+                        title="Annuler le bon de livraison" aria-label="Annuler le bon de livraison"
                       >
                         <Ban size={16} />
                       </button>
@@ -451,7 +451,7 @@ export default function Livraisons() {
                       <button
                         className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
                         onClick={() => remove(d)}
-                        aria-label="Supprimer le bon de livraison"
+                        title="Supprimer le bon de livraison" aria-label="Supprimer le bon de livraison"
                       >
                         <Trash2 size={16} />
                       </button>
@@ -670,7 +670,7 @@ export default function Livraisons() {
                                 prev.filter((_, i) => i !== index)
                               )
                             }
-                            aria-label="Retirer la ligne"
+                            title="Retirer la ligne" aria-label="Retirer la ligne"
                           >
                             <Trash2 size={15} />
                           </button>

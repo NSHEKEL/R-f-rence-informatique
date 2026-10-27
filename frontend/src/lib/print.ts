@@ -227,12 +227,15 @@ export function printLabels(
 /**
  * Applies the page geometry matching the receipt format, then prints. When
  * several copies are configured, the ticket is repeated on as many pages so a
- * single dialog produces the whole set.
+ * single dialog produces the whole set. Resolves to true when the drawer kick
+ * travelled with the ticket, so the caller knows the till is already open.
  */
 export function printReceipt(
   format: ReceiptFormat,
-  config: ReceiptPrinterConfig = DEFAULT_PRINTING.receipt
-): void {
+  config: ReceiptPrinterConfig = DEFAULT_PRINTING.receipt,
+  /** Cash drawer kick code, sent with the ticket on the same printer. */
+  kick: number[] = []
+): Promise<boolean> {
   let style = document.getElementById(PAGE_STYLE_ID);
   if (!style) {
     style = document.createElement("style");
@@ -261,27 +264,46 @@ export function printReceipt(
       printer: config.printer_name,
       copies,
       cut: config.cut_paper,
+      kick,
       lines: ticketLines(root, format),
     });
     extras.forEach((copy) => copy.remove());
     extras.length = 0;
-    direct(payload).then((problem) => {
-      // No thermal printer on this computer: fall back on the page printer.
-      if (problem) window.print();
+    return direct(payload).then((problem) => {
+      if (!problem) return kick.length > 0;
+      // No thermal printer on this computer: fall back on the page printer,
+      // still at the ticket geometry so the roll is not padded to a sheet.
+      const fallback = desktopPrint();
+      if (fallback) {
+        return fallback(widthMm(format), pageHeight, 0)
+          .then((done) => {
+            if (!done) window.print();
+            return false;
+          })
+          .catch(() => {
+            window.print();
+            return false;
+          });
+      }
+      window.print();
+      return false;
     });
-    return;
   }
   const native = desktopPrint();
   if (native) {
     const width = thermal ? widthMm(format) : 210;
-    native(width, pageHeight, 0)
+    return native(width, pageHeight, 0)
       .then((done) => {
         if (!done) window.print();
+        return false;
       })
-      .catch(() => window.print())
+      .catch(() => {
+        window.print();
+        return false;
+      })
       .finally(() => extras.forEach((copy) => copy.remove()));
-    return;
   }
   window.print();
   extras.forEach((copy) => copy.remove());
+  return Promise.resolve(false);
 }

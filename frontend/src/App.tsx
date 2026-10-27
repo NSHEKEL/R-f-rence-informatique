@@ -23,6 +23,7 @@ import Categories from "./pages/Categories";
 import Users from "./pages/Users";
 import Settings from "./pages/Settings";
 import APropos from "./pages/APropos";
+import Assistance from "./pages/Assistance";
 import Approvisionnements from "./pages/Approvisionnements";
 import Commandes from "./pages/Commandes";
 import Livraisons from "./pages/Livraisons";
@@ -35,6 +36,7 @@ import ConsoleClients from "./pages/console/ConsoleClients";
 import ConsoleClient from "./pages/console/ConsoleClient";
 import ConsolePlans from "./pages/console/ConsolePlans";
 import ConsoleJournal from "./pages/console/ConsoleJournal";
+import ConsoleSuggestions from "./pages/console/ConsoleSuggestions";
 import Mobile from "./pages/Mobile";
 
 /** Home screens, in the order a user falls back to them. */
@@ -138,6 +140,7 @@ export default function App() {
         <Route path="clients" element={<ConsoleClients />} />
         <Route path="clients/:id" element={<ConsoleClient />} />
         <Route path="formules" element={<ConsolePlans />} />
+        <Route path="suggestions" element={<ConsoleSuggestions />} />
         <Route path="journal" element={<ConsoleJournal />} />
       </Route>
       <Route
@@ -314,6 +317,14 @@ export default function App() {
             <AdminRoute>
               <MonAbonnement />
             </AdminRoute>
+          }
+        />
+        <Route
+          path="/assistance"
+          element={
+            <PermRoute right="assistance">
+              <Assistance />
+            </PermRoute>
           }
         />
         <Route

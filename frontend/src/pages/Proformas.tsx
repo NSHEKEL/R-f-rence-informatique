@@ -206,14 +206,14 @@ export default function Proformas() {
                     <button
                       className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
                       onClick={() => print(p)}
-                      aria-label="Imprimer la proforma"
+                      title="Imprimer la proforma" aria-label="Imprimer la proforma"
                     >
                       <Printer size={16} />
                     </button>
                     <button
                       className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
                       onClick={() => remove(p)}
-                      aria-label="Supprimer la proforma"
+                      title="Supprimer la proforma" aria-label="Supprimer la proforma"
                     >
                       <Trash2 size={16} />
                     </button>
