@@ -583,7 +583,7 @@ export default function NouvelleVente() {
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 p-4 lg:grid-cols-[3fr_2fr]">
         {/* Ticket in progress */}
-        <div className="card flex min-h-0 flex-col overflow-hidden p-0">
+        <div className="card flex min-h-0 flex-col overflow-y-auto p-0">
           <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 px-4 py-3">
             <span className="flex items-center gap-2 text-base font-bold text-slate-900">
               <ShoppingCart size={18} className="text-brand-600" />
@@ -636,7 +636,7 @@ export default function NouvelleVente() {
             </p>
           )}
 
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="min-h-[330px] flex-1 overflow-y-auto">
             {cart.length === 0 ? (
               <p className="px-4 py-10 text-center text-sm text-slate-400">
                 Scannez un code ou cliquez sur un article.
@@ -777,7 +777,7 @@ export default function NouvelleVente() {
             </p>
           )}
 
-          <div className="space-y-2 border-t border-slate-100 px-4 py-3">
+          <div className="space-y-1.5 border-t border-slate-100 px-4 py-2.5">
             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
               <div>
                 <div className="flex items-center justify-between">
@@ -898,7 +898,7 @@ export default function NouvelleVente() {
             </div>
           </div>
 
-          <div className="bg-slate-800 px-4 py-3 text-white">
+          <div className="bg-slate-800 px-4 py-2.5 text-white">
             <div className="flex items-center justify-between text-sm text-slate-300">
               <span>Articles</span>
               <span>{itemCount}</span>
@@ -935,7 +935,7 @@ export default function NouvelleVente() {
             </div>
           </div>
 
-          <div className="flex gap-2 p-3">
+          <div className="flex gap-2 p-2.5">
             <button
               className="btn-ghost flex-1 justify-center py-3"
               onClick={clearCart}
