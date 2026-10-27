@@ -118,6 +118,7 @@ function offlineSale(
 export default function NouvelleVente() {
   const { user, isAdmin, can } = useAuth();
   const canChangePrice = can("prix_modifier");
+  const canQuote = can("proformas");
   const { company, printing } = useCompany();
   const { online } = useNetwork();
   const version = useSyncVersion();
@@ -475,6 +476,60 @@ export default function NouvelleVente() {
     searchRef.current?.focus();
   }
 
+  /** Empties the ticket after the cashier confirms — never silently. */
+  function clearCart() {
+    if (cart.length === 0) return;
+    if (
+      !window.confirm(
+        "Vider le panier ? Toutes les lignes du ticket seront supprimées."
+      )
+    ) {
+      return;
+    }
+    resetCart();
+  }
+
+  /**
+   * Saves the current ticket as a commercial offer ("devis") instead of
+   * cashing it in — same lines and prices, the sale happens later from the
+   * proformas page.
+   */
+  async function saveQuote() {
+    if (cart.length === 0) {
+      setError("Le panier est vide.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const res = await api.post<{ reference: string }>("/proformas", {
+        kind: "devis",
+        status: "Brouillon",
+        customer_id: customer?.id ?? null,
+        customer_name: customer?.name ?? customerQuery.trim(),
+        note,
+        discount,
+        items: cart.map((l) => ({
+          product_id: l.product.id,
+          product_name: l.product.name,
+          quantity: l.quantity,
+          unit_price: linePrice(l, priceMode),
+        })),
+      });
+      resetCart();
+      setFlash(`Devis ${res.data.reference} enregistré`);
+      window.setTimeout(() => setFlash(""), 3000);
+    } catch (err) {
+      setError(
+        axios.isAxiosError(err)
+          ? err.response?.data?.detail ?? "Impossible d'enregistrer le devis"
+          : "Impossible d'enregistrer le devis"
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
   if (tillLoaded && !session) {
     return (
       <div className="flex h-full items-center justify-center p-8">
@@ -516,7 +571,7 @@ export default function NouvelleVente() {
         </Link>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 p-4 lg:grid-cols-[380px_1fr]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 p-4 lg:grid-cols-[3fr_2fr]">
         {/* Ticket in progress */}
         <div className="card flex min-h-0 flex-col overflow-hidden p-0">
           <div className="flex items-center gap-2 border-b border-slate-200 px-3 py-2.5">
@@ -568,6 +623,15 @@ export default function NouvelleVente() {
                 </button>
               ))}
             </div>
+            {cart.length > 0 && (
+              <button
+                className="ml-1 flex shrink-0 items-center gap-1 rounded-lg bg-white px-2 py-1 text-[11px] font-semibold text-red-600 hover:bg-red-50"
+                onClick={clearCart}
+                title="Vider le panier (avec confirmation)"
+              >
+                <Trash2 size={12} /> Vider
+              </button>
+            )}
           </div>
 
           {flash && (
@@ -577,85 +641,109 @@ export default function NouvelleVente() {
           )}
 
           <div className="min-h-0 flex-1 overflow-y-auto">
-            {cart.length === 0 && (
+            {cart.length === 0 ? (
               <p className="px-4 py-10 text-center text-sm text-slate-400">
                 Scannez un code ou cliquez sur un article.
               </p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 z-[1] bg-white">
+                  <tr className="border-b border-slate-200 text-left text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                    <th className="w-8 px-3 py-2">#</th>
+                    <th className="px-1 py-2">Produit</th>
+                    <th className="w-28 px-1 py-2 text-right">Prix unit.</th>
+                    <th className="w-36 px-1 py-2 text-center">Quantité</th>
+                    <th className="w-28 px-1 py-2 text-right">Total</th>
+                    <th className="w-10 px-1 py-2" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {cart.map((l, index) => (
+                    <tr
+                      key={l.product.id}
+                      className="border-b border-slate-100 last:border-0"
+                    >
+                      <td className="px-3 py-2.5 text-slate-400">
+                        {index + 1}
+                      </td>
+                      <td className="px-1 py-2.5">
+                        <p className="font-semibold text-slate-800">
+                          {l.product.name}
+                        </p>
+                        <p className="text-xs text-slate-400">
+                          Stock : {l.product.quantity}
+                        </p>
+                      </td>
+                      <td className="px-1 py-2.5 text-right">
+                        {canChangePrice ? (
+                          <input
+                            className="w-24 rounded-lg border border-slate-200 px-1.5 py-1 text-right text-sm text-slate-700"
+                            value={l.price ?? unitPrice(l.product, priceMode)}
+                            onChange={(e) =>
+                              setLinePrice(l.product.id, e.target.value)
+                            }
+                            title="Prix de vente pour cette ligne"
+                            aria-label={`Prix de ${l.product.name}`}
+                          />
+                        ) : (
+                          <span className="text-slate-600">
+                            {formatXOF(linePrice(l, priceMode))}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-1 py-2.5">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            className="rounded-lg bg-slate-100 p-1.5 text-slate-600 hover:bg-slate-200"
+                            onClick={() =>
+                              setQuantity(l.product.id, l.quantity - 1)
+                            }
+                            title="Diminuer la quantité"
+                            aria-label={`Diminuer la quantité de ${l.product.name}`}
+                          >
+                            <Minus size={14} />
+                          </button>
+                          <input
+                            className="w-12 rounded-lg border border-slate-200 py-1 text-center text-sm"
+                            value={l.quantity}
+                            onChange={(e) =>
+                              setQuantity(
+                                l.product.id,
+                                Number(e.target.value) || 0
+                              )
+                            }
+                            aria-label={`Quantité de ${l.product.name}`}
+                          />
+                          <button
+                            className="rounded-lg bg-slate-100 p-1.5 text-slate-600 hover:bg-slate-200"
+                            onClick={() =>
+                              setQuantity(l.product.id, l.quantity + 1)
+                            }
+                            title="Augmenter la quantité"
+                            aria-label={`Augmenter la quantité de ${l.product.name}`}
+                          >
+                            <Plus size={14} />
+                          </button>
+                        </div>
+                      </td>
+                      <td className="whitespace-nowrap px-1 py-2.5 text-right font-bold text-slate-900">
+                        {formatXOF(linePrice(l, priceMode) * l.quantity)}
+                      </td>
+                      <td className="px-1 py-2.5 text-center">
+                        <button
+                          className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                          onClick={() => setQuantity(l.product.id, 0)}
+                          title="Retirer l'article"
+                          aria-label={`Retirer ${l.product.name}`}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             )}
-            {cart.map((l) => (
-              <div
-                key={l.product.id}
-                className="border-b border-slate-100 px-4 py-2.5"
-              >
-                <div className="flex items-start gap-2">
-                  <p className="min-w-0 flex-1 truncate text-sm font-bold text-slate-800">
-                    {l.product.name}
-                  </p>
-                  <span className="w-8 text-center text-sm text-slate-600">
-                    {l.quantity}
-                  </span>
-                  <span className="shrink-0 whitespace-nowrap text-right text-sm font-bold text-slate-900">
-                    {formatXOF(linePrice(l, priceMode) * l.quantity)}
-                  </span>
-                  <button
-                    className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                    onClick={() => setQuantity(l.product.id, 0)}
-                    title="Retirer cet article du panier"
-                    aria-label={`Retirer ${l.product.name}`}
-                  >
-                    <Trash2 size={15} />
-                  </button>
-                </div>
-                <div className="mt-1.5 flex items-center gap-1">
-                  {canChangePrice ? (
-                    <span className="mr-auto flex items-center gap-1 text-xs text-slate-400">
-                      <input
-                        className="w-20 rounded-lg border border-slate-200 px-1.5 py-0.5 text-right text-sm text-slate-700"
-                        value={l.price ?? unitPrice(l.product, priceMode)}
-                        onChange={(e) =>
-                          setLinePrice(l.product.id, e.target.value)
-                        }
-                        title="Prix de vente pour cette ligne"
-                        aria-label={`Prix de ${l.product.name}`}
-                      />
-                      l'unité
-                    </span>
-                  ) : (
-                    <span className="mr-auto text-xs text-slate-400">
-                      {formatXOF(unitPrice(l.product, priceMode))} l'unité
-                    </span>
-                  )}
-                  <button
-                    className="rounded-lg bg-slate-100 p-1 text-slate-600 hover:bg-slate-200"
-                    onClick={() => setQuantity(l.product.id, l.quantity - 1)}
-                    title="Diminuer la quantité"
-                  >
-                    <Minus size={13} />
-                  </button>
-                  <input
-                    className="w-11 rounded-lg border border-slate-200 py-0.5 text-center text-sm"
-                    value={l.quantity}
-                    onChange={(e) =>
-                      setQuantity(l.product.id, Number(e.target.value) || 0)
-                    }
-                  />
-                  <button
-                    className="rounded-lg bg-slate-100 p-1 text-slate-600 hover:bg-slate-200"
-                    onClick={() => setQuantity(l.product.id, l.quantity + 1)}
-                    title="Augmenter la quantité"
-                  >
-                    <Plus size={13} />
-                  </button>
-                  <button
-                    className="rounded-lg p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                    onClick={() => setQuantity(l.product.id, 0)}
-                    title="Retirer l'article"
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              </div>
-            ))}
           </div>
 
           {error && (
@@ -732,13 +820,16 @@ export default function NouvelleVente() {
                 </select>
               </div>
             </div>
-            <input
-              className="input"
-              placeholder="Note sur le reçu (facultatif)"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-            />
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="sm:col-span-2 xl:col-span-1">
+                <label className="label">Note sur le reçu</label>
+                <input
+                  className="input"
+                  placeholder="Facultatif"
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                />
+              </div>
               <div>
                 <label className="label">Remise</label>
                 <input
@@ -766,6 +857,15 @@ export default function NouvelleVente() {
                 />
               </div>
             </div>
+            {paidAmount > 0 && (
+              <p className="rounded-lg bg-emerald-50 px-3 py-1.5 text-sm font-bold text-emerald-700">
+                {change > 0
+                  ? `Monnaie à rendre : ${formatXOF(change)}`
+                  : paidAmount < total
+                    ? `Reste à payer : ${formatXOF(total - paidAmount)}`
+                    : "Montant exact reçu"}
+              </p>
+            )}
           </div>
 
           <div className="bg-slate-800 px-4 py-3 text-white">
@@ -808,11 +908,20 @@ export default function NouvelleVente() {
           <div className="flex gap-2 p-3">
             <button
               className="btn-ghost flex-1 justify-center py-3"
-              onClick={resetCart}
+              onClick={clearCart}
               disabled={cart.length === 0}
             >
               Vider
             </button>
+            {canQuote && (
+              <button
+                className="btn-ghost flex-1 justify-center py-3"
+                onClick={saveQuote}
+                disabled={saving || cart.length === 0}
+              >
+                Devis
+              </button>
+            )}
             <button
               className="btn-primary flex-[2] justify-center py-3 text-base"
               onClick={checkout}
@@ -852,7 +961,7 @@ export default function NouvelleVente() {
               ))}
             </div>
           )}
-          <div className="grid min-h-0 flex-1 grid-cols-2 gap-3 overflow-y-auto sm:grid-cols-3 xl:grid-cols-4">
+          <div className="grid min-h-0 flex-1 grid-cols-2 gap-3 overflow-y-auto xl:grid-cols-3">
             {filtered.map((p) => (
               <button
                 key={p.id}
@@ -863,10 +972,10 @@ export default function NouvelleVente() {
                   <img
                     src={p.image}
                     alt=""
-                    className="mb-2 h-24 w-full rounded-xl object-contain"
+                    className="mb-2 h-20 w-full rounded-xl object-contain"
                   />
                 ) : (
-                  <span className="mb-2 flex h-24 w-full items-center justify-center rounded-xl bg-slate-100 text-slate-300">
+                  <span className="mb-2 flex h-20 w-full items-center justify-center rounded-xl bg-slate-100 text-slate-300">
                     <ImageIcon size={22} />
                   </span>
                 )}
