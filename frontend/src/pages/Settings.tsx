@@ -390,8 +390,10 @@ export default function Settings() {
       );
     } catch (err) {
       setMobileStatus(
-        axios.isAxiosError(err) && typeof err.response?.data?.detail === "string"
-          ? err.response.data.detail
+        axios.isAxiosError(err)
+          ? typeof err.response?.data?.detail === "string"
+            ? err.response.data.detail
+            : "Serveur central injoignable. Vérifiez la connexion internet puis réessayez."
           : "Publication impossible pour le moment."
       );
     }

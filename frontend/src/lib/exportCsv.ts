@@ -41,6 +41,39 @@ export async function exportCsv(
   const blob = new Blob(["\uFEFF" + body], {
     type: "text/csv;charset=utf-8;",
   });
+  // Chrome/Edge: ask where to save, like the desktop save dialog does.
+  const picker = (
+    window as unknown as {
+      showSaveFilePicker?: (options: object) => Promise<{
+        createWritable: () => Promise<{
+          write: (data: Blob) => Promise<void>;
+          close: () => Promise<void>;
+        }>;
+      }>;
+    }
+  ).showSaveFilePicker;
+  if (picker) {
+    try {
+      const handle = await picker({
+        suggestedName: name,
+        types: [
+          {
+            description: "Fichier Excel (CSV)",
+            accept: { "text/csv": [".csv"] },
+          },
+        ],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      return name;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return "";
+      }
+      throw error;
+    }
+  }
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
