@@ -146,11 +146,33 @@ public class MainActivity extends AppCompatActivity {
                     if (!empty) {
                         return;
                     }
+                    if (outdatedWebView()) {
+                        offerOpenInBrowser();
+                        return;
+                    }
                     Toast.makeText(this,
-                            outdatedWebView() || pageFailed
-                                    ? R.string.webview_old : R.string.page_error,
+                            pageFailed ? R.string.webview_old : R.string.page_error,
                             Toast.LENGTH_LONG).show();
                 });
+    }
+
+    /**
+     * The system WebView cannot run the app, but the phone's browser can:
+     * offer to continue there instead of leaving the user on a blank screen.
+     */
+    private void offerOpenInBrowser() {
+        String server = ServerStore.url(this);
+        if (server == null) {
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.app_name)
+                .setMessage(R.string.webview_old)
+                .setPositiveButton(R.string.open_browser, (dialog, which) ->
+                        startActivity(new Intent(Intent.ACTION_VIEW,
+                                android.net.Uri.parse(server))))
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
     }
 
     /** Very old system WebViews cannot run the EasyGest scripts. */
