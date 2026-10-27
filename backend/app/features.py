@@ -112,6 +112,10 @@ FEATURES: tuple[FeatureSpec, ...] = (
         "apropos", "À propos de nous", "Administration",
         "Page de présentation de l'éditeur",
     ),
+    FeatureSpec(
+        "assistance", "Assistance et support", "Administration",
+        "WhatsApp, e-mail et formulaire de contact",
+    ),
 )
 
 # Catalogue of the releases before these menu entries became switchable.
@@ -142,6 +146,7 @@ LEGACY_FEATURE_CODES: frozenset[str] = frozenset(
         "restauration",
         "synchronisation",
         "fonctions_avancees",
+        "assistance",
     }
 )
 
@@ -169,5 +174,6 @@ BASE_FEATURES: frozenset[str] = frozenset(
         "droits_acces",
         "parametres",
         "apropos",
+        "assistance",
     }
 )

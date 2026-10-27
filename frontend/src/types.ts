@@ -204,6 +204,11 @@ export interface CompanySettings {
   backup_keep: number;
   backup_on_sale: boolean;
   last_backup_at: string | null;
+  /** Magasin's city (multi-magasins supervision). */
+  city: string;
+  /** Contact shown on "Assistance et support". */
+  support_whatsapp: string;
+  support_email: string;
 }
 
 export interface BackupFile {

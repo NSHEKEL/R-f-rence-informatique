@@ -11,12 +11,16 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from .. import events, mailer
+from ..database import SessionLocal
 from ..models import (
     Client,
+    GlobalAdmin,
     Installation,
     License,
     MirrorReturn,
     MirrorSale,
+    MirrorSupportRequest,
     MirrorUser,
     Plan,
 )
@@ -197,11 +201,14 @@ def mirror(payload: MirrorRequest, db: Session = Depends(get_db)):
         row.reference: row
         for row in db.query(MirrorSale).filter(MirrorSale.client_id == client.id)
     }
+    new_sales = []
     for sale in payload.sales:
         row = stored.get(sale.reference)
         if row is None:
             row = MirrorSale(client_id=client.id, reference=sale.reference)
             db.add(row)
+            new_sales.append(sale)
+        row.installation_uid = installation.uid
         row.date = _naive(sale.date)
         row.total = sale.total
         row.status = sale.status
@@ -220,6 +227,7 @@ def mirror(payload: MirrorRequest, db: Session = Depends(get_db)):
         if row is None:
             row = MirrorReturn(client_id=client.id, reference=credit.reference)
             db.add(row)
+        row.installation_uid = installation.uid
         row.sale_reference = credit.sale_reference
         row.date = _naive(credit.date)
         row.total = credit.total
@@ -229,9 +237,130 @@ def mirror(payload: MirrorRequest, db: Session = Depends(get_db)):
         row.seller_email = credit.seller_email.strip().lower()
         row.items = json.dumps(credit.items, ensure_ascii=False)
 
+    # Magasin identity self-declared by the shop (never overwrites a name or
+    # city the console set by hand).
+    if payload.shop_name and not installation.shop_name:
+        installation.shop_name = payload.shop_name.strip()[:200]
+    if payload.city and not installation.city:
+        installation.city = payload.city.strip()[:200]
+    if payload.address and not installation.address:
+        installation.address = payload.address.strip()[:300]
+
+    known_requests = {
+        row.local_id: row
+        for row in db.query(MirrorSupportRequest).filter(
+            MirrorSupportRequest.client_id == client.id,
+            MirrorSupportRequest.installation_uid == installation.uid,
+        )
+    }
+    new_requests = []
+    for req in payload.support_requests:
+        if req.local_id in known_requests:
+            continue  # never duplicate a demand already received
+        db.add(
+            MirrorSupportRequest(
+                client_id=client.id,
+                installation_uid=installation.uid,
+                local_id=req.local_id,
+                name=req.name[:200],
+                email=req.email[:200],
+                subject=req.subject[:300],
+                category=(req.category or "assistance")[:50],
+                message=req.message[:10000],
+                created_at=_naive(req.created_at) or utcnow(),
+            )
+        )
+        new_requests.append(req)
+
     installation.last_seen = utcnow()
     db.commit()
+
+    # Real-time fan-out: consoles watching right now are told within a second.
+    for sale in new_sales:
+        events.publish(
+            "vente",
+            {
+                "client_id": client.id,
+                "client_name": client.company,
+                "installation_uid": installation.uid,
+                "shop_name": installation.shop_name or installation.hostname,
+                "city": installation.city,
+                "reference": sale.reference,
+                "total": sale.total,
+                "seller": sale.seller,
+                "date": sale.date.isoformat() if sale.date else None,
+            },
+        )
+    for req in new_requests:
+        events.publish(
+            "support",
+            {
+                "client_id": client.id,
+                "client_name": client.company,
+                "installation_uid": installation.uid,
+                "subject": req.subject,
+                "category": req.category,
+            },
+        )
+    _alert_support_requests(db, client, installation, new_requests)
     return {"status": "ok", "code": mobile_code(db, client), "sales": len(payload.sales)}
+
+
+def _alert_support_requests(db, client, installation, requests) -> None:
+    """E-mail the global admin for each new demand; failures are recorded on
+    the row itself (email_sent stays False) so nothing is ever pretended."""
+    import os
+    import threading
+
+    if not requests:
+        return
+    recipient = os.getenv("CENTRAL_ALERT_EMAIL", "").strip()
+    if not recipient:
+        admin = db.query(GlobalAdmin).filter(GlobalAdmin.is_active.is_(True)).first()
+        recipient = admin.email if admin else ""
+    if not recipient:
+        return
+
+    def _work():
+        session = SessionLocal()
+        try:
+            for req in requests:
+                row = (
+                    session.query(MirrorSupportRequest)
+                    .filter(
+                        MirrorSupportRequest.client_id == client.id,
+                        MirrorSupportRequest.installation_uid == installation.uid,
+                        MirrorSupportRequest.local_id == req.local_id,
+                    )
+                    .first()
+                )
+                if row is None:
+                    continue
+                row.email_attempts = (row.email_attempts or 0) + 1
+                try:
+                    mailer.send_alert(
+                        recipient,
+                        f"[EasyGest] Demande {req.category} — {req.subject}",
+                        "Nouvelle demande reçue depuis la console EasyGest.\n\n"
+                        f"Client : {client.company}\n"
+                        f"Magasin : {installation.shop_name or installation.hostname}"
+                        f" ({installation.city or '—'})\n"
+                        f"Catégorie : {req.category}\n"
+                        f"Sujet : {req.subject}\n"
+                        f"De : {req.name} <{req.email}>\n\n"
+                        "Le contenu complet est consultable dans la console,"
+                        " section « Suggestions et critiques ».",
+                    )
+                    row.email_sent = True
+                    row.email_error = ""
+                except Exception as exc:  # noqa: BLE001 - recorded, never hidden
+                    row.email_sent = False
+                    row.email_error = str(exc)[:500]
+                session.commit()
+        finally:
+            session.close()
+
+    threading.Thread(target=_work, daemon=True).start()
 
 
 @router.post("/sync", response_model=LicenseAnswer)

@@ -48,6 +48,7 @@ class CompanySettings(Base):
     # VAT shown on receipts; prices are already tax inclusive.
     vat_rate = Column(Float, default=0.0, nullable=False)
     about = Column(Text, default="")  # free text shown on the "À propos" page
+    city = Column(String, default="")  # magasin's city (multi-magasins)
     receipt_header = Column(Text, default="")
     receipt_footer = Column(Text, default="Merci de votre confiance !")
     receipt_format = Column(String, default="A4")  # A4, 80mm
@@ -86,6 +87,10 @@ class CompanySettings(Base):
     fne_client_id = Column(String, default="")
     fne_client_secret = Column(String, default="")
     fne_api_key = Column(String, default="")
+    # "Assistance et support" contact points shown to every logged-in user.
+    # Editable from the settings page; nothing here is a secret.
+    support_whatsapp = Column(String, default="0710069059")
+    support_email = Column(String, default="ankouame022@gmail.com")
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
 
@@ -921,3 +926,30 @@ class FneInvoice(Base):
 
     sale = relationship("Sale")
     created_by = relationship("User")
+
+
+class SupportRequest(Base):
+    """Help request sent through the "Assistance et support" page.
+
+    The row is stored locally first so the form only confirms after a real
+    write, then mirrored to the owner's console at the next push (and right
+    away through remote_sales.schedule()). Status and internal notes are
+    managed on the console; the shop keeps the sent copy as history.
+    """
+
+    __tablename__ = "support_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    email = Column(String, default="", index=True)
+    subject = Column(String, nullable=False)
+    category = Column(String, default="assistance", index=True)
+    message = Column(Text, nullable=False)
+    status = Column(String, default="nouvelle", nullable=False, index=True)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+
+    created_by = relationship("User")
+
+
+SUPPORT_CATEGORIES = ("assistance", "bug", "suggestion", "critique", "autre")

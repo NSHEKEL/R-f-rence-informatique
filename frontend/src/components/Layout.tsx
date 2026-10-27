@@ -21,6 +21,7 @@ import {
   BarChart3,
   FileText,
   Info,
+  LifeBuoy,
   PanelLeftClose,
   PanelLeftOpen,
   ClipboardCheck,
@@ -173,6 +174,12 @@ const navItems: NavItem[] = [
     icon: BadgeCheck,
     access: "admin",
   },
+  {
+    to: "/assistance",
+    label: "Assistance et support",
+    icon: LifeBuoy,
+    access: "assistance",
+  },
   { to: "/a-propos", label: "À propos de nous", icon: Info, access: "apropos" },
 ];
 
@@ -219,6 +226,7 @@ const navGroups: NavGroup[] = [
       "/droits",
       "/parametres",
       "/mon-abonnement",
+      "/assistance",
       "/a-propos"
     ),
   },

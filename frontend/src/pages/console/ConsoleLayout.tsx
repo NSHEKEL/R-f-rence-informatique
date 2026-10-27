@@ -1,6 +1,13 @@
 import { useEffect, useState } from "react";
 import { Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { BarChart3, Building2, ClipboardList, LayoutGrid, LogOut } from "lucide-react";
+import {
+  BarChart3,
+  Building2,
+  ClipboardList,
+  LayoutGrid,
+  LogOut,
+  MessageSquareText,
+} from "lucide-react";
 import central, {
   getCentralToken,
   getCentralUrl,
@@ -11,6 +18,12 @@ const entries = [
   { to: "/console", label: "Tableau de bord", icon: BarChart3, end: true },
   { to: "/console/clients", label: "Mes clients", icon: Building2 },
   { to: "/console/formules", label: "Formules & Droits", icon: LayoutGrid },
+  {
+    to: "/console/suggestions",
+    label: "Suggestions et critiques",
+    icon: MessageSquareText,
+    badge: true,
+  },
   { to: "/console/journal", label: "Journal", icon: ClipboardList },
 ];
 
@@ -21,6 +34,7 @@ export default function ConsoleLayout() {
   const [admin, setAdmin] = useState<{ name: string; email: string } | null>(
     null
   );
+  const [unread, setUnread] = useState(0);
 
   useEffect(() => {
     if (!getCentralToken()) return;
@@ -28,6 +42,21 @@ export default function ConsoleLayout() {
       .get<{ name: string; email: string }>("/auth/me")
       .then((res) => setAdmin(res.data))
       .catch(() => setAdmin(null));
+    const refresh = () =>
+      central
+        .get<{ count: number }>("/support-requests/unread-count")
+        .then((res) => setUnread(res.data.count))
+        .catch(() => undefined);
+    refresh();
+
+    // Real-time: a shop pushes a sale or a demand, the badge moves at once.
+    const source = new EventSource(
+      `${getCentralUrl()}/api/central/events?token=${encodeURIComponent(
+        getCentralToken()
+      )}`
+    );
+    source.onmessage = () => refresh();
+    return () => source.close();
   }, []);
 
   if (!getCentralToken()) return <Navigate to="/console/connexion" replace />;
@@ -60,7 +89,12 @@ export default function ConsoleLayout() {
                 }`}
               >
                 <entry.icon size={18} />
-                {entry.label}
+                <span className="flex-1">{entry.label}</span>
+                {entry.badge && unread > 0 && (
+                  <span className="rounded-full bg-red-500 px-2 py-0.5 text-[11px] font-bold text-white">
+                    {unread}
+                  </span>
+                )}
               </button>
             );
           })}

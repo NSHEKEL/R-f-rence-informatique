@@ -91,6 +91,9 @@ const emptyCompany: CompanyForm = {
   backup_keep: 30,
   backup_on_sale: false,
   last_backup_at: null,
+  city: "",
+  support_whatsapp: "0710069059",
+  support_email: "",
 };
 
 /** Native folder picker, only available inside the desktop window. */
@@ -561,6 +564,15 @@ export default function Settings() {
               />
             </div>
             <div>
+              <label className="label">Ville du magasin</label>
+              <input
+                className="input"
+                value={company.city}
+                onChange={(e) => update({ city: e.target.value })}
+                placeholder="Abidjan"
+              />
+            </div>
+            <div>
               <label className="label">Téléphone</label>
               <input
                 className="input"
@@ -594,6 +606,24 @@ export default function Settings() {
                 value={company.tax_id}
                 onChange={(e) => update({ tax_id: e.target.value })}
                 placeholder="CI-ABJ-..."
+              />
+            </div>
+            <div>
+              <label className="label">WhatsApp d'assistance</label>
+              <input
+                className="input"
+                value={company.support_whatsapp}
+                onChange={(e) => update({ support_whatsapp: e.target.value })}
+                placeholder="0710069059"
+              />
+            </div>
+            <div>
+              <label className="label">E-mail d'assistance</label>
+              <input
+                className="input"
+                value={company.support_email}
+                onChange={(e) => update({ support_email: e.target.value })}
+                placeholder="support@exemple.ci"
               />
             </div>
             <div>

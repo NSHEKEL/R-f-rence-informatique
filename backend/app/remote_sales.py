@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from . import licensing
 from .database import SessionLocal
-from .models import Sale, SaleReturn, User
+from .models import Sale, SaleReturn, SupportRequest, User
 
 # Window of sales kept on the central server for the phone.
 MIRROR_DAYS = 120
@@ -119,6 +119,24 @@ def _users(db: Session) -> list[dict]:
     ]
 
 
+def _support_requests(db: Session) -> list[dict]:
+    """Help requests to mirror in the owner's « Suggestions et critiques »."""
+    return [
+        {
+            "local_id": row.id,
+            "name": row.name,
+            "email": row.email,
+            "subject": row.subject,
+            "category": row.category,
+            "message": row.message,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+        }
+        for row in db.query(SupportRequest)
+        .order_by(SupportRequest.created_at.desc())
+        .limit(500)
+    ]
+
+
 def push(db: Session) -> dict:
     """Send accounts and recent sales; returns the shop's phone code."""
     row = licensing.state(db)
@@ -127,6 +145,7 @@ def push(db: Session) -> dict:
     base = (row.central_url or licensing.central_url()).rstrip("/")
     if not base:
         raise licensing.CentralError("Adresse du serveur central manquante")
+    company = db.query(CompanySettings).first()
     return licensing._post(  # noqa: SLF001 - same module family
         f"{base}/api/central/public/mirror",
         {
@@ -135,6 +154,11 @@ def push(db: Session) -> dict:
             "users": _users(db),
             "sales": _sales(db),
             "returns": _returns(db),
+            "support_requests": _support_requests(db),
+            # Magasin identity, so the console can name each installation.
+            "shop_name": (company.name if company else "") or "",
+            "city": (company.city if company else "") or "",
+            "address": (company.address if company else "") or "",
         },
     )
 

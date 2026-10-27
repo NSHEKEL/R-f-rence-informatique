@@ -27,6 +27,7 @@ export const PLAN_FEATURE: Record<string, string> = {
   approvisionnements: "achats",
   categories: "categories",
   apropos: "apropos",
+  assistance: "assistance",
 };
 
 /** Feature of the pages the administrator alone reaches, keyed by path. */

@@ -61,6 +61,7 @@ class CompanySettingsOut(BaseModel):
     currency: str = "FCFA"
     vat_rate: float = 0.0
     about: str = ""
+    city: str = ""
     receipt_header: str = ""
     receipt_footer: str = ""
     receipt_format: str = "A4"
@@ -81,6 +82,8 @@ class CompanySettingsOut(BaseModel):
     backup_keep: int = 30
     backup_on_sale: bool = False
     last_backup_at: Optional[datetime] = None
+    support_whatsapp: str = ""
+    support_email: str = ""
 
 
 class CompanySettingsUpdate(BaseModel):
@@ -94,6 +97,9 @@ class CompanySettingsUpdate(BaseModel):
     tax_id: Optional[str] = None
     currency: Optional[str] = None
     vat_rate: Optional[float] = None
+    city: Optional[str] = None
+    support_whatsapp: Optional[str] = None
+    support_email: Optional[str] = None
     # "about" is intentionally absent: the page is read-only.
     receipt_header: Optional[str] = None
     receipt_footer: Optional[str] = None
@@ -114,6 +120,33 @@ class CompanySettingsUpdate(BaseModel):
     backup_auto: Optional[bool] = None
     backup_keep: Optional[int] = None
     backup_on_sale: Optional[bool] = None
+    support_whatsapp: Optional[str] = None
+    support_email: Optional[str] = None
+
+
+# ---------- Assistance et support ----------
+class SupportRequestIn(BaseModel):
+    name: str
+    email: str = ""
+    subject: str
+    category: str = "assistance"
+    message: str
+
+
+class SupportRequestOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    name: str
+    email: str = ""
+    subject: str
+    category: str = ""
+    status: str = ""
+    created_at: datetime
+
+
+class SupportContactOut(BaseModel):
+    whatsapp: str = ""
+    email: str = ""
 
 
 # ---------- Printing ----------

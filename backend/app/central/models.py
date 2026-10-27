@@ -201,6 +201,14 @@ class Installation(Base):
     last_sync = Column(DateTime, nullable=True)
     last_ip = Column(String, default="")
     is_revoked = Column(Boolean, default=False, nullable=False)
+    # Magasin identity: several installations of one client are the owner's
+    # shops (e.g. Abidjan, Bouaké). Reported by the shop itself, editable
+    # from the console. is_active disables a shop without losing its history.
+    shop_name = Column(String, default="")
+    city = Column(String, default="", index=True)
+    address = Column(String, default="")
+    manager = Column(String, default="")
+    is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=utcnow)
 
     client = relationship("Client", back_populates="installations")
@@ -242,6 +250,8 @@ class MirrorSale(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    # Which magasin (installation) produced the sale; older copies may lack it.
+    installation_uid = Column(String, default="", index=True)
     reference = Column(String, nullable=False, index=True)
     date = Column(DateTime, nullable=True, index=True)
     total = Column(Float, default=0)
@@ -264,6 +274,7 @@ class MirrorReturn(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    installation_uid = Column(String, default="", index=True)
     reference = Column(String, nullable=False, index=True)
     sale_reference = Column(String, default="")
     date = Column(DateTime, nullable=True, index=True)
@@ -290,3 +301,37 @@ class AdminLog(Base):
     old_value = Column(Text, default="")
     new_value = Column(Text, default="")
     created_at = Column(DateTime, default=utcnow, index=True)
+
+
+class MirrorSupportRequest(Base):
+    """Copy of a shop's « Assistance et support » request.
+
+    Written by the shop push, managed (status, internal note) on the console.
+    """
+
+    __tablename__ = "mirror_support_requests"
+    __table_args__ = (
+        UniqueConstraint(
+            "client_id", "installation_uid", "local_id", name="uq_support_req"
+        ),
+    )
+
+    STATUSES = ("nouvelle", "en_cours", "resolue", "fermee")
+
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    installation_uid = Column(String, default="", index=True)
+    local_id = Column(Integer, nullable=False)
+    name = Column(String, default="")
+    email = Column(String, default="")
+    subject = Column(String, default="")
+    category = Column(String, default="assistance", index=True)
+    message = Column(Text, default="")
+    status = Column(String, default="nouvelle", nullable=False, index=True)
+    internal_note = Column(Text, default="")
+    # Whether the alert e-mail actually left the server (never pretend).
+    email_sent = Column(Boolean, default=False, nullable=False)
+    email_attempts = Column(Integer, default=0, nullable=False)
+    email_error = Column(String, default="")
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
