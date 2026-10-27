@@ -1,0 +1,67 @@
+name: Build Windows package
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install pyinstaller==6.11.1
+
+      - name: Build executable
+        run: pyinstaller packaging/ReferenceInformatique.spec
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReferenceInformatique-windows
+          path: dist/ReferenceInformatique.exe
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/ReferenceInformatique.exe
+          name: Référence Informatique ${{ github.ref_name }}
+          body: |
+            Application Référence Informatique (Vente & Stock) pour Windows.
+
+            **Installation :** téléchargez `ReferenceInformatique.exe` ci-dessous et double-cliquez dessus. Le navigateur s'ouvre automatiquement sur l'application.
+
+            Comptes de démonstration :
+            - Administrateur : admin@reference.ci / admin123
+            - Vendeur : vendeur@reference.ci / vendeur123
+
+            Les données sont enregistrées dans le dossier `ReferenceInformatique` de votre profil utilisateur.
