@@ -161,6 +161,7 @@ export default function Dettes() {
   const [opened, setOpened] = useState(0);
   const [payment, setPayment] = useState({ ...NO_PAYMENT });
   const [message, setMessage] = useState("");
+  const [notice, setNotice] = useState("");
 
   const kind = tab === "dette" ? "dette" : "creance";
   const receivable = kind === "creance";
@@ -283,7 +284,8 @@ export default function Dettes() {
   }
 
   async function exportSettlements() {
-    await exportCsv(
+    try {
+      const saved = await exportCsv(
       stampedName("reglements"),
       ["Reçu", "Date", "Type", "Tiers", "Document", "Mode", "Montant", "État"],
       settlements.map((row) => [
@@ -295,12 +297,21 @@ export default function Dettes() {
         row.method,
         row.amount,
         row.cancelled ? "Annulé" : "Valide",
-      ])
-    );
+        ])
+      );
+      setNotice(
+        saved
+          ? `Export enregistré : ${saved}`
+          : "Export annulé : aucun fichier enregistré."
+      );
+    } catch {
+      setMessage("Export impossible : le fichier n'a pas pu être créé.");
+    }
   }
 
   async function exportBalances() {
-    await exportCsv(
+    try {
+      const saved = await exportCsv(
       stampedName(
         reportReceivable ? "creances-clients" : "dettes-fournisseurs"
       ),
@@ -313,8 +324,16 @@ export default function Dettes() {
         row.remaining,
         row.overdue,
         day(row.next_due),
-      ])
-    );
+        ])
+      );
+      setNotice(
+        saved
+          ? `Export enregistré : ${saved}`
+          : "Export annulé : aucun fichier enregistré."
+      );
+    } catch {
+      setMessage("Export impossible : le fichier n'a pas pu être créé.");
+    }
   }
 
   function printBalances() {
@@ -821,6 +840,11 @@ export default function Dettes() {
               </button>
             )}
           </div>
+          {notice && (
+            <p className="mb-2 text-sm font-medium text-emerald-600 dark:text-emerald-300">
+              {notice}
+            </p>
+          )}
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-slate-500 dark:bg-slate-800 dark:text-slate-300">
               <tr>
@@ -904,6 +928,11 @@ export default function Dettes() {
               </>
             )}
           </div>
+          {notice && (
+            <p className="mb-2 text-sm font-medium text-emerald-600 dark:text-emerald-300">
+              {notice}
+            </p>
+          )}
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-slate-500 dark:bg-slate-800 dark:text-slate-300">
               <tr>

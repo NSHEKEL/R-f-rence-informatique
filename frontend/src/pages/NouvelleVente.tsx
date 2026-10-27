@@ -756,20 +756,21 @@ export default function NouvelleVente() {
                 </tbody>
               </table>
             )}
-            {cart.length > 0 && (
-              <div className="flex items-center justify-between border-t border-slate-200 bg-brand-50 px-4 py-2.5">
-                <span className="text-sm font-bold text-slate-600">
-                  Articles : {itemCount}
-                </span>
-                <span className="text-sm font-semibold text-slate-500">
-                  Sous-total{" "}
-                  <span className="text-lg font-extrabold text-brand-700">
-                    {formatXOF(subtotal)}
-                  </span>
-                </span>
-              </div>
-            )}
           </div>
+
+          {cart.length > 0 && (
+            <div className="flex shrink-0 items-center justify-between border-t border-slate-200 bg-brand-50 px-4 py-2.5">
+              <span className="text-sm font-bold text-slate-600">
+                Articles : {itemCount}
+              </span>
+              <span className="text-sm font-semibold text-slate-500">
+                Sous-total{" "}
+                <span className="text-lg font-extrabold text-brand-700">
+                  {formatXOF(subtotal)}
+                </span>
+              </span>
+            </div>
+          )}
 
           {error && (
             <p className="bg-red-50 px-4 py-2.5 text-sm font-medium text-red-600">

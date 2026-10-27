@@ -57,6 +57,7 @@ export default function Sales() {
   const [query, setQuery] = useState("");
   const [detail, setDetail] = useState<Sale | null>(null);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [fneInvoices, setFneInvoices] = useState<FneInvoice[]>([]);
 
   // Receipt modal
@@ -125,7 +126,15 @@ export default function Sales() {
         s.status ?? "",
         s.total,
       ])
-    );
+    )
+      .then((saved) =>
+        setNotice(
+          saved
+            ? `Export enregistré : ${saved}`
+            : "Export annulé : aucun fichier enregistré."
+        )
+      )
+      .catch(() => setError("Export impossible : le fichier n'a pas pu être créé."));
   }
 
   const fneBySale = useMemo(() => {
@@ -276,6 +285,12 @@ export default function Sales() {
           </button>
         </div>
       </div>
+
+      {notice && (
+        <div className="rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+          {notice}
+        </div>
+      )}
 
       {error && (
         <div className="rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-600">

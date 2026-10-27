@@ -95,6 +95,17 @@ def _repo() -> str:
     return os.getenv("UPDATE_REPO", UPDATE_REPO)
 
 
+def asset_url_exists(url: str) -> bool:
+    """True when the release asset answers — a missing file on GitHub is a 404,
+    an unreachable proxy raises and is also treated as unavailable."""
+    try:
+        request = urllib.request.Request(url, method="HEAD")
+        with _urlopen(request, TIMEOUT) as response:
+            return response.status < 400
+    except Exception:  # noqa: BLE001 - network error or 404
+        return False
+
+
 def is_packaged() -> bool:
     return bool(getattr(sys, "frozen", False))
 
