@@ -19,4 +19,6 @@
     <string name="offline">Connexion perdue. Vérifiez le Wi-Fi puis actualisez.</string>
     <string name="page_error">La page n\'a pas pu s\'afficher. Appuyez sur ⋮ puis « Actualiser ».</string>
     <string name="webview_old">Votre « Android System WebView » (ou Chrome) est trop ancien pour afficher EasyGest. Mettez-le à jour depuis le Play Store, puis rouvrez l\'application.</string>
+    <string name="webview_version">\n\nWebView détectée : %1$s</string>
+    <string name="unknown">inconnue</string>
 </resources>
