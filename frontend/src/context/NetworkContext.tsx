@@ -9,7 +9,13 @@ import {
 } from "react";
 import axios from "axios";
 import { API_BASE } from "../api/client";
-import { flushPendingSales, pendingSales } from "../lib/offline";
+import {
+  dismissRejected,
+  flushPendingSales,
+  pendingSales,
+  rejectedSales,
+  type RejectedSale,
+} from "../lib/offline";
 
 const PING_INTERVAL_MS = 15000;
 const RECONNECT_BANNER_MS = 6000;
@@ -20,6 +26,9 @@ interface NetworkContextValue {
   pendingCount: number;
   justReconnected: boolean;
   syncErrors: string[];
+  /** Tickets the server refused outright — kept until the cashier dismisses them. */
+  rejected: RejectedSale[];
+  dismissRejectedSale: (reference: string) => void;
   refresh: () => Promise<boolean>;
 }
 
@@ -32,11 +41,13 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
   const [pendingCount, setPendingCount] = useState(pendingSales().length);
   const [justReconnected, setJustReconnected] = useState(false);
   const [syncErrors, setSyncErrors] = useState<string[]>([]);
+  const [rejected, setRejected] = useState<RejectedSale[]>(rejectedSales());
   const wasOnline = useRef(true);
 
   const sync = useCallback(async () => {
     const result = await flushPendingSales();
     setPendingCount(pendingSales().length);
+    setRejected(rejectedSales());
     if (result.rejected.length > 0) setSyncErrors(result.rejected);
     if (result.synced > 0) {
       window.dispatchEvent(new Event("ri:synced"));
@@ -64,7 +75,10 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     refresh();
     const timer = window.setInterval(refresh, PING_INTERVAL_MS);
-    const onQueueChange = () => setPendingCount(pendingSales().length);
+    const onQueueChange = () => {
+      setPendingCount(pendingSales().length);
+      setRejected(rejectedSales());
+    };
     window.addEventListener("online", refresh);
     window.addEventListener("offline", refresh);
     window.addEventListener("ri:queue", onQueueChange);
@@ -78,7 +92,18 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
 
   return (
     <NetworkContext.Provider
-      value={{ online, pendingCount, justReconnected, syncErrors, refresh }}
+      value={{
+        online,
+        pendingCount,
+        justReconnected,
+        syncErrors,
+        rejected,
+        dismissRejectedSale: (reference: string) => {
+          dismissRejected(reference);
+          setRejected(rejectedSales());
+        },
+        refresh,
+      }}
     >
       {children}
     </NetworkContext.Provider>

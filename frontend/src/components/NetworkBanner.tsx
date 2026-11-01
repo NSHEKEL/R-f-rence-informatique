@@ -1,11 +1,24 @@
-import { CloudOff, RefreshCw, Wifi } from "lucide-react";
+import { CloudOff, RefreshCw, Wifi, X } from "lucide-react";
 import { useNetwork } from "../context/NetworkContext";
 
 /** Connection state shown on every screen, with the offline ticket count. */
 export default function NetworkBanner() {
-  const { online, pendingCount, justReconnected, syncErrors } = useNetwork();
+  const {
+    online,
+    pendingCount,
+    justReconnected,
+    syncErrors,
+    rejected,
+    dismissRejectedSale,
+  } = useNetwork();
 
-  if (online && !justReconnected && syncErrors.length === 0) return null;
+  if (
+    online &&
+    !justReconnected &&
+    syncErrors.length === 0 &&
+    rejected.length === 0
+  )
+    return null;
 
   return (
     <div className="no-print space-y-2 px-5 pt-4 lg:px-7">
@@ -34,13 +47,35 @@ export default function NetworkBanner() {
           )}
         </div>
       )}
-      {syncErrors.length > 0 && (
+      {(rejected.length > 0 || syncErrors.length > 0) && (
         <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
-          <p className="font-semibold">Tickets non synchronisés :</p>
-          <ul className="mt-1 list-inside list-disc">
-            {syncErrors.map((message) => (
-              <li key={message}>{message}</li>
+          <p className="font-semibold">
+            Tickets refusés par le serveur — à resaisir :
+          </p>
+          <ul className="mt-1 space-y-1">
+            {rejected.map((entry) => (
+              <li
+                key={entry.snapshot.reference}
+                className="flex items-center gap-2"
+              >
+                <span>
+                  {entry.snapshot.reference} — {entry.reason} (total{" "}
+                  {entry.snapshot.total})
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    dismissRejectedSale(entry.snapshot.reference)
+                  }
+                  className="ml-auto flex items-center gap-1 rounded-lg bg-red-100 px-2 py-0.5 text-xs font-semibold hover:bg-red-200"
+                  title="Marquer comme resaisi"
+                >
+                  <X size={12} /> Resaisi
+                </button>
+              </li>
             ))}
+            {rejected.length === 0 &&
+              syncErrors.map((message) => <li key={message}>{message}</li>)}
           </ul>
         </div>
       )}

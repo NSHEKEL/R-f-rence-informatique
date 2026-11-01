@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
+from .. import backup
 from ..auth import ALGORITHM, SECRET_KEY
 from ..database import get_db
 from ..models import User
@@ -65,12 +66,24 @@ def check_update(_: None = Depends(allow_update)):
 
 
 @router.post("/install", response_model=UpdateInstallResult)
-def install_update(_: None = Depends(allow_update)):
+def install_update(
+    _: None = Depends(allow_update), db: Session = Depends(get_db)
+):
     try:
         release = latest_release()
         if not update_available(release):
             raise HTTPException(
                 status_code=400, detail="Aucune mise à jour disponible"
+            )
+        # The process exits right after install: take a backup first so an
+        # upgrade gone wrong never means lost data. A failed backup blocks
+        # the update — safer than upgrading unprotected.
+        try:
+            backup.create(db, reason="pre-maj")
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Sauvegarde avant mise à jour impossible : {exc}",
             )
         install(release)
     except UpdateError as exc:
