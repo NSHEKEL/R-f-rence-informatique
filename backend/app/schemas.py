@@ -771,6 +771,38 @@ class StockLotOut(BaseModel):
     days_left: Optional[int] = None
 
 
+class StockTransferItemCreate(BaseModel):
+    product_id: int
+    quantity: int
+
+
+class StockTransferCreate(BaseModel):
+    direction: str = "sortie"  # sortie | entree
+    store_name: str = ""
+    note: str = ""
+    items: List[StockTransferItemCreate]
+
+
+class StockTransferItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    product_id: Optional[int]
+    product_name: str
+    quantity: int
+
+
+class StockTransferOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    reference: str
+    direction: str
+    store_name: str
+    note: str
+    created_at: datetime
+    created_by: Optional[UserOut] = None
+    items: List[StockTransferItemOut] = []
+
+
 class StockMovementOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int

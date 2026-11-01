@@ -380,6 +380,43 @@ class StockLot(Base):
     created_by = relationship("User")
 
 
+class StockTransfer(Base):
+    """Stock sent to, or received from, another shop of the network.
+
+    Each site records its own side: 'sortie' decrements stock, 'entree'
+    increments it. The document keeps the counterpart store for audit.
+    """
+
+    __tablename__ = "stock_transfers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    reference = Column(String, unique=True)
+    direction = Column(String, default="sortie")  # sortie | entree
+    store_name = Column(String, default="")
+    note = Column(String, default="")
+    created_at = Column(DateTime, default=utcnow)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    items = relationship(
+        "StockTransferItem", cascade="all, delete-orphan", back_populates="transfer"
+    )
+    created_by = relationship("User")
+
+
+class StockTransferItem(Base):
+    __tablename__ = "stock_transfer_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    transfer_id = Column(
+        Integer, ForeignKey("stock_transfers.id"), index=True
+    )
+    product_id = Column(Integer, ForeignKey("products.id"))
+    product_name = Column(String, default="")
+    quantity = Column(Integer, default=0)
+
+    transfer = relationship("StockTransfer", back_populates="items")
+
+
 class Proforma(Base):
     """Quotation: same layout as an invoice, but nothing is sold or stocked."""
 

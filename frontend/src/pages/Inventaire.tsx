@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import {
+  ArrowLeftRight,
   ClipboardCheck,
   History,
+  Plus,
   Printer,
   RotateCcw,
   Search,
+  Trash2,
 } from "lucide-react";
 import api, { formatDate, formatXOF } from "../api/client";
 import type { Product, StockMovement } from "../types";
@@ -19,7 +22,14 @@ const kindLabels: Record<string, string> = {
   vente: "Vente",
   inventaire: "Inventaire",
   ajustement: "Ajustement",
+  transfert: "Transfert",
 };
+
+/** One line of an inter-store transfer being composed. */
+interface TransferLine {
+  product_id: number;
+  quantity: number;
+}
 
 export default function Inventaire() {
   const version = useSyncVersion();
@@ -32,6 +42,13 @@ export default function Inventaire() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [transfer, setTransfer] = useState({
+    direction: "sortie" as "sortie" | "entree",
+    store_name: "",
+    note: "",
+  });
+  const [lines, setLines] = useState<TransferLine[]>([]);
+  const [lineDraft, setLineDraft] = useState({ product_id: "", quantity: "1" });
 
   const load = useCallback(async () => {
     const [p, m] = await Promise.all([
@@ -102,6 +119,54 @@ export default function Inventaire() {
     } catch (err) {
       if (axios.isAxiosError(err)) {
         setError(err.response?.data?.detail ?? "Erreur lors de l'inventaire");
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function addLine() {
+    const product_id = Number(lineDraft.product_id);
+    const quantity = Number(lineDraft.quantity);
+    if (!product_id || quantity <= 0) return;
+    setLines((prev) => {
+      const rest = prev.filter((l) => l.product_id !== product_id);
+      const same = prev.find((l) => l.product_id === product_id);
+      return [
+        ...rest,
+        { product_id, quantity: quantity + (same?.quantity ?? 0) },
+      ];
+    });
+    setLineDraft({ product_id: "", quantity: "1" });
+  }
+
+  /** Registers the transfer: the stock moves immediately on this site. */
+  async function submitTransfer() {
+    setError("");
+    setMessage("");
+    if (!transfer.store_name.trim()) {
+      setError("Indiquez le magasin concerné.");
+      return;
+    }
+    if (lines.length === 0) {
+      setError("Ajoutez au moins un article.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const { data } = await api.post<{ reference: string }>("/transfers", {
+        direction: transfer.direction,
+        store_name: transfer.store_name,
+        note: transfer.note,
+        items: lines,
+      });
+      setMessage(`Transfert ${data.reference} enregistré.`);
+      setLines([]);
+      setTransfer({ ...transfer, note: "" });
+      await load();
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        setError(err.response?.data?.detail ?? "Transfert impossible");
       }
     } finally {
       setSaving(false);
@@ -286,6 +351,133 @@ export default function Inventaire() {
             disabled={saving || differences.length === 0}
           >
             {saving ? "Application..." : "Appliquer l'inventaire"}
+          </button>
+        </div>
+      </div>
+
+      <div className="card p-5">
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <ArrowLeftRight size={18} className="text-brand-600" />
+          <h3 className="text-base font-bold text-slate-900">
+            Transfert inter-magasins
+          </h3>
+          <div className="ml-auto flex rounded-lg bg-slate-100 p-1">
+            {(
+              [
+                ["sortie", "Envoi"],
+                ["entree", "Réception"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                onClick={() => setTransfer({ ...transfer, direction: value })}
+                className={`rounded-md px-3 py-1 text-sm ${
+                  transfer.direction === value
+                    ? "bg-white font-semibold shadow"
+                    : "text-slate-600"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            className="input w-56"
+            placeholder={
+              transfer.direction === "sortie"
+                ? "Magasin destinataire"
+                : "Magasin d'origine"
+            }
+            value={transfer.store_name}
+            onChange={(e) =>
+              setTransfer({ ...transfer, store_name: e.target.value })
+            }
+          />
+          <input
+            className="input flex-1"
+            placeholder="Note (optionnel)"
+            value={transfer.note}
+            onChange={(e) =>
+              setTransfer({ ...transfer, note: e.target.value })
+            }
+          />
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <select
+            className="input w-64"
+            value={lineDraft.product_id}
+            onChange={(e) =>
+              setLineDraft({ ...lineDraft, product_id: e.target.value })
+            }
+          >
+            <option value="">— Produit —</option>
+            {products.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name} (stock {p.quantity})
+              </option>
+            ))}
+          </select>
+          <input
+            className="input w-24"
+            type="number"
+            min="1"
+            value={lineDraft.quantity}
+            onChange={(e) =>
+              setLineDraft({ ...lineDraft, quantity: e.target.value })
+            }
+          />
+          <button className="btn-secondary" onClick={addLine}>
+            <Plus size={16} /> Ajouter
+          </button>
+        </div>
+
+        {lines.length > 0 && (
+          <table className="mt-3 w-full text-sm">
+            <tbody className="divide-y divide-slate-100">
+              {lines.map((l) => {
+                const p = products.find((x) => x.id === l.product_id);
+                return (
+                  <tr key={l.product_id}>
+                    <td className="py-2 font-medium text-slate-800">
+                      {p?.name ?? `#${l.product_id}`}
+                    </td>
+                    <td className="py-2 text-center font-semibold">
+                      {l.quantity}
+                    </td>
+                    <td className="py-2 text-right">
+                      <button
+                        className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                        onClick={() =>
+                          setLines(
+                            lines.filter((x) => x.product_id !== l.product_id)
+                          )
+                        }
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+
+        <div className="mt-3 flex items-center justify-end">
+          <button
+            className="btn-primary"
+            onClick={() => void submitTransfer()}
+            disabled={saving || lines.length === 0}
+          >
+            {saving
+              ? "Enregistrement..."
+              : transfer.direction === "sortie"
+                ? "Valider l'envoi"
+                : "Valider la réception"}
           </button>
         </div>
       </div>
