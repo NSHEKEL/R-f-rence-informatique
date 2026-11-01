@@ -362,6 +362,9 @@ class SaleCreate(BaseModel):
     # Idempotency key set by tills recording offline; replaying the same key
     # returns the existing ticket instead of duplicating it.
     client_id: Optional[str] = None
+    # Mixed tender: the legs the customer paid with; must add up to the
+    # total. When present it overrides payment_method.
+    payments: Optional[List["SalePaymentCreate"]] = None
 
 
 class SaleUpdate(BaseModel):
@@ -369,6 +372,18 @@ class SaleUpdate(BaseModel):
     payment_method: Optional[str] = None
     note: Optional[str] = None
     receipt_footer: Optional[str] = None
+
+
+class SalePaymentCreate(BaseModel):
+    method: str
+    amount: float
+
+
+class SalePaymentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    method: str
+    amount: float
 
 
 class SaleItemOut(BaseModel):
@@ -401,6 +416,7 @@ class SaleOut(BaseModel):
     print_count: int = 0
     returned_total: float = 0
     paid_amount: float = 0
+    payments: List[SalePaymentOut] = []
     discount: float = 0
 
 

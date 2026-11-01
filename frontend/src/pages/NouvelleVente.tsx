@@ -46,7 +46,11 @@ const PAYMENTS = [
   "Carte bancaire",
   "Virement",
   "Crédit (à régler plus tard)",
+  "Mixte",
 ];
+
+/** Tender methods that may be combined inside a « Mixte » payment. */
+const MIXABLE = PAYMENTS.slice(0, -1);
 
 type PriceMode = "detail" | "gros";
 
@@ -89,7 +93,8 @@ function offlineSale(
   sellerName: string,
   priceMode: PriceMode,
   discount: number,
-  paidAmount: number
+  paidAmount: number,
+  legs?: { method: string; amount: number }[]
 ): Sale {
   const gross = cart.reduce((s, l) => s + lineNet(l, priceMode), 0);
   return {
@@ -119,6 +124,7 @@ function offlineSale(
     returned_total: 0,
     paid_amount: paidAmount,
     discount,
+    payments: legs?.map((leg, index) => ({ id: index, ...leg })),
     pending_sync: true,
   };
 }
@@ -146,6 +152,8 @@ export default function NouvelleVente() {
   const [customerQuery, setCustomerQuery] = useState("");
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [payment, setPayment] = useState(PAYMENTS[0]);
+  /** Per-method amounts when « Mixte » is selected. */
+  const [legs, setLegs] = useState<Record<string, number>>({});
   const [note, setNote] = useState("");
   const [discount, setDiscount] = useState(0);
   const [paidAmount, setPaidAmount] = useState(0);
@@ -445,6 +453,16 @@ export default function NouvelleVente() {
       setError("Le panier est vide.");
       return;
     }
+    if (payment === "Mixte") {
+      const legTotal = Object.values(legs).reduce((s, a) => s + a, 0);
+      if (Math.abs(legTotal - total) > 0.01 || legTotal <= 0) {
+        setError(
+          `Paiement mixte : la somme des montants (${formatXOF(legTotal)}) ` +
+            `doit égaler le total (${formatXOF(total)}).`
+        );
+        return;
+      }
+    }
     setSaving(true);
     setError("");
     const payload: SalePayload = {
@@ -462,6 +480,12 @@ export default function NouvelleVente() {
         unit_price: linePrice(l, priceMode),
         discount: l.discount ?? 0,
       })),
+      payments:
+        payment === "Mixte"
+          ? Object.entries(legs)
+              .filter(([, amount]) => amount > 0)
+              .map(([method, amount]) => ({ method, amount }))
+          : undefined,
     };
     try {
       const res = await api.post<Sale>("/sales", payload);
@@ -489,7 +513,8 @@ export default function NouvelleVente() {
         user?.name ?? "",
         priceMode,
         discount,
-        paidAmount
+        paidAmount,
+        payload.payments
       );
       queueSale({ payload, snapshot });
       finishSale(snapshot);
@@ -504,6 +529,7 @@ export default function NouvelleVente() {
     setNote("");
     setDiscount(0);
     setPaidAmount(0);
+    setLegs({});
     setCustomer(null);
     setCustomerQuery("");
     setCustomers([]);
@@ -890,6 +916,45 @@ export default function NouvelleVente() {
                   ))}
                 </select>
               </div>
+              {payment === "Mixte" && (
+                <div className="sm:col-span-2 xl:col-span-3">
+                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                    {MIXABLE.map((method) => (
+                      <div key={method}>
+                        <label className="label">{method}</label>
+                        <input
+                          className="input"
+                          type="number"
+                          min={0}
+                          value={legs[method] || ""}
+                          onChange={(e) =>
+                            setLegs((prev) => ({
+                              ...prev,
+                              [method]: Math.max(
+                                Number(e.target.value) || 0,
+                                0
+                              ),
+                            }))
+                          }
+                          placeholder="0"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  {(() => {
+                    const legTotal = Object.values(legs).reduce(
+                      (s, a) => s + a,
+                      0
+                    );
+                    return Math.abs(legTotal - total) > 0.01 ? (
+                      <p className="mt-1 text-xs font-semibold text-red-600">
+                        La somme des montants ({formatXOF(legTotal)}) doit
+                        égaler le total ({formatXOF(total)}).
+                      </p>
+                    ) : null;
+                  })()}
+                </div>
+              )}
               <div>
                 <label className="label">Remise globale</label>
                 <input

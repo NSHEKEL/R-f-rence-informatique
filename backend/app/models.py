@@ -188,10 +188,26 @@ class Sale(Base):
     returns = relationship(
         "SaleReturn", back_populates="sale", cascade="all, delete-orphan"
     )
+    payments = relationship(
+        "SalePayment", back_populates="sale", cascade="all, delete-orphan"
+    )
 
     @property
     def returned_total(self) -> float:
         return sum(r.total for r in self.returns)
+
+
+class SalePayment(Base):
+    """One leg of a mixed payment (Espèces + Mobile Money + ...)."""
+
+    __tablename__ = "sale_payments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sale_id = Column(Integer, ForeignKey("sales.id"), nullable=False)
+    method = Column(String, default="Espèces")
+    amount = Column(Float, default=0)
+
+    sale = relationship("Sale", back_populates="payments")
 
 
 class SaleItem(Base):

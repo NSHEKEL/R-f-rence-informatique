@@ -13,6 +13,7 @@ from ..models import (
     Product,
     Sale,
     SaleItem,
+    SalePayment,
     StockMovement,
     User,
 )
@@ -204,6 +205,28 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
 
     sale.total = max(total - sale.discount, 0.0)
     total = sale.total
+    if payload.payments is not None:
+        legs = [
+            (p.method.strip(), float(p.amount))
+            for p in payload.payments
+            if (p.method or "").strip() and float(p.amount) > 0
+        ]
+        if not legs:
+            raise HTTPException(
+                status_code=400, detail="Paiement mixte : aucun montant valide"
+            )
+        if abs(sum(amount for _, amount in legs) - total) > 0.01:
+            raise HTTPException(
+                status_code=400,
+                detail="Paiement mixte : la somme des montants doit égaler "
+                "le total du ticket",
+            )
+        methods = {method for method, _ in legs}
+        sale.payment_method = (
+            legs[0][0] if len(methods) == 1 else "Mixte"
+        )
+        for method, amount in legs:
+            sale.payments.append(SalePayment(method=method, amount=amount))
     db.add(sale)
     db.flush()
     _open_receivable(db, sale, current_user)
@@ -245,10 +268,20 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
 
 def _open_receivable(db: Session, sale: Sale, current_user: User) -> None:
     """A sale settled later stays visible in Dettes & créances until paid."""
-    if "crédit" not in (sale.payment_method or "").lower():
-        return
     if sale.status == "Annulée":
         return
+    if sale.payments:
+        # Mixed tender: only the credit legs become a receivable.
+        credit = sum(
+            leg.amount for leg in sale.payments if "crédit" in leg.method.lower()
+        )
+        if credit <= 0:
+            return
+        amount = credit
+    else:
+        if "crédit" not in (sale.payment_method or "").lower():
+            return
+        amount = sale.total
     db.add(
         Debt(
             kind="creance",
@@ -256,7 +289,7 @@ def _open_receivable(db: Session, sale: Sale, current_user: User) -> None:
             customer_id=sale.customer_id,
             sale_id=sale.id,
             reference=sale.reference,
-            amount=sale.total,
+            amount=amount,
             note="Vente à crédit",
             created_by_id=current_user.id,
         )

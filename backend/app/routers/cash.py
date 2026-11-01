@@ -73,8 +73,20 @@ def _totals(db: Session, session: CashSession) -> dict:
         .filter(Sale.cash_session_id == session.id, Sale.status != "Annulée")
         .all()
     )
-    cash = sum(s.total for s in sales if s.payment_method == CASH_PAYMENT)
-    other = sum(s.total for s in sales if s.payment_method != CASH_PAYMENT)
+    cash = 0.0
+    other = 0.0
+    for s in sales:
+        if s.payments:
+            # Mixed tender: each leg counts toward its own method.
+            for leg in s.payments:
+                if leg.method == CASH_PAYMENT:
+                    cash += leg.amount
+                else:
+                    other += leg.amount
+        elif s.payment_method == CASH_PAYMENT:
+            cash += s.total
+        else:
+            other += s.total
     return {
         "cash_sales": cash,
         "other_sales": other,

@@ -379,6 +379,12 @@ export interface SaleItem {
   returned_quantity: number;
 }
 
+export interface SalePayment {
+  id: number;
+  method: string;
+  amount: number;
+}
+
 export interface Sale {
   id: number;
   reference: string;
@@ -399,6 +405,8 @@ export interface Sale {
   paid_amount: number;
   /** Discount granted on the whole ticket, already deducted. */
   discount: number;
+  /** Tender legs for a « Mixte » payment; empty for single-method sales. */
+  payments?: SalePayment[];
   /** Set on tickets queued offline and not yet pushed to the server. */
   pending_sync?: boolean;
 }

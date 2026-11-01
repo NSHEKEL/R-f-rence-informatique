@@ -21,6 +21,8 @@ export interface SalePayload {
     unit_price?: number;
     discount?: number;
   }[];
+  /** Tender legs for a « Mixte » payment; must add up to the total. */
+  payments?: { method: string; amount: number }[];
 }
 
 export interface PendingSale {
