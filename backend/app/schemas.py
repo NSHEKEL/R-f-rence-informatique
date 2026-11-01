@@ -290,6 +290,8 @@ class CustomerBase(BaseModel):
     email: str = ""
     phone: str = ""
     address: str = ""
+    # Ceiling on unpaid receivables; 0 means no limit.
+    credit_limit: float = 0
 
 
 class CustomerCreate(CustomerBase):

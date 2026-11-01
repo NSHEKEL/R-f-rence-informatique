@@ -148,9 +148,23 @@ export async function flushPendingSales(): Promise<SyncResult> {
         ?.status;
       if (status && status >= 400 && status < 500) {
         const detail = (
-          err as { response?: { data?: { detail?: string } } }
+          err as { response?: { data?: { detail?: unknown } } }
         ).response?.data?.detail;
-        const reason = detail ?? "refusé par le serveur";
+        // A 422 body carries an array of {loc,msg,...} objects, not a string.
+        const reason =
+          typeof detail === "string"
+            ? detail
+            : Array.isArray(detail)
+              ? detail
+                  .map((d) =>
+                    d && typeof d === "object" && "msg" in d
+                      ? String((d as { msg: unknown }).msg)
+                      : String(d)
+                  )
+                  .join("; ")
+              : detail
+                ? JSON.stringify(detail)
+                : "refusé par le serveur";
         rejected.push(`${entry.snapshot.reference} : ${reason}`);
         writeRejected([
           ...rejectedSales(),

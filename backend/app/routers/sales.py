@@ -229,6 +229,7 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
             sale.payments.append(SalePayment(method=method, amount=amount))
     db.add(sale)
     db.flush()
+    _check_credit_limit(db, sale)
     _open_receivable(db, sale, current_user)
 
     if current_user.role != "admin":
@@ -264,6 +265,46 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
     _backup_after_sale(db)
     remote_sales.schedule()
     return sale
+
+
+def _credit_amount(sale: Sale) -> float:
+    """Amount of a sale that stays unpaid (credit legs or credit method)."""
+    if sale.status == "Annulée":
+        return 0
+    if sale.payments:
+        return sum(
+            leg.amount for leg in sale.payments if "crédit" in leg.method.lower()
+        )
+    if "crédit" in (sale.payment_method or "").lower():
+        return sale.total
+    return 0
+
+
+def _check_credit_limit(db: Session, sale: Sale) -> None:
+    """Refuses a credit sale that would exceed the customer's credit limit."""
+    if not sale.customer_id:
+        return
+    limit = sale.customer.credit_limit if sale.customer else 0
+    if not limit or limit <= 0:
+        return
+    new_credit = _credit_amount(sale)
+    if new_credit <= 0:
+        return
+    open_debts = (
+        db.query(Debt)
+        .filter(Debt.kind == "creance", Debt.customer_id == sale.customer_id)
+        .all()
+    )
+    outstanding = sum(d.remaining for d in open_debts)
+    if outstanding + new_credit > limit + 0.009:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Plafond de crédit dépassé pour {sale.customer.name} : "
+                f"encours {outstanding:,.0f} FCFA + {new_credit:,.0f} FCFA "
+                f"> {limit:,.0f} FCFA".replace(",", " ")
+            ),
+        )
 
 
 def _open_receivable(db: Session, sale: Sale, current_user: User) -> None:

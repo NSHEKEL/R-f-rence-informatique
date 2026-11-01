@@ -24,6 +24,9 @@ COLUMNS: dict[str, dict[str, str]] = {
     "suppliers": {
         "logo": "TEXT DEFAULT ''",
     },
+    "customers": {
+        "credit_limit": "FLOAT DEFAULT 0",
+    },
     "sales": {
         "created_by_id": "INTEGER",
         "note": "TEXT DEFAULT ''",

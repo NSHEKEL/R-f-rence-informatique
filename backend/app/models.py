@@ -127,6 +127,8 @@ class Customer(Base):
     email = Column(String, default="")
     phone = Column(String, default="")
     address = Column(String, default="")
+    # Ceiling on the customer's unpaid receivables; 0 means no limit.
+    credit_limit = Column(Float, default=0)
     created_at = Column(DateTime, default=utcnow)
 
     sales = relationship("Sale", back_populates="customer")

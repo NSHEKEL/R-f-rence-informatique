@@ -342,6 +342,8 @@ export interface Customer {
   email: string;
   phone: string;
   address: string;
+  /** Ceiling on the customer's unpaid receivables; 0 = no limit. */
+  credit_limit: number;
 }
 
 export interface Product {
