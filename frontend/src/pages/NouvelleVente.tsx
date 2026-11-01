@@ -3,14 +3,23 @@ import axios from "axios";
 import { Link, useNavigate } from "react-router-dom";
 import {
   type LucideIcon,
+  Apple,
+  Banknote,
   Barcode,
+  ChevronDown,
   CreditCard,
+  CupSoda,
   FileCheck2,
   FilePenLine,
   Flame,
+  HandCoins,
+  Home,
   Image as ImageIcon,
+  Layers,
   LayoutGrid,
+  List,
   Minus,
+  Monitor,
   Pause,
   Percent,
   Play,
@@ -18,7 +27,12 @@ import {
   Printer,
   ReceiptText,
   RotateCcw,
+  Send,
+  Shirt,
+  ShoppingBag,
   ShoppingCart,
+  Smartphone,
+  Sparkles,
   Trash2,
   Truck,
   UserPlus,
@@ -33,6 +47,7 @@ import type {
   Product,
   ReceiptFormat,
   Sale,
+  Supplier,
 } from "../types";
 import Modal from "../components/Modal";
 import PrinterHint from "../components/PrinterHint";
@@ -201,6 +216,10 @@ export default function NouvelleVente() {
   const [saving, setSaving] = useState(false);
   const [mobileView, setMobileView] = useState<"catalog" | "cart">("catalog");
   const [showParked, setShowParked] = useState(true);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [supplierFilter, setSupplierFilter] = useState<number | "all">("all");
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [cartCollapsed, setCartCollapsed] = useState(false);
   const discountRef = useRef<HTMLInputElement>(null);
 
   const [newCustomer, setNewCustomer] = useState(false);
@@ -220,6 +239,12 @@ export default function NouvelleVente() {
     setProducts(data);
     const cats = await fetchCached<Category[]>("/categories", "categories");
     setCategories(cats.data);
+    try {
+      const sup = await api.get<Supplier[]>("/suppliers");
+      setSuppliers(sup.data);
+    } catch {
+      /* filtre fournisseur optionnel */
+    }
     try {
       const top = await api.get<Product[]>("/products/best-sellers");
       setBestSellerIds(top.data.map((p) => p.id));
@@ -279,6 +304,18 @@ export default function NouvelleVente() {
     [categoryById]
   );
 
+  function categoryIcon(name: string): LucideIcon {
+    const n = name.toLowerCase();
+    if (/(aliment|épicerie|epicerie|denrée|riz|food)/.test(n)) return Apple;
+    if (/(boisson|eau|jus|coca|drink)/.test(n)) return CupSoda;
+    if (/(hygiène|hygiene|savon|beauté|beaute|propre)/.test(n)) return Sparkles;
+    if (/(maison|ménage|menage|domestique)/.test(n)) return Home;
+    if (/(électronique|electronique|informatique|télé|tele|tech|phone)/.test(n))
+      return Monitor;
+    if (/(vêtement|vetement|textile|habit|mode)/.test(n)) return Shirt;
+    return ShoppingBag;
+  }
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const available = products.filter((p) => p.quantity > 0);
@@ -291,17 +328,33 @@ export default function NouvelleVente() {
         )
         .slice(0, 60);
     }
+    const applySupplier = (list: Product[]) =>
+      supplierFilter === "all"
+        ? list
+        : list.filter((p) => p.supplier_id === supplierFilter);
     if (activeCategory === "all") {
-      return available.slice(0, 80);
+      return applySupplier(available.slice(0, 80));
     }
     if (activeCategory === "top") {
       const ranked = bestSellerIds
         .map((id) => available.find((p) => p.id === id))
         .filter((p): p is Product => Boolean(p));
-      return ranked.length > 0 ? ranked : available.slice(0, 40);
+      return applySupplier(ranked.length > 0 ? ranked : available.slice(0, 40));
     }
-    return available.filter((p) => p.category_id === activeCategory);
-  }, [products, query, activeCategory, bestSellerIds]);
+    return applySupplier(
+      available.filter((p) => p.category_id === activeCategory)
+    );
+  }, [products, query, activeCategory, bestSellerIds, supplierFilter]);
+
+  const PAYMENT_STYLE: Record<string, { icon: LucideIcon; tint: string }> = {
+    Espèces: { icon: Banknote, tint: "bg-emerald-600" },
+    "Mobile Money": { icon: Smartphone, tint: "bg-orange-500" },
+    "Carte bancaire": { icon: CreditCard, tint: "bg-blue-600" },
+    Chèque: { icon: ReceiptText, tint: "bg-slate-500" },
+    Virement: { icon: Send, tint: "bg-indigo-500" },
+    "Crédit (à régler plus tard)": { icon: HandCoins, tint: "bg-rose-600" },
+    Mixte: { icon: Layers, tint: "bg-purple-600" },
+  };
 
   const recents = useMemo(
     () =>
@@ -748,7 +801,7 @@ export default function NouvelleVente() {
             icon: Truck,
             label: "Livraison",
             sub: "Bon de livraison",
-            tint: "bg-cyan-600",
+            tint: "bg-emerald-600",
             onClick: () => navigate("/livraisons"),
           },
         ]
@@ -772,7 +825,7 @@ export default function NouvelleVente() {
       icon: Printer,
       label: "Imprimer",
       sub: "Dernier document",
-      tint: "bg-sky-700",
+      tint: "bg-cyan-600",
       onClick: () =>
         lastSale
           ? void printReceipt(format, printing.receipt)
@@ -881,27 +934,35 @@ export default function NouvelleVente() {
           }`}
         >
           <div className="sticky top-0 z-10 bg-white">
-          <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 px-4 py-3">
-            <span className="flex items-center gap-2 text-base font-bold text-slate-900">
-              <ShoppingCart size={18} className="text-brand-600" />
-              Panier / Ticket
+          <div className="flex flex-wrap items-center gap-2 rounded-t-2xl bg-[#123a7a] px-4 py-3 text-white">
+            <span className="flex items-center gap-2 text-base font-bold">
+              <ShoppingCart size={18} />
+              Panier ({itemCount} article{itemCount > 1 ? "s" : ""})
             </span>
-            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-500">
-              {itemCount} article(s)
-            </span>
-            <div className="ml-auto flex gap-2">
+            <div className="ml-auto flex items-center gap-1.5">
               <button
-                className="btn-ghost border border-brand-200 py-1.5 text-sm font-semibold text-brand-700 hover:bg-brand-50"
+                className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white/90 transition hover:bg-white/15 disabled:opacity-40"
                 onClick={() => searchRef.current?.focus()}
               >
-                <Plus size={15} /> Ajouter un article
+                + Article
               </button>
               <button
-                className="btn-ghost border border-red-200 py-1.5 text-sm font-semibold text-red-600 hover:bg-red-50"
+                className="flex items-center gap-1 rounded-lg bg-white/15 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-white/25 disabled:opacity-40"
                 onClick={clearCart}
                 disabled={cart.length === 0}
               >
-                <Trash2 size={15} /> Vider le panier
+                <Trash2 size={13} /> Effacer tout
+              </button>
+              <button
+                className="rounded-lg p-1.5 text-white/80 transition hover:bg-white/15"
+                onClick={() => setCartCollapsed((v) => !v)}
+                title={cartCollapsed ? "Développer le panier" : "Réduire le panier"}
+                aria-label={cartCollapsed ? "Développer le panier" : "Réduire le panier"}
+              >
+                <ChevronDown
+                  size={16}
+                  className={`transition ${cartCollapsed ? "rotate-180" : ""}`}
+                />
               </button>
             </div>
           </div>
@@ -964,7 +1025,11 @@ export default function NouvelleVente() {
           )}
           </div>
 
-          <div className="min-h-[120px] flex-1 overflow-y-auto">
+          <div
+            className={`min-h-[120px] flex-1 overflow-y-auto ${
+              cartCollapsed ? "hidden" : ""
+            }`}
+          >
             {cart.length === 0 ? (
               <p className="px-4 py-10 text-center text-sm text-slate-400">
                 Scannez un code ou cliquez sur un article.
@@ -1105,7 +1170,7 @@ export default function NouvelleVente() {
             )}
           </div>
 
-          {cart.length > 0 && (
+          {cart.length > 0 && !cartCollapsed && (
             <div className="flex shrink-0 items-center justify-between border-t border-slate-200 bg-brand-50 px-4 py-2.5">
               <span className="text-sm font-bold text-slate-600">
                 Articles : {itemCount}
@@ -1125,7 +1190,11 @@ export default function NouvelleVente() {
             </p>
           )}
 
-          <div className="space-y-1.5 border-t border-slate-100 px-4 py-2.5">
+          <div
+            className={`space-y-1.5 border-t border-slate-100 px-4 py-2.5 ${
+              cartCollapsed ? "hidden" : ""
+            }`}
+          >
             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
               <div>
                 <div className="flex items-center justify-between">
@@ -1181,21 +1250,30 @@ export default function NouvelleVente() {
                 )}
               </div>
               <div>
-                <label className="label">Paiement</label>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {PAYMENTS.map((p) => (
-                    <button
-                      key={p}
-                      onClick={() => setPayment(p)}
-                      className={`rounded-lg px-1 py-1.5 text-[11px] font-semibold transition ${
-                        payment === p
-                          ? "bg-brand-600 text-white"
-                          : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                      }`}
-                    >
-                      {p === "Crédit (à régler plus tard)" ? "Crédit" : p}
-                    </button>
-                  ))}
+                <label className="label">Mode de paiement</label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {PAYMENTS.map((p) => {
+                    const meta = PAYMENT_STYLE[p];
+                    const Icon = meta.icon;
+                    return (
+                      <button
+                        key={p}
+                        onClick={() => setPayment(p)}
+                        className={`flex items-center gap-1.5 rounded-lg px-2 py-2 text-[11px] font-bold text-white shadow-sm transition hover:opacity-90 ${
+                          meta.tint
+                        } ${
+                          payment === p
+                            ? "ring-2 ring-slate-900 ring-offset-1"
+                            : "opacity-80"
+                        }`}
+                      >
+                        <Icon size={14} className="shrink-0" />
+                        <span className="truncate">
+                          {p === "Crédit (à régler plus tard)" ? "Crédit" : p}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
               {payment === "Mixte" && (
@@ -1293,7 +1371,7 @@ export default function NouvelleVente() {
           </div>
 
           <div className="sticky bottom-0 z-10 bg-white">
-          <div className="bg-slate-800 px-4 py-2.5 text-white">
+          <div className="bg-[#123a7a] px-4 py-2.5 text-white">
             <div className="flex items-center justify-between text-sm text-slate-300">
               <span>Articles</span>
               <span>{itemCount}</span>
@@ -1359,7 +1437,10 @@ export default function NouvelleVente() {
               onClick={checkout}
               disabled={saving || cart.length === 0}
             >
-              {saving ? "Encaissement..." : `Payer ${formatXOF(total)}`}
+              <ReceiptText size={18} />
+              {saving
+                ? "Encaissement..."
+                : `Valider la vente · ${formatXOF(total)}`}
             </button>
           </div>
           </div>
@@ -1371,33 +1452,119 @@ export default function NouvelleVente() {
             mobileView === "catalog" ? "flex" : "hidden"
           }`}
         >
-          <div className="mb-3 flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2">
-            <input
-              ref={searchRef}
-              autoFocus
-              className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
-              placeholder="Rechercher un article, un code ou une catégorie..."
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  submitSearch();
+          {!query && (
+            <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
+              {[
+                {
+                  id: "all" as number | "top" | "all",
+                  label: "Tous",
+                  icon: LayoutGrid,
+                },
+                {
+                  id: "top" as number | "top" | "all",
+                  label: "Meilleures ventes",
+                  icon: Flame,
+                },
+                ...categories.map((c) => ({
+                  id: c.id as number | "top" | "all",
+                  label: c.name,
+                  icon: categoryIcon(c.name),
+                })),
+              ].map((chip) => {
+                const Icon = chip.icon;
+                const active = activeCategory === chip.id;
+                return (
+                  <button
+                    key={chip.id}
+                    onClick={() => setActiveCategory(chip.id)}
+                    className={`flex min-w-[74px] shrink-0 flex-col items-center gap-1 rounded-xl border px-3 py-2 text-[11px] font-semibold transition ${
+                      active
+                        ? "border-[#123a7a] bg-[#123a7a] text-white shadow-sm"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:text-slate-900"
+                    }`}
+                  >
+                    <Icon size={17} />
+                    <span className="max-w-[88px] truncate">{chip.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          <div className="mb-3 flex items-center gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
+              <input
+                ref={searchRef}
+                autoFocus
+                className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
+                placeholder="Rechercher un article, un code ou une catégorie..."
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    submitSearch();
+                  }
+                }}
+              />
+              {query && (
+                <button
+                  className="shrink-0 text-slate-400 hover:text-slate-600"
+                  onClick={() => setQuery("")}
+                  title="Effacer la recherche"
+                  aria-label="Effacer la recherche"
+                >
+                  <X size={16} />
+                </button>
+              )}
+            </div>
+            <select
+              className="hidden w-36 shrink-0 rounded-xl border border-slate-200 bg-white px-2 py-2.5 text-xs font-semibold text-slate-600 sm:block"
+              value={activeCategory === "top" ? "all" : activeCategory}
+              onChange={(e) =>
+                setActiveCategory(
+                  e.target.value === "all" ? "all" : Number(e.target.value)
+                )
+              }
+              aria-label="Filtrer par catégorie"
+            >
+              <option value="all">Toutes les catégories</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            {suppliers.length > 0 && (
+              <select
+                className="hidden w-32 shrink-0 rounded-xl border border-slate-200 bg-white px-2 py-2.5 text-xs font-semibold text-slate-600 sm:block"
+                value={supplierFilter}
+                onChange={(e) =>
+                  setSupplierFilter(
+                    e.target.value === "all" ? "all" : Number(e.target.value)
+                  )
                 }
-              }}
-            />
-            {query && (
-              <button
-                className="shrink-0 text-slate-400 hover:text-slate-600"
-                onClick={() => setQuery("")}
-                title="Effacer la recherche"
-                aria-label="Effacer la recherche"
+                aria-label="Filtrer par fournisseur"
               >
-                <X size={16} />
-              </button>
+                <option value="all">Tous les fournisseurs</option>
+                {suppliers.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
             )}
             <button
-              className="shrink-0 rounded-lg border border-brand-200 p-2 text-brand-600 transition hover:bg-brand-50"
+              className="shrink-0 rounded-xl border border-slate-200 bg-white p-2.5 text-slate-500 transition hover:border-blue-300"
+              onClick={() =>
+                setViewMode((v) => (v === "grid" ? "list" : "grid"))
+              }
+              title={viewMode === "grid" ? "Affichage liste" : "Affichage grille"}
+              aria-label={viewMode === "grid" ? "Affichage liste" : "Affichage grille"}
+            >
+              {viewMode === "grid" ? <List size={16} /> : <LayoutGrid size={16} />}
+            </button>
+            <button
+              className="shrink-0 rounded-xl border border-brand-200 bg-white p-2.5 text-brand-600 transition hover:bg-brand-50"
               onClick={submitSearch}
               title="Scanner un code-barres ou ajouter l'article trouvé"
               aria-label="Scanner un code-barres ou ajouter l'article trouvé"
@@ -1405,43 +1572,48 @@ export default function NouvelleVente() {
               <Barcode size={16} />
             </button>
           </div>
-          {!query && (
-            <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
-              <button
-                onClick={() => setActiveCategory("all")}
-                className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
-                  activeCategory === "all"
-                    ? "bg-brand-600 text-white"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                }`}
-              >
-                Tous
-              </button>
-              <button
-                onClick={() => setActiveCategory("top")}
-                className={`flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
-                  activeCategory === "top"
-                    ? "bg-brand-600 text-white"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                }`}
-              >
-                <Flame size={13} /> Meilleures ventes
-              </button>
-              {categories.map((c) => (
+          {viewMode === "list" ? (
+            <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto rounded-xl border border-slate-200 bg-white">
+              {filtered.map((p) => (
                 <button
-                  key={c.id}
-                  onClick={() => setActiveCategory(c.id)}
-                  className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
-                    activeCategory === c.id
-                      ? "bg-brand-600 text-white"
-                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                  }`}
+                  key={p.id}
+                  onClick={() => addToCart(p)}
+                  className="flex w-full items-center gap-3 px-3 py-2 text-left transition hover:bg-brand-50"
                 >
-                  {c.name}
+                  {p.image ? (
+                    <img
+                      src={p.image}
+                      alt=""
+                      className="h-9 w-9 shrink-0 rounded-lg bg-slate-50 object-contain"
+                    />
+                  ) : (
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-300">
+                      <ImageIcon size={15} />
+                    </span>
+                  )}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-slate-800">
+                      {p.name}
+                    </span>
+                    <span className="text-[11px] text-slate-400">
+                      {categoryName(p.category_id)} · Stock : {p.quantity}
+                    </span>
+                  </span>
+                  <span className="text-sm font-extrabold text-brand-700">
+                    {formatXOF(unitPrice(p, priceMode))}
+                  </span>
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-600 text-white">
+                    <Plus size={15} />
+                  </span>
                 </button>
               ))}
+              {filtered.length === 0 && (
+                <p className="py-10 text-center text-sm text-slate-400">
+                  Aucun article disponible.
+                </p>
+              )}
             </div>
-          )}
+          ) : (
           <div className="grid min-h-0 flex-1 grid-cols-2 content-start gap-3 overflow-y-auto sm:grid-cols-3 2xl:grid-cols-4">
             {filtered.map((p) => (
               <button
@@ -1491,6 +1663,7 @@ export default function NouvelleVente() {
               </p>
             )}
           </div>
+          )}
           {!query && recents.length > 0 && (
             <div className="mt-3 border-t border-slate-100 pt-3">
               <div className="mb-2 flex items-center justify-between">
