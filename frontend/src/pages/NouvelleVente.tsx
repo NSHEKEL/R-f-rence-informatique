@@ -611,7 +611,9 @@ export default function NouvelleVente() {
     const next = [...readParked(), entry];
     localStorage.setItem(PARK_KEY, JSON.stringify(next));
     setParked(next);
-    setFlash(`Ticket mis en attente (${entry.customer_name})`);
+    setFlash(
+      `Ticket mis en attente${entry.customer_name ? ` (${entry.customer_name})` : ""}`
+    );
     window.setTimeout(() => setFlash(""), 2000);
     resetCart();
   }
@@ -874,10 +876,11 @@ export default function NouvelleVente() {
       <div className="flex min-h-0 flex-1 gap-4 p-4">
         {/* Ticket in progress */}
         <div
-          className={`card min-h-0 w-full flex-col p-0 md:order-2 md:flex md:w-[400px] md:shrink-0 xl:w-[440px] ${
+          className={`card min-h-0 w-full flex-col overflow-y-auto p-0 md:order-2 md:flex md:w-[400px] md:shrink-0 xl:w-[440px] ${
             mobileView === "cart" ? "flex" : "hidden"
           }`}
         >
+          <div className="sticky top-0 z-10 bg-white">
           <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 px-4 py-3">
             <span className="flex items-center gap-2 text-base font-bold text-slate-900">
               <ShoppingCart size={18} className="text-brand-600" />
@@ -959,8 +962,9 @@ export default function NouvelleVente() {
               </div>
             </div>
           )}
+          </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="min-h-[120px] flex-1 overflow-y-auto">
             {cart.length === 0 ? (
               <p className="px-4 py-10 text-center text-sm text-slate-400">
                 Scannez un code ou cliquez sur un article.
@@ -1288,6 +1292,7 @@ export default function NouvelleVente() {
             </div>
           </div>
 
+          <div className="sticky bottom-0 z-10 bg-white">
           <div className="bg-slate-800 px-4 py-2.5 text-white">
             <div className="flex items-center justify-between text-sm text-slate-300">
               <span>Articles</span>
@@ -1356,6 +1361,7 @@ export default function NouvelleVente() {
             >
               {saving ? "Encaissement..." : `Payer ${formatXOF(total)}`}
             </button>
+          </div>
           </div>
         </div>
 
