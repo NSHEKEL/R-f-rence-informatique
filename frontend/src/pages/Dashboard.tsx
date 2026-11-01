@@ -20,6 +20,7 @@ import {
   AlertTriangle,
   Award,
   CalendarRange,
+  Wallet,
 } from "lucide-react";
 import api, { formatDate, formatXOF } from "../api/client";
 import type { DashboardStats } from "../types";
@@ -156,7 +157,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-5">
         <StatCard
           title="Chiffre d'affaires"
           value={formatXOF(stats.total_revenue)}
@@ -182,6 +183,20 @@ export default function Dashboard() {
           value={String(stats.total_customers)}
           icon={Users}
           tint="bg-amber-50 text-amber-600"
+        />
+        <StatCard
+          title="Écarts de caisse"
+          value={
+            stats.cash_gap_count === 0
+              ? "Aucun"
+              : `${stats.cash_gap_count} (${formatXOF(stats.cash_gap_total)})`
+          }
+          icon={Wallet}
+          tint={
+            stats.cash_gap_count === 0
+              ? "bg-slate-50 text-slate-500"
+              : "bg-red-50 text-red-600"
+          }
         />
       </div>
 

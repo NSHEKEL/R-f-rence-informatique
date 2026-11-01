@@ -47,6 +47,7 @@ from .routers import (
     suppliers,
     support,
     sync,
+    transfers,
     updates,
     users,
 )
@@ -103,6 +104,7 @@ app.include_router(permissions.router)
 app.include_router(security.router)
 app.include_router(cash.router, dependencies=feature("versements"))
 app.include_router(inventory.router, dependencies=feature("inventaire"))
+app.include_router(transfers.router, dependencies=feature("inventaire"))
 app.include_router(accounting.router, dependencies=feature("comptabilite"))
 app.include_router(payroll.router, dependencies=feature("paie"))
 app.include_router(debts.router, dependencies=feature("dettes"))

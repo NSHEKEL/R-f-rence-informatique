@@ -342,6 +342,8 @@ export interface Customer {
   email: string;
   phone: string;
   address: string;
+  /** Ceiling on the customer's unpaid receivables; 0 = no limit. */
+  credit_limit: number;
 }
 
 export interface Product {
@@ -373,8 +375,16 @@ export interface SaleItem {
   product_name: string;
   quantity: number;
   unit_price: number;
+  /** Discount granted on this line only, already deducted from subtotal. */
+  discount: number;
   subtotal: number;
   returned_quantity: number;
+}
+
+export interface SalePayment {
+  id: number;
+  method: string;
+  amount: number;
 }
 
 export interface Sale {
@@ -397,6 +407,8 @@ export interface Sale {
   paid_amount: number;
   /** Discount granted on the whole ticket, already deducted. */
   discount: number;
+  /** Tender legs for a « Mixte » payment; empty for single-method sales. */
+  payments?: SalePayment[];
   /** Set on tickets queued offline and not yet pushed to the server. */
   pending_sync?: boolean;
 }
@@ -506,8 +518,23 @@ export interface DashboardStats {
   top_products: TopProduct[];
   top_sellers: TopSeller[];
   low_stock_products: Product[];
+  /** Tills closed in the window with a non-zero cash gap. */
+  cash_gap_count: number;
+  /** Absolute sum of those gaps. */
+  cash_gap_total: number;
   period_start: string | null;
   period_end: string | null;
+}
+
+export interface StockLot {
+  id: number;
+  product_id: number;
+  lot_number: string;
+  expiry_date: string | null;
+  quantity: number;
+  created_at: string;
+  product_name: string;
+  days_left: number | null;
 }
 
 export interface Notification {

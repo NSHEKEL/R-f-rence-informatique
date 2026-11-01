@@ -9,7 +9,13 @@ import { useSelection } from "../lib/selection";
 import { useAuth } from "../context/AuthContext";
 import { useSyncVersion } from "../context/SyncContext";
 
-const empty = { name: "", email: "", phone: "", address: "" };
+const empty = {
+  name: "",
+  email: "",
+  phone: "",
+  address: "",
+  credit_limit: 0,
+};
 
 /** What one customer still owes, taken from the debts module. */
 interface Balance {
@@ -72,7 +78,13 @@ export default function Customers() {
 
   function openEdit(c: Customer) {
     setEditing(c);
-    setForm({ name: c.name, email: c.email, phone: c.phone, address: c.address });
+    setForm({
+      name: c.name,
+      email: c.email,
+      phone: c.phone,
+      address: c.address,
+      credit_limit: c.credit_limit ?? 0,
+    });
     setOpen(true);
   }
 
@@ -185,6 +197,22 @@ export default function Customers() {
               <p className="flex items-center gap-2">
                 <Phone size={15} className="text-slate-400" /> {c.phone || "—"}
               </p>
+              {c.credit_limit > 0 && (
+                <p
+                  className={`flex items-center gap-2 ${
+                    balanceOf(c.name) &&
+                    balanceOf(c.name)!.remaining >= c.credit_limit
+                      ? "font-semibold text-red-600"
+                      : "text-slate-600"
+                  }`}
+                  title="Montant maximum de crédit accordé au client"
+                >
+                  Plafond de crédit : {formatMoney(c.credit_limit)}
+                  {balanceOf(c.name) &&
+                    balanceOf(c.name)!.remaining >= c.credit_limit &&
+                    " (atteint)"}
+                </p>
+              )}
               {balanceOf(c.name) && (
                 <Link
                   to="/dettes"
@@ -256,6 +284,21 @@ export default function Customers() {
               className="input"
               value={form.address}
               onChange={(e) => setForm({ ...form, address: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className="label">Plafond de crédit (0 = illimité)</label>
+            <input
+              className="input"
+              type="number"
+              min="0"
+              value={form.credit_limit || ""}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  credit_limit: Math.max(0, Number(e.target.value) || 0),
+                })
+              }
             />
           </div>
         </div>

@@ -13,6 +13,8 @@ from ..models import (
     Product,
     Sale,
     SaleItem,
+    SalePayment,
+    StockLot,
     StockMovement,
     User,
 )
@@ -98,6 +100,27 @@ def create_sale(
     raise HTTPException(status_code=409, detail="Caisse occupée, veuillez réessayer")
 
 
+def _consume_lots_fefo(db: Session, product: Product, quantity: int) -> None:
+    """Draw `quantity` from the product's tagged lots, earliest expiry first.
+
+    Never fails the sale: if the tagged lots run out, the remainder comes
+    from the untagged stock already decremented on the product row.
+    """
+    remaining = quantity
+    lots = (
+        db.query(StockLot)
+        .filter(StockLot.product_id == product.id, StockLot.quantity > 0)
+        .order_by(StockLot.expiry_date.is_(None), StockLot.expiry_date.asc(), StockLot.id.asc())
+        .all()
+    )
+    for lot in lots:
+        if remaining <= 0:
+            break
+        take = min(lot.quantity, remaining)
+        lot.quantity -= take
+        remaining -= take
+
+
 def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
     session = current_session(db, current_user)
     if session is None:
@@ -147,7 +170,16 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
             if item.unit_price < 0:
                 raise HTTPException(status_code=400, detail="Prix invalide")
             unit_price = float(item.unit_price)
-        subtotal = unit_price * item.quantity
+        line_discount = 0.0
+        if (item.discount or 0) > 0:
+            # A line discount is a price change: same right required.
+            if not has_permission(db, current_user, "prix_modifier"):
+                raise HTTPException(
+                    status_code=403,
+                    detail="Vous n'avez pas le droit de modifier le prix de vente",
+                )
+            line_discount = min(float(item.discount), unit_price * item.quantity)
+        subtotal = unit_price * item.quantity - line_discount
         total += subtotal
         sale.items.append(
             SaleItem(
@@ -155,6 +187,7 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
                 product_name=product.name,
                 quantity=item.quantity,
                 unit_price=unit_price,
+                discount=line_discount,
                 subtotal=subtotal,
             )
         )
@@ -189,13 +222,37 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
                     created_by_id=current_user.id,
                 )
             )
+            _consume_lots_fefo(db, product, item.quantity)
             if product.quantity <= product.min_stock:
                 low_stock.append(product)
 
     sale.total = max(total - sale.discount, 0.0)
     total = sale.total
+    if payload.payments is not None:
+        legs = [
+            (p.method.strip(), float(p.amount))
+            for p in payload.payments
+            if (p.method or "").strip() and float(p.amount) > 0
+        ]
+        if not legs:
+            raise HTTPException(
+                status_code=400, detail="Paiement mixte : aucun montant valide"
+            )
+        if abs(sum(amount for _, amount in legs) - total) > 0.01:
+            raise HTTPException(
+                status_code=400,
+                detail="Paiement mixte : la somme des montants doit égaler "
+                "le total du ticket",
+            )
+        methods = {method for method, _ in legs}
+        sale.payment_method = (
+            legs[0][0] if len(methods) == 1 else "Mixte"
+        )
+        for method, amount in legs:
+            sale.payments.append(SalePayment(method=method, amount=amount))
     db.add(sale)
     db.flush()
+    _check_credit_limit(db, sale)
     _open_receivable(db, sale, current_user)
 
     if current_user.role != "admin":
@@ -233,12 +290,62 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
     return sale
 
 
+def _credit_amount(sale: Sale) -> float:
+    """Amount of a sale that stays unpaid (credit legs or credit method)."""
+    if sale.status == "Annulée":
+        return 0
+    if sale.payments:
+        return sum(
+            leg.amount for leg in sale.payments if "crédit" in leg.method.lower()
+        )
+    if "crédit" in (sale.payment_method or "").lower():
+        return sale.total
+    return 0
+
+
+def _check_credit_limit(db: Session, sale: Sale) -> None:
+    """Refuses a credit sale that would exceed the customer's credit limit."""
+    if not sale.customer_id:
+        return
+    limit = sale.customer.credit_limit if sale.customer else 0
+    if not limit or limit <= 0:
+        return
+    new_credit = _credit_amount(sale)
+    if new_credit <= 0:
+        return
+    open_debts = (
+        db.query(Debt)
+        .filter(Debt.kind == "creance", Debt.customer_id == sale.customer_id)
+        .all()
+    )
+    outstanding = sum(d.remaining for d in open_debts)
+    if outstanding + new_credit > limit + 0.009:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Plafond de crédit dépassé pour {sale.customer.name} : "
+                f"encours {outstanding:,.0f} FCFA + {new_credit:,.0f} FCFA "
+                f"> {limit:,.0f} FCFA".replace(",", " ")
+            ),
+        )
+
+
 def _open_receivable(db: Session, sale: Sale, current_user: User) -> None:
     """A sale settled later stays visible in Dettes & créances until paid."""
-    if "crédit" not in (sale.payment_method or "").lower():
-        return
     if sale.status == "Annulée":
         return
+    if sale.payments:
+        # Mixed tender: only the credit legs become a receivable.
+        credit = sum(
+            leg.amount for leg in sale.payments if "crédit" in leg.method.lower()
+        )
+        if credit <= 0:
+            return
+        amount = credit
+    else:
+        if "crédit" not in (sale.payment_method or "").lower():
+            return
+        amount = sale.total
     db.add(
         Debt(
             kind="creance",
@@ -246,7 +353,7 @@ def _open_receivable(db: Session, sale: Sale, current_user: User) -> None:
             customer_id=sale.customer_id,
             sale_id=sale.id,
             reference=sale.reference,
-            amount=sale.total,
+            amount=amount,
             note="Vente à crédit",
             created_by_id=current_user.id,
         )

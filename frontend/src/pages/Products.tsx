@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import {
+  Boxes,
   FileSpreadsheet,
+  History,
   Image as ImageIcon,
   Pencil,
   Plus,
@@ -12,7 +14,7 @@ import {
   Trash2,
 } from "lucide-react";
 import api, { formatDateTime, formatXOF } from "../api/client";
-import type { Category, Product, Supplier } from "../types";
+import type { Category, Product, StockLot, Supplier } from "../types";
 import Modal from "../components/Modal";
 import ProductQrCode from "../components/ProductQrCode";
 import BulkDelete, { SelectBox } from "../components/BulkDelete";
@@ -45,6 +47,22 @@ const empty = {
 
 const MAX_IMAGE_BYTES = 700_000;
 
+/** One recorded price change on an article. */
+interface PriceChange {
+  id: number;
+  field: string;
+  old_value: number;
+  new_value: number;
+  changed_at: string;
+  changed_by?: { name: string } | null;
+}
+
+const FIELD_LABEL: Record<string, string> = {
+  sale_price: "Prix de vente",
+  purchase_price: "Prix d'achat",
+  wholesale_price: "Prix de gros",
+};
+
 /** Sales filter applied server-side: all, never sold, best sellers. */
 type SoldFilter = "" | "jamais" | "top";
 
@@ -54,6 +72,7 @@ export default function Products() {
   const { hasFeature } = useLicense();
   const version = useSyncVersion();
   const [sold, setSold] = useState<SoldFilter>("");
+  const csvInputRef = useRef<HTMLInputElement>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -66,6 +85,16 @@ export default function Products() {
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
   const [qrProduct, setQrProduct] = useState<Product | null>(null);
+  const [historyProduct, setHistoryProduct] = useState<Product | null>(null);
+  const [historyItems, setHistoryItems] = useState<PriceChange[]>([]);
+  const [lotsProduct, setLotsProduct] = useState<Product | null>(null);
+  const [lots, setLots] = useState<StockLot[]>([]);
+  const [lotForm, setLotForm] = useState({
+    lot_number: "",
+    expiry_date: "",
+    quantity: "",
+  });
+  const [lotError, setLotError] = useState("");
   const imageInput = useRef<HTMLInputElement>(null);
   const pageSize = 8;
 
@@ -133,6 +162,39 @@ export default function Products() {
       .catch(() => setError("Export impossible : le fichier n'a pas pu être créé."));
   }
 
+  /** Sends the picked CSV to the bulk upsert endpoint and reports per row. */
+  async function importCsv(file: File) {
+    setError("");
+    setNotice("");
+    const body = new FormData();
+    body.append("file", file);
+    try {
+      const res = await api.post<{
+        created: number;
+        updated: number;
+        errors: { line: number; message: string }[];
+      }>("/products/import", body);
+      const { created, updated, errors } = res.data;
+      setNotice(
+        `Import terminé : ${created} créé(s), ${updated} mis à jour` +
+          (errors.length
+            ? `, ${errors.length} ligne(s) en erreur (l. ${errors
+                .map((e) => e.line)
+                .join(", ")} : ${errors[0].message}${
+                errors.length > 1 ? "…" : ""
+              })`
+            : ".")
+      );
+      await load();
+    } catch (err) {
+      setError(
+        axios.isAxiosError(err)
+          ? err.response?.data?.detail ?? "Import impossible"
+          : "Import impossible"
+      );
+    }
+  }
+
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
   const selection = useSelection(paged);
@@ -192,6 +254,69 @@ export default function Products() {
       }
     } finally {
       setSaving(false);
+    }
+  }
+
+  /** Opens the price history of the article in a modal. */
+  async function openHistory(p: Product) {
+    setHistoryProduct(p);
+    setHistoryItems([]);
+    try {
+      const res = await api.get<PriceChange[]>(
+        `/products/${p.id}/price-history`
+      );
+      setHistoryItems(res.data);
+    } catch {
+      setHistoryItems([]);
+    }
+  }
+
+  /** Opens the stock lots of the article in a modal. */
+  async function openLots(p: Product) {
+    setLotsProduct(p);
+    setLots([]);
+    setLotError("");
+    setLotForm({ lot_number: "", expiry_date: "", quantity: "" });
+    try {
+      const res = await api.get<StockLot[]>(`/products/${p.id}/lots`);
+      setLots(res.data);
+    } catch {
+      setLots([]);
+    }
+  }
+
+  async function addLot(event: React.FormEvent) {
+    event.preventDefault();
+    if (!lotsProduct) return;
+    setLotError("");
+    try {
+      await api.post(`/products/${lotsProduct.id}/lots`, {
+        lot_number: lotForm.lot_number,
+        expiry_date: lotForm.expiry_date
+          ? `${lotForm.expiry_date}T00:00:00`
+          : null,
+        quantity: Number(lotForm.quantity),
+      });
+      setLotForm({ lot_number: "", expiry_date: "", quantity: "" });
+      await openLots(lotsProduct);
+      await load();
+    } catch (error) {
+      setLotError(
+        axios.isAxiosError(error) &&
+          typeof error.response?.data?.detail === "string"
+          ? error.response.data.detail
+          : "Enregistrement impossible."
+      );
+    }
+  }
+
+  async function releaseLot(lot: StockLot) {
+    if (!lotsProduct) return;
+    try {
+      await api.delete(`/products/lots/${lot.id}`);
+      await openLots(lotsProduct);
+    } catch {
+      setLotError("Suppression impossible.");
     }
   }
 
@@ -286,6 +411,27 @@ export default function Products() {
             <button className="btn-ghost" onClick={exportExcel}>
               <FileSpreadsheet size={16} /> Exporter Excel
             </button>
+          )}
+          {can("produits_gerer") && (
+            <>
+              <input
+                ref={csvInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) importCsv(file);
+                  e.target.value = "";
+                }}
+              />
+              <button
+                className="btn-ghost"
+                onClick={() => csvInputRef.current?.click()}
+              >
+                <FileSpreadsheet size={16} /> Importer CSV
+              </button>
+            </>
           )}
           {can("produits_gerer") && (
             <button className="btn-primary" onClick={openCreate}>
@@ -414,6 +560,22 @@ export default function Products() {
                       >
                         <Tag size={16} />
                       </button>
+                      <button
+                        onClick={() => openHistory(p)}
+                        title="Historique des prix" aria-label="Historique des prix"
+                        className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
+                      >
+                        <History size={16} />
+                      </button>
+                      {can("stocks") && (
+                        <button
+                          onClick={() => openLots(p)}
+                          title="Lots et péremptions" aria-label="Lots et péremptions"
+                          className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
+                        >
+                          <Boxes size={16} />
+                        </button>
+                      )}
                       {can("produits_gerer") && (
                         <>
                           <button
@@ -691,6 +853,168 @@ export default function Products() {
             </p>
           </div>
         )}
+      </Modal>
+
+      <Modal
+        open={historyProduct !== null}
+        onClose={() => setHistoryProduct(null)}
+        title={`Historique des prix — ${historyProduct?.name ?? ""}`}
+      >
+        {historyItems.length === 0 ? (
+          <p className="py-6 text-center text-sm text-slate-400">
+            Aucun changement de prix enregistré.
+          </p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-400">
+                <th className="py-2">Date</th>
+                <th className="py-2">Prix</th>
+                <th className="py-2 text-right">Ancien</th>
+                <th className="py-2 text-right">Nouveau</th>
+                <th className="py-2 text-right">Par</th>
+              </tr>
+            </thead>
+            <tbody>
+              {historyItems.map((h) => (
+                <tr key={h.id} className="border-b border-slate-50">
+                  <td className="py-2 text-slate-500">
+                    {formatDateTime(h.changed_at)}
+                  </td>
+                  <td className="py-2 font-medium text-slate-700">
+                    {FIELD_LABEL[h.field] ?? h.field}
+                  </td>
+                  <td className="py-2 text-right text-slate-500">
+                    {formatXOF(h.old_value)}
+                  </td>
+                  <td className="py-2 text-right font-semibold text-slate-800">
+                    {formatXOF(h.new_value)}
+                  </td>
+                  <td className="py-2 text-right text-slate-500">
+                    {h.changed_by?.name ?? "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Modal>
+
+      <Modal
+        open={lotsProduct !== null}
+        onClose={() => setLotsProduct(null)}
+        title={`Lots et péremptions — ${lotsProduct?.name ?? ""}`}
+      >
+        <div className="space-y-4">
+          {can("stocks") && (
+            <form
+              onSubmit={(e) => void addLot(e)}
+              className="grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-3 sm:grid-cols-4"
+            >
+              <input
+                className="input"
+                placeholder="N° de lot"
+                value={lotForm.lot_number}
+                onChange={(e) =>
+                  setLotForm({ ...lotForm, lot_number: e.target.value })
+                }
+              />
+              <input
+                className="input"
+                type="date"
+                title="Date de péremption"
+                value={lotForm.expiry_date}
+                onChange={(e) =>
+                  setLotForm({ ...lotForm, expiry_date: e.target.value })
+                }
+              />
+              <input
+                className="input"
+                type="number"
+                min="1"
+                required
+                placeholder="Quantité"
+                value={lotForm.quantity}
+                onChange={(e) =>
+                  setLotForm({ ...lotForm, quantity: e.target.value })
+                }
+              />
+              <button className="btn-primary" type="submit">
+                Ajouter
+              </button>
+            </form>
+          )}
+          {lotError && (
+            <p className="text-sm font-medium text-red-600">{lotError}</p>
+          )}
+          {lots.length === 0 ? (
+            <p className="py-4 text-center text-sm text-slate-400">
+              Aucun lot — le stock n'est pas ventilé par péremption.
+            </p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-400">
+                  <th className="py-2">Lot</th>
+                  <th className="py-2">Péremption</th>
+                  <th className="py-2 text-right">Quantité</th>
+                  <th className="py-2 text-right"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {lots.map((lot) => (
+                  <tr key={lot.id} className="border-b border-slate-50">
+                    <td className="py-2 font-medium text-slate-700">
+                      {lot.lot_number || `Lot ${lot.id}`}
+                    </td>
+                    <td className="py-2">
+                      {lot.expiry_date ? (
+                        <span
+                          className={`font-medium ${
+                            lot.days_left !== null && lot.days_left <= 0
+                              ? "text-red-600"
+                              : lot.days_left !== null && lot.days_left <= 30
+                                ? "text-amber-600"
+                                : "text-slate-600"
+                          }`}
+                        >
+                          {formatDateTime(lot.expiry_date)}
+                          {lot.days_left !== null &&
+                            ` (${
+                              lot.days_left <= 0
+                                ? "périmé"
+                                : `${lot.days_left} j`
+                            })`}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
+                    </td>
+                    <td className="py-2 text-right font-semibold text-slate-800">
+                      {lot.quantity}
+                    </td>
+                    <td className="py-2 text-right">
+                      {can("stocks") && (
+                        <button
+                          onClick={() => void releaseLot(lot)}
+                          title="Retirer le lot (quantité rendue au stock)"
+                          aria-label="Retirer le lot"
+                          className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <p className="text-xs text-slate-400">
+            Les ventes consomment d'abord les lots les plus proches de la
+            péremption (FEFO).
+          </p>
+        </div>
       </Modal>
     </div>
   );

@@ -46,7 +46,34 @@ const PAYMENTS = [
   "Carte bancaire",
   "Virement",
   "Crédit (à régler plus tard)",
+  "Mixte",
 ];
+
+/** Tender methods that may be combined inside a « Mixte » payment. */
+const MIXABLE = PAYMENTS.slice(0, -1);
+
+const PARK_KEY = "ri_parked_carts";
+
+interface ParkedCart {
+  id: string;
+  at: string;
+  customer_name: string;
+  cart: CartLine[];
+  customer: Customer | null;
+  note: string;
+  discount: number;
+  payment: string;
+  legs: Record<string, number>;
+}
+
+function readParked(): ParkedCart[] {
+  try {
+    const raw = localStorage.getItem(PARK_KEY);
+    return raw ? (JSON.parse(raw) as ParkedCart[]) : [];
+  } catch {
+    return [];
+  }
+}
 
 type PriceMode = "detail" | "gros";
 
@@ -62,11 +89,21 @@ interface CartLine {
   quantity: number;
   /** Price agreed at the counter, when it differs from the product sheet. */
   price?: number;
+  /** Discount granted on this line only, in currency units. */
+  discount?: number;
 }
 
 /** Price actually charged for a cart line. */
 function linePrice(line: CartLine, mode: PriceMode): number {
   return line.price ?? unitPrice(line.product, mode);
+}
+
+/** Line total after its own discount. */
+function lineNet(line: CartLine, mode: PriceMode): number {
+  return Math.max(
+    linePrice(line, mode) * line.quantity - (line.discount ?? 0),
+    0
+  );
 }
 
 /** Local receipt shown while a ticket recorded offline waits for the server. */
@@ -79,12 +116,10 @@ function offlineSale(
   sellerName: string,
   priceMode: PriceMode,
   discount: number,
-  paidAmount: number
+  paidAmount: number,
+  legs?: { method: string; amount: number }[]
 ): Sale {
-  const gross = cart.reduce(
-    (s, l) => s + linePrice(l, priceMode) * l.quantity,
-    0
-  );
+  const gross = cart.reduce((s, l) => s + lineNet(l, priceMode), 0);
   return {
     id: -Date.now(),
     reference,
@@ -104,13 +139,15 @@ function offlineSale(
       product_name: l.product.name,
       quantity: l.quantity,
       unit_price: linePrice(l, priceMode),
-      subtotal: linePrice(l, priceMode) * l.quantity,
+      discount: l.discount ?? 0,
+      subtotal: lineNet(l, priceMode),
       returned_quantity: 0,
     })),
     print_count: 0,
     returned_total: 0,
     paid_amount: paidAmount,
     discount,
+    payments: legs?.map((leg, index) => ({ id: index, ...leg })),
     pending_sync: true,
   };
 }
@@ -138,6 +175,9 @@ export default function NouvelleVente() {
   const [customerQuery, setCustomerQuery] = useState("");
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [payment, setPayment] = useState(PAYMENTS[0]);
+  /** Per-method amounts when « Mixte » is selected. */
+  const [legs, setLegs] = useState<Record<string, number>>({});
+  const [parked, setParked] = useState<ParkedCart[]>(readParked());
   const [note, setNote] = useState("");
   const [discount, setDiscount] = useState(0);
   const [paidAmount, setPaidAmount] = useState(0);
@@ -243,8 +283,7 @@ export default function NouvelleVente() {
   }, [products, query, activeCategory, bestSellerIds]);
 
   const subtotal = useMemo(
-    () =>
-      cart.reduce((sum, l) => sum + linePrice(l, priceMode) * l.quantity, 0),
+    () => cart.reduce((sum, l) => sum + lineNet(l, priceMode), 0),
     [cart, priceMode]
   );
   const total = Math.max(subtotal - discount, 0);
@@ -302,6 +341,23 @@ export default function NouvelleVente() {
                 value.trim() === "" || Number.isNaN(price) || price < 0
                   ? undefined
                   : price,
+            }
+          : l
+      )
+    );
+  }
+
+  function setLineDiscount(productId: number, value: string) {
+    const discount = Number(value.replace(",", "."));
+    setCart((prev) =>
+      prev.map((l) =>
+        l.product.id === productId
+          ? {
+              ...l,
+              discount:
+                value.trim() === "" || Number.isNaN(discount) || discount < 0
+                  ? undefined
+                  : discount,
             }
           : l
       )
@@ -421,6 +477,16 @@ export default function NouvelleVente() {
       setError("Le panier est vide.");
       return;
     }
+    if (payment === "Mixte") {
+      const legTotal = Object.values(legs).reduce((s, a) => s + a, 0);
+      if (Math.abs(legTotal - total) > 0.01 || legTotal <= 0) {
+        setError(
+          `Paiement mixte : la somme des montants (${formatXOF(legTotal)}) ` +
+            `doit égaler le total (${formatXOF(total)}).`
+        );
+        return;
+      }
+    }
     setSaving(true);
     setError("");
     const payload: SalePayload = {
@@ -436,7 +502,14 @@ export default function NouvelleVente() {
         product_id: l.product.id,
         quantity: l.quantity,
         unit_price: linePrice(l, priceMode),
+        discount: l.discount ?? 0,
       })),
+      payments:
+        payment === "Mixte"
+          ? Object.entries(legs)
+              .filter(([, amount]) => amount > 0)
+              .map(([method, amount]) => ({ method, amount }))
+          : undefined,
     };
     try {
       const res = await api.post<Sale>("/sales", payload);
@@ -464,7 +537,8 @@ export default function NouvelleVente() {
         user?.name ?? "",
         priceMode,
         discount,
-        paidAmount
+        paidAmount,
+        payload.payments
       );
       queueSale({ payload, snapshot });
       finishSale(snapshot);
@@ -479,11 +553,69 @@ export default function NouvelleVente() {
     setNote("");
     setDiscount(0);
     setPaidAmount(0);
+    setLegs({});
     setCustomer(null);
     setCustomerQuery("");
     setCustomers([]);
     setQuery("");
     searchRef.current?.focus();
+  }
+
+  /**
+   * Parks the current ticket: nothing is written to the server, no stock is
+   * touched — the cart is kept on this till until the cashier resumes it.
+   */
+  function parkCart() {
+    if (cart.length === 0) return;
+    const entry: ParkedCart = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      at: new Date().toISOString(),
+      customer_name: customer?.name ?? customerQuery.trim() ?? "Client",
+      cart,
+      customer,
+      note,
+      discount,
+      payment,
+      legs,
+    };
+    const next = [...readParked(), entry];
+    localStorage.setItem(PARK_KEY, JSON.stringify(next));
+    setParked(next);
+    setFlash(`Ticket mis en attente (${entry.customer_name})`);
+    window.setTimeout(() => setFlash(""), 2000);
+    resetCart();
+  }
+
+  /** Brings a parked ticket back into the cart and frees its slot. */
+  function resumeCart(id: string) {
+    const entry = readParked().find((p) => p.id === id);
+    if (!entry) return;
+    // Drop lines whose product vanished or no longer has enough stock.
+    const restored = entry.cart.filter((l) => {
+      const fresh = products.find((p) => p.id === l.product.id);
+      if (!fresh) return false;
+      l.product = fresh;
+      return l.quantity <= fresh.quantity;
+    });
+    if (restored.length < entry.cart.length) {
+      setError("Certaines lignes du ticket en attente ne sont plus disponibles.");
+    }
+    setCart(restored);
+    setCustomer(entry.customer);
+    setCustomerQuery(entry.customer?.name ?? entry.customer_name);
+    setNote(entry.note);
+    setDiscount(entry.discount);
+    setPayment(entry.payment);
+    setLegs(entry.legs ?? {});
+    const next = readParked().filter((p) => p.id !== id);
+    localStorage.setItem(PARK_KEY, JSON.stringify(next));
+    setParked(next);
+  }
+
+  function dropParked(id: string) {
+    const next = readParked().filter((p) => p.id !== id);
+    localStorage.setItem(PARK_KEY, JSON.stringify(next));
+    setParked(next);
   }
 
   /** Empties the ticket after the cashier confirms — never silently. */
@@ -524,6 +656,7 @@ export default function NouvelleVente() {
           product_name: l.product.name,
           quantity: l.quantity,
           unit_price: linePrice(l, priceMode),
+          discount: l.discount ?? 0,
         })),
       });
       resetCart();
@@ -636,6 +769,36 @@ export default function NouvelleVente() {
             </p>
           )}
 
+          {parked.length > 0 && (
+            <div className="border-t border-amber-100 bg-amber-50 px-4 py-2">
+              <p className="mb-1 text-xs font-bold uppercase tracking-wide text-amber-700">
+                Tickets en attente
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {parked.map((p) => (
+                  <span
+                    key={p.id}
+                    className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-amber-800 shadow-sm"
+                  >
+                    {p.customer_name} · {new Date(p.at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
+                    <button
+                      className="rounded-full bg-amber-600 px-1.5 py-0.5 text-white"
+                      onClick={() => resumeCart(p.id)}
+                    >
+                      Reprendre
+                    </button>
+                    <button
+                      className="rounded-full bg-slate-200 px-1.5 py-0.5 text-slate-500"
+                      onClick={() => dropParked(p.id)}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="min-h-[330px] flex-1 overflow-y-auto">
             {cart.length === 0 ? (
               <p className="px-4 py-10 text-center text-sm text-slate-400">
@@ -648,6 +811,7 @@ export default function NouvelleVente() {
                     <th className="w-8 px-3 py-2">#</th>
                     <th className="px-1 py-2">Produit</th>
                     <th className="w-28 px-1 py-2 text-right">Prix unit.</th>
+                    <th className="w-24 px-1 py-2 text-right">Remise</th>
                     <th className="w-36 px-1 py-2 text-center">Quantité</th>
                     <th className="w-28 px-1 py-2 text-right">Total</th>
                     <th className="w-10 px-1 py-2" />
@@ -703,6 +867,24 @@ export default function NouvelleVente() {
                           </span>
                         )}
                       </td>
+                      <td className="px-1 py-2.5 text-right">
+                        {canChangePrice ? (
+                          <input
+                            className="w-20 rounded-lg border border-slate-200 px-1.5 py-1 text-right text-sm text-slate-700"
+                            value={l.discount ?? ""}
+                            placeholder="0"
+                            onChange={(e) =>
+                              setLineDiscount(l.product.id, e.target.value)
+                            }
+                            title="Remise pour cette ligne"
+                            aria-label={`Remise de ${l.product.name}`}
+                          />
+                        ) : (
+                          <span className="text-slate-600">
+                            {l.discount ? formatXOF(l.discount) : "—"}
+                          </span>
+                        )}
+                      </td>
                       <td className="px-1 py-2.5">
                         <div className="flex items-center justify-center gap-1">
                           <button
@@ -739,7 +921,7 @@ export default function NouvelleVente() {
                         </div>
                       </td>
                       <td className="whitespace-nowrap px-1 py-2.5 text-right font-bold text-slate-900">
-                        {formatXOF(linePrice(l, priceMode) * l.quantity)}
+                        {formatXOF(lineNet(l, priceMode))}
                       </td>
                       <td className="px-1 py-2.5 text-center">
                         <button
@@ -845,6 +1027,45 @@ export default function NouvelleVente() {
                   ))}
                 </select>
               </div>
+              {payment === "Mixte" && (
+                <div className="sm:col-span-2 xl:col-span-3">
+                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                    {MIXABLE.map((method) => (
+                      <div key={method}>
+                        <label className="label">{method}</label>
+                        <input
+                          className="input"
+                          type="number"
+                          min={0}
+                          value={legs[method] || ""}
+                          onChange={(e) =>
+                            setLegs((prev) => ({
+                              ...prev,
+                              [method]: Math.max(
+                                Number(e.target.value) || 0,
+                                0
+                              ),
+                            }))
+                          }
+                          placeholder="0"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  {(() => {
+                    const legTotal = Object.values(legs).reduce(
+                      (s, a) => s + a,
+                      0
+                    );
+                    return Math.abs(legTotal - total) > 0.01 ? (
+                      <p className="mt-1 text-xs font-semibold text-red-600">
+                        La somme des montants ({formatXOF(legTotal)}) doit
+                        égaler le total ({formatXOF(total)}).
+                      </p>
+                    ) : null;
+                  })()}
+                </div>
+              )}
               <div>
                 <label className="label">Remise globale</label>
                 <input
@@ -937,6 +1158,13 @@ export default function NouvelleVente() {
           </div>
 
           <div className="flex gap-2 p-2.5">
+            <button
+              className="btn-ghost flex-1 justify-center py-3"
+              onClick={parkCart}
+              disabled={cart.length === 0}
+            >
+              Attente
+            </button>
             <button
               className="btn-ghost flex-1 justify-center py-3"
               onClick={clearCart}

@@ -15,7 +15,14 @@ export interface SalePayload {
   discount: number;
   /** Cash handed over, used to print the change given back. */
   paid_amount: number;
-  items: { product_id: number; quantity: number; unit_price?: number }[];
+  items: {
+    product_id: number;
+    quantity: number;
+    unit_price?: number;
+    discount?: number;
+  }[];
+  /** Tender legs for a « Mixte » payment; must add up to the total. */
+  payments?: { method: string; amount: number }[];
 }
 
 export interface PendingSale {

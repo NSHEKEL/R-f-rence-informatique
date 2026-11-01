@@ -24,6 +24,9 @@ COLUMNS: dict[str, dict[str, str]] = {
     "suppliers": {
         "logo": "TEXT DEFAULT ''",
     },
+    "customers": {
+        "credit_limit": "FLOAT DEFAULT 0",
+    },
     "sales": {
         "created_by_id": "INTEGER",
         "note": "TEXT DEFAULT ''",
@@ -104,6 +107,10 @@ COLUMNS: dict[str, dict[str, str]] = {
         "customer_name": "VARCHAR DEFAULT ''",
         "status": "VARCHAR DEFAULT 'Validé'",
         "validated_at": "TIMESTAMP",
+    },
+    "sale_items": {
+        # Per-line discount at the register (proforma/order lines had it).
+        "discount": "FLOAT DEFAULT 0",
     },
     "debt_payments": {
         "reference": "VARCHAR DEFAULT ''",

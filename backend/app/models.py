@@ -127,6 +127,8 @@ class Customer(Base):
     email = Column(String, default="")
     phone = Column(String, default="")
     address = Column(String, default="")
+    # Ceiling on the customer's unpaid receivables; 0 means no limit.
+    credit_limit = Column(Float, default=0)
     created_at = Column(DateTime, default=utcnow)
 
     sales = relationship("Sale", back_populates="customer")
@@ -153,6 +155,25 @@ class Product(Base):
 
     category = relationship("Category", back_populates="products")
     supplier = relationship("Supplier", back_populates="products")
+
+
+class PriceHistory(Base):
+    """One price change on an article, with who made it and when."""
+
+    __tablename__ = "price_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(
+        Integer, ForeignKey("products.id"), nullable=False, index=True
+    )
+    field = Column(String, default="")  # sale_price, purchase_price, ...
+    old_value = Column(Float, default=0)
+    new_value = Column(Float, default=0)
+    changed_at = Column(DateTime, default=utcnow)
+    changed_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    product = relationship("Product")
+    changed_by = relationship("User")
 
 
 class Sale(Base):
@@ -188,10 +209,26 @@ class Sale(Base):
     returns = relationship(
         "SaleReturn", back_populates="sale", cascade="all, delete-orphan"
     )
+    payments = relationship(
+        "SalePayment", back_populates="sale", cascade="all, delete-orphan"
+    )
 
     @property
     def returned_total(self) -> float:
         return sum(r.total for r in self.returns)
+
+
+class SalePayment(Base):
+    """One leg of a mixed payment (Espèces + Mobile Money + ...)."""
+
+    __tablename__ = "sale_payments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sale_id = Column(Integer, ForeignKey("sales.id"), nullable=False)
+    method = Column(String, default="Espèces")
+    amount = Column(Float, default=0)
+
+    sale = relationship("Sale", back_populates="payments")
 
 
 class SaleItem(Base):
@@ -203,6 +240,8 @@ class SaleItem(Base):
     product_name = Column(String, default="")
     quantity = Column(Integer, default=1)
     unit_price = Column(Float, default=0)
+    # Discount granted on this line only, deducted from its subtotal.
+    discount = Column(Float, default=0)
     subtotal = Column(Float, default=0)
 
     sale = relationship("Sale", back_populates="items")
@@ -317,6 +356,65 @@ class StockMovement(Base):
 
     product = relationship("Product")
     created_by = relationship("User")
+
+
+class StockLot(Base):
+    """Tagged part of a product's stock carrying a lot number and expiry.
+
+    Lot quantities are earmarked inside ``product.quantity``: the sum of a
+    product's lots never exceeds its on-hand stock; the remainder stays
+    "untagged". Sales consume lots FEFO (earliest expiry first).
+    """
+
+    __tablename__ = "stock_lots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(Integer, ForeignKey("products.id"), index=True)
+    lot_number = Column(String, default="")
+    expiry_date = Column(DateTime, nullable=True)
+    quantity = Column(Integer, default=0)
+    created_at = Column(DateTime, default=utcnow)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    product = relationship("Product")
+    created_by = relationship("User")
+
+
+class StockTransfer(Base):
+    """Stock sent to, or received from, another shop of the network.
+
+    Each site records its own side: 'sortie' decrements stock, 'entree'
+    increments it. The document keeps the counterpart store for audit.
+    """
+
+    __tablename__ = "stock_transfers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    reference = Column(String, unique=True)
+    direction = Column(String, default="sortie")  # sortie | entree
+    store_name = Column(String, default="")
+    note = Column(String, default="")
+    created_at = Column(DateTime, default=utcnow)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    items = relationship(
+        "StockTransferItem", cascade="all, delete-orphan", back_populates="transfer"
+    )
+    created_by = relationship("User")
+
+
+class StockTransferItem(Base):
+    __tablename__ = "stock_transfer_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    transfer_id = Column(
+        Integer, ForeignKey("stock_transfers.id"), index=True
+    )
+    product_id = Column(Integer, ForeignKey("products.id"))
+    product_name = Column(String, default="")
+    quantity = Column(Integer, default=0)
+
+    transfer = relationship("StockTransfer", back_populates="items")
 
 
 class Proforma(Base):

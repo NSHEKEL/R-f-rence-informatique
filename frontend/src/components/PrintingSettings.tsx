@@ -127,6 +127,7 @@ function sampleSale(): Sale {
     unit_price: price,
     subtotal: qty * price,
     returned_quantity: 0,
+    discount: 0,
   });
   const items = [
     line(1, "Câble HDMI 2 m", 2, 3000),

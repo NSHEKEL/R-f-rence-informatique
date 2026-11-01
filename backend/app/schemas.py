@@ -290,6 +290,8 @@ class CustomerBase(BaseModel):
     email: str = ""
     phone: str = ""
     address: str = ""
+    # Ceiling on unpaid receivables; 0 means no limit.
+    credit_limit: float = 0
 
 
 class CustomerCreate(CustomerBase):
@@ -337,6 +339,17 @@ class ProductOut(ProductBase):
     last_sold_at: Optional[datetime] = None
 
 
+class PriceHistoryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    product_id: int
+    field: str
+    old_value: float
+    new_value: float
+    changed_at: datetime
+    changed_by: Optional["UserOut"] = None
+
+
 # ---------- Sales ----------
 class SaleItemCreate(BaseModel):
     product_id: int
@@ -344,6 +357,8 @@ class SaleItemCreate(BaseModel):
     # Price agreed at the counter; ignored unless the seller holds the right
     # to change a price, and never written back to the product sheet.
     unit_price: Optional[float] = None
+    # Discount granted on this line only, in currency units (not %).
+    discount: float = 0
 
 
 class SaleCreate(BaseModel):
@@ -360,6 +375,9 @@ class SaleCreate(BaseModel):
     # Idempotency key set by tills recording offline; replaying the same key
     # returns the existing ticket instead of duplicating it.
     client_id: Optional[str] = None
+    # Mixed tender: the legs the customer paid with; must add up to the
+    # total. When present it overrides payment_method.
+    payments: Optional[List["SalePaymentCreate"]] = None
 
 
 class SaleUpdate(BaseModel):
@@ -369,6 +387,18 @@ class SaleUpdate(BaseModel):
     receipt_footer: Optional[str] = None
 
 
+class SalePaymentCreate(BaseModel):
+    method: str
+    amount: float
+
+
+class SalePaymentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    method: str
+    amount: float
+
+
 class SaleItemOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -376,6 +406,7 @@ class SaleItemOut(BaseModel):
     product_name: str
     quantity: int
     unit_price: float
+    discount: float = 0
     subtotal: float
     returned_quantity: int = 0
 
@@ -398,6 +429,7 @@ class SaleOut(BaseModel):
     print_count: int = 0
     returned_total: float = 0
     paid_amount: float = 0
+    payments: List[SalePaymentOut] = []
     discount: float = 0
 
 
@@ -629,6 +661,9 @@ class DashboardStats(BaseModel):
     top_products: List[TopProduct]
     top_sellers: List[TopSeller] = []
     low_stock_products: List[ProductOut]
+    # Tills closed in the window with a non-zero counted-vs-expected gap.
+    cash_gap_count: int = 0
+    cash_gap_total: float = 0
     period_start: Optional[datetime] = None
     period_end: Optional[datetime] = None
 
@@ -716,6 +751,56 @@ class InventoryLine(BaseModel):
 class InventoryApply(BaseModel):
     lines: List[InventoryLine]
     note: str = ""
+
+
+class StockLotCreate(BaseModel):
+    lot_number: str = ""
+    expiry_date: Optional[datetime] = None
+    quantity: int
+
+
+class StockLotOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    product_id: int
+    lot_number: str
+    expiry_date: Optional[datetime] = None
+    quantity: int
+    created_at: datetime
+    product_name: str = ""
+    days_left: Optional[int] = None
+
+
+class StockTransferItemCreate(BaseModel):
+    product_id: int
+    quantity: int
+
+
+class StockTransferCreate(BaseModel):
+    direction: str = "sortie"  # sortie | entree
+    store_name: str = ""
+    note: str = ""
+    items: List[StockTransferItemCreate]
+
+
+class StockTransferItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    product_id: Optional[int]
+    product_name: str
+    quantity: int
+
+
+class StockTransferOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    reference: str
+    direction: str
+    store_name: str
+    note: str
+    created_at: datetime
+    created_by: Optional[UserOut] = None
+    items: List[StockTransferItemOut] = []
 
 
 class StockMovementOut(BaseModel):
@@ -1226,6 +1311,15 @@ class PartyBalance(BaseModel):
     overdue: float = 0
     days_late: int = 0
     next_due: Optional[datetime] = None
+
+
+class AgingBucket(BaseModel):
+    """One row of the receivables schedule: how much falls in each delay."""
+
+    label: str
+    total: float = 0
+    count: int = 0
+    parties: List[str] = []
 
 
 # ---------- Paie ----------

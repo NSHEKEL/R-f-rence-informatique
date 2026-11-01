@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import {
+  ArrowLeftRight,
   ClipboardCheck,
   History,
+  Plus,
   Printer,
   RotateCcw,
   Search,
+  Trash2,
 } from "lucide-react";
 import api, { formatDate, formatXOF } from "../api/client";
 import type { Product, StockMovement } from "../types";
@@ -19,7 +22,24 @@ const kindLabels: Record<string, string> = {
   vente: "Vente",
   inventaire: "Inventaire",
   ajustement: "Ajustement",
+  transfert: "Transfert",
 };
+
+/** One line of an inter-store transfer being composed. */
+interface TransferLine {
+  product_id: number;
+  quantity: number;
+}
+
+/** Shipment the central service holds for this shop. */
+interface PendingTransfer {
+  id: number;
+  reference: string;
+  from_shop: string;
+  note: string;
+  items: string; // JSON [{product_name, quantity}]
+  created_at: string;
+}
 
 export default function Inventaire() {
   const version = useSyncVersion();
@@ -32,16 +52,28 @@ export default function Inventaire() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [transfer, setTransfer] = useState({
+    direction: "sortie" as "sortie" | "entree",
+    store_name: "",
+    note: "",
+  });
+  const [lines, setLines] = useState<TransferLine[]>([]);
+  const [lineDraft, setLineDraft] = useState({ product_id: "", quantity: "1" });
+  const [pending, setPending] = useState<PendingTransfer[]>([]);
 
   const load = useCallback(async () => {
-    const [p, m] = await Promise.all([
+    const [p, m, r] = await Promise.all([
       api.get<Product[]>("/products"),
       api.get<StockMovement[]>("/inventory/movements", {
         params: { limit: 50 },
       }),
+      api.get<PendingTransfer[]>("/transfers/entrantes").catch(() => ({
+        data: [] as PendingTransfer[],
+      })),
     ]);
     setProducts(p.data);
     setMovements(m.data);
+    setPending(r.data);
   }, []);
 
   useEffect(() => {
@@ -102,6 +134,101 @@ export default function Inventaire() {
     } catch (err) {
       if (axios.isAxiosError(err)) {
         setError(err.response?.data?.detail ?? "Erreur lors de l'inventaire");
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function addLine() {
+    const product_id = Number(lineDraft.product_id);
+    const quantity = Number(lineDraft.quantity);
+    if (!product_id || quantity <= 0) return;
+    setLines((prev) => {
+      const rest = prev.filter((l) => l.product_id !== product_id);
+      const same = prev.find((l) => l.product_id === product_id);
+      return [
+        ...rest,
+        { product_id, quantity: quantity + (same?.quantity ?? 0) },
+      ];
+    });
+    setLineDraft({ product_id: "", quantity: "1" });
+  }
+
+  /** Turns a shipment waiting on the central into a local reception. */
+  async function receivePending(t: PendingTransfer) {
+    setError("");
+    setMessage("");
+    let items: { product_name: string; quantity: number }[] = [];
+    try {
+      items = JSON.parse(t.items || "[]");
+    } catch {
+      items = [];
+    }
+    const matched = items
+      .map((i) => {
+        const product = products.find(
+          (p) => p.name.trim().toLowerCase() === i.product_name.trim().toLowerCase()
+        );
+        return product ? { product_id: product.id, quantity: i.quantity } : null;
+      })
+      .filter((i): i is TransferLine => i !== null);
+    if (matched.length === 0) {
+      setError(
+        "Aucun article de cet envoi n'existe dans votre catalogue : créez-les d'abord."
+      );
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.post("/transfers/recevoir", {
+        central_id: t.id,
+        from_shop: t.from_shop,
+        note: t.note,
+        items: matched,
+      });
+      const skipped = items.length - matched.length;
+      setMessage(
+        `Réception ${t.reference} enregistrée.` +
+          (skipped > 0 ? ` ${skipped} article(s) ignoré(s) (non trouvés).` : "")
+      );
+      await load();
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        setError(err.response?.data?.detail ?? "Réception impossible");
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /** Registers the transfer: the stock moves immediately on this site. */
+  async function submitTransfer() {
+    setError("");
+    setMessage("");
+    if (!transfer.store_name.trim()) {
+      setError("Indiquez le magasin concerné.");
+      return;
+    }
+    if (lines.length === 0) {
+      setError("Ajoutez au moins un article.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const { data } = await api.post<{ reference: string }>("/transfers", {
+        direction: transfer.direction,
+        store_name: transfer.store_name,
+        note: transfer.note,
+        items: lines,
+      });
+      setMessage(`Transfert ${data.reference} enregistré.`);
+      setLines([]);
+      setTransfer({ ...transfer, note: "" });
+      await load();
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        setError(err.response?.data?.detail ?? "Transfert impossible");
       }
     } finally {
       setSaving(false);
@@ -288,6 +415,172 @@ export default function Inventaire() {
             {saving ? "Application..." : "Appliquer l'inventaire"}
           </button>
         </div>
+      </div>
+
+      <div className="card p-5">
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <ArrowLeftRight size={18} className="text-brand-600" />
+          <h3 className="text-base font-bold text-slate-900">
+            Transfert inter-magasins
+          </h3>
+          <div className="ml-auto flex rounded-lg bg-slate-100 p-1">
+            {(
+              [
+                ["sortie", "Envoi"],
+                ["entree", "Réception"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                onClick={() => setTransfer({ ...transfer, direction: value })}
+                className={`rounded-md px-3 py-1 text-sm ${
+                  transfer.direction === value
+                    ? "bg-white font-semibold shadow"
+                    : "text-slate-600"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            className="input w-56"
+            placeholder={
+              transfer.direction === "sortie"
+                ? "Magasin destinataire"
+                : "Magasin d'origine"
+            }
+            value={transfer.store_name}
+            onChange={(e) =>
+              setTransfer({ ...transfer, store_name: e.target.value })
+            }
+          />
+          <input
+            className="input flex-1"
+            placeholder="Note (optionnel)"
+            value={transfer.note}
+            onChange={(e) =>
+              setTransfer({ ...transfer, note: e.target.value })
+            }
+          />
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <select
+            className="input w-64"
+            value={lineDraft.product_id}
+            onChange={(e) =>
+              setLineDraft({ ...lineDraft, product_id: e.target.value })
+            }
+          >
+            <option value="">— Produit —</option>
+            {products.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name} (stock {p.quantity})
+              </option>
+            ))}
+          </select>
+          <input
+            className="input w-24"
+            type="number"
+            min="1"
+            value={lineDraft.quantity}
+            onChange={(e) =>
+              setLineDraft({ ...lineDraft, quantity: e.target.value })
+            }
+          />
+          <button className="btn-secondary" onClick={addLine}>
+            <Plus size={16} /> Ajouter
+          </button>
+        </div>
+
+        {lines.length > 0 && (
+          <table className="mt-3 w-full text-sm">
+            <tbody className="divide-y divide-slate-100">
+              {lines.map((l) => {
+                const p = products.find((x) => x.id === l.product_id);
+                return (
+                  <tr key={l.product_id}>
+                    <td className="py-2 font-medium text-slate-800">
+                      {p?.name ?? `#${l.product_id}`}
+                    </td>
+                    <td className="py-2 text-center font-semibold">
+                      {l.quantity}
+                    </td>
+                    <td className="py-2 text-right">
+                      <button
+                        className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                        onClick={() =>
+                          setLines(
+                            lines.filter((x) => x.product_id !== l.product_id)
+                          )
+                        }
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+
+        <div className="mt-3 flex items-center justify-end">
+          <button
+            className="btn-primary"
+            onClick={() => void submitTransfer()}
+            disabled={saving || lines.length === 0}
+          >
+            {saving
+              ? "Enregistrement..."
+              : transfer.direction === "sortie"
+                ? "Valider l'envoi"
+                : "Valider la réception"}
+          </button>
+        </div>
+
+        {pending.length > 0 && (
+          <div className="mt-4 border-t border-slate-100 pt-3">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Envois en attente pour vous
+            </p>
+            <div className="space-y-2">
+              {pending.map((t) => {
+                let count = 0;
+                try {
+                  count = (JSON.parse(t.items || "[]") as unknown[]).length;
+                } catch {
+                  count = 0;
+                }
+                return (
+                  <div
+                    key={t.id}
+                    className="flex flex-wrap items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-sm dark:bg-amber-950"
+                  >
+                    <span className="font-semibold text-amber-800 dark:text-amber-200">
+                      {t.reference || `Envoi #${t.id}`}
+                    </span>
+                    <span className="text-amber-700 dark:text-amber-300">
+                      de {t.from_shop || "—"} · {count} article(s)
+                      {t.note ? ` · ${t.note}` : ""}
+                    </span>
+                    <button
+                      className="btn-secondary ml-auto"
+                      onClick={() => void receivePending(t)}
+                      disabled={saving}
+                    >
+                      Réceptionner
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="card p-5">

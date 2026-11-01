@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
 from ..database import get_db
-from ..models import Customer, Product, Sale, SaleItem, User
+from ..models import CashSession, Customer, Product, Sale, SaleItem, User
 from ..schemas import (
     DashboardStats,
     MonthlyRevenue,
@@ -138,6 +138,14 @@ def get_stats(
 
     recent_sales = sorted(sales, key=lambda s: s.date, reverse=True)[:5]
 
+    # Till closings in the window whose counted cash missed the expected one.
+    gaps = [
+        s
+        for s in db.query(CashSession).filter(CashSession.closed_at.isnot(None))
+        if s.closed_at and period_start <= s.closed_at <= period_end
+        and abs(s.difference or 0) > 0.009
+    ]
+
     return DashboardStats(
         total_products=total_products,
         total_stock_value=round(total_stock_value, 2),
@@ -152,6 +160,8 @@ def get_stats(
         top_products=top_products,
         top_sellers=top_sellers,
         low_stock_products=low_stock_products,
+        cash_gap_count=len(gaps),
+        cash_gap_total=round(sum(abs(s.difference or 0) for s in gaps), 2),
         period_start=period_start,
         period_end=period_end,
     )
