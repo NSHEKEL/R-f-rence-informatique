@@ -24,6 +24,39 @@ export interface PendingSale {
   snapshot: Sale;
 }
 
+export interface RejectedSale extends PendingSale {
+  /** Why the server refused the ticket (HTTP detail). */
+  reason: string;
+  /** When the rejection happened (ISO). */
+  rejected_at: string;
+}
+
+const REJECTED_KEY = "ri_rejected_sales";
+
+/**
+ * Tickets the server refused for good (4xx). They are moved out of the retry
+ * queue but never dropped: the cashier sees them in the banner and re-rings
+ * them manually, so a sale is never lost silently.
+ */
+export function rejectedSales(): RejectedSale[] {
+  try {
+    const raw = localStorage.getItem(REJECTED_KEY);
+    return raw ? (JSON.parse(raw) as RejectedSale[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeRejected(queue: RejectedSale[]): void {
+  localStorage.setItem(REJECTED_KEY, JSON.stringify(queue));
+  window.dispatchEvent(new Event("ri:queue"));
+}
+
+/** Cashier re-rang the ticket on a fresh sale: drop it from the reject list. */
+export function dismissRejected(reference: string): void {
+  writeRejected(rejectedSales().filter((r) => r.snapshot.reference !== reference));
+}
+
 /** Last successful server response for a screen, replayed when offline. */
 export function cacheRead<T>(key: string): T | null {
   try {
@@ -110,9 +143,12 @@ export async function flushPendingSales(): Promise<SyncResult> {
         const detail = (
           err as { response?: { data?: { detail?: string } } }
         ).response?.data?.detail;
-        rejected.push(
-          `${entry.snapshot.reference} : ${detail ?? "refusé par le serveur"}`
-        );
+        const reason = detail ?? "refusé par le serveur";
+        rejected.push(`${entry.snapshot.reference} : ${reason}`);
+        writeRejected([
+          ...rejectedSales(),
+          { ...entry, reason, rejected_at: new Date().toISOString() },
+        ]);
       } else {
         remaining.push(entry);
       }
