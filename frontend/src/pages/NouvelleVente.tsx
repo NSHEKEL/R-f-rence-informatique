@@ -1273,9 +1273,9 @@ export default function NouvelleVente() {
               )}
             </div>
             <div className="flex gap-3">
-              <div className="w-[46%] shrink-0">
+              <div className="w-[58%] shrink-0">
               <label className="label">Mode de paiement</label>
-              <div className="grid grid-cols-3 gap-1.5">
+              <div className="grid grid-cols-4 gap-1.5">
                 {PAYMENTS.map((p) => {
                   const meta = PAYMENT_STYLE[p];
                   const Icon = meta.icon;
