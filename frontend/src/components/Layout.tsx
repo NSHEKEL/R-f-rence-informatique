@@ -48,6 +48,7 @@ import LicenseBanner from "./LicenseBanner";
 import NetworkBanner from "./NetworkBanner";
 import UpdateBanner from "./UpdateBanner";
 import NotificationBell from "./NotificationBell";
+import GlobalSearch from "./GlobalSearch";
 import UndoRedo from "./UndoRedo";
 import TillGate from "./TillGate";
 
@@ -191,35 +192,41 @@ function pick(...paths: string[]): NavItem[] {
     .filter((item): item is NavItem => Boolean(item));
 }
 
-/** Daily work grouped by trade, so a frequent action is one click away. */
+/** Daily work grouped like a full ERP menu; only real modules appear. */
 const navGroups: NavGroup[] = [
   {
-    label: "Vente",
+    label: "Ventes",
     icon: ShoppingCart,
-    items: pick("/ventes/nouvelle", "/ventes", "/retours", "/proformas"),
-  },
-  {
-    label: "Commandes & livraisons",
-    icon: ClipboardCheck,
     items: pick(
-      "/commandes",
+      "/ventes/nouvelle",
+      "/ventes",
+      "/proformas",
       "/livraisons",
-      "/approvisionnements",
-      "/fournisseurs"
+      "/retours"
     ),
   },
   {
-    label: "Produits & stock",
+    label: "Stocks",
     icon: Package,
     items: pick("/produits", "/categories", "/inventaire"),
   },
   {
-    label: "Clients & finances",
-    icon: HandCoins,
-    items: pick("/clients", "/dettes", "/comptabilite", "/paie", "/rapports"),
+    label: "Achats & commandes",
+    icon: ClipboardCheck,
+    items: pick("/commandes", "/approvisionnements", "/fournisseurs"),
   },
   {
-    label: "Comptes",
+    label: "Clients & finances",
+    icon: HandCoins,
+    items: pick("/clients", "/dettes", "/comptabilite", "/paie"),
+  },
+  {
+    label: "Pilotage",
+    icon: BarChart3,
+    items: pick("/rapports"),
+  },
+  {
+    label: "Administration",
     icon: UserCog,
     items: pick(
       "/utilisateurs",
@@ -234,6 +241,9 @@ const navGroups: NavGroup[] = [
 
 const topLevel = pick("/", "/caisse");
 const GROUPS_KEY = "ri_sidebar_groups";
+
+/** Pages the dashboard's « Récemment utilisés » strip offers back. */
+export const RECENTS_KEY = "ri_recent_pages";
 
 const COLLAPSED_KEY = "ri_sidebar_collapsed";
 
@@ -303,6 +313,25 @@ export default function Layout() {
   useEffect(() => {
     localStorage.setItem(GROUPS_KEY, JSON.stringify(openGroups));
   }, [openGroups]);
+
+  // Every visited module is remembered for the dashboard's recent strip.
+  useEffect(() => {
+    const label = pageTitles[location.pathname];
+    if (!label) return;
+    try {
+      const saved: unknown = JSON.parse(
+        localStorage.getItem(RECENTS_KEY) ?? "[]"
+      );
+      const list = Array.isArray(saved) ? (saved as { to: string }[]) : [];
+      const next = [
+        { to: location.pathname, label },
+        ...list.filter((r) => r.to !== location.pathname),
+      ].slice(0, 6);
+      localStorage.setItem(RECENTS_KEY, JSON.stringify(next));
+    } catch {
+      /* localStorage indisponible */
+    }
+  }, [location.pathname]);
 
   useEffect(() => {
     localStorage.setItem(COLLAPSED_KEY, collapsed ? "1" : "0");
@@ -549,8 +578,19 @@ export default function Layout() {
               <PanelLeftClose size={22} />
             )}
           </button>
-          <h1 className="text-xl font-bold text-slate-900">{title}</h1>
+          <h1 className="hidden text-xl font-bold text-slate-900 md:block">
+            {title}
+          </h1>
+          <GlobalSearch />
           <div className="ml-auto flex items-center gap-2">
+            <span className="hidden text-xs font-medium capitalize text-slate-400 xl:block">
+              {new Date().toLocaleDateString("fr-FR", {
+                weekday: "long",
+                day: "numeric",
+                month: "long",
+                year: "numeric",
+              })}
+            </span>
             <button
               onClick={toggleTheme}
               className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
