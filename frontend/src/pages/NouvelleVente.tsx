@@ -1,15 +1,40 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
+  type LucideIcon,
+  Apple,
+  Banknote,
   Barcode,
+  ChevronDown,
+  CreditCard,
+  CupSoda,
+  FileCheck2,
+  FilePenLine,
   Flame,
+  HandCoins,
+  Home,
   Image as ImageIcon,
+  Layers,
+  LayoutGrid,
+  List,
   Minus,
+  Monitor,
+  Pause,
+  Percent,
+  Play,
   Plus,
   Printer,
+  ReceiptText,
+  RotateCcw,
+  Send,
+  Shirt,
+  ShoppingBag,
   ShoppingCart,
+  Smartphone,
+  Sparkles,
   Trash2,
+  Truck,
   UserPlus,
   WifiOff,
   X,
@@ -22,6 +47,7 @@ import type {
   Product,
   ReceiptFormat,
   Sale,
+  Supplier,
 } from "../types";
 import Modal from "../components/Modal";
 import PrinterHint from "../components/PrinterHint";
@@ -44,6 +70,7 @@ const PAYMENTS = [
   "Espèces",
   "Mobile Money",
   "Carte bancaire",
+  "Chèque",
   "Virement",
   "Crédit (à régler plus tard)",
   "Mixte",
@@ -153,17 +180,20 @@ function offlineSale(
 }
 
 export default function NouvelleVente() {
-  const { user, isAdmin, can } = useAuth();
+  const { user, can } = useAuth();
   const canChangePrice = can("prix_modifier");
   const canQuote = can("proformas");
   const { company, printing } = useCompany();
   const { online } = useNetwork();
   const version = useSyncVersion();
+  const navigate = useNavigate();
 
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [bestSellerIds, setBestSellerIds] = useState<number[]>([]);
-  const [activeCategory, setActiveCategory] = useState<number | "top">("top");
+  const [activeCategory, setActiveCategory] = useState<number | "top" | "all">(
+    "top"
+  );
   const [priceMode, setPriceMode] = useState<PriceMode>("detail");
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [session, setSession] = useState<CashSessionDetail | null>(null);
@@ -184,6 +214,13 @@ export default function NouvelleVente() {
   const [error, setError] = useState("");
   const [flash, setFlash] = useState("");
   const [saving, setSaving] = useState(false);
+  const [mobileView, setMobileView] = useState<"catalog" | "cart">("catalog");
+  const [showParked, setShowParked] = useState(true);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [supplierFilter, setSupplierFilter] = useState<number | "all">("all");
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [cartCollapsed, setCartCollapsed] = useState(false);
+  const discountRef = useRef<HTMLInputElement>(null);
 
   const [newCustomer, setNewCustomer] = useState(false);
   const [customerForm, setCustomerForm] = useState({
@@ -202,6 +239,12 @@ export default function NouvelleVente() {
     setProducts(data);
     const cats = await fetchCached<Category[]>("/categories", "categories");
     setCategories(cats.data);
+    try {
+      const sup = await api.get<Supplier[]>("/suppliers");
+      setSuppliers(sup.data);
+    } catch {
+      /* filtre fournisseur optionnel */
+    }
     try {
       const top = await api.get<Product[]>("/products/best-sellers");
       setBestSellerIds(top.data.map((p) => p.id));
@@ -261,6 +304,18 @@ export default function NouvelleVente() {
     [categoryById]
   );
 
+  function categoryIcon(name: string): LucideIcon {
+    const n = name.toLowerCase();
+    if (/(aliment|épicerie|epicerie|denrée|riz|food)/.test(n)) return Apple;
+    if (/(boisson|eau|jus|coca|drink)/.test(n)) return CupSoda;
+    if (/(hygiène|hygiene|savon|beauté|beaute|propre)/.test(n)) return Sparkles;
+    if (/(maison|ménage|menage|domestique)/.test(n)) return Home;
+    if (/(électronique|electronique|informatique|télé|tele|tech|phone)/.test(n))
+      return Monitor;
+    if (/(vêtement|vetement|textile|habit|mode)/.test(n)) return Shirt;
+    return ShoppingBag;
+  }
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const available = products.filter((p) => p.quantity > 0);
@@ -273,14 +328,42 @@ export default function NouvelleVente() {
         )
         .slice(0, 60);
     }
+    const applySupplier = (list: Product[]) =>
+      supplierFilter === "all"
+        ? list
+        : list.filter((p) => p.supplier_id === supplierFilter);
+    if (activeCategory === "all") {
+      return applySupplier(available.slice(0, 80));
+    }
     if (activeCategory === "top") {
       const ranked = bestSellerIds
         .map((id) => available.find((p) => p.id === id))
         .filter((p): p is Product => Boolean(p));
-      return ranked.length > 0 ? ranked : available.slice(0, 40);
+      return applySupplier(ranked.length > 0 ? ranked : available.slice(0, 40));
     }
-    return available.filter((p) => p.category_id === activeCategory);
-  }, [products, query, activeCategory, bestSellerIds]);
+    return applySupplier(
+      available.filter((p) => p.category_id === activeCategory)
+    );
+  }, [products, query, activeCategory, bestSellerIds, supplierFilter]);
+
+  const PAYMENT_STYLE: Record<string, { icon: LucideIcon; tint: string }> = {
+    Espèces: { icon: Banknote, tint: "bg-emerald-600" },
+    "Mobile Money": { icon: Smartphone, tint: "bg-orange-500" },
+    "Carte bancaire": { icon: CreditCard, tint: "bg-blue-600" },
+    Chèque: { icon: ReceiptText, tint: "bg-slate-500" },
+    Virement: { icon: Send, tint: "bg-indigo-500" },
+    "Crédit (à régler plus tard)": { icon: HandCoins, tint: "bg-rose-600" },
+    Mixte: { icon: Layers, tint: "bg-purple-600" },
+  };
+
+  const recents = useMemo(
+    () =>
+      [...products]
+        .filter((p) => p.quantity > 0)
+        .sort((a, b) => b.id - a.id)
+        .slice(0, 6),
+    [products]
+  );
 
   const subtotal = useMemo(
     () => cart.reduce((sum, l) => sum + lineNet(l, priceMode), 0),
@@ -581,7 +664,9 @@ export default function NouvelleVente() {
     const next = [...readParked(), entry];
     localStorage.setItem(PARK_KEY, JSON.stringify(next));
     setParked(next);
-    setFlash(`Ticket mis en attente (${entry.customer_name})`);
+    setFlash(
+      `Ticket mis en attente${entry.customer_name ? ` (${entry.customer_name})` : ""}`
+    );
     window.setTimeout(() => setFlash(""), 2000);
     resetCart();
   }
@@ -636,7 +721,7 @@ export default function NouvelleVente() {
    * cashing it in — same lines and prices, the sale happens later from the
    * proformas page.
    */
-  async function saveQuote() {
+  async function saveQuote(kind: "devis" | "proforma" = "devis") {
     if (cart.length === 0) {
       setError("Le panier est vide.");
       return;
@@ -645,7 +730,7 @@ export default function NouvelleVente() {
     setError("");
     try {
       const res = await api.post<{ reference: string }>("/proformas", {
-        kind: "devis",
+        kind,
         status: "Brouillon",
         customer_id: customer?.id ?? null,
         customer_name: customer?.name ?? customerQuery.trim(),
@@ -660,7 +745,9 @@ export default function NouvelleVente() {
         })),
       });
       resetCart();
-      setFlash(`Devis ${res.data.reference} enregistré`);
+      setFlash(
+        `${kind === "proforma" ? "Proforma" : "Devis"} ${res.data.reference} enregistré`
+      );
       window.setTimeout(() => setFlash(""), 3000);
     } catch (err) {
       setError(
@@ -672,6 +759,113 @@ export default function NouvelleVente() {
       setSaving(false);
     }
   }
+
+  const quickActions: {
+    icon: LucideIcon;
+    label: string;
+    sub: string;
+    tint: string;
+    onClick: () => void;
+    disabled?: boolean;
+  }[] = [
+    {
+      icon: ReceiptText,
+      label: "Facture",
+      sub: "Nouveau ticket",
+      tint: "bg-blue-600",
+      onClick: clearCart,
+    },
+    ...(canQuote
+      ? [
+          {
+            icon: FileCheck2,
+            label: "Pro forma",
+            sub: "Facture provisoire",
+            tint: "bg-violet-600",
+            onClick: () => saveQuote("proforma"),
+            disabled: saving || cart.length === 0,
+          },
+          {
+            icon: FilePenLine,
+            label: "Devis",
+            sub: "Établir un devis",
+            tint: "bg-teal-500",
+            onClick: () => saveQuote("devis"),
+            disabled: saving || cart.length === 0,
+          },
+        ]
+      : []),
+    ...(can("livraisons")
+      ? [
+          {
+            icon: Truck,
+            label: "Livraison",
+            sub: "Bon de livraison",
+            tint: "bg-emerald-600",
+            onClick: () => navigate("/livraisons"),
+          },
+        ]
+      : []),
+    {
+      icon: UserPlus,
+      label: "Client",
+      sub: "Ajouter un client",
+      tint: "bg-orange-500",
+      onClick: () => setNewCustomer(true),
+    },
+    {
+      icon: Percent,
+      label: "Remise",
+      sub: "Remise globale",
+      tint: "bg-pink-600",
+      onClick: () => discountRef.current?.focus(),
+      disabled: cart.length === 0 || !canChangePrice,
+    },
+    {
+      icon: Printer,
+      label: "Imprimer",
+      sub: "Dernier document",
+      tint: "bg-cyan-600",
+      onClick: () =>
+        lastSale
+          ? void printReceipt(format, printing.receipt)
+          : navigate("/ventes"),
+    },
+    ...(can("retours")
+      ? [
+          {
+            icon: RotateCcw,
+            label: "Retour",
+            sub: "Retour d'articles",
+            tint: "bg-rose-600",
+            onClick: () => navigate("/retours"),
+          },
+        ]
+      : []),
+    {
+      icon: Pause,
+      label: "Suspendre",
+      sub: "Mettre en attente",
+      tint: "bg-slate-600",
+      onClick: parkCart,
+      disabled: cart.length === 0,
+    },
+    {
+      icon: Play,
+      label: `Reprendre${parked.length ? ` (${parked.length})` : ""}`,
+      sub: "Tickets suspendus",
+      tint: "bg-amber-600",
+      onClick: () => setShowParked((v) => !v),
+      disabled: parked.length === 0,
+    },
+    {
+      icon: CreditCard,
+      label: "Crédit",
+      sub: "Payer plus tard",
+      tint: "bg-indigo-600",
+      onClick: () => setPayment("Crédit (à régler plus tard)"),
+    },
+  ];
 
   if (tillLoaded && !session) {
     return (
@@ -714,30 +908,61 @@ export default function NouvelleVente() {
         </Link>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 p-4 lg:grid-cols-[3fr_2fr]">
+      {/* Barre d'actions rapides */}
+      <div className="flex gap-2 overflow-x-auto border-b border-slate-200 bg-white px-4 py-2">
+        {quickActions.map((action) => (
+          <button
+            key={action.label}
+            onClick={action.onClick}
+            disabled={action.disabled}
+            className={`flex min-w-[118px] shrink-0 flex-col items-center gap-1.5 rounded-xl px-3 py-3 text-white shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 ${action.tint}`}
+          >
+            <action.icon size={20} />
+            <span className="text-xs font-bold leading-none">{action.label}</span>
+            <span className="text-[10px] font-medium leading-none opacity-80">
+              {action.sub}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      <div className="flex min-h-0 flex-1 gap-4 p-4">
         {/* Ticket in progress */}
-        <div className="card flex min-h-0 flex-col overflow-y-auto p-0">
-          <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 px-4 py-3">
-            <span className="flex items-center gap-2 text-base font-bold text-slate-900">
-              <ShoppingCart size={18} className="text-brand-600" />
-              Panier / Ticket
+        <div
+          className={`card min-h-0 w-full flex-col overflow-y-auto p-0 md:order-2 md:flex md:w-[380px] md:shrink-0 lg:w-[440px] xl:w-[520px] 2xl:w-[560px] ${
+            mobileView === "cart" ? "flex" : "hidden"
+          }`}
+        >
+          <div className="sticky top-0 z-10 bg-white">
+          <div className="flex flex-wrap items-center gap-2 rounded-t-2xl bg-[#123a7a] px-4 py-3 text-white">
+            <span className="flex items-center gap-2 text-base font-bold">
+              <ShoppingCart size={18} />
+              Panier ({itemCount} article{itemCount > 1 ? "s" : ""})
             </span>
-            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-500">
-              {itemCount} article(s)
-            </span>
-            <div className="ml-auto flex gap-2">
+            <div className="ml-auto flex items-center gap-1.5">
               <button
-                className="btn-ghost border border-brand-200 py-1.5 text-sm font-semibold text-brand-700 hover:bg-brand-50"
+                className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white/90 transition hover:bg-white/15 disabled:opacity-40"
                 onClick={() => searchRef.current?.focus()}
               >
-                <Plus size={15} /> Ajouter un article
+                + Article
               </button>
               <button
-                className="btn-ghost border border-red-200 py-1.5 text-sm font-semibold text-red-600 hover:bg-red-50"
+                className="flex items-center gap-1 rounded-lg bg-white/15 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-white/25 disabled:opacity-40"
                 onClick={clearCart}
                 disabled={cart.length === 0}
               >
-                <Trash2 size={15} /> Vider le panier
+                <Trash2 size={13} /> Effacer tout
+              </button>
+              <button
+                className="rounded-lg p-1.5 text-white/80 transition hover:bg-white/15"
+                onClick={() => setCartCollapsed((v) => !v)}
+                title={cartCollapsed ? "Développer le panier" : "Réduire le panier"}
+                aria-label={cartCollapsed ? "Développer le panier" : "Réduire le panier"}
+              >
+                <ChevronDown
+                  size={16}
+                  className={`transition ${cartCollapsed ? "rotate-180" : ""}`}
+                />
               </button>
             </div>
           </div>
@@ -769,7 +994,7 @@ export default function NouvelleVente() {
             </p>
           )}
 
-          {parked.length > 0 && (
+          {parked.length > 0 && showParked && (
             <div className="border-t border-amber-100 bg-amber-50 px-4 py-2">
               <p className="mb-1 text-xs font-bold uppercase tracking-wide text-amber-700">
                 Tickets en attente
@@ -798,8 +1023,13 @@ export default function NouvelleVente() {
               </div>
             </div>
           )}
+          </div>
 
-          <div className="min-h-[330px] flex-1 overflow-y-auto">
+          <div
+            className={`min-h-[120px] flex-1 overflow-y-auto ${
+              cartCollapsed ? "hidden" : ""
+            }`}
+          >
             {cart.length === 0 ? (
               <p className="px-4 py-10 text-center text-sm text-slate-400">
                 Scannez un code ou cliquez sur un article.
@@ -808,13 +1038,19 @@ export default function NouvelleVente() {
               <table className="w-full text-sm">
                 <thead className="sticky top-0 z-[1] bg-white">
                   <tr className="border-b border-slate-200 text-left text-[11px] font-bold uppercase tracking-wide text-slate-400">
-                    <th className="w-8 px-3 py-2">#</th>
-                    <th className="px-1 py-2">Produit</th>
-                    <th className="w-28 px-1 py-2 text-right">Prix unit.</th>
-                    <th className="w-24 px-1 py-2 text-right">Remise</th>
-                    <th className="w-36 px-1 py-2 text-center">Quantité</th>
-                    <th className="w-28 px-1 py-2 text-right">Total</th>
-                    <th className="w-10 px-1 py-2" />
+                    <th className="w-7 px-2 py-1.5">#</th>
+                    <th className="px-1 py-1.5">Article</th>
+                    <th className="w-[86px] px-1 py-1.5 text-right">
+                      Prix unitaire
+                    </th>
+                    {canChangePrice && (
+                      <th className="w-14 px-1 py-1.5 text-right">Rem.</th>
+                    )}
+                    <th className="w-[118px] px-1 py-1.5 text-center">
+                      Quantité
+                    </th>
+                    <th className="w-[84px] px-1 py-1.5 text-right">Total</th>
+                    <th className="w-8 px-1 py-1.5" />
                   </tr>
                 </thead>
                 <tbody>
@@ -823,37 +1059,31 @@ export default function NouvelleVente() {
                       key={l.product.id}
                       className="border-b border-slate-100 last:border-0"
                     >
-                      <td className="px-3 py-2.5 text-slate-400">
+                      <td className="px-2 py-1.5 text-xs text-slate-400">
                         {index + 1}
                       </td>
-                      <td className="px-1 py-2.5">
-                        <div className="flex items-center gap-2.5">
+                      <td className="px-1 py-1.5">
+                        <div className="flex items-center gap-2">
                           {l.product.image ? (
                             <img
                               src={l.product.image}
                               alt=""
-                              className="h-10 w-10 shrink-0 rounded-lg bg-slate-50 object-contain"
+                              className="h-9 w-9 shrink-0 rounded-lg bg-slate-50 object-contain"
                             />
                           ) : (
-                            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-300">
-                              <ImageIcon size={16} />
+                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-300">
+                              <ImageIcon size={15} />
                             </span>
                           )}
-                          <div className="min-w-0">
-                            <p className="truncate font-semibold text-slate-800">
-                              {l.product.name}
-                            </p>
-                            <p className="truncate text-xs text-slate-400">
-                              {categoryName(l.product.category_id)} · Stock :{" "}
-                              {l.product.quantity}
-                            </p>
-                          </div>
+                          <p className="min-w-0 truncate text-sm font-semibold text-slate-800">
+                            {l.product.name}
+                          </p>
                         </div>
                       </td>
-                      <td className="px-1 py-2.5 text-right">
+                      <td className="px-1 py-1.5 text-right">
                         {canChangePrice ? (
                           <input
-                            className="w-24 rounded-lg border border-slate-200 px-1.5 py-1 text-right text-sm text-slate-700"
+                            className="w-[76px] rounded-lg border border-slate-200 px-1.5 py-1 text-right text-sm text-slate-700"
                             value={l.price ?? unitPrice(l.product, priceMode)}
                             onChange={(e) =>
                               setLinePrice(l.product.id, e.target.value)
@@ -867,10 +1097,10 @@ export default function NouvelleVente() {
                           </span>
                         )}
                       </td>
-                      <td className="px-1 py-2.5 text-right">
-                        {canChangePrice ? (
+                      {canChangePrice && (
+                        <td className="px-1 py-1.5 text-right">
                           <input
-                            className="w-20 rounded-lg border border-slate-200 px-1.5 py-1 text-right text-sm text-slate-700"
+                            className="w-14 rounded-lg border border-slate-200 px-1 py-1 text-right text-xs text-slate-700"
                             value={l.discount ?? ""}
                             placeholder="0"
                             onChange={(e) =>
@@ -879,16 +1109,12 @@ export default function NouvelleVente() {
                             title="Remise pour cette ligne"
                             aria-label={`Remise de ${l.product.name}`}
                           />
-                        ) : (
-                          <span className="text-slate-600">
-                            {l.discount ? formatXOF(l.discount) : "—"}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-1 py-2.5">
-                        <div className="flex items-center justify-center gap-1">
+                        </td>
+                      )}
+                      <td className="px-1 py-1.5">
+                        <div className="flex items-center justify-center gap-0.5">
                           <button
-                            className="rounded-lg bg-slate-100 p-1.5 text-slate-600 hover:bg-slate-200"
+                            className="rounded-lg bg-slate-100 p-1 text-slate-600 hover:bg-slate-200"
                             onClick={() =>
                               setQuantity(l.product.id, l.quantity - 1)
                             }
@@ -898,7 +1124,7 @@ export default function NouvelleVente() {
                             <Minus size={14} />
                           </button>
                           <input
-                            className="w-12 rounded-lg border border-slate-200 py-1 text-center text-sm"
+                            className="w-11 rounded-lg border border-slate-200 py-1 text-center text-sm"
                             value={l.quantity}
                             onChange={(e) =>
                               setQuantity(
@@ -909,7 +1135,7 @@ export default function NouvelleVente() {
                             aria-label={`Quantité de ${l.product.name}`}
                           />
                           <button
-                            className="rounded-lg bg-slate-100 p-1.5 text-slate-600 hover:bg-slate-200"
+                            className="rounded-lg bg-slate-100 p-1 text-slate-600 hover:bg-slate-200"
                             onClick={() =>
                               setQuantity(l.product.id, l.quantity + 1)
                             }
@@ -920,10 +1146,10 @@ export default function NouvelleVente() {
                           </button>
                         </div>
                       </td>
-                      <td className="whitespace-nowrap px-1 py-2.5 text-right font-bold text-slate-900">
+                      <td className="whitespace-nowrap px-1 py-1.5 text-right text-sm font-bold text-slate-900">
                         {formatXOF(lineNet(l, priceMode))}
                       </td>
-                      <td className="px-1 py-2.5 text-center">
+                      <td className="px-1 py-1.5 text-center">
                         <button
                           className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
                           onClick={() => setQuantity(l.product.id, 0)}
@@ -940,28 +1166,19 @@ export default function NouvelleVente() {
             )}
           </div>
 
-          {cart.length > 0 && (
-            <div className="flex shrink-0 items-center justify-between border-t border-slate-200 bg-brand-50 px-4 py-2.5">
-              <span className="text-sm font-bold text-slate-600">
-                Articles : {itemCount}
-              </span>
-              <span className="text-sm font-semibold text-slate-500">
-                Sous-total{" "}
-                <span className="text-lg font-extrabold text-brand-700">
-                  {formatXOF(subtotal)}
-                </span>
-              </span>
-            </div>
-          )}
-
           {error && (
             <p className="bg-red-50 px-4 py-2.5 text-sm font-medium text-red-600">
               {error}
             </p>
           )}
 
-          <div className="space-y-1.5 border-t border-slate-100 px-4 py-2.5">
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          <div
+            className={`sticky bottom-0 z-10 bg-white ${
+              cartCollapsed ? "hidden" : ""
+            }`}
+          >
+          <div className="space-y-2 border-t border-slate-100 px-3 py-2">
+            <div className="grid gap-2 grid-cols-1">
               <div>
                 <div className="flex items-center justify-between">
                   <label className="label">Client</label>
@@ -1015,18 +1232,6 @@ export default function NouvelleVente() {
                   </div>
                 )}
               </div>
-              <div>
-                <label className="label">Paiement</label>
-                <select
-                  className="input"
-                  value={payment}
-                  onChange={(e) => setPayment(e.target.value)}
-                >
-                  {PAYMENTS.map((p) => (
-                    <option key={p}>{p}</option>
-                  ))}
-                </select>
-              </div>
               {payment === "Mixte" && (
                 <div className="sm:col-span-2 xl:col-span-3">
                   <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
@@ -1066,18 +1271,71 @@ export default function NouvelleVente() {
                   })()}
                 </div>
               )}
-              <div>
-                <label className="label">Remise globale</label>
-                <input
-                  className="input"
-                  type="number"
-                  min={0}
-                  value={discount || ""}
-                  onChange={(e) =>
-                    setDiscount(Math.max(Number(e.target.value) || 0, 0))
-                  }
-                  placeholder="0"
-                />
+            </div>
+            <div className="flex gap-3">
+              <div className="w-[58%] shrink-0">
+              <label className="label">Mode de paiement</label>
+              <div className="grid grid-cols-4 gap-1.5">
+                {PAYMENTS.map((p) => {
+                  const meta = PAYMENT_STYLE[p];
+                  const Icon = meta.icon;
+                  return (
+                    <button
+                      key={p}
+                      onClick={() => setPayment(p)}
+                      className={`flex flex-col items-center justify-center gap-1 rounded-lg px-1 py-2 text-[10px] font-bold leading-tight text-white shadow-sm transition hover:opacity-90 ${
+                        meta.tint
+                      } ${
+                        payment === p
+                          ? "ring-2 ring-slate-900 ring-offset-1"
+                          : "opacity-85"
+                      }`}
+                    >
+                      <Icon size={15} />
+                      <span className="text-center">
+                        {p === "Crédit (à régler plus tard)" ? "Crédit" : p}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              </div>
+              <div className="min-w-0 flex-1 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold text-slate-500">
+                    Sous-total
+                  </span>
+                  <span className="text-sm font-extrabold text-slate-800">
+                    {formatXOF(vat ? vat.excluded : subtotal)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-semibold text-slate-500">
+                    Remise
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <input
+                      ref={discountRef}
+                      className="input w-20 px-2 py-1 text-right"
+                      type="number"
+                      min={0}
+                      value={discount || ""}
+                      onChange={(e) =>
+                        setDiscount(Math.max(Number(e.target.value) || 0, 0))
+                      }
+                      placeholder="0"
+                    />
+                    <span className="text-[10px] font-semibold text-slate-400">
+                      FCFA
+                    </span>
+                  </span>
+                </div>
+                {vat && (
+                  <div className="flex items-center justify-between text-[11px] text-slate-400">
+                    <span>TVA ({vat.rate} %)</span>
+                    <span>{formatXOF(vat.vat)}</span>
+                  </div>
+                )}
               </div>
             </div>
             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
@@ -1120,15 +1378,13 @@ export default function NouvelleVente() {
             </div>
           </div>
 
-          <div className="bg-slate-800 px-4 py-2.5 text-white">
-            <div className="flex items-center justify-between text-sm text-slate-300">
-              <span>Articles</span>
-              <span>{itemCount}</span>
-            </div>
-            <div className="mt-1 flex items-center justify-between text-sm text-slate-300">
-              <span>{vat ? "Total HT" : "Sous-total"}</span>
-              <span>{formatXOF(vat ? vat.excluded : total)}</span>
-            </div>
+          <div className="bg-[#123a7a] px-4 py-2.5 text-white">
+            {vat && (
+              <div className="flex items-center justify-between text-sm text-slate-300">
+                <span>Total HT</span>
+                <span>{formatXOF(vat.excluded)}</span>
+              </div>
+            )}
             {vat && (
               <div className="mt-1 flex items-center justify-between text-sm text-slate-300">
                 <span>TVA ({vat.rate} %)</span>
@@ -1175,7 +1431,7 @@ export default function NouvelleVente() {
             {canQuote && (
               <button
                 className="btn-ghost flex-1 justify-center py-3"
-                onClick={saveQuote}
+                onClick={() => saveQuote("devis")}
                 disabled={saving || cart.length === 0}
               >
                 Devis
@@ -1186,40 +1442,134 @@ export default function NouvelleVente() {
               onClick={checkout}
               disabled={saving || cart.length === 0}
             >
-              {saving ? "Encaissement..." : `Payer ${formatXOF(total)}`}
+              <ReceiptText size={18} />
+              {saving
+                ? "Encaissement..."
+                : `Valider la vente · ${formatXOF(total)}`}
             </button>
+          </div>
           </div>
         </div>
 
         {/* Article picker */}
-        <div className="card flex min-h-0 flex-col p-4">
-          <div className="mb-3 flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2">
-            <input
-              ref={searchRef}
-              autoFocus
-              className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
-              placeholder="Rechercher un article, un code ou une catégorie..."
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  submitSearch();
+        <div
+          className={`card min-h-0 min-w-0 flex-1 flex-col p-4 md:order-1 md:flex ${
+            mobileView === "catalog" ? "flex" : "hidden"
+          }`}
+        >
+          {!query && (
+            <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
+              {[
+                {
+                  id: "all" as number | "top" | "all",
+                  label: "Tous",
+                  icon: LayoutGrid,
+                },
+                {
+                  id: "top" as number | "top" | "all",
+                  label: "Meilleures ventes",
+                  icon: Flame,
+                },
+                ...categories.map((c) => ({
+                  id: c.id as number | "top" | "all",
+                  label: c.name,
+                  icon: categoryIcon(c.name),
+                })),
+              ].map((chip) => {
+                const Icon = chip.icon;
+                const active = activeCategory === chip.id;
+                return (
+                  <button
+                    key={chip.id}
+                    onClick={() => setActiveCategory(chip.id)}
+                    className={`flex min-w-[74px] shrink-0 flex-col items-center gap-1 rounded-xl border px-3 py-2 text-[11px] font-semibold transition ${
+                      active
+                        ? "border-[#123a7a] bg-[#123a7a] text-white shadow-sm"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:text-slate-900"
+                    }`}
+                  >
+                    <Icon size={17} />
+                    <span className="max-w-[88px] truncate">{chip.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          <div className="mb-3 flex items-center gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
+              <input
+                ref={searchRef}
+                autoFocus
+                className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
+                placeholder="Rechercher un article, un code ou une catégorie..."
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    submitSearch();
+                  }
+                }}
+              />
+              {query && (
+                <button
+                  className="shrink-0 text-slate-400 hover:text-slate-600"
+                  onClick={() => setQuery("")}
+                  title="Effacer la recherche"
+                  aria-label="Effacer la recherche"
+                >
+                  <X size={16} />
+                </button>
+              )}
+            </div>
+            <select
+              className="hidden w-36 shrink-0 rounded-xl border border-slate-200 bg-white px-2 py-2.5 text-xs font-semibold text-slate-600 sm:block"
+              value={activeCategory === "top" ? "all" : activeCategory}
+              onChange={(e) =>
+                setActiveCategory(
+                  e.target.value === "all" ? "all" : Number(e.target.value)
+                )
+              }
+              aria-label="Filtrer par catégorie"
+            >
+              <option value="all">Toutes les catégories</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            {suppliers.length > 0 && (
+              <select
+                className="hidden w-32 shrink-0 rounded-xl border border-slate-200 bg-white px-2 py-2.5 text-xs font-semibold text-slate-600 sm:block"
+                value={supplierFilter}
+                onChange={(e) =>
+                  setSupplierFilter(
+                    e.target.value === "all" ? "all" : Number(e.target.value)
+                  )
                 }
-              }}
-            />
-            {query && (
-              <button
-                className="shrink-0 text-slate-400 hover:text-slate-600"
-                onClick={() => setQuery("")}
-                title="Effacer la recherche"
-                aria-label="Effacer la recherche"
+                aria-label="Filtrer par fournisseur"
               >
-                <X size={16} />
-              </button>
+                <option value="all">Tous les fournisseurs</option>
+                {suppliers.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
             )}
             <button
-              className="shrink-0 rounded-lg border border-brand-200 p-2 text-brand-600 transition hover:bg-brand-50"
+              className="shrink-0 rounded-xl border border-slate-200 bg-white p-2.5 text-slate-500 transition hover:border-blue-300"
+              onClick={() =>
+                setViewMode((v) => (v === "grid" ? "list" : "grid"))
+              }
+              title={viewMode === "grid" ? "Affichage liste" : "Affichage grille"}
+              aria-label={viewMode === "grid" ? "Affichage liste" : "Affichage grille"}
+            >
+              {viewMode === "grid" ? <List size={16} /> : <LayoutGrid size={16} />}
+            </button>
+            <button
+              className="shrink-0 rounded-xl border border-brand-200 bg-white p-2.5 text-brand-600 transition hover:bg-brand-50"
               onClick={submitSearch}
               title="Scanner un code-barres ou ajouter l'article trouvé"
               aria-label="Scanner un code-barres ou ajouter l'article trouvé"
@@ -1227,60 +1577,89 @@ export default function NouvelleVente() {
               <Barcode size={16} />
             </button>
           </div>
-          {!query && (
-            <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
-              <button
-                onClick={() => setActiveCategory("top")}
-                className={`flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
-                  activeCategory === "top"
-                    ? "bg-brand-600 text-white"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                }`}
-              >
-                <Flame size={13} /> Meilleures ventes
-              </button>
-              {categories.map((c) => (
+          {viewMode === "list" ? (
+            <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto rounded-xl border border-slate-200 bg-white">
+              {filtered.map((p) => (
                 <button
-                  key={c.id}
-                  onClick={() => setActiveCategory(c.id)}
-                  className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
-                    activeCategory === c.id
-                      ? "bg-brand-600 text-white"
-                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                  }`}
+                  key={p.id}
+                  onClick={() => addToCart(p)}
+                  className="flex w-full items-center gap-3 px-3 py-2 text-left transition hover:bg-brand-50"
                 >
-                  {c.name}
+                  {p.image ? (
+                    <img
+                      src={p.image}
+                      alt=""
+                      className="h-9 w-9 shrink-0 rounded-lg bg-slate-50 object-contain"
+                    />
+                  ) : (
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-300">
+                      <ImageIcon size={15} />
+                    </span>
+                  )}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-slate-800">
+                      {p.name}
+                    </span>
+                    <span className="text-[11px] text-slate-400">
+                      {categoryName(p.category_id)} · Stock : {p.quantity}
+                    </span>
+                  </span>
+                  <span className="text-sm font-extrabold text-brand-700">
+                    {formatXOF(unitPrice(p, priceMode))}
+                  </span>
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-600 text-white">
+                    <Plus size={15} />
+                  </span>
                 </button>
               ))}
+              {filtered.length === 0 && (
+                <p className="py-10 text-center text-sm text-slate-400">
+                  Aucun article disponible.
+                </p>
+              )}
             </div>
-          )}
-          <div className="grid min-h-0 flex-1 grid-cols-2 gap-3 overflow-y-auto xl:grid-cols-3">
+          ) : (
+          <div className="grid min-h-0 flex-1 grid-cols-2 content-start gap-2.5 overflow-y-auto sm:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-6">
             {filtered.map((p) => (
               <button
                 key={p.id}
                 onClick={() => addToCart(p)}
-                className="flex flex-col items-center rounded-2xl border-2 border-brand-500 bg-white p-3 text-center transition hover:bg-brand-50"
+                className="flex flex-col rounded-2xl border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-brand-400 hover:shadow"
               >
                 {p.image ? (
                   <img
                     src={p.image}
                     alt=""
-                    className="mb-2 h-20 w-full rounded-xl object-contain"
+                    className="mb-2 h-[88px] w-full rounded-xl object-contain"
                   />
                 ) : (
-                  <span className="mb-2 flex h-20 w-full items-center justify-center rounded-xl bg-slate-100 text-slate-300">
+                  <span className="mb-2 flex h-[88px] w-full items-center justify-center rounded-xl bg-slate-100 text-slate-300">
                     <ImageIcon size={22} />
                   </span>
                 )}
-                <p className="line-clamp-2 text-sm font-bold text-slate-800">
+                <p className="line-clamp-2 min-h-[2.5rem] text-sm font-bold text-slate-800">
                   {p.name}
                 </p>
-                <p className="mt-auto pt-1 text-sm font-extrabold text-brand-700">
+                <p className="truncate text-[11px] text-slate-400">
+                  {categoryName(p.category_id)}
+                </p>
+                <p className="mt-0.5 text-sm font-extrabold text-brand-700">
                   {formatXOF(unitPrice(p, priceMode))}
                 </p>
-                {isAdmin && (
-                  <p className="text-xs text-slate-400">Stock : {p.quantity}</p>
-                )}
+                <div className="mt-1.5 flex items-center justify-between">
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                      p.quantity <= p.min_stock
+                        ? "bg-amber-100 text-amber-700"
+                        : "bg-emerald-100 text-emerald-700"
+                    }`}
+                  >
+                    Stock : {p.quantity}
+                  </span>
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-600 text-white">
+                    <Plus size={15} />
+                  </span>
+                </div>
               </button>
             ))}
             {filtered.length === 0 && (
@@ -1289,7 +1668,70 @@ export default function NouvelleVente() {
               </p>
             )}
           </div>
+          )}
+          {!query && recents.length > 0 && (
+            <div className="mt-3 border-t border-slate-100 pt-3">
+              <div className="mb-2 flex items-center justify-between">
+                <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                  Articles récemment ajoutés
+                </h3>
+                <Link
+                  to="/produits"
+                  className="text-xs font-semibold text-brand-700 hover:underline"
+                >
+                  Voir tout
+                </Link>
+              </div>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {recents.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => addToCart(p)}
+                    className="flex w-28 shrink-0 flex-col items-center rounded-xl border border-slate-200 bg-white p-2 text-center hover:border-brand-400"
+                  >
+                    {p.image ? (
+                      <img
+                        src={p.image}
+                        alt=""
+                        className="mb-1 h-10 w-full object-contain"
+                      />
+                    ) : (
+                      <span className="mb-1 flex h-10 items-center justify-center text-slate-300">
+                        <ImageIcon size={18} />
+                      </span>
+                    )}
+                    <p className="w-full truncate text-[11px] font-semibold text-slate-700">
+                      {p.name}
+                    </p>
+                    <p className="text-[11px] font-bold text-brand-700">
+                      {formatXOF(unitPrice(p, priceMode))}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
+      </div>
+
+      {/* Bascule catalogue / panier — mobile */}
+      <div className="flex items-center gap-2 border-t border-slate-200 bg-white px-3 py-2 md:hidden">
+        <button
+          className={`flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold ${
+            mobileView === "catalog"
+              ? "bg-brand-50 text-brand-700"
+              : "text-slate-500"
+          }`}
+          onClick={() => setMobileView("catalog")}
+        >
+          <LayoutGrid size={16} /> Catalogue
+        </button>
+        <button
+          className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand-600 px-3 py-2.5 text-sm font-bold text-white"
+          onClick={() => setMobileView("cart")}
+        >
+          <ShoppingCart size={16} /> Panier ({itemCount}) · {formatXOF(total)}
+        </button>
       </div>
 
       {/* New customer */}

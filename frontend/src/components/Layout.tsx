@@ -42,6 +42,7 @@ import { useCompany } from "../context/CompanyContext";
 import { useLicense } from "../context/LicenseContext";
 import { useTheme } from "../context/ThemeContext";
 import { TILL_GATED, useTill } from "../context/TillContext";
+import { useNetwork } from "../context/NetworkContext";
 import { ADMIN_FEATURE, PLAN_FEATURE } from "../lib/planFeatures";
 import { isFullscreen, toggleFullscreen } from "../lib/fullscreen";
 import LicenseBanner from "./LicenseBanner";
@@ -51,6 +52,7 @@ import NotificationBell from "./NotificationBell";
 import GlobalSearch from "./GlobalSearch";
 import UndoRedo from "./UndoRedo";
 import TillGate from "./TillGate";
+import api from "../api/client";
 
 type NavItem = {
   to: string;
@@ -287,9 +289,18 @@ export default function Layout() {
   const { user, isAdmin, can, logout } = useAuth();
   const { brandName, logoSrc } = useCompany();
   const { hasFeature, featureName } = useLicense();
-  const { selling } = useTill();
+  const { selling, session: tillSession } = useTill();
+  const { online } = useNetwork();
   const { theme, toggle: toggleTheme } = useTheme();
   const [fullscreen, setFullscreen] = useState(isFullscreen);
+  const [appVersion, setAppVersion] = useState("");
+
+  useEffect(() => {
+    api
+      .get<{ version?: string }>("/health")
+      .then(({ data }) => setAppVersion(data.version ?? ""))
+      .catch(() => {});
+  }, []);
   const location = useLocation();
   const navigate = useNavigate();
   const title = pageTitles[location.pathname] ?? brandName;
@@ -379,14 +390,14 @@ export default function Layout() {
           collapsed ? "lg:justify-center lg:px-2" : ""
         } ${
           isActive
-            ? "bg-brand-50 text-brand-700"
-            : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+            ? "bg-blue-600 text-white shadow-sm"
+            : "text-blue-100/80 hover:bg-white/10 hover:text-white"
         }`}
       >
         <item.icon size={20} className="shrink-0" />
         <span
           className={`${collapsed ? "lg:hidden" : ""} ${
-            locked ? "text-slate-400" : ""
+            locked ? "text-blue-300/60" : ""
           }`}
         >
           {item.label}
@@ -418,8 +429,8 @@ export default function Layout() {
       </a>
       {/* Sidebar */}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex flex-col border-r border-slate-200 bg-white transition-all duration-200 lg:static lg:translate-x-0 ${
-          collapsed ? "w-72 lg:w-[76px]" : "w-72"
+        className={`fixed inset-y-0 left-0 z-40 flex flex-col bg-gradient-to-b from-[#0b2559] via-[#0d2f6e] to-[#0a1f4a] text-white transition-all duration-200 lg:static lg:translate-x-0 ${
+          collapsed ? "w-[208px] lg:w-[76px]" : "w-[208px]"
         } ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}
       >
         <div
@@ -427,7 +438,7 @@ export default function Layout() {
             collapsed ? "px-6 lg:justify-center lg:px-3" : "px-6"
           }`}
         >
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white ring-1 ring-slate-100">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white/95 ring-1 ring-white/30">
             <img
               src={logoSrc}
               alt={brandName}
@@ -437,15 +448,15 @@ export default function Layout() {
           <div
             className={`min-w-0 leading-tight ${collapsed ? "lg:hidden" : ""}`}
           >
-            <p className="truncate text-sm font-extrabold uppercase tracking-tight text-brand-700">
+            <p className="truncate text-sm font-extrabold uppercase tracking-tight text-white">
               {brandName}
             </p>
-            <p className="text-[11px] font-semibold tracking-widest text-slate-500">
-              VENTE &amp; STOCK
+            <p className="text-[11px] font-semibold tracking-widest text-blue-200/80">
+              Gestion Commerciale &amp; Stock
             </p>
           </div>
           <button
-            className="ml-auto rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 lg:hidden"
+            className="ml-auto rounded-lg p-1.5 text-blue-200 hover:bg-white/10 lg:hidden"
             onClick={() => setMobileOpen(false)}
             title="Fermer le menu" aria-label="Fermer le menu"
           >
@@ -482,8 +493,8 @@ export default function Layout() {
                     collapsed ? "lg:justify-center lg:px-2" : ""
                   } ${
                     active
-                      ? "bg-brand-50 text-brand-700"
-                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "text-blue-100/80 hover:bg-white/10 hover:text-white"
                   }`}
                 >
                   <group.icon size={20} className="shrink-0" />
@@ -500,7 +511,7 @@ export default function Layout() {
                 </button>
                 {open && (
                   <div
-                    className={`mt-1 space-y-1 border-l border-slate-100 pl-3 ${
+                    className={`mt-1 space-y-1 border-l border-white/15 pl-3 ${
                       collapsed ? "lg:border-0 lg:pl-0" : "ml-5"
                     }`}
                   >
@@ -512,7 +523,7 @@ export default function Layout() {
           })}
         </nav>
 
-        <div className="border-t border-slate-100 p-4">
+        <div className="border-t border-white/10 p-4">
           <div
             className={`flex items-center gap-3 rounded-xl px-2 py-2 ${
               collapsed ? "lg:flex-col lg:gap-2 lg:px-0" : ""
@@ -530,20 +541,42 @@ export default function Layout() {
               </div>
             )}
             <div className={`min-w-0 flex-1 ${collapsed ? "lg:hidden" : ""}`}>
-              <p className="truncate text-sm font-semibold text-slate-900">
+              <p className="truncate text-sm font-semibold text-white">
                 {user?.name ?? "Administrateur"}
               </p>
-              <p className="truncate text-xs text-slate-500">
+              <p className="truncate text-xs text-blue-200/80">
                 {roleLabels[user?.role ?? "admin"] ?? user?.role}
               </p>
             </div>
             <button
               onClick={logout}
               title="Se déconnecter" aria-label="Se déconnecter"
-              className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
+              className="rounded-lg p-2 text-blue-200 hover:bg-white/10 hover:text-red-300"
             >
               <LogOut size={18} />
             </button>
+          </div>
+          <div className={collapsed ? "lg:hidden" : ""}>
+            <div className="mt-3 flex items-center gap-2 rounded-xl border border-white/15 bg-white/10 px-3 py-2">
+              <img
+                src={logoSrc}
+                alt=""
+                className="h-8 w-8 shrink-0 object-contain"
+              />
+              <div className="min-w-0 leading-tight">
+                <p className="truncate text-xs font-bold text-white">
+                  {brandName}
+                </p>
+                <p className="truncate text-[10px] italic text-blue-200/80">
+                  Votre succès, notre priorité !
+                </p>
+              </div>
+            </div>
+            {appVersion && (
+              <p className="mt-1.5 text-center text-[10px] text-blue-300/70">
+                Version {appVersion}
+              </p>
+            )}
           </div>
         </div>
       </aside>
@@ -558,16 +591,16 @@ export default function Layout() {
 
       {/* Main */}
       <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="relative z-30 flex items-center gap-4 border-b border-slate-200 bg-white/80 px-5 py-4 backdrop-blur">
+        <header className="relative z-30 flex items-center gap-4 border-b border-[#123a7a] bg-gradient-to-r from-[#0d2f6e] to-[#16448f] px-5 py-3.5 text-white">
           <button
-            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 lg:hidden"
+            className="rounded-lg p-2 text-blue-100 hover:bg-white/10 lg:hidden"
             onClick={() => setMobileOpen(true)}
             title="Ouvrir le menu" aria-label="Ouvrir le menu"
           >
             <Menu size={22} />
           </button>
           <button
-            className="hidden rounded-lg p-2 text-slate-500 hover:bg-slate-100 lg:block"
+            className="hidden rounded-lg p-2 text-blue-100 hover:bg-white/10 lg:block"
             onClick={() => setCollapsed((v) => !v)}
             title={collapsed ? "Déplier le menu" : "Replier le menu"}
             aria-label={collapsed ? "Déplier le menu" : "Replier le menu"}
@@ -578,12 +611,12 @@ export default function Layout() {
               <PanelLeftClose size={22} />
             )}
           </button>
-          <h1 className="hidden text-xl font-bold text-slate-900 md:block">
+          <h1 className="hidden text-xl font-bold text-white md:block">
             {title}
           </h1>
           <GlobalSearch />
           <div className="ml-auto flex items-center gap-2">
-            <span className="hidden text-xs font-medium capitalize text-slate-400 xl:block">
+            <span className="hidden text-xs font-medium capitalize text-blue-200 xl:block">
               {new Date().toLocaleDateString("fr-FR", {
                 weekday: "long",
                 day: "numeric",
@@ -593,7 +626,7 @@ export default function Layout() {
             </span>
             <button
               onClick={toggleTheme}
-              className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+              className="rounded-lg p-2 text-blue-100 hover:bg-white/10"
               title={theme === "dark" ? "Thème clair" : "Thème sombre"}
               aria-label={theme === "dark" ? "Thème clair" : "Thème sombre"}
             >
@@ -603,7 +636,7 @@ export default function Layout() {
             {isAdmin && <NotificationBell />}
             <button
               onClick={() => void switchFullscreen()}
-              className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+              className="rounded-lg p-2 text-blue-100 hover:bg-white/10"
               aria-label={
                 fullscreen ? "Quitter le plein écran" : "Passer en plein écran"
               }
@@ -613,9 +646,22 @@ export default function Layout() {
             >
               {fullscreen ? <Minimize2 size={20} /> : <Maximize2 size={20} />}
             </button>
+            <div className="hidden items-center gap-2.5 border-l border-white/20 pl-4 lg:flex">
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-xs font-bold text-white ring-1 ring-white/25">
+                {initials}
+              </span>
+              <span className="hidden leading-tight xl:block">
+                <span className="block max-w-[140px] truncate text-sm font-semibold text-white">
+                  {user?.name ?? "Administrateur"}
+                </span>
+                <span className="block text-[11px] text-blue-200/80">
+                  {roleLabels[user?.role ?? "admin"] ?? user?.role}
+                </span>
+              </span>
+            </div>
             <button
               onClick={logout}
-              className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-red-50 hover:text-red-600"
+              className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-blue-100 hover:bg-white/10 hover:text-red-200"
             >
               <LogOut size={18} />
               <span className="hidden sm:inline">Déconnexion</span>
@@ -636,6 +682,29 @@ export default function Layout() {
         >
           <Outlet />
         </main>
+
+        {/* Barre d'etat basse : caisse, vendeur, connectivite */}
+        <footer className="flex items-center gap-4 bg-[#0a1f4a] px-5 py-1.5 text-[11px] font-medium text-blue-200/90">
+          <span>
+            Caisse : {tillSession ? "Ouverte" : "—"}
+          </span>
+          <span className="hidden sm:inline">
+            Vendeur : {user?.name ?? "—"}
+          </span>
+          <span className="ml-auto flex items-center gap-4">
+            <span className="flex items-center gap-1.5">
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  online ? "bg-emerald-400" : "bg-red-400"
+                }`}
+              />
+              {online ? "Connecté" : "Hors ligne"}
+            </span>
+            <span className="hidden sm:inline">
+              Imprimante : {navigator.onLine ? "Prête" : "Hors ligne"}
+            </span>
+          </span>
+        </footer>
       </div>
     </div>
   );
