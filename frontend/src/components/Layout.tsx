@@ -646,6 +646,19 @@ export default function Layout() {
             >
               {fullscreen ? <Minimize2 size={20} /> : <Maximize2 size={20} />}
             </button>
+            <div className="hidden items-center gap-2.5 border-l border-white/20 pl-4 lg:flex">
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-xs font-bold text-white ring-1 ring-white/25">
+                {initials}
+              </span>
+              <span className="hidden leading-tight xl:block">
+                <span className="block max-w-[140px] truncate text-sm font-semibold text-white">
+                  {user?.name ?? "Administrateur"}
+                </span>
+                <span className="block text-[11px] text-blue-200/80">
+                  {roleLabels[user?.role ?? "admin"] ?? user?.role}
+                </span>
+              </span>
+            </div>
             <button
               onClick={logout}
               className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-blue-100 hover:bg-white/10 hover:text-red-200"
