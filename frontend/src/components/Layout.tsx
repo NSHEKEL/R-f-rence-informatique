@@ -52,6 +52,7 @@ import NotificationBell from "./NotificationBell";
 import GlobalSearch from "./GlobalSearch";
 import UndoRedo from "./UndoRedo";
 import TillGate from "./TillGate";
+import api from "../api/client";
 
 type NavItem = {
   to: string;
@@ -292,6 +293,14 @@ export default function Layout() {
   const { online } = useNetwork();
   const { theme, toggle: toggleTheme } = useTheme();
   const [fullscreen, setFullscreen] = useState(isFullscreen);
+  const [appVersion, setAppVersion] = useState("");
+
+  useEffect(() => {
+    api
+      .get<{ version?: string }>("/health")
+      .then(({ data }) => setAppVersion(data.version ?? ""))
+      .catch(() => {});
+  }, []);
   const location = useLocation();
   const navigate = useNavigate();
   const title = pageTitles[location.pathname] ?? brandName;
@@ -421,7 +430,7 @@ export default function Layout() {
       {/* Sidebar */}
       <aside
         className={`fixed inset-y-0 left-0 z-40 flex flex-col bg-gradient-to-b from-[#0b2559] via-[#0d2f6e] to-[#0a1f4a] text-white transition-all duration-200 lg:static lg:translate-x-0 ${
-          collapsed ? "w-72 lg:w-[76px]" : "w-72"
+          collapsed ? "w-[208px] lg:w-[76px]" : "w-[208px]"
         } ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}
       >
         <div
@@ -546,6 +555,28 @@ export default function Layout() {
             >
               <LogOut size={18} />
             </button>
+          </div>
+          <div className={collapsed ? "lg:hidden" : ""}>
+            <div className="mt-3 flex items-center gap-2 rounded-xl border border-white/15 bg-white/10 px-3 py-2">
+              <img
+                src={logoSrc}
+                alt=""
+                className="h-8 w-8 shrink-0 object-contain"
+              />
+              <div className="min-w-0 leading-tight">
+                <p className="truncate text-xs font-bold text-white">
+                  {brandName}
+                </p>
+                <p className="truncate text-[10px] italic text-blue-200/80">
+                  Votre succès, notre priorité !
+                </p>
+              </div>
+            </div>
+            {appVersion && (
+              <p className="mt-1.5 text-center text-[10px] text-blue-300/70">
+                Version {appVersion}
+              </p>
+            )}
           </div>
         </div>
       </aside>

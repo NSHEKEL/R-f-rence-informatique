@@ -915,9 +915,9 @@ export default function NouvelleVente() {
             key={action.label}
             onClick={action.onClick}
             disabled={action.disabled}
-            className={`flex min-w-[104px] shrink-0 flex-col items-center gap-1 rounded-xl px-3 py-2 text-white shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 ${action.tint}`}
+            className={`flex min-w-[118px] shrink-0 flex-col items-center gap-1.5 rounded-xl px-3 py-3 text-white shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 ${action.tint}`}
           >
-            <action.icon size={17} />
+            <action.icon size={20} />
             <span className="text-xs font-bold leading-none">{action.label}</span>
             <span className="text-[10px] font-medium leading-none opacity-80">
               {action.sub}
@@ -929,7 +929,7 @@ export default function NouvelleVente() {
       <div className="flex min-h-0 flex-1 gap-4 p-4">
         {/* Ticket in progress */}
         <div
-          className={`card min-h-0 w-full flex-col overflow-y-auto p-0 md:order-2 md:flex md:w-[400px] md:shrink-0 xl:w-[440px] ${
+          className={`card min-h-0 w-full flex-col overflow-y-auto p-0 md:order-2 md:flex md:w-[380px] md:shrink-0 lg:w-[440px] xl:w-[520px] 2xl:w-[560px] ${
             mobileView === "cart" ? "flex" : "hidden"
           }`}
         >
@@ -1038,13 +1038,19 @@ export default function NouvelleVente() {
               <table className="w-full text-sm">
                 <thead className="sticky top-0 z-[1] bg-white">
                   <tr className="border-b border-slate-200 text-left text-[11px] font-bold uppercase tracking-wide text-slate-400">
-                    <th className="w-8 px-3 py-2">#</th>
-                    <th className="px-1 py-2">Produit</th>
-                    <th className="w-28 px-1 py-2 text-right">Prix unit.</th>
-                    <th className="w-24 px-1 py-2 text-right">Remise</th>
-                    <th className="w-36 px-1 py-2 text-center">Quantité</th>
-                    <th className="w-28 px-1 py-2 text-right">Total</th>
-                    <th className="w-10 px-1 py-2" />
+                    <th className="w-7 px-2 py-1.5">#</th>
+                    <th className="px-1 py-1.5">Article</th>
+                    <th className="w-[86px] px-1 py-1.5 text-right">
+                      Prix unitaire
+                    </th>
+                    {canChangePrice && (
+                      <th className="w-14 px-1 py-1.5 text-right">Rem.</th>
+                    )}
+                    <th className="w-[118px] px-1 py-1.5 text-center">
+                      Quantité
+                    </th>
+                    <th className="w-[84px] px-1 py-1.5 text-right">Total</th>
+                    <th className="w-8 px-1 py-1.5" />
                   </tr>
                 </thead>
                 <tbody>
@@ -1053,37 +1059,31 @@ export default function NouvelleVente() {
                       key={l.product.id}
                       className="border-b border-slate-100 last:border-0"
                     >
-                      <td className="px-3 py-2.5 text-slate-400">
+                      <td className="px-2 py-1.5 text-xs text-slate-400">
                         {index + 1}
                       </td>
-                      <td className="px-1 py-2.5">
-                        <div className="flex items-center gap-2.5">
+                      <td className="px-1 py-1.5">
+                        <div className="flex items-center gap-2">
                           {l.product.image ? (
                             <img
                               src={l.product.image}
                               alt=""
-                              className="h-10 w-10 shrink-0 rounded-lg bg-slate-50 object-contain"
+                              className="h-9 w-9 shrink-0 rounded-lg bg-slate-50 object-contain"
                             />
                           ) : (
-                            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-300">
-                              <ImageIcon size={16} />
+                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-300">
+                              <ImageIcon size={15} />
                             </span>
                           )}
-                          <div className="min-w-0">
-                            <p className="truncate font-semibold text-slate-800">
-                              {l.product.name}
-                            </p>
-                            <p className="truncate text-xs text-slate-400">
-                              {categoryName(l.product.category_id)} · Stock :{" "}
-                              {l.product.quantity}
-                            </p>
-                          </div>
+                          <p className="min-w-0 truncate text-sm font-semibold text-slate-800">
+                            {l.product.name}
+                          </p>
                         </div>
                       </td>
-                      <td className="px-1 py-2.5 text-right">
+                      <td className="px-1 py-1.5 text-right">
                         {canChangePrice ? (
                           <input
-                            className="w-24 rounded-lg border border-slate-200 px-1.5 py-1 text-right text-sm text-slate-700"
+                            className="w-[76px] rounded-lg border border-slate-200 px-1.5 py-1 text-right text-sm text-slate-700"
                             value={l.price ?? unitPrice(l.product, priceMode)}
                             onChange={(e) =>
                               setLinePrice(l.product.id, e.target.value)
@@ -1097,10 +1097,10 @@ export default function NouvelleVente() {
                           </span>
                         )}
                       </td>
-                      <td className="px-1 py-2.5 text-right">
-                        {canChangePrice ? (
+                      {canChangePrice && (
+                        <td className="px-1 py-1.5 text-right">
                           <input
-                            className="w-20 rounded-lg border border-slate-200 px-1.5 py-1 text-right text-sm text-slate-700"
+                            className="w-14 rounded-lg border border-slate-200 px-1 py-1 text-right text-xs text-slate-700"
                             value={l.discount ?? ""}
                             placeholder="0"
                             onChange={(e) =>
@@ -1109,16 +1109,12 @@ export default function NouvelleVente() {
                             title="Remise pour cette ligne"
                             aria-label={`Remise de ${l.product.name}`}
                           />
-                        ) : (
-                          <span className="text-slate-600">
-                            {l.discount ? formatXOF(l.discount) : "—"}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-1 py-2.5">
-                        <div className="flex items-center justify-center gap-1">
+                        </td>
+                      )}
+                      <td className="px-1 py-1.5">
+                        <div className="flex items-center justify-center gap-0.5">
                           <button
-                            className="rounded-lg bg-slate-100 p-1.5 text-slate-600 hover:bg-slate-200"
+                            className="rounded-lg bg-slate-100 p-1 text-slate-600 hover:bg-slate-200"
                             onClick={() =>
                               setQuantity(l.product.id, l.quantity - 1)
                             }
@@ -1128,7 +1124,7 @@ export default function NouvelleVente() {
                             <Minus size={14} />
                           </button>
                           <input
-                            className="w-12 rounded-lg border border-slate-200 py-1 text-center text-sm"
+                            className="w-11 rounded-lg border border-slate-200 py-1 text-center text-sm"
                             value={l.quantity}
                             onChange={(e) =>
                               setQuantity(
@@ -1139,7 +1135,7 @@ export default function NouvelleVente() {
                             aria-label={`Quantité de ${l.product.name}`}
                           />
                           <button
-                            className="rounded-lg bg-slate-100 p-1.5 text-slate-600 hover:bg-slate-200"
+                            className="rounded-lg bg-slate-100 p-1 text-slate-600 hover:bg-slate-200"
                             onClick={() =>
                               setQuantity(l.product.id, l.quantity + 1)
                             }
@@ -1150,10 +1146,10 @@ export default function NouvelleVente() {
                           </button>
                         </div>
                       </td>
-                      <td className="whitespace-nowrap px-1 py-2.5 text-right font-bold text-slate-900">
+                      <td className="whitespace-nowrap px-1 py-1.5 text-right text-sm font-bold text-slate-900">
                         {formatXOF(lineNet(l, priceMode))}
                       </td>
-                      <td className="px-1 py-2.5 text-center">
+                      <td className="px-1 py-1.5 text-center">
                         <button
                           className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
                           onClick={() => setQuantity(l.product.id, 0)}
@@ -1170,20 +1166,6 @@ export default function NouvelleVente() {
             )}
           </div>
 
-          {cart.length > 0 && !cartCollapsed && (
-            <div className="flex shrink-0 items-center justify-between border-t border-slate-200 bg-brand-50 px-4 py-2.5">
-              <span className="text-sm font-bold text-slate-600">
-                Articles : {itemCount}
-              </span>
-              <span className="text-sm font-semibold text-slate-500">
-                Sous-total{" "}
-                <span className="text-lg font-extrabold text-brand-700">
-                  {formatXOF(subtotal)}
-                </span>
-              </span>
-            </div>
-          )}
-
           {error && (
             <p className="bg-red-50 px-4 py-2.5 text-sm font-medium text-red-600">
               {error}
@@ -1191,11 +1173,12 @@ export default function NouvelleVente() {
           )}
 
           <div
-            className={`space-y-1.5 border-t border-slate-100 px-4 py-2.5 ${
+            className={`sticky bottom-0 z-10 bg-white ${
               cartCollapsed ? "hidden" : ""
             }`}
           >
-            <div className="grid gap-2 sm:grid-cols-2">
+          <div className="space-y-2 border-t border-slate-100 px-3 py-2">
+            <div className="grid gap-2 grid-cols-1">
               <div>
                 <div className="flex items-center justify-between">
                   <label className="label">Client</label>
@@ -1288,24 +1271,11 @@ export default function NouvelleVente() {
                   })()}
                 </div>
               )}
-              <div>
-                <label className="label">Remise globale</label>
-                <input
-                  ref={discountRef}
-                  className="input"
-                  type="number"
-                  min={0}
-                  value={discount || ""}
-                  onChange={(e) =>
-                    setDiscount(Math.max(Number(e.target.value) || 0, 0))
-                  }
-                  placeholder="0"
-                />
-              </div>
             </div>
-            <div>
+            <div className="flex gap-3">
+              <div className="w-[46%] shrink-0">
               <label className="label">Mode de paiement</label>
-              <div className="grid grid-cols-4 gap-1.5">
+              <div className="grid grid-cols-3 gap-1.5">
                 {PAYMENTS.map((p) => {
                   const meta = PAYMENT_STYLE[p];
                   const Icon = meta.icon;
@@ -1328,6 +1298,44 @@ export default function NouvelleVente() {
                     </button>
                   );
                 })}
+              </div>
+              </div>
+              <div className="min-w-0 flex-1 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold text-slate-500">
+                    Sous-total
+                  </span>
+                  <span className="text-sm font-extrabold text-slate-800">
+                    {formatXOF(vat ? vat.excluded : subtotal)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-semibold text-slate-500">
+                    Remise
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <input
+                      ref={discountRef}
+                      className="input w-20 px-2 py-1 text-right"
+                      type="number"
+                      min={0}
+                      value={discount || ""}
+                      onChange={(e) =>
+                        setDiscount(Math.max(Number(e.target.value) || 0, 0))
+                      }
+                      placeholder="0"
+                    />
+                    <span className="text-[10px] font-semibold text-slate-400">
+                      FCFA
+                    </span>
+                  </span>
+                </div>
+                {vat && (
+                  <div className="flex items-center justify-between text-[11px] text-slate-400">
+                    <span>TVA ({vat.rate} %)</span>
+                    <span>{formatXOF(vat.vat)}</span>
+                  </div>
+                )}
               </div>
             </div>
             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
@@ -1370,16 +1378,13 @@ export default function NouvelleVente() {
             </div>
           </div>
 
-          <div className="sticky bottom-0 z-10 bg-white">
           <div className="bg-[#123a7a] px-4 py-2.5 text-white">
-            <div className="flex items-center justify-between text-sm text-slate-300">
-              <span>Articles</span>
-              <span>{itemCount}</span>
-            </div>
-            <div className="mt-1 flex items-center justify-between text-sm text-slate-300">
-              <span>{vat ? "Total HT" : "Sous-total"}</span>
-              <span>{formatXOF(vat ? vat.excluded : total)}</span>
-            </div>
+            {vat && (
+              <div className="flex items-center justify-between text-sm text-slate-300">
+                <span>Total HT</span>
+                <span>{formatXOF(vat.excluded)}</span>
+              </div>
+            )}
             {vat && (
               <div className="mt-1 flex items-center justify-between text-sm text-slate-300">
                 <span>TVA ({vat.rate} %)</span>
@@ -1614,7 +1619,7 @@ export default function NouvelleVente() {
               )}
             </div>
           ) : (
-          <div className="grid min-h-0 flex-1 grid-cols-2 content-start gap-3 overflow-y-auto sm:grid-cols-3 2xl:grid-cols-4">
+          <div className="grid min-h-0 flex-1 grid-cols-2 content-start gap-2.5 overflow-y-auto sm:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-6">
             {filtered.map((p) => (
               <button
                 key={p.id}
@@ -1625,10 +1630,10 @@ export default function NouvelleVente() {
                   <img
                     src={p.image}
                     alt=""
-                    className="mb-2 h-20 w-full rounded-xl object-contain"
+                    className="mb-2 h-[88px] w-full rounded-xl object-contain"
                   />
                 ) : (
-                  <span className="mb-2 flex h-20 w-full items-center justify-center rounded-xl bg-slate-100 text-slate-300">
+                  <span className="mb-2 flex h-[88px] w-full items-center justify-center rounded-xl bg-slate-100 text-slate-300">
                     <ImageIcon size={22} />
                   </span>
                 )}
