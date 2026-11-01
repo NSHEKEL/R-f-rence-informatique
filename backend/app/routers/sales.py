@@ -14,6 +14,7 @@ from ..models import (
     Sale,
     SaleItem,
     SalePayment,
+    StockLot,
     StockMovement,
     User,
 )
@@ -97,6 +98,27 @@ def create_sale(
                     detail="Caisse occupée, veuillez réessayer",
                 )
     raise HTTPException(status_code=409, detail="Caisse occupée, veuillez réessayer")
+
+
+def _consume_lots_fefo(db: Session, product: Product, quantity: int) -> None:
+    """Draw `quantity` from the product's tagged lots, earliest expiry first.
+
+    Never fails the sale: if the tagged lots run out, the remainder comes
+    from the untagged stock already decremented on the product row.
+    """
+    remaining = quantity
+    lots = (
+        db.query(StockLot)
+        .filter(StockLot.product_id == product.id, StockLot.quantity > 0)
+        .order_by(StockLot.expiry_date.is_(None), StockLot.expiry_date.asc(), StockLot.id.asc())
+        .all()
+    )
+    for lot in lots:
+        if remaining <= 0:
+            break
+        take = min(lot.quantity, remaining)
+        lot.quantity -= take
+        remaining -= take
 
 
 def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
@@ -200,6 +222,7 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
                     created_by_id=current_user.id,
                 )
             )
+            _consume_lots_fefo(db, product, item.quantity)
             if product.quantity <= product.min_stock:
                 low_stock.append(product)
 

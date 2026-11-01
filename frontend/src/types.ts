@@ -526,6 +526,17 @@ export interface DashboardStats {
   period_end: string | null;
 }
 
+export interface StockLot {
+  id: number;
+  product_id: number;
+  lot_number: string;
+  expiry_date: string | null;
+  quantity: number;
+  created_at: string;
+  product_name: string;
+  days_left: number | null;
+}
+
 export interface Notification {
   id: number;
   kind: string;

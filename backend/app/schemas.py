@@ -753,6 +753,24 @@ class InventoryApply(BaseModel):
     note: str = ""
 
 
+class StockLotCreate(BaseModel):
+    lot_number: str = ""
+    expiry_date: Optional[datetime] = None
+    quantity: int
+
+
+class StockLotOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    product_id: int
+    lot_number: str
+    expiry_date: Optional[datetime] = None
+    quantity: int
+    created_at: datetime
+    product_name: str = ""
+    days_left: Optional[int] = None
+
+
 class StockMovementOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int

@@ -358,6 +358,28 @@ class StockMovement(Base):
     created_by = relationship("User")
 
 
+class StockLot(Base):
+    """Tagged part of a product's stock carrying a lot number and expiry.
+
+    Lot quantities are earmarked inside ``product.quantity``: the sum of a
+    product's lots never exceeds its on-hand stock; the remainder stays
+    "untagged". Sales consume lots FEFO (earliest expiry first).
+    """
+
+    __tablename__ = "stock_lots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(Integer, ForeignKey("products.id"), index=True)
+    lot_number = Column(String, default="")
+    expiry_date = Column(DateTime, nullable=True)
+    quantity = Column(Integer, default=0)
+    created_at = Column(DateTime, default=utcnow)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    product = relationship("Product")
+    created_by = relationship("User")
+
+
 class Proforma(Base):
     """Quotation: same layout as an invoice, but nothing is sold or stocked."""
 

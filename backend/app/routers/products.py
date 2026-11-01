@@ -1,19 +1,30 @@
 import csv
 import io
 import random
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Category, PriceHistory, Product, Sale, SaleItem, User
+from ..models import (
+    Category,
+    PriceHistory,
+    Product,
+    Sale,
+    SaleItem,
+    StockLot,
+    User,
+)
 from ..permissions import require_permission
 from ..schemas import (
     PriceHistoryOut,
     ProductCreate,
     ProductOut,
     ProductUpdate,
+    StockLotCreate,
+    StockLotOut,
 )
 from .cash import require_open_till
 
@@ -431,4 +442,103 @@ def delete_product(
     if not product:
         raise HTTPException(status_code=404, detail="Produit introuvable")
     db.delete(product)
+    db.commit()
+
+
+# ---------- Stock lots & expiry ----------
+
+def _lot_out(lot: StockLot) -> StockLotOut:
+    row = StockLotOut.model_validate(lot)
+    row.product_name = lot.product.name if lot.product else ""
+    if lot.expiry_date:
+        row.days_left = (lot.expiry_date.date() - datetime.now().date()).days
+    return row
+
+
+@router.get("/lots/alertes", response_model=list[StockLotOut])
+def lot_alerts(
+    days: int = 30,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission("produits")),
+):
+    """Lots expiring within `days` (or already expired), soonest first."""
+    horizon = datetime.now().date() + timedelta(days=max(days, 0))
+    lots = (
+        db.query(StockLot)
+        .filter(StockLot.quantity > 0, StockLot.expiry_date.isnot(None))
+        .order_by(StockLot.expiry_date.asc())
+        .all()
+    )
+    return [
+        _lot_out(lot)
+        for lot in lots
+        if lot.expiry_date and lot.expiry_date.date() <= horizon
+    ]
+
+
+@router.get("/{product_id}/lots", response_model=list[StockLotOut])
+def product_lots(
+    product_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission("produits")),
+):
+    if not db.query(Product).get(product_id):
+        raise HTTPException(status_code=404, detail="Produit introuvable")
+    lots = (
+        db.query(StockLot)
+        .filter(StockLot.product_id == product_id)
+        .order_by(StockLot.expiry_date.asc(), StockLot.id.asc())
+        .all()
+    )
+    return [_lot_out(lot) for lot in lots]
+
+
+@router.post("/{product_id}/lots", response_model=StockLotOut, status_code=201)
+def create_lot(
+    product_id: int,
+    payload: StockLotCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("stocks")),
+):
+    """Earmark part of the on-hand stock under a lot number + expiry date."""
+    product = db.query(Product).get(product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Produit introuvable")
+    if payload.quantity <= 0:
+        raise HTTPException(status_code=400, detail="Quantité invalide")
+    tagged = (
+        db.query(func.coalesce(func.sum(StockLot.quantity), 0))
+        .filter(StockLot.product_id == product_id)
+        .scalar()
+    )
+    untagged = product.quantity - int(tagged)
+    if payload.quantity > untagged:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Stock sans lot insuffisant : {untagged} disponible(s)",
+        )
+    lot = StockLot(
+        product_id=product_id,
+        lot_number=payload.lot_number.strip(),
+        expiry_date=payload.expiry_date,
+        quantity=payload.quantity,
+        created_by_id=current_user.id,
+    )
+    db.add(lot)
+    db.commit()
+    db.refresh(lot)
+    return _lot_out(lot)
+
+
+@router.delete("/lots/{lot_id}", status_code=204)
+def release_lot(
+    lot_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission("stocks")),
+):
+    """Remove the lot tag: its quantity returns to the untagged stock."""
+    lot = db.query(StockLot).get(lot_id)
+    if not lot:
+        raise HTTPException(status_code=404, detail="Lot introuvable")
+    db.delete(lot)
     db.commit()
