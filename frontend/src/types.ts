@@ -518,6 +518,10 @@ export interface DashboardStats {
   top_products: TopProduct[];
   top_sellers: TopSeller[];
   low_stock_products: Product[];
+  /** Tills closed in the window with a non-zero cash gap. */
+  cash_gap_count: number;
+  /** Absolute sum of those gaps. */
+  cash_gap_total: number;
   period_start: string | null;
   period_end: string | null;
 }

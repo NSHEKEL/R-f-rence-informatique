@@ -119,6 +119,13 @@ const NO_PAYMENT = { amount: "", method: METHODS[0], reference: "", note: "" };
 
 type Tab = "tableau" | "creance" | "dette" | "reglements" | "etats";
 
+interface AgingBucket {
+  label: string;
+  total: number;
+  count: number;
+  parties: string[];
+}
+
 function day(value: string | null): string {
   if (!value) return "—";
   return new Date(value).toLocaleDateString("fr-FR");
@@ -148,6 +155,7 @@ export default function Dettes() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [settlements, setSettlements] = useState<Settlement[]>([]);
   const [balances, setBalances] = useState<Balance[]>([]);
+  const [aging, setAging] = useState<AgingBucket[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [alertDays, setAlertDays] = useState(7);
   const [start, setStart] = useState(monthStart());
@@ -169,7 +177,8 @@ export default function Dettes() {
 
   const load = useCallback(async () => {
     try {
-      const [list, totals, history, owing, notices] = await Promise.all([
+      const [list, totals, history, owing, notices, agingData] =
+        await Promise.all([
         api.get<Debt[]>("/debts", { params: { kind, status, search } }),
         api.get<Summary>("/debts/resume", { params: { start, end } }),
         api.get<Settlement[]>("/debts/reglements", {
@@ -179,12 +188,16 @@ export default function Dettes() {
           params: { kind: tab === "etats" ? reportKind : kind },
         }),
         api.get<Alert[]>("/debts/alertes", { params: { days: alertDays } }),
+        api.get<AgingBucket[]>("/debts/echeancier", {
+          params: { kind: tab === "etats" ? reportKind : kind },
+        }),
       ]);
       setRows(list.data);
       setSummary(totals.data);
       setSettlements(history.data);
       setBalances(owing.data);
       setAlerts(notices.data);
+      setAging(agingData.data);
     } catch {
       setMessage("Chargement impossible.");
     }
@@ -932,6 +945,35 @@ export default function Dettes() {
             <p className="mb-2 text-sm font-medium text-emerald-600 dark:text-emerald-300">
               {notice}
             </p>
+          )}
+          {aging.length > 0 && (
+            <div className="grid grid-cols-2 gap-2 border-b border-slate-100 p-3 sm:grid-cols-5">
+              {aging.map((bucket) => (
+                <div
+                  key={bucket.label}
+                  className={`rounded-xl px-3 py-2.5 text-center ${
+                    bucket.total > 0 && bucket.label !== "Non échu"
+                      ? "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300"
+                      : "bg-slate-50 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                  }`}
+                  title={
+                    bucket.parties.length
+                      ? bucket.parties.join(", ")
+                      : "Aucune écriture"
+                  }
+                >
+                  <p className="text-[11px] font-semibold uppercase tracking-wide">
+                    {bucket.label}
+                  </p>
+                  <p className="mt-0.5 text-sm font-bold">
+                    {formatMoney(bucket.total)}
+                  </p>
+                  <p className="text-[11px] opacity-70">
+                    {bucket.count} écriture{bucket.count > 1 ? "s" : ""}
+                  </p>
+                </div>
+              ))}
+            </div>
           )}
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-slate-500 dark:bg-slate-800 dark:text-slate-300">

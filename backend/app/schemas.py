@@ -661,6 +661,9 @@ class DashboardStats(BaseModel):
     top_products: List[TopProduct]
     top_sellers: List[TopSeller] = []
     low_stock_products: List[ProductOut]
+    # Tills closed in the window with a non-zero counted-vs-expected gap.
+    cash_gap_count: int = 0
+    cash_gap_total: float = 0
     period_start: Optional[datetime] = None
     period_end: Optional[datetime] = None
 
@@ -1258,6 +1261,15 @@ class PartyBalance(BaseModel):
     overdue: float = 0
     days_late: int = 0
     next_due: Optional[datetime] = None
+
+
+class AgingBucket(BaseModel):
+    """One row of the receivables schedule: how much falls in each delay."""
+
+    label: str
+    total: float = 0
+    count: int = 0
+    parties: List[str] = []
 
 
 # ---------- Paie ----------

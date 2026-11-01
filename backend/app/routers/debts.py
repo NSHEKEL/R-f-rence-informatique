@@ -15,6 +15,7 @@ from ..models import Customer, Debt, DebtPayment, Supplier, User, utcnow
 from ..permissions import require_permission
 from ..receivables import receipt_reference
 from ..schemas import (
+    AgingBucket,
     DebtAlert,
     DebtCreate,
     DebtOut,
@@ -298,6 +299,40 @@ def balances(
             if row.next_due is None or due < _aware(row.next_due):
                 row.next_due = debt.due_date
     return [row for row in grouped.values() if row.remaining > 0.009]
+
+
+# Delay buckets of the receivables schedule (échéancier).
+_AGING = [
+    ("Non échu", lambda d: not d.overdue),
+    ("1-30 jours", lambda d: d.overdue and d.days_late <= 30),
+    ("31-60 jours", lambda d: d.overdue and 30 < d.days_late <= 60),
+    ("61-90 jours", lambda d: d.overdue and 60 < d.days_late <= 90),
+    ("Plus de 90 jours", lambda d: d.overdue and d.days_late > 90),
+]
+
+
+@router.get("/echeancier", response_model=list[AgingBucket])
+def aging(
+    kind: str = "creance",
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission("dettes")),
+):
+    """Receivables (or payables) split by how late their due date is."""
+    wanted = kind if kind in KINDS else "creance"
+    buckets = [AgingBucket(label=label) for label, _ in _AGING]
+    for debt in db.query(Debt).filter(Debt.kind == wanted):
+        if debt.settled:
+            continue
+        for bucket, (_, matches) in zip(buckets, _AGING):
+            if matches(debt):
+                bucket.total += debt.remaining
+                bucket.count += 1
+                if debt.party and debt.party not in bucket.parties:
+                    bucket.parties.append(debt.party)
+                break
+    for bucket in buckets:
+        bucket.total = round(bucket.total, 2)
+    return buckets
 
 
 @router.get("/alertes", response_model=list[DebtAlert])
