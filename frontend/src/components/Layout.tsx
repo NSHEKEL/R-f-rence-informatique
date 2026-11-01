@@ -558,7 +558,7 @@ export default function Layout() {
 
       {/* Main */}
       <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex items-center gap-4 border-b border-slate-200 bg-white/80 px-5 py-4 backdrop-blur">
+        <header className="relative z-30 flex items-center gap-4 border-b border-slate-200 bg-white/80 px-5 py-4 backdrop-blur">
           <button
             className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 lg:hidden"
             onClick={() => setMobileOpen(true)}
