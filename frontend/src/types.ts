@@ -373,6 +373,8 @@ export interface SaleItem {
   product_name: string;
   quantity: number;
   unit_price: number;
+  /** Discount granted on this line only, already deducted from subtotal. */
+  discount: number;
   subtotal: number;
   returned_quantity: number;
 }

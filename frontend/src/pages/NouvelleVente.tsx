@@ -62,11 +62,21 @@ interface CartLine {
   quantity: number;
   /** Price agreed at the counter, when it differs from the product sheet. */
   price?: number;
+  /** Discount granted on this line only, in currency units. */
+  discount?: number;
 }
 
 /** Price actually charged for a cart line. */
 function linePrice(line: CartLine, mode: PriceMode): number {
   return line.price ?? unitPrice(line.product, mode);
+}
+
+/** Line total after its own discount. */
+function lineNet(line: CartLine, mode: PriceMode): number {
+  return Math.max(
+    linePrice(line, mode) * line.quantity - (line.discount ?? 0),
+    0
+  );
 }
 
 /** Local receipt shown while a ticket recorded offline waits for the server. */
@@ -81,10 +91,7 @@ function offlineSale(
   discount: number,
   paidAmount: number
 ): Sale {
-  const gross = cart.reduce(
-    (s, l) => s + linePrice(l, priceMode) * l.quantity,
-    0
-  );
+  const gross = cart.reduce((s, l) => s + lineNet(l, priceMode), 0);
   return {
     id: -Date.now(),
     reference,
@@ -104,7 +111,8 @@ function offlineSale(
       product_name: l.product.name,
       quantity: l.quantity,
       unit_price: linePrice(l, priceMode),
-      subtotal: linePrice(l, priceMode) * l.quantity,
+      discount: l.discount ?? 0,
+      subtotal: lineNet(l, priceMode),
       returned_quantity: 0,
     })),
     print_count: 0,
@@ -243,8 +251,7 @@ export default function NouvelleVente() {
   }, [products, query, activeCategory, bestSellerIds]);
 
   const subtotal = useMemo(
-    () =>
-      cart.reduce((sum, l) => sum + linePrice(l, priceMode) * l.quantity, 0),
+    () => cart.reduce((sum, l) => sum + lineNet(l, priceMode), 0),
     [cart, priceMode]
   );
   const total = Math.max(subtotal - discount, 0);
@@ -302,6 +309,23 @@ export default function NouvelleVente() {
                 value.trim() === "" || Number.isNaN(price) || price < 0
                   ? undefined
                   : price,
+            }
+          : l
+      )
+    );
+  }
+
+  function setLineDiscount(productId: number, value: string) {
+    const discount = Number(value.replace(",", "."));
+    setCart((prev) =>
+      prev.map((l) =>
+        l.product.id === productId
+          ? {
+              ...l,
+              discount:
+                value.trim() === "" || Number.isNaN(discount) || discount < 0
+                  ? undefined
+                  : discount,
             }
           : l
       )
@@ -436,6 +460,7 @@ export default function NouvelleVente() {
         product_id: l.product.id,
         quantity: l.quantity,
         unit_price: linePrice(l, priceMode),
+        discount: l.discount ?? 0,
       })),
     };
     try {
@@ -524,6 +549,7 @@ export default function NouvelleVente() {
           product_name: l.product.name,
           quantity: l.quantity,
           unit_price: linePrice(l, priceMode),
+          discount: l.discount ?? 0,
         })),
       });
       resetCart();
@@ -648,6 +674,7 @@ export default function NouvelleVente() {
                     <th className="w-8 px-3 py-2">#</th>
                     <th className="px-1 py-2">Produit</th>
                     <th className="w-28 px-1 py-2 text-right">Prix unit.</th>
+                    <th className="w-24 px-1 py-2 text-right">Remise</th>
                     <th className="w-36 px-1 py-2 text-center">Quantité</th>
                     <th className="w-28 px-1 py-2 text-right">Total</th>
                     <th className="w-10 px-1 py-2" />
@@ -703,6 +730,24 @@ export default function NouvelleVente() {
                           </span>
                         )}
                       </td>
+                      <td className="px-1 py-2.5 text-right">
+                        {canChangePrice ? (
+                          <input
+                            className="w-20 rounded-lg border border-slate-200 px-1.5 py-1 text-right text-sm text-slate-700"
+                            value={l.discount ?? ""}
+                            placeholder="0"
+                            onChange={(e) =>
+                              setLineDiscount(l.product.id, e.target.value)
+                            }
+                            title="Remise pour cette ligne"
+                            aria-label={`Remise de ${l.product.name}`}
+                          />
+                        ) : (
+                          <span className="text-slate-600">
+                            {l.discount ? formatXOF(l.discount) : "—"}
+                          </span>
+                        )}
+                      </td>
                       <td className="px-1 py-2.5">
                         <div className="flex items-center justify-center gap-1">
                           <button
@@ -739,7 +784,7 @@ export default function NouvelleVente() {
                         </div>
                       </td>
                       <td className="whitespace-nowrap px-1 py-2.5 text-right font-bold text-slate-900">
-                        {formatXOF(linePrice(l, priceMode) * l.quantity)}
+                        {formatXOF(lineNet(l, priceMode))}
                       </td>
                       <td className="px-1 py-2.5 text-center">
                         <button

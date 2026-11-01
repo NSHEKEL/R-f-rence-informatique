@@ -203,6 +203,8 @@ class SaleItem(Base):
     product_name = Column(String, default="")
     quantity = Column(Integer, default=1)
     unit_price = Column(Float, default=0)
+    # Discount granted on this line only, deducted from its subtotal.
+    discount = Column(Float, default=0)
     subtotal = Column(Float, default=0)
 
     sale = relationship("Sale", back_populates="items")

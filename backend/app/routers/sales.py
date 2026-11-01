@@ -147,7 +147,16 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
             if item.unit_price < 0:
                 raise HTTPException(status_code=400, detail="Prix invalide")
             unit_price = float(item.unit_price)
-        subtotal = unit_price * item.quantity
+        line_discount = 0.0
+        if (item.discount or 0) > 0:
+            # A line discount is a price change: same right required.
+            if not has_permission(db, current_user, "prix_modifier"):
+                raise HTTPException(
+                    status_code=403,
+                    detail="Vous n'avez pas le droit de modifier le prix de vente",
+                )
+            line_discount = min(float(item.discount), unit_price * item.quantity)
+        subtotal = unit_price * item.quantity - line_discount
         total += subtotal
         sale.items.append(
             SaleItem(
@@ -155,6 +164,7 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
                 product_name=product.name,
                 quantity=item.quantity,
                 unit_price=unit_price,
+                discount=line_discount,
                 subtotal=subtotal,
             )
         )

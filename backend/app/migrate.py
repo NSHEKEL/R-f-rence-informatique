@@ -105,6 +105,10 @@ COLUMNS: dict[str, dict[str, str]] = {
         "status": "VARCHAR DEFAULT 'Validé'",
         "validated_at": "TIMESTAMP",
     },
+    "sale_items": {
+        # Per-line discount at the register (proforma/order lines had it).
+        "discount": "FLOAT DEFAULT 0",
+    },
     "debt_payments": {
         "reference": "VARCHAR DEFAULT ''",
         "receipt_reference": "VARCHAR DEFAULT ''",

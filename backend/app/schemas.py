@@ -344,6 +344,8 @@ class SaleItemCreate(BaseModel):
     # Price agreed at the counter; ignored unless the seller holds the right
     # to change a price, and never written back to the product sheet.
     unit_price: Optional[float] = None
+    # Discount granted on this line only, in currency units (not %).
+    discount: float = 0
 
 
 class SaleCreate(BaseModel):
@@ -376,6 +378,7 @@ class SaleItemOut(BaseModel):
     product_name: str
     quantity: int
     unit_price: float
+    discount: float = 0
     subtotal: float
     returned_quantity: int = 0
 
