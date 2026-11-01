@@ -157,6 +157,25 @@ class Product(Base):
     supplier = relationship("Supplier", back_populates="products")
 
 
+class PriceHistory(Base):
+    """One price change on an article, with who made it and when."""
+
+    __tablename__ = "price_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(
+        Integer, ForeignKey("products.id"), nullable=False, index=True
+    )
+    field = Column(String, default="")  # sale_price, purchase_price, ...
+    old_value = Column(Float, default=0)
+    new_value = Column(Float, default=0)
+    changed_at = Column(DateTime, default=utcnow)
+    changed_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    product = relationship("Product")
+    changed_by = relationship("User")
+
+
 class Sale(Base):
     __tablename__ = "sales"
 

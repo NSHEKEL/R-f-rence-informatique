@@ -339,6 +339,17 @@ class ProductOut(ProductBase):
     last_sold_at: Optional[datetime] = None
 
 
+class PriceHistoryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    product_id: int
+    field: str
+    old_value: float
+    new_value: float
+    changed_at: datetime
+    changed_by: Optional["UserOut"] = None
+
+
 # ---------- Sales ----------
 class SaleItemCreate(BaseModel):
     product_id: int

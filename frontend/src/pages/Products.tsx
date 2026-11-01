@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import {
   FileSpreadsheet,
+  History,
   Image as ImageIcon,
   Pencil,
   Plus,
@@ -45,6 +46,22 @@ const empty = {
 
 const MAX_IMAGE_BYTES = 700_000;
 
+/** One recorded price change on an article. */
+interface PriceChange {
+  id: number;
+  field: string;
+  old_value: number;
+  new_value: number;
+  changed_at: string;
+  changed_by?: { name: string } | null;
+}
+
+const FIELD_LABEL: Record<string, string> = {
+  sale_price: "Prix de vente",
+  purchase_price: "Prix d'achat",
+  wholesale_price: "Prix de gros",
+};
+
 /** Sales filter applied server-side: all, never sold, best sellers. */
 type SoldFilter = "" | "jamais" | "top";
 
@@ -54,6 +71,7 @@ export default function Products() {
   const { hasFeature } = useLicense();
   const version = useSyncVersion();
   const [sold, setSold] = useState<SoldFilter>("");
+  const csvInputRef = useRef<HTMLInputElement>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -66,6 +84,8 @@ export default function Products() {
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
   const [qrProduct, setQrProduct] = useState<Product | null>(null);
+  const [historyProduct, setHistoryProduct] = useState<Product | null>(null);
+  const [historyItems, setHistoryItems] = useState<PriceChange[]>([]);
   const imageInput = useRef<HTMLInputElement>(null);
   const pageSize = 8;
 
@@ -133,6 +153,39 @@ export default function Products() {
       .catch(() => setError("Export impossible : le fichier n'a pas pu être créé."));
   }
 
+  /** Sends the picked CSV to the bulk upsert endpoint and reports per row. */
+  async function importCsv(file: File) {
+    setError("");
+    setNotice("");
+    const body = new FormData();
+    body.append("file", file);
+    try {
+      const res = await api.post<{
+        created: number;
+        updated: number;
+        errors: { line: number; message: string }[];
+      }>("/products/import", body);
+      const { created, updated, errors } = res.data;
+      setNotice(
+        `Import terminé : ${created} créé(s), ${updated} mis à jour` +
+          (errors.length
+            ? `, ${errors.length} ligne(s) en erreur (l. ${errors
+                .map((e) => e.line)
+                .join(", ")} : ${errors[0].message}${
+                errors.length > 1 ? "…" : ""
+              })`
+            : ".")
+      );
+      await load();
+    } catch (err) {
+      setError(
+        axios.isAxiosError(err)
+          ? err.response?.data?.detail ?? "Import impossible"
+          : "Import impossible"
+      );
+    }
+  }
+
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
   const selection = useSelection(paged);
@@ -192,6 +245,20 @@ export default function Products() {
       }
     } finally {
       setSaving(false);
+    }
+  }
+
+  /** Opens the price history of the article in a modal. */
+  async function openHistory(p: Product) {
+    setHistoryProduct(p);
+    setHistoryItems([]);
+    try {
+      const res = await api.get<PriceChange[]>(
+        `/products/${p.id}/price-history`
+      );
+      setHistoryItems(res.data);
+    } catch {
+      setHistoryItems([]);
     }
   }
 
@@ -286,6 +353,27 @@ export default function Products() {
             <button className="btn-ghost" onClick={exportExcel}>
               <FileSpreadsheet size={16} /> Exporter Excel
             </button>
+          )}
+          {can("produits_gerer") && (
+            <>
+              <input
+                ref={csvInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) importCsv(file);
+                  e.target.value = "";
+                }}
+              />
+              <button
+                className="btn-ghost"
+                onClick={() => csvInputRef.current?.click()}
+              >
+                <FileSpreadsheet size={16} /> Importer CSV
+              </button>
+            </>
           )}
           {can("produits_gerer") && (
             <button className="btn-primary" onClick={openCreate}>
@@ -413,6 +501,13 @@ export default function Products() {
                         className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
                       >
                         <Tag size={16} />
+                      </button>
+                      <button
+                        onClick={() => openHistory(p)}
+                        title="Historique des prix" aria-label="Historique des prix"
+                        className="rounded-lg p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
+                      >
+                        <History size={16} />
                       </button>
                       {can("produits_gerer") && (
                         <>
@@ -690,6 +785,51 @@ export default function Products() {
               panier (code : {scanCode(qrProduct)}).
             </p>
           </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={historyProduct !== null}
+        onClose={() => setHistoryProduct(null)}
+        title={`Historique des prix — ${historyProduct?.name ?? ""}`}
+      >
+        {historyItems.length === 0 ? (
+          <p className="py-6 text-center text-sm text-slate-400">
+            Aucun changement de prix enregistré.
+          </p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-400">
+                <th className="py-2">Date</th>
+                <th className="py-2">Prix</th>
+                <th className="py-2 text-right">Ancien</th>
+                <th className="py-2 text-right">Nouveau</th>
+                <th className="py-2 text-right">Par</th>
+              </tr>
+            </thead>
+            <tbody>
+              {historyItems.map((h) => (
+                <tr key={h.id} className="border-b border-slate-50">
+                  <td className="py-2 text-slate-500">
+                    {formatDateTime(h.changed_at)}
+                  </td>
+                  <td className="py-2 font-medium text-slate-700">
+                    {FIELD_LABEL[h.field] ?? h.field}
+                  </td>
+                  <td className="py-2 text-right text-slate-500">
+                    {formatXOF(h.old_value)}
+                  </td>
+                  <td className="py-2 text-right font-semibold text-slate-800">
+                    {formatXOF(h.new_value)}
+                  </td>
+                  <td className="py-2 text-right text-slate-500">
+                    {h.changed_by?.name ?? "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </Modal>
     </div>
