@@ -1195,7 +1195,7 @@ export default function NouvelleVente() {
               cartCollapsed ? "hidden" : ""
             }`}
           >
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-2 sm:grid-cols-2">
               <div>
                 <div className="flex items-center justify-between">
                   <label className="label">Client</label>
@@ -1249,33 +1249,6 @@ export default function NouvelleVente() {
                   </div>
                 )}
               </div>
-              <div>
-                <label className="label">Mode de paiement</label>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {PAYMENTS.map((p) => {
-                    const meta = PAYMENT_STYLE[p];
-                    const Icon = meta.icon;
-                    return (
-                      <button
-                        key={p}
-                        onClick={() => setPayment(p)}
-                        className={`flex items-center gap-1.5 rounded-lg px-2 py-2 text-[11px] font-bold text-white shadow-sm transition hover:opacity-90 ${
-                          meta.tint
-                        } ${
-                          payment === p
-                            ? "ring-2 ring-slate-900 ring-offset-1"
-                            : "opacity-80"
-                        }`}
-                      >
-                        <Icon size={14} className="shrink-0" />
-                        <span className="truncate">
-                          {p === "Crédit (à régler plus tard)" ? "Crédit" : p}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
               {payment === "Mixte" && (
                 <div className="sm:col-span-2 xl:col-span-3">
                   <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
@@ -1328,6 +1301,33 @@ export default function NouvelleVente() {
                   }
                   placeholder="0"
                 />
+              </div>
+            </div>
+            <div>
+              <label className="label">Mode de paiement</label>
+              <div className="grid grid-cols-4 gap-1.5">
+                {PAYMENTS.map((p) => {
+                  const meta = PAYMENT_STYLE[p];
+                  const Icon = meta.icon;
+                  return (
+                    <button
+                      key={p}
+                      onClick={() => setPayment(p)}
+                      className={`flex flex-col items-center justify-center gap-1 rounded-lg px-1 py-2 text-[10px] font-bold leading-tight text-white shadow-sm transition hover:opacity-90 ${
+                        meta.tint
+                      } ${
+                        payment === p
+                          ? "ring-2 ring-slate-900 ring-offset-1"
+                          : "opacity-85"
+                      }`}
+                    >
+                      <Icon size={15} />
+                      <span className="text-center">
+                        {p === "Crédit (à régler plus tard)" ? "Crédit" : p}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
