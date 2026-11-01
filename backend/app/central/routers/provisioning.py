@@ -21,6 +21,7 @@ from ..models import (
     MirrorReturn,
     MirrorSale,
     MirrorSupportRequest,
+    PendingTransfer,
     MirrorUser,
     Plan,
 )
@@ -30,6 +31,9 @@ from ..schemas import (
     PublicPlan,
     RegisterRequest,
     SyncRequest,
+    TransferPendingOut,
+    TransferPushIn,
+    TransferReceivedIn,
 )
 from ..security import license_public_key
 from ..service import (
@@ -394,3 +398,74 @@ def sync(payload: SyncRequest, request: Request, db: Session = Depends(get_db)):
     if license_ is None:
         raise HTTPException(status_code=404, detail="Aucune licence")
     return LicenseAnswer(license=license_answer(db, installation, license_))
+
+
+def _installation(db: Session, uid: str, token: str) -> Installation:
+    """Same authentication as the mirror: uid + installation token."""
+    installation = (
+        db.query(Installation)
+        .filter(Installation.uid == (uid or "").strip())
+        .first()
+    )
+    if installation is None or not token or token != installation.token:
+        raise HTTPException(status_code=401, detail="Installation non autorisée")
+    return installation
+
+
+@router.post("/transfers", status_code=201)
+def push_transfer(payload: TransferPushIn, db: Session = Depends(get_db)):
+    """An emitting shop relays a shipment for the destination shop."""
+    installation = _installation(db, payload.installation_uid, payload.token)
+    if not payload.to_shop.strip() or not payload.items:
+        raise HTTPException(status_code=400, detail="Magasin ou lignes manquants")
+    row = PendingTransfer(
+        installation_uid=installation.uid,
+        from_shop=(installation.shop_name or "").strip(),
+        to_shop=payload.to_shop.strip().lower(),
+        reference=payload.reference.strip(),
+        note=payload.note.strip(),
+        items=json.dumps(
+            [item.model_dump() for item in payload.items], ensure_ascii=False
+        ),
+    )
+    db.add(row)
+    db.commit()
+    return {"id": row.id}
+
+
+@router.get("/transfers", response_model=list[TransferPendingOut])
+def pending_transfers(
+    installation_uid: str,
+    token: str,
+    shop: str,
+    db: Session = Depends(get_db),
+):
+    """Shipments awaiting the shop `shop` (name as declared in its settings)."""
+    _installation(db, installation_uid, token)
+    wanted = (shop or "").strip().lower()
+    if not wanted:
+        return []
+    return (
+        db.query(PendingTransfer)
+        .filter(
+            PendingTransfer.status == "pending",
+            PendingTransfer.to_shop == wanted,
+        )
+        .order_by(PendingTransfer.created_at.desc())
+        .all()
+    )
+
+
+@router.post("/transfers/{transfer_id}/received")
+def transfer_received(
+    transfer_id: int, payload: TransferReceivedIn, db: Session = Depends(get_db)
+):
+    """Destination shop confirms the goods are in: the relay closes."""
+    _installation(db, payload.installation_uid, payload.token)
+    row = db.query(PendingTransfer).get(transfer_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Transfert introuvable")
+    row.status = "received"
+    row.received_at = utcnow()
+    db.commit()
+    return {"received": True}

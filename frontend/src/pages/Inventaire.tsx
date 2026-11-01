@@ -31,6 +31,16 @@ interface TransferLine {
   quantity: number;
 }
 
+/** Shipment the central service holds for this shop. */
+interface PendingTransfer {
+  id: number;
+  reference: string;
+  from_shop: string;
+  note: string;
+  items: string; // JSON [{product_name, quantity}]
+  created_at: string;
+}
+
 export default function Inventaire() {
   const version = useSyncVersion();
   const { company } = useCompany();
@@ -49,16 +59,21 @@ export default function Inventaire() {
   });
   const [lines, setLines] = useState<TransferLine[]>([]);
   const [lineDraft, setLineDraft] = useState({ product_id: "", quantity: "1" });
+  const [pending, setPending] = useState<PendingTransfer[]>([]);
 
   const load = useCallback(async () => {
-    const [p, m] = await Promise.all([
+    const [p, m, r] = await Promise.all([
       api.get<Product[]>("/products"),
       api.get<StockMovement[]>("/inventory/movements", {
         params: { limit: 50 },
       }),
+      api.get<PendingTransfer[]>("/transfers/entrantes").catch(() => ({
+        data: [] as PendingTransfer[],
+      })),
     ]);
     setProducts(p.data);
     setMovements(m.data);
+    setPending(r.data);
   }, []);
 
   useEffect(() => {
@@ -138,6 +153,53 @@ export default function Inventaire() {
       ];
     });
     setLineDraft({ product_id: "", quantity: "1" });
+  }
+
+  /** Turns a shipment waiting on the central into a local reception. */
+  async function receivePending(t: PendingTransfer) {
+    setError("");
+    setMessage("");
+    let items: { product_name: string; quantity: number }[] = [];
+    try {
+      items = JSON.parse(t.items || "[]");
+    } catch {
+      items = [];
+    }
+    const matched = items
+      .map((i) => {
+        const product = products.find(
+          (p) => p.name.trim().toLowerCase() === i.product_name.trim().toLowerCase()
+        );
+        return product ? { product_id: product.id, quantity: i.quantity } : null;
+      })
+      .filter((i): i is TransferLine => i !== null);
+    if (matched.length === 0) {
+      setError(
+        "Aucun article de cet envoi n'existe dans votre catalogue : créez-les d'abord."
+      );
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.post("/transfers/recevoir", {
+        central_id: t.id,
+        from_shop: t.from_shop,
+        note: t.note,
+        items: matched,
+      });
+      const skipped = items.length - matched.length;
+      setMessage(
+        `Réception ${t.reference} enregistrée.` +
+          (skipped > 0 ? ` ${skipped} article(s) ignoré(s) (non trouvés).` : "")
+      );
+      await load();
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        setError(err.response?.data?.detail ?? "Réception impossible");
+      }
+    } finally {
+      setSaving(false);
+    }
   }
 
   /** Registers the transfer: the stock moves immediately on this site. */
@@ -480,6 +542,45 @@ export default function Inventaire() {
                 : "Valider la réception"}
           </button>
         </div>
+
+        {pending.length > 0 && (
+          <div className="mt-4 border-t border-slate-100 pt-3">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Envois en attente pour vous
+            </p>
+            <div className="space-y-2">
+              {pending.map((t) => {
+                let count = 0;
+                try {
+                  count = (JSON.parse(t.items || "[]") as unknown[]).length;
+                } catch {
+                  count = 0;
+                }
+                return (
+                  <div
+                    key={t.id}
+                    className="flex flex-wrap items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-sm dark:bg-amber-950"
+                  >
+                    <span className="font-semibold text-amber-800 dark:text-amber-200">
+                      {t.reference || `Envoi #${t.id}`}
+                    </span>
+                    <span className="text-amber-700 dark:text-amber-300">
+                      de {t.from_shop || "—"} · {count} article(s)
+                      {t.note ? ` · ${t.note}` : ""}
+                    </span>
+                    <button
+                      className="btn-secondary ml-auto"
+                      onClick={() => void receivePending(t)}
+                      disabled={saving}
+                    >
+                      Réceptionner
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="card p-5">

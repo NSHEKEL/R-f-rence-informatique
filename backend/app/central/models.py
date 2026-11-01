@@ -335,3 +335,27 @@ class MirrorSupportRequest(Base):
     email_error = Column(String, default="")
     created_at = Column(DateTime, default=utcnow)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class PendingTransfer(Base):
+    """Inter-store transfer relayed between two installations.
+
+    The emitting shop pushes it (authenticated like its mirror); the
+    destination shop polls it and marks it received once the goods are
+    counted in. Read-only for everyone else.
+    """
+
+    __tablename__ = "pending_transfers"
+
+    STATUSES = ("pending", "received")
+
+    id = Column(Integer, primary_key=True, index=True)
+    installation_uid = Column(String, default="", index=True)
+    from_shop = Column(String, default="")
+    to_shop = Column(String, default="", index=True)
+    reference = Column(String, default="")
+    items = Column(Text, default="")  # JSON [{product_name, quantity}]
+    note = Column(String, default="")
+    status = Column(String, default="pending", index=True)
+    created_at = Column(DateTime, default=utcnow)
+    received_at = Column(DateTime, nullable=True)

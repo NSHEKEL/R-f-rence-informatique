@@ -414,3 +414,36 @@ class MagasinStats(BaseModel):
     ca_jour: float = 0
     top_produits: list = []
     derniere_vente: Optional[datetime] = None
+
+
+# ---------- Relais de transferts inter-magasins ----------
+class TransferItemIn(BaseModel):
+    product_name: str
+    quantity: int
+
+
+class TransferPushIn(BaseModel):
+    """Emission relayed to the central service for the destination shop."""
+
+    installation_uid: str
+    token: str
+    reference: str = ""
+    to_shop: str = ""
+    note: str = ""
+    items: list[TransferItemIn] = []
+
+
+class TransferPendingOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    reference: str
+    from_shop: str
+    note: str
+    items: str = ""
+    created_at: datetime
+
+
+class TransferReceivedIn(BaseModel):
+    installation_uid: str
+    token: str
