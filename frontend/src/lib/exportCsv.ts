@@ -1,16 +1,47 @@
 /**
- * Save a table as a CSV file Excel opens directly.
+ * Save a table as a real Excel file (.xls, SpreadsheetML 2003).
  *
- * Excel in French reads a semicolon as the column separator and needs the
- * byte-order mark to show accented letters correctly.
+ * The header row is formatted (bold white text on the brand blue) and numbers
+ * stay typed as numbers, so the file opens clean in Excel — unlike a CSV,
+ * which cannot carry any formatting.
  */
-function cell(value: string | number): string {
-  const text = String(value ?? "");
-  return /[";\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+function esc(value: string | number): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function cellXml(value: string | number, header: boolean): string {
+  const style = header ? ' ss:StyleID="h"' : "";
+  const type = typeof value === "number" ? "Number" : "String";
+  return `<Cell${style}><Data ss:Type="${type}">${esc(value)}</Data></Cell>`;
+}
+
+function workbookXml(headers: string[], rows: (string | number)[][]): string {
+  return (
+    '<?xml version="1.0" encoding="UTF-8"?>\n' +
+    '<?mso-application progid="Excel.Sheet"?>\n' +
+    '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" ' +
+    'xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">\n' +
+    "<Styles>" +
+    '<Style ss:ID="h"><Font ss:Bold="1" ss:Color="#FFFFFF"/>' +
+    '<Interior ss:Color="#2563EB" ss:Pattern="Solid"/></Style>' +
+    "</Styles>\n" +
+    '<Worksheet ss:Name="Export"><Table>\n' +
+    `<Row>${headers.map((h) => cellXml(h, true)).join("")}</Row>\n` +
+    rows
+      .map((row) => `<Row>${row.map((c) => cellXml(c, false)).join("")}</Row>`)
+      .join("\n") +
+    "\n</Table></Worksheet></Workbook>"
+  );
 }
 
 /** Native window bridge: it saves the file itself, downloads being blocked. */
-function desktopSave(): ((name: string, body: string) => Promise<string>) | undefined {
+function desktopSave():
+  | ((name: string, body: string) => Promise<string>)
+  | undefined {
   return (
     window as unknown as {
       pywebview?: {
@@ -30,17 +61,13 @@ export async function exportCsv(
   headers: string[],
   rows: (string | number)[][]
 ): Promise<string> {
-  const body = [headers, ...rows]
-    .map((row) => row.map(cell).join(";"))
-    .join("\r\n");
-  const name = filename.endsWith(".csv") ? filename : `${filename}.csv`;
+  const body = workbookXml(headers, rows);
+  const name = filename.endsWith(".xls") ? filename : `${filename}.xls`;
   const save = desktopSave();
   if (save) {
     return (await save(name, body)) || "";
   }
-  const blob = new Blob(["\uFEFF" + body], {
-    type: "text/csv;charset=utf-8;",
-  });
+  const blob = new Blob([body], { type: "application/vnd.ms-excel" });
   // Chrome/Edge: ask where to save, like the desktop save dialog does.
   const picker = (
     window as unknown as {
@@ -58,8 +85,8 @@ export async function exportCsv(
         suggestedName: name,
         types: [
           {
-            description: "Fichier Excel (CSV)",
-            accept: { "text/csv": [".csv"] },
+            description: "Classeur Excel",
+            accept: { "application/vnd.ms-excel": [".xls"] },
           },
         ],
       });
