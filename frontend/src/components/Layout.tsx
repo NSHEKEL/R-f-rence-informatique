@@ -446,7 +446,7 @@ export default function Layout() {
         } ${
           isActive
             ? "bg-[#2563eb] text-white shadow-sm"
-            : "text-blue-100/80 hover:bg-white/10 hover:text-white"
+            : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
         }`}
       >
         <span
@@ -458,7 +458,7 @@ export default function Layout() {
         </span>
         <span
           className={`${collapsed ? "lg:hidden" : ""} ${
-            locked ? "text-blue-200/50" : ""
+            locked ? "text-slate-300" : ""
           }`}
         >
           {item.label}
@@ -466,7 +466,7 @@ export default function Layout() {
         {locked && (
           <Lock
             size={14}
-            className={`ml-auto shrink-0 text-blue-200/70 ${
+            className={`ml-auto shrink-0 text-slate-400 ${
               collapsed ? "lg:hidden" : ""
             }`}
           />
@@ -490,7 +490,7 @@ export default function Layout() {
       </a>
       {/* Sidebar */}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex flex-col border-r border-slate-200 bg-gradient-to-b from-[#0b2559] via-[#0d2f6e] to-[#0a1f4a] text-white transition-all duration-200 lg:static lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 flex flex-col border-r border-slate-200 bg-white text-slate-800 transition-all duration-200 lg:static lg:translate-x-0 ${
           collapsed ? "w-[208px] lg:w-[76px]" : "w-[208px]"
         } ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}
       >
@@ -509,15 +509,15 @@ export default function Layout() {
           <div
             className={`min-w-0 leading-tight ${collapsed ? "lg:hidden" : ""}`}
           >
-            <p className="truncate text-sm font-extrabold uppercase tracking-tight text-white">
+            <p className="truncate text-sm font-extrabold uppercase tracking-tight text-brand-700">
               {brandName}
             </p>
-            <p className="text-[11px] font-semibold tracking-widest text-blue-200/70">
+            <p className="text-[11px] font-semibold tracking-widest text-slate-400">
               Gestion Commerciale &amp; Stock
             </p>
           </div>
           <button
-            className="ml-auto rounded-lg p-1.5 text-blue-200 hover:bg-white/10 lg:hidden"
+            className="ml-auto rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 lg:hidden"
             onClick={() => setMobileOpen(false)}
             title="Fermer le menu" aria-label="Fermer le menu"
           >
@@ -555,7 +555,7 @@ export default function Layout() {
                   } ${
                     active
                       ? "bg-[#2563eb] text-white shadow-sm"
-                      : "text-blue-100/80 hover:bg-white/10 hover:text-white"
+                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                   }`}
                 >
                   <span
@@ -608,23 +608,23 @@ export default function Layout() {
               </div>
             )}
             <div className={`min-w-0 flex-1 ${collapsed ? "lg:hidden" : ""}`}>
-              <p className="truncate text-sm font-semibold text-white">
+              <p className="truncate text-sm font-semibold text-slate-800">
                 {user?.name ?? "Administrateur"}
               </p>
-              <p className="truncate text-xs text-blue-200/70">
+              <p className="truncate text-xs text-slate-400">
                 {roleLabels[user?.role ?? "admin"] ?? user?.role}
               </p>
             </div>
             <button
               onClick={logout}
               title="Se déconnecter" aria-label="Se déconnecter"
-              className="rounded-lg p-2 text-blue-200/70 hover:bg-white/10 hover:text-red-300"
+              className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-red-500"
             >
               <LogOut size={18} />
             </button>
           </div>
           <div className={collapsed ? "lg:hidden" : ""}>
-            <div className="mt-3 flex items-center gap-2 rounded-xl border border-white/15 bg-white/10 px-3 py-2">
+            <div className="mt-3 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
               <img
                 src={logoSrc}
                 alt=""
@@ -634,13 +634,13 @@ export default function Layout() {
                 <p className="truncate text-xs font-bold text-brand-700">
                   {brandName}
                 </p>
-                <p className="truncate text-[10px] italic text-blue-200/70">
+                <p className="truncate text-[10px] italic text-slate-400">
                   Votre succès, notre priorité !
                 </p>
               </div>
             </div>
             {appVersion && (
-              <p className="mt-1.5 text-center text-[10px] text-blue-200/70">
+              <p className="mt-1.5 text-center text-[10px] text-slate-400">
                 Version {appVersion}
               </p>
             )}
