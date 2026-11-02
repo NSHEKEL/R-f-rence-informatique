@@ -5,6 +5,7 @@ import { TILL_GATED, useTill } from "./context/TillContext";
 import { ADMIN_FEATURE, PLAN_FEATURE } from "./lib/planFeatures";
 import Layout from "./components/Layout";
 import Login from "./pages/Login";
+import Accueil from "./pages/Accueil";
 import Dashboard from "./pages/Dashboard";
 import Products from "./pages/Products";
 import Sales from "./pages/Sales";
@@ -121,14 +122,6 @@ function PermRoute({
   return <>{children}</>;
 }
 
-/** Users without the dashboard land on their own home screen. */
-function HomeRoute() {
-  const { can } = useAuth();
-  const fallback = useFallbackPath();
-  if (can("tableau_bord")) return <Dashboard />;
-  return <Navigate to={fallback} replace />;
-}
-
 export default function App() {
   return (
     <Routes>
@@ -150,7 +143,15 @@ export default function App() {
           </ProtectedRoute>
         }
       >
-        <Route path="/" element={<HomeRoute />} />
+        <Route path="/" element={<Accueil />} />
+        <Route
+          path="/tableau-de-bord"
+          element={
+            <PermRoute right="tableau_bord">
+              <Dashboard />
+            </PermRoute>
+          }
+        />
         <Route
           path="/caisse"
           element={

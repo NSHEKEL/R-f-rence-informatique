@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
+  Home,
   Package,
   ShoppingCart,
   Users,
@@ -75,9 +76,15 @@ type NavGroup = {
 const navItems: NavItem[] = [
   {
     to: "/",
+    label: "Accueil",
+    icon: Home,
+    end: true,
+    access: "",
+  },
+  {
+    to: "/tableau-de-bord",
     label: "Tableau de bord",
     icon: LayoutDashboard,
-    end: true,
     access: "tableau_bord",
   },
   { to: "/caisse", label: "Ma caisse", icon: Wallet, access: "caisse" },
@@ -225,7 +232,7 @@ const navGroups: NavGroup[] = [
   {
     label: "Pilotage",
     icon: BarChart3,
-    items: pick("/rapports"),
+    items: pick("/tableau-de-bord", "/rapports"),
   },
   {
     label: "Administration",
@@ -256,7 +263,8 @@ const roleLabels: Record<string, string> = {
 };
 
 const pageTitles: Record<string, string> = {
-  "/": "Tableau de bord",
+  "/": "Accueil",
+  "/tableau-de-bord": "Tableau de bord",
   "/caisse": "Ma caisse",
   "/ventes/nouvelle": "Nouvelle vente",
   "/retours": "Retours & avoirs",
