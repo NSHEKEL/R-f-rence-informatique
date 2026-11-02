@@ -92,6 +92,9 @@ function ReceiptBody({
       )}
 
       {duplicate && <p className="receipt-duplicate">DUPLICATA</p>}
+      {sale.is_gift && (
+        <p className="receipt-duplicate">VENTE CADEAU — ARTICLES OFFERTS</p>
+      )}
 
       <div className="receipt-meta">
         {config.show_number && (
@@ -115,7 +118,7 @@ function ReceiptBody({
         {config.show_payment && (
           <>
             <span>Paiement</span>
-            <span>{sale.payment_method}</span>
+            <span>{sale.is_gift ? "Offert" : sale.payment_method}</span>
           </>
         )}
         <span>Statut</span>

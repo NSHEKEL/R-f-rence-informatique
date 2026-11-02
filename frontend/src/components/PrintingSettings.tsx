@@ -8,6 +8,7 @@ import {
   RefreshCw,
   Tags,
 } from "lucide-react";
+import { applyPostePrinters, writePostePrinters } from "../context/CompanyContext";
 import api from "../api/client";
 import Modal from "../components/Modal";
 import Receipt from "../components/Receipt";
@@ -244,7 +245,7 @@ export default function PrintingSettings({
   const [drawerMessage, setDrawerMessage] = useState("");
 
   useEffect(() => {
-    setForm(printing);
+    setForm(applyPostePrinters(printing));
   }, [printing]);
 
   const loadPrinters = useCallback(() => {
@@ -279,7 +280,14 @@ export default function PrintingSettings({
     try {
       const res = await api.put<PrintingConfig>("/settings/printing", form);
       setPrinting(res.data);
-      setForm(res.data);
+      setForm(applyPostePrinters(res.data));
+      // The three printer names are also remembered for this workstation
+      // only, so several tills sharing the database keep their own choices.
+      writePostePrinters({
+        receipt: form.receipt.printer_name,
+        label: form.label.printer_name,
+        documents: form.documents.printer_name,
+      });
       await saveCompany();
       setSaved(true);
     } catch (err) {
@@ -794,6 +802,17 @@ export default function PrintingSettings({
           numérotation et informations imprimées.
         </p>
         <div className="grid gap-4 sm:grid-cols-3">
+          <div>
+            <PrinterSelect
+              label="Imprimante des documents commerciaux"
+              value={form.documents.printer_name}
+              devices={devices}
+              loading={loadingPrinters}
+              onRefresh={loadPrinters}
+              onChange={(name) => patchDocuments({ printer_name: name })}
+              hint="Imprimante A4 pour les bons de commande et de livraison."
+            />
+          </div>
           <div>
             <label className="label">Format du papier</label>
             <select

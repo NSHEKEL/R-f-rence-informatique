@@ -322,6 +322,24 @@ export default function Products() {
     }
   }
 
+  /** Scanner/handler lookup: fill the form with a known article. */
+  async function lookupBarcode() {
+    const code = form.barcode.trim();
+    if (!code) return;
+    try {
+      const { data } = await api.get<Product>(
+        `/products/scan/${encodeURIComponent(code)}`
+      );
+      if (editing?.id === data.id) return;
+      setNotice(`Article reconnu : ${data.name} — fiche chargée`);
+      openEdit(data);
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response?.status === 404) {
+        setNotice("Article inconnu — poursuivez l'enregistrement");
+      }
+    }
+  }
+
   async function generateBarcode() {
     try {
       const { data } = await api.get<{ barcode: string }>(
@@ -769,6 +787,13 @@ export default function Products() {
                     barcode: e.target.value.replace(/\D/g, ""),
                   })
                 }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    lookupBarcode();
+                  }
+                }}
+                onBlur={lookupBarcode}
                 placeholder="Scannez le code ou tapez les chiffres"
               />
               <button className="btn-ghost shrink-0" onClick={generateBarcode}>

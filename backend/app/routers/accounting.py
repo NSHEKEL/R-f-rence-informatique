@@ -53,6 +53,7 @@ def summary(
             Sale.date >= period_start,
             Sale.date <= period_end,
             Sale.status != "Annulée",
+            Sale.is_gift.is_(False),
         )
         .all()
     )

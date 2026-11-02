@@ -591,38 +591,6 @@ export default function Layout() {
         </nav>
 
         <div className="border-t border-slate-200 p-4">
-          <div
-            className={`flex items-center gap-3 rounded-xl px-2 py-2 ${
-              collapsed ? "lg:flex-col lg:gap-2 lg:px-0" : ""
-            }`}
-          >
-            {user?.photo ? (
-              <img
-                src={user.photo}
-                alt={user.name}
-                className="h-10 w-10 shrink-0 rounded-full object-cover"
-              />
-            ) : (
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-600 text-sm font-bold text-white">
-                {initials}
-              </div>
-            )}
-            <div className={`min-w-0 flex-1 ${collapsed ? "lg:hidden" : ""}`}>
-              <p className="truncate text-sm font-semibold text-slate-800">
-                {user?.name ?? "Administrateur"}
-              </p>
-              <p className="truncate text-xs text-slate-400">
-                {roleLabels[user?.role ?? "admin"] ?? user?.role}
-              </p>
-            </div>
-            <button
-              onClick={logout}
-              title="Se déconnecter" aria-label="Se déconnecter"
-              className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-red-500"
-            >
-              <LogOut size={18} />
-            </button>
-          </div>
           <div className={collapsed ? "lg:hidden" : ""}>
             <div className="mt-3 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
               <img
@@ -714,9 +682,17 @@ export default function Layout() {
               {fullscreen ? <Minimize2 size={20} /> : <Maximize2 size={20} />}
             </button>
             <div className="hidden items-center gap-2.5 border-l border-slate-200 pl-4 lg:flex">
-              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-100 text-xs font-bold text-brand-700 ring-1 ring-brand-200">
-                {initials}
-              </span>
+              {user?.photo ? (
+                <img
+                  src={user.photo}
+                  alt={user.name}
+                  className="h-9 w-9 rounded-full object-cover ring-1 ring-brand-200"
+                />
+              ) : (
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-100 text-xs font-bold text-brand-700 ring-1 ring-brand-200">
+                  {initials}
+                </span>
+              )}
               <span className="hidden leading-tight xl:block">
                 <span className="block max-w-[140px] truncate text-sm font-semibold text-slate-800">
                   {user?.name ?? "Administrateur"}

@@ -253,7 +253,7 @@ export default function Proformas() {
       : "";
     printSheet(
       `${title} ${document.reference}`,
-      documentHeader(company) +
+      documentHeader(company, undefined, "devis") +
         `<h2>${title} ${document.reference}</h2>` +
         `<p class="meta">Date : ${formatDateTime(document.date)}` +
         (document.valid_until

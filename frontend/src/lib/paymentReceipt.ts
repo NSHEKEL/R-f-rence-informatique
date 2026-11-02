@@ -89,7 +89,7 @@ export function paymentReceiptHtml(
   const title = receivable ? "Reçu de paiement" : "Preuve de règlement";
   const who = receivable ? "Reçu de" : "Payé à";
   return (
-    documentHeader(company) +
+    documentHeader(company, undefined, "reglement") +
     `<h2 class="title">${title}</h2>` +
     `<p class="number">N° ${escape(payment.receipt_reference || "—")}</p>` +
     "<table>" +

@@ -149,25 +149,79 @@ export function printDocument(
  * and contact details, so orders, delivery notes, proformas and inventory
  * sheets look like the shop's own stationery.
  */
+/** Per-document-type layout overrides stored in company.document_layouts. */
+export interface DocumentLayout {
+  logo_position?: "gauche" | "centre" | "droite";
+  show_contact?: boolean;
+  show_admin?: boolean;
+}
+
+export function readDocumentLayout(
+  company: CompanySettings | null | undefined,
+  docType: string
+): DocumentLayout {
+  try {
+    const all = JSON.parse(company?.document_layouts || "{}") as Record<
+      string,
+      DocumentLayout
+    >;
+    return all?.[docType] ?? {};
+  } catch {
+    return {};
+  }
+}
+
 export function documentHeader(
   settings: CompanySettings | null,
   /** Supplier logo printed instead of the company one on its own documents. */
-  logoOverride?: string
+  logoOverride?: string,
+  /** Document kind ("facture", "devis"...) for per-type layout overrides. */
+  docType?: string
 ): string {
   // Printing right after start-up: the settings may still be loading, so fall
   // back on the copy kept for offline use instead of an empty letterhead.
   const company = settings ?? cacheRead<CompanySettings>("company");
-  const contact = [company?.address, company?.phone, company?.email]
+  const layout = docType ? readDocumentLayout(company, docType) : {};
+  const place = [company?.city, company?.country].filter(Boolean).join(", ");
+  const phones = [company?.phone, company?.phone2].filter(Boolean).join(" / ");
+  const contact = [
+    [company?.address, place].filter(Boolean).join(" - "),
+    phones,
+    company?.email,
+    company?.website,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const admin = [
+    company?.rccm ? `RCCM ${company.rccm}` : "",
+    company?.ncc ? `NCC ${company.ncc}` : company?.tax_id ? `NCC ${company.tax_id}` : "",
+    company?.capital_social ? `Capital ${company.capital_social}` : "",
+    company?.regime_fiscal || "",
+  ]
     .filter(Boolean)
     .join(" · ");
   const logo = logoOverride || company?.logo;
-  return (
-    `<div class="doc-head">` +
-    (logo ? `<img src="${logo}" alt="" />` : "") +
+  const position = layout.logo_position ?? "gauche";
+  const align =
+    position === "centre" ? "center" : position === "droite" ? "right" : "left";
+  const logoImg = logo ? `<img src="${logo}" alt="" />` : "";
+  const text =
     `<div><h1>${company?.name ?? ""}</h1>` +
-    (contact ? `<p class="meta">${contact}</p>` : "") +
-    `</div></div>`
-  );
+    (company?.slogan ? `<p class="meta">${company.slogan}</p>` : "") +
+    (layout.show_contact === false || !contact
+      ? ""
+      : `<p class="meta">${contact}</p>`) +
+    (layout.show_admin === false || !admin
+      ? ""
+      : `<p class="meta">${admin}</p>`) +
+    `</div>`;
+  if (position === "centre") {
+    return `<div class="doc-head" style="justify-content:center;text-align:center">${logoImg}${text}</div>`;
+  }
+  if (position === "droite") {
+    return `<div class="doc-head" style="flex-direction:row-reverse;text-align:${align}">${logoImg}${text}</div>`;
+  }
+  return `<div class="doc-head">${logoImg}${text}</div>`;
 }
 
 /**

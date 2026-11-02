@@ -262,7 +262,7 @@ export default function Approvisionnements() {
     )?.logo;
     printSheet(
       `Approvisionnement ${purchase.reference}`,
-      documentHeader(company, supplierLogo) +
+      documentHeader(company, supplierLogo, "approvisionnement") +
         `<h2>Bon d'approvisionnement ${purchase.reference}</h2>` +
         `<p class="meta">Date : ${formatDateTime(purchase.date)}` +
         (purchase.expected_date

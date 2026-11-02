@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import {
+  AlertTriangle,
   ArrowLeftRight,
   ClipboardCheck,
   History,
@@ -11,7 +12,7 @@ import {
   Trash2,
 } from "lucide-react";
 import api, { formatDate, formatXOF } from "../api/client";
-import type { Product, StockMovement } from "../types";
+import type { Product, StockLot, StockMovement } from "../types";
 import { documentHeader, printSheet } from "../lib/print";
 import { useCompany } from "../context/CompanyContext";
 import { useSyncVersion } from "../context/SyncContext";
@@ -47,6 +48,7 @@ export default function Inventaire() {
   const [products, setProducts] = useState<Product[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [counted, setCounted] = useState<Counted>({});
+  const [blind, setBlind] = useState(false);
   const [query, setQuery] = useState("");
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
@@ -60,6 +62,8 @@ export default function Inventaire() {
   const [lines, setLines] = useState<TransferLine[]>([]);
   const [lineDraft, setLineDraft] = useState({ product_id: "", quantity: "1" });
   const [pending, setPending] = useState<PendingTransfer[]>([]);
+  const [expiring, setExpiring] = useState<StockLot[]>([]);
+  const [expiryDays, setExpiryDays] = useState(90);
 
   const load = useCallback(async () => {
     const [p, m, r] = await Promise.all([
@@ -74,7 +78,13 @@ export default function Inventaire() {
     setProducts(p.data);
     setMovements(m.data);
     setPending(r.data);
-  }, []);
+    const lots = await api
+      .get<StockLot[]>("/products/lots/alertes", {
+        params: { days: expiryDays },
+      })
+      .catch(() => ({ data: [] as StockLot[] }));
+    setExpiring(lots.data);
+  }, [expiryDays]);
 
   useEffect(() => {
     load();
@@ -249,7 +259,7 @@ export default function Inventaire() {
       .join("");
     printSheet(
       "Fiche d'inventaire",
-      documentHeader(company) +
+      documentHeader(company, undefined, "etat") +
         `<p class="meta">Fiche d'inventaire — ${new Date().toLocaleDateString("fr-FR")}` +
         ` · ${filtered.length} article(s)<br/>Compté par : ______________________` +
         ` · Signature : ______________________</p>` +
@@ -273,7 +283,7 @@ export default function Inventaire() {
       .join("");
     printSheet(
       "Écarts d'inventaire",
-      documentHeader(company) +
+      documentHeader(company, undefined, "etat") +
         `<p class="meta">Écarts d'inventaire — ${new Date().toLocaleDateString("fr-FR")}` +
         (note ? `<br/>Motif : ${note}` : "") +
         `</p><table><thead><tr><th>Article</th><th>SKU</th>` +
@@ -287,6 +297,85 @@ export default function Inventaire() {
 
   return (
     <div className="space-y-5">
+      {/* Suivi des péremptions */}
+      <div className="card p-5">
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <AlertTriangle size={18} className="text-amber-600" />
+          <h3 className="text-base font-bold text-slate-900">
+            Suivi des péremptions
+          </h3>
+          <select
+            className="ml-auto rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600"
+            value={expiryDays}
+            onChange={(e) => setExpiryDays(Number(e.target.value))}
+            aria-label="Délai d'alerte"
+          >
+            <option value={7}>7 jours</option>
+            <option value={15}>15 jours</option>
+            <option value={30}>30 jours</option>
+            <option value={60}>60 jours</option>
+            <option value={90}>90 jours</option>
+          </select>
+        </div>
+        {expiring.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            Aucun lot n'arrive à péremption dans le délai choisi.
+          </p>
+        ) : (
+          <div className="max-h-56 overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-white">
+                <tr className="border-b border-slate-100 text-left text-xs font-semibold uppercase text-slate-500">
+                  <th className="py-2">Produit</th>
+                  <th className="py-2">Lot</th>
+                  <th className="py-2 text-center">Qté</th>
+                  <th className="py-2 text-center">Péremption</th>
+                  <th className="py-2 text-right">Statut</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {expiring.map((lot) => {
+                  const expired = (lot.days_left ?? 0) < 0;
+                  const soon = (lot.days_left ?? 99) <= 15;
+                  return (
+                    <tr key={lot.id}>
+                      <td className="py-2 font-medium text-slate-800">
+                        {lot.product_name}
+                      </td>
+                      <td className="py-2 text-slate-500">
+                        {lot.lot_number || "—"}
+                      </td>
+                      <td className="py-2 text-center text-slate-700">
+                        {lot.quantity}
+                      </td>
+                      <td className="py-2 text-center text-slate-700">
+                        {lot.expiry_date
+                          ? formatDate(lot.expiry_date)
+                          : "—"}
+                      </td>
+                      <td className="py-2 text-right">
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                            expired
+                              ? "bg-red-100 text-red-700"
+                              : soon
+                                ? "bg-amber-100 text-amber-700"
+                                : "bg-emerald-100 text-emerald-700"
+                          }`}
+                        >
+                          {expired
+                            ? `Périmé depuis ${-lot.days_left!} j`
+                            : `${lot.days_left} j`}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
       <div className="card p-5">
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <ClipboardCheck size={18} className="text-brand-600" />
@@ -297,6 +386,15 @@ export default function Inventaire() {
             Saisissez la quantité réellement comptée ; seuls les écarts sont
             appliqués.
           </p>
+          <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600">
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-brand-600"
+              checked={blind}
+              onChange={(e) => setBlind(e.target.checked)}
+            />
+            Comptage à l'aveugle
+          </label>
           <div className="ml-auto flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
             <Search size={16} className="text-slate-400" />
             <input
@@ -325,9 +423,11 @@ export default function Inventaire() {
               <tr className="border-b border-slate-100 text-left text-xs font-semibold uppercase text-slate-500">
                 <th className="py-2">Produit</th>
                 <th className="py-2">Code</th>
-                <th className="py-2 text-center">Stock théorique</th>
+                {!blind && (
+                  <th className="py-2 text-center">Stock théorique</th>
+                )}
                 <th className="py-2 text-center">Compté</th>
-                <th className="py-2 text-center">Écart</th>
+                {!blind && <th className="py-2 text-center">Écart</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -340,9 +440,11 @@ export default function Inventaire() {
                       {p.name}
                     </td>
                     <td className="py-2 text-slate-500">{p.sku}</td>
-                    <td className="py-2 text-center text-slate-700">
-                      {p.quantity}
-                    </td>
+                    {!blind && (
+                      <td className="py-2 text-center text-slate-700">
+                        {p.quantity}
+                      </td>
+                    )}
                     <td className="py-2 text-center">
                       <input
                         className="w-20 rounded-lg border border-slate-200 py-1 text-center"
@@ -355,17 +457,19 @@ export default function Inventaire() {
                         }
                       />
                     </td>
-                    <td
-                      className={`py-2 text-center font-semibold ${
-                        delta === null || delta === 0
-                          ? "text-slate-400"
-                          : delta > 0
-                            ? "text-emerald-600"
-                            : "text-red-600"
-                      }`}
-                    >
-                      {delta === null ? "—" : delta > 0 ? `+${delta}` : delta}
-                    </td>
+                    {!blind && (
+                      <td
+                        className={`py-2 text-center font-semibold ${
+                          delta === null || delta === 0
+                            ? "text-slate-400"
+                            : delta > 0
+                              ? "text-emerald-600"
+                              : "text-red-600"
+                        }`}
+                      >
+                        {delta === null ? "—" : delta > 0 ? `+${delta}` : delta}
+                      </td>
+                    )}
                   </tr>
                 );
               })}
@@ -380,16 +484,18 @@ export default function Inventaire() {
             value={note}
             onChange={(e) => setNote(e.target.value)}
           />
-          <p className="text-sm text-slate-500">
-            {differences.length} écart(s) · impact valorisé{" "}
-            <span
-              className={`font-bold ${
-                impact < 0 ? "text-red-600" : "text-emerald-600"
-              }`}
-            >
-              {formatXOF(impact)}
-            </span>
-          </p>
+          {!blind && (
+            <p className="text-sm text-slate-500">
+              {differences.length} écart(s) · impact valorisé{" "}
+              <span
+                className={`font-bold ${
+                  impact < 0 ? "text-red-600" : "text-emerald-600"
+                }`}
+              >
+                {formatXOF(impact)}
+              </span>
+            </p>
+          )}
           <button className="btn-ghost" onClick={printCountSheet}>
             <Printer size={16} /> Fiche de comptage
           </button>

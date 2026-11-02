@@ -61,7 +61,11 @@ def get_stats(
     def in_period(sale: Sale) -> bool:
         return bool(sale.date and period_start <= sale.date <= period_end)
 
-    all_sales = db.query(Sale).filter(Sale.status != "Annulée").all()
+    all_sales = (
+        db.query(Sale)
+        .filter(Sale.status != "Annulée", Sale.is_gift.is_(False))
+        .all()
+    )
     sales = [s for s in all_sales if in_period(s)]
     total_sales = len(sales)
     total_revenue = sum(s.total for s in sales)
@@ -100,7 +104,7 @@ def get_stats(
     items = (
         db.query(SaleItem)
         .join(Sale, SaleItem.sale_id == Sale.id)
-        .filter(Sale.status != "Annulée")
+        .filter(Sale.status != "Annulée", Sale.is_gift.is_(False))
         .all()
     )
     for it in items:

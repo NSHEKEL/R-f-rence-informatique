@@ -65,14 +65,27 @@ function letterhead(
   config: DocumentConfig
 ): string {
   const lines = [
-    config.show_address ? company?.address : "",
-    config.show_phone && company?.phone ? `Tél. : ${company.phone}` : "",
+    config.show_address
+      ? [company?.address, company?.city, company?.country]
+          .filter(Boolean)
+          .join(", ")
+      : "",
+    config.show_phone && company?.phone
+      ? `Tél. : ${[company.phone, company.phone2].filter(Boolean).join(" / ")}`
+      : "",
     config.show_whatsapp && company?.phone
       ? `WhatsApp : ${company.phone}`
       : "",
     config.show_email ? company?.email : "",
     config.show_website ? company?.website : "",
-    company?.tax_id ? `N° fiscal : ${company.tax_id}` : "",
+    company?.rccm ? `RCCM : ${company.rccm}` : "",
+    company?.ncc
+      ? `NCC : ${company.ncc}`
+      : company?.tax_id
+        ? `N° fiscal : ${company.tax_id}`
+        : "",
+    company?.capital_social ? `Capital : ${company.capital_social}` : "",
+    company?.regime_fiscal || "",
   ].filter(Boolean);
   const logo =
     config.show_logo && company?.logo

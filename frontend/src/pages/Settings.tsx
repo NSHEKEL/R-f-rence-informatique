@@ -30,6 +30,8 @@ import type {
   UpdateStatus,
   Workstation,
 } from "../types";
+import { documentHeader, readDocumentLayout } from "../lib/print";
+import type { DocumentLayout } from "../lib/print";
 import { useAuth } from "../context/AuthContext";
 import PhotoPicker from "../components/PhotoPicker";
 import PrintingSettings from "../components/PrintingSettings";
@@ -58,15 +60,33 @@ type TabKey = (typeof TABS)[number]["key"];
 
 const TAB_KEY = "easygest_settings_tab";
 
+const DOC_TYPES = [
+  { key: "facture", label: "Facture" },
+  { key: "devis", label: "Devis / Proforma" },
+  { key: "livraison", label: "Bon de livraison" },
+  { key: "commande", label: "Bon de commande" },
+  { key: "approvisionnement", label: "Bon d'approvisionnement" },
+  { key: "avoir", label: "Avoir / Retour" },
+  { key: "reglement", label: "Reçu de règlement" },
+  { key: "etat", label: "États & rapports" },
+];
+
 const emptyCompany: CompanyForm = {
   name: "",
   slogan: "",
   logo: "",
   address: "",
   phone: "",
+  phone2: "",
   email: "",
   website: "",
   tax_id: "",
+  country: "",
+  rccm: "",
+  ncc: "",
+  capital_social: "",
+  regime_fiscal: "",
+  document_layouts: "",
   currency: "FCFA",
   vat_rate: 0,
   about: "",
@@ -134,6 +154,22 @@ export default function Settings() {
       : "entreprise";
   });
   const [workstations, setWorkstations] = useState<Workstation[]>([]);
+  const [layoutDoc, setLayoutDoc] = useState(DOC_TYPES[0].key);
+  const docLayout = readDocumentLayout(
+    company as unknown as CompanySettings,
+    layoutDoc
+  );
+  function saveDocLayout(layout: DocumentLayout) {
+    let all: Record<string, DocumentLayout> = {};
+    try {
+      all = JSON.parse(company.document_layouts || "{}");
+    } catch {
+      all = {};
+    }
+    update({
+      document_layouts: JSON.stringify({ ...all, [layoutDoc]: layout }),
+    });
+  }
   const [passwordForm, setPasswordForm] = useState({
     current_password: "",
     password: "",
@@ -584,6 +620,24 @@ export default function Settings() {
               />
             </div>
             <div>
+              <label className="label">Téléphone secondaire</label>
+              <input
+                className="input"
+                value={company.phone2}
+                onChange={(e) => update({ phone2: e.target.value })}
+                placeholder="+225 05 00 00 00"
+              />
+            </div>
+            <div>
+              <label className="label">Pays</label>
+              <input
+                className="input"
+                value={company.country}
+                onChange={(e) => update({ country: e.target.value })}
+                placeholder="Côte d'Ivoire"
+              />
+            </div>
+            <div>
               <label className="label">Email</label>
               <input
                 className="input"
@@ -609,6 +663,123 @@ export default function Settings() {
                 onChange={(e) => update({ tax_id: e.target.value })}
                 placeholder="CI-ABJ-..."
               />
+            </div>
+            <div>
+              <label className="label">RCCM</label>
+              <input
+                className="input"
+                value={company.rccm}
+                onChange={(e) => update({ rccm: e.target.value })}
+                placeholder="CI-ABJ-2024-B-..."
+              />
+            </div>
+            <div>
+              <label className="label">NCC (contribuable)</label>
+              <input
+                className="input"
+                value={company.ncc}
+                onChange={(e) => update({ ncc: e.target.value })}
+                placeholder="0123456A"
+              />
+            </div>
+            <div>
+              <label className="label">Capital social</label>
+              <input
+                className="input"
+                value={company.capital_social}
+                onChange={(e) => update({ capital_social: e.target.value })}
+                placeholder="1 000 000 FCFA"
+              />
+            </div>
+            <div>
+              <label className="label">Régime fiscal</label>
+              <input
+                className="input"
+                value={company.regime_fiscal}
+                onChange={(e) => update({ regime_fiscal: e.target.value })}
+                placeholder="Régime simplifié"
+              />
+            </div>
+            <div className="sm:col-span-2 rounded-xl border border-slate-200 p-3">
+              <p className="label">Disposition des en-têtes de documents</p>
+              <p className="mb-2 text-xs text-slate-400">
+                Réglage indépendant pour chaque type de document.
+              </p>
+              <div className="flex flex-wrap items-end gap-3">
+                <div>
+                  <label className="label">Document</label>
+                  <select
+                    className="input"
+                    value={layoutDoc}
+                    onChange={(e) => setLayoutDoc(e.target.value)}
+                  >
+                    {DOC_TYPES.map((d) => (
+                      <option key={d.key} value={d.key}>
+                        {d.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Position du logo</label>
+                  <select
+                    className="input"
+                    value={docLayout.logo_position ?? "gauche"}
+                    onChange={(e) =>
+                      saveDocLayout({
+                        ...docLayout,
+                        logo_position: e.target
+                          .value as DocumentLayout["logo_position"],
+                      })
+                    }
+                  >
+                    <option value="gauche">Gauche</option>
+                    <option value="centre">Centre</option>
+                    <option value="droite">Droite</option>
+                  </select>
+                </div>
+                <label className="flex items-center gap-2 pb-2 text-sm text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={docLayout.show_contact !== false}
+                    onChange={(e) =>
+                      saveDocLayout({
+                        ...docLayout,
+                        show_contact: e.target.checked,
+                      })
+                    }
+                  />
+                  Coordonnées
+                </label>
+                <label className="flex items-center gap-2 pb-2 text-sm text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={docLayout.show_admin !== false}
+                    onChange={(e) =>
+                      saveDocLayout({
+                        ...docLayout,
+                        show_admin: e.target.checked,
+                      })
+                    }
+                  />
+                  Infos administratives
+                </label>
+              </div>
+              <div className="mt-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3">
+                <p className="mb-1 text-[10px] font-bold uppercase text-slate-400">
+                  Aperçu
+                </p>
+                <div
+                  className="doc-preview"
+                  dangerouslySetInnerHTML={{
+                    __html: documentHeader(
+                      company as unknown as CompanySettings,
+                      undefined,
+                      layoutDoc
+                    ),
+                  }}
+                />
+              </div>
             </div>
             <div>
               <label className="label">WhatsApp d'assistance</label>
