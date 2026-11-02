@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   ArrowLeftRight,
   ClipboardCheck,
+  Download,
   History,
   Plus,
   Printer,
@@ -14,10 +15,17 @@ import {
 import api, { formatDate, formatXOF } from "../api/client";
 import type { Product, StockLot, StockMovement } from "../types";
 import { documentHeader, printSheet } from "../lib/print";
+import { exportCsv, stampedName } from "../lib/exportCsv";
 import { useCompany } from "../context/CompanyContext";
 import { useSyncVersion } from "../context/SyncContext";
 
-type Counted = Record<number, string>;
+type Counted = Record<number, { rayon: string; stock: string }>;
+
+/** Quantité constatée = rayon + stock ; null tant que rien n'est saisi. */
+function countedTotal(entry?: { rayon: string; stock: string }): number | null {
+  if (!entry || (entry.rayon === "" && entry.stock === "")) return null;
+  return Number(entry.rayon || 0) + Number(entry.stock || 0);
+}
 
 const kindLabels: Record<string, string> = {
   vente: "Vente",
@@ -103,9 +111,9 @@ export default function Inventaire() {
     () =>
       products
         .map((p) => {
-          const raw = counted[p.id];
-          if (raw === undefined || raw === "") return null;
-          const delta = Number(raw) - p.quantity;
+          const total = countedTotal(counted[p.id]);
+          if (total === null) return null;
+          const delta = total - p.quantity;
           return delta === 0 ? null : { product: p, delta };
         })
         .filter((d): d is { product: Product; delta: number } => d !== null),
@@ -245,6 +253,45 @@ export default function Inventaire() {
     }
   }
 
+  /** Feuille Excel : état du comptage (rayon + stock = quantité disponible). */
+  function exportInventaire() {
+    exportCsv(
+      stampedName("inventaire"),
+      [
+        "Article",
+        "SKU",
+        "Code-barres",
+        "Quantité disponible",
+        "Quantité en rayon",
+        "Quantité en stock",
+        "Écart",
+      ],
+      filtered.map((p) => {
+        const entry = counted[p.id] ?? { rayon: "", stock: "" };
+        const total = countedTotal(entry);
+        return [
+          p.name,
+          p.sku,
+          p.barcode || "",
+          p.quantity,
+          entry.rayon === "" ? "" : Number(entry.rayon),
+          entry.stock === "" ? "" : Number(entry.stock),
+          total === null ? "" : total - p.quantity,
+        ];
+      })
+    )
+      .then((saved) =>
+        setMessage(
+          saved
+            ? `Export enregistré : ${saved}`
+            : "Export annulé : aucun fichier enregistré."
+        )
+      )
+      .catch(() =>
+        setError("Export impossible : le fichier n'a pas pu être créé.")
+      );
+  }
+
   /** Count sheet the team fills in by hand during the physical count. */
   function printCountSheet() {
     // En comptage à l'aveugle, la quantité théorique n'est pas imprimée : la
@@ -255,9 +302,9 @@ export default function Inventaire() {
           `<tr><td>${p.name}</td><td>${p.sku}</td>` +
           `<td>${p.barcode || ""}</td>` +
           (blind
-            ? `<td class="blank"></td><td class="blank"></td>`
+            ? `<td class="blank"></td><td class="blank"></td><td class="blank"></td>`
             : `<td class="num">${p.quantity}</td>` +
-              `<td class="blank"></td><td class="blank"></td>`) +
+              `<td class="blank"></td><td class="blank"></td><td class="blank"></td>`) +
           `</tr>`
       )
       .join("");
@@ -269,7 +316,7 @@ export default function Inventaire() {
         ` · Signature : ______________________</p>` +
         `<table><thead><tr><th>Article</th><th>SKU</th><th>Code-barres</th>` +
         (blind ? "" : `<th>Quantité disponible</th>`) +
-        `<th>Quantité comptée</th><th>Observation</th>` +
+        `<th>Quantité en rayon</th><th>Quantité en stock</th><th>Observation</th>` +
         `</tr></thead><tbody>${rows}</tbody></table>`
     );
   }
@@ -431,14 +478,16 @@ export default function Inventaire() {
                 {!blind && (
                   <th className="py-2 text-center">Stock théorique</th>
                 )}
-                <th className="py-2 text-center">Compté</th>
+                <th className="py-2 text-center">Qté en rayon</th>
+                <th className="py-2 text-center">Qté en stock</th>
                 {!blind && <th className="py-2 text-center">Écart</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filtered.map((p) => {
-                const raw = counted[p.id] ?? "";
-                const delta = raw === "" ? null : Number(raw) - p.quantity;
+                const entry = counted[p.id] ?? { rayon: "", stock: "" };
+                const total = countedTotal(entry);
+                const delta = total === null ? null : total - p.quantity;
                 return (
                   <tr key={p.id}>
                     <td className="py-2 font-medium text-slate-800">
@@ -455,10 +504,28 @@ export default function Inventaire() {
                         className="w-20 rounded-lg border border-slate-200 py-1 text-center"
                         type="number"
                         min="0"
-                        value={raw}
+                        value={entry.rayon}
                         placeholder="—"
                         onChange={(e) =>
-                          setCounted({ ...counted, [p.id]: e.target.value })
+                          setCounted({
+                            ...counted,
+                            [p.id]: { ...entry, rayon: e.target.value },
+                          })
+                        }
+                      />
+                    </td>
+                    <td className="py-2 text-center">
+                      <input
+                        className="w-20 rounded-lg border border-slate-200 py-1 text-center"
+                        type="number"
+                        min="0"
+                        value={entry.stock}
+                        placeholder="—"
+                        onChange={(e) =>
+                          setCounted({
+                            ...counted,
+                            [p.id]: { ...entry, stock: e.target.value },
+                          })
                         }
                       />
                     </td>
@@ -503,6 +570,9 @@ export default function Inventaire() {
           )}
           <button className="btn-ghost" onClick={printCountSheet}>
             <Printer size={16} /> Fiche de comptage
+          </button>
+          <button className="btn-ghost" onClick={exportInventaire}>
+            <Download size={16} /> Exporter Excel
           </button>
           <button
             className="btn-ghost"
