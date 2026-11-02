@@ -378,14 +378,6 @@ export default function NouvelleVente() {
     Mixte: { icon: Layers, tint: "bg-purple-600" },
   };
 
-  const recents = useMemo(
-    () =>
-      [...products]
-        .filter((p) => p.quantity > 0)
-        .sort((a, b) => b.id - a.id)
-        .slice(0, 6),
-    [products]
-  );
 
   const subtotal = useMemo(
     () => cart.reduce((sum, l) => sum + lineNet(l, priceMode), 0),
@@ -1799,49 +1791,6 @@ export default function NouvelleVente() {
             )}
           </div>
           )}
-          {!query && recents.length > 0 && (
-            <div className="mt-3 border-t border-slate-100 pt-3">
-              <div className="mb-2 flex items-center justify-between">
-                <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">
-                  Articles récemment ajoutés
-                </h3>
-                <Link
-                  to="/produits"
-                  className="text-xs font-semibold text-brand-700 hover:underline"
-                >
-                  Voir tout
-                </Link>
-              </div>
-              <div className="flex gap-2 overflow-x-auto pb-1">
-                {recents.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => addToCart(p)}
-                    className="flex w-28 shrink-0 flex-col items-center rounded-xl border border-slate-200 bg-white p-2 text-center hover:border-brand-400"
-                  >
-                    {p.image ? (
-                      <img
-                        src={p.image}
-                        alt=""
-                        className="mb-1 h-10 w-full object-contain"
-                      />
-                    ) : (
-                      <span className="mb-1 flex h-10 items-center justify-center text-slate-300">
-                        <ImageIcon size={18} />
-                      </span>
-                    )}
-                    <p className="w-full truncate text-[11px] font-semibold text-slate-700">
-                      {p.name}
-                    </p>
-                    <p className="text-[11px] font-bold text-brand-700">
-                      {formatXOF(unitPrice(p, priceMode))}
-                    </p>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-            </div>
             {/* Modes de paiement — sous la liste des articles */}
             <div className="border-t border-slate-100 pt-2">
               <label className="label">Mode de paiement</label>
@@ -1884,6 +1833,7 @@ export default function NouvelleVente() {
                   </button>
                 )}
               </div>
+            </div>
             </div>
           </div>
         </div>
