@@ -348,6 +348,28 @@ export default function Layout() {
   const { online } = useNetwork();
   const { theme, toggle: toggleTheme } = useTheme();
   const [fullscreen, setFullscreen] = useState(isFullscreen);
+  const [sidebarWidth, setSidebarWidth] = useState(() =>
+    Number(localStorage.getItem("ri_sidebar_width")) || 208
+  );
+  useEffect(() => {
+    localStorage.setItem("ri_sidebar_width", String(sidebarWidth));
+  }, [sidebarWidth]);
+  const startSidebarDrag = (e: React.PointerEvent) => {
+    if (collapsed) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = sidebarWidth;
+    const move = (ev: PointerEvent) =>
+      setSidebarWidth(
+        Math.min(360, Math.max(150, startW + ev.clientX - startX))
+      );
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
   const [appVersion, setAppVersion] = useState("");
 
   useEffect(() => {
@@ -493,6 +515,7 @@ export default function Layout() {
         className={`fixed inset-y-0 left-0 z-40 flex flex-col border-r border-slate-200 bg-white text-slate-800 transition-all duration-200 lg:static lg:translate-x-0 ${
           collapsed ? "w-[208px] lg:w-[76px]" : "w-[208px]"
         } ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}
+        style={collapsed ? undefined : { width: sidebarWidth }}
       >
         <div
           className={`flex items-center gap-3 py-5 ${
@@ -615,6 +638,16 @@ export default function Layout() {
           </div>
         </div>
       </aside>
+      {/* Poignée : largeur du menu latéral mémorisée par poste */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Redimensionner le menu"
+        onPointerDown={startSidebarDrag}
+        className={`z-40 -ml-1.5 hidden w-1.5 cursor-col-resize hover:bg-brand-200 lg:block ${
+          collapsed ? "lg:hidden" : ""
+        }`}
+      />
 
       {mobileOpen && (
         <div
