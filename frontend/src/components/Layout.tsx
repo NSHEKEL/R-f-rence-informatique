@@ -195,6 +195,44 @@ const navItems: NavItem[] = [
 
 const byPath = new Map(navItems.map((item) => [item.to, item]));
 
+// Sidebar icon chips reuse the quick-action tile palette.
+const NAV_TINTS: Record<string, string> = {
+  "/": "bg-sky-500",
+  "/tableau-de-bord": "bg-indigo-500",
+  "/caisse": "bg-emerald-600",
+  "/ventes/nouvelle": "bg-blue-600",
+  "/ventes": "bg-blue-500",
+  "/commandes": "bg-orange-500",
+  "/livraisons": "bg-emerald-500",
+  "/retours": "bg-red-500",
+  "/clients": "bg-orange-600",
+  "/produits": "bg-cyan-600",
+  "/inventaire": "bg-cyan-500",
+  "/rapports": "bg-violet-500",
+  "/proformas": "bg-violet-600",
+  "/comptabilite": "bg-teal-600",
+  "/paie": "bg-pink-500",
+  "/dettes": "bg-rose-500",
+  "/fournisseurs": "bg-amber-600",
+  "/approvisionnements": "bg-amber-500",
+  "/categories": "bg-fuchsia-500",
+  "/utilisateurs": "bg-slate-500",
+  "/droits": "bg-slate-600",
+  "/parametres": "bg-slate-500",
+  "/mon-abonnement": "bg-yellow-500",
+  "/assistance": "bg-lime-600",
+  "/a-propos": "bg-sky-400",
+};
+
+const GROUP_TINTS: Record<string, string> = {
+  Ventes: "bg-blue-600",
+  Stocks: "bg-cyan-600",
+  "Achats & commandes": "bg-orange-500",
+  "Clients & finances": "bg-pink-500",
+  Pilotage: "bg-violet-500",
+  Administration: "bg-slate-500",
+};
+
 function pick(...paths: string[]): NavItem[] {
   return paths
     .map((path) => byPath.get(path))
@@ -411,7 +449,13 @@ export default function Layout() {
             : "text-blue-100/80 hover:bg-white/10 hover:text-white"
         }`}
       >
-        <item.icon size={20} className="shrink-0" />
+        <span
+          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-white ${
+            NAV_TINTS[item.to] ?? "bg-slate-500"
+          }`}
+        >
+          <item.icon size={14} />
+        </span>
         <span
           className={`${collapsed ? "lg:hidden" : ""} ${
             locked ? "text-blue-200/50" : ""
@@ -514,7 +558,13 @@ export default function Layout() {
                       : "text-blue-100/80 hover:bg-white/10 hover:text-white"
                   }`}
                 >
-                  <group.icon size={20} className="shrink-0" />
+                  <span
+                    className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-white ${
+                      GROUP_TINTS[group.label] ?? "bg-slate-500"
+                    }`}
+                  >
+                    <group.icon size={14} />
+                  </span>
                   <span className={collapsed ? "lg:hidden" : ""}>
                     {group.label}
                   </span>
