@@ -216,10 +216,24 @@ export default function NouvelleVente() {
   const [saving, setSaving] = useState(false);
   const [mobileView, setMobileView] = useState<"catalog" | "cart">("catalog");
   const [showParked, setShowParked] = useState(true);
+  const [cartW, setCartW] = useState(
+    () => Number(localStorage.getItem("ri_cart_w")) || 0
+  );
+  const cartRef = useRef<HTMLDivElement>(null);
+  const [uiScale, setUiScale] = useState(
+    () => Number(localStorage.getItem("ri_ui_scale")) || 1
+  );
+  const setScale = (v: number) => {
+    const s = Math.min(1.3, Math.max(0.7, Math.round(v * 10) / 10));
+    setUiScale(s);
+    localStorage.setItem("ri_ui_scale", String(s));
+    window.dispatchEvent(new Event("ri_ui_scale_change"));
+  };
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [supplierFilter, setSupplierFilter] = useState<number | "all">("all");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [cartCollapsed, setCartCollapsed] = useState(false);
+  const [validMenu, setValidMenu] = useState(false);
   const discountRef = useRef<HTMLInputElement>(null);
 
   const [newCustomer, setNewCustomer] = useState(false);
@@ -891,7 +905,7 @@ export default function NouvelleVente() {
 
   return (
     <div className="flex h-full flex-col bg-slate-100">
-      <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 bg-white px-5 py-3">
+      <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 bg-white px-5 py-2">
         <h1 className="text-base font-bold text-slate-900">Nouvelle vente</h1>
         {session && (
           <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
@@ -903,21 +917,40 @@ export default function NouvelleVente() {
             <WifiOff size={13} /> Mode local
           </span>
         )}
-        <Link className="btn-ghost ml-auto" to="/ventes">
+        <div className="ml-auto flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-1 py-0.5">
+          <button
+            className="rounded-lg px-2 py-0.5 text-sm font-bold text-slate-600 hover:bg-slate-100"
+            onClick={() => setScale(uiScale - 0.1)}
+            title="Réduire la taille de l'interface"
+          >
+            −
+          </button>
+          <span className="w-10 text-center text-[11px] font-semibold text-slate-500">
+            {Math.round(uiScale * 100)}%
+          </span>
+          <button
+            className="rounded-lg px-2 py-0.5 text-sm font-bold text-slate-600 hover:bg-slate-100"
+            onClick={() => setScale(uiScale + 0.1)}
+            title="Agrandir la taille de l'interface"
+          >
+            +
+          </button>
+        </div>
+        <Link className="btn-ghost" to="/ventes">
           Historique des ventes
         </Link>
       </div>
 
       {/* Barre d'actions rapides */}
-      <div className="flex gap-2 overflow-x-auto border-b border-slate-200 bg-white px-4 py-2">
+      <div className="flex gap-2 overflow-x-auto border-b border-slate-200 bg-white px-4 py-1.5">
         {quickActions.map((action) => (
           <button
             key={action.label}
             onClick={action.onClick}
             disabled={action.disabled}
-            className={`flex min-w-[118px] shrink-0 flex-col items-center gap-1.5 rounded-xl px-3 py-3 text-white shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 ${action.tint}`}
+            className={`flex min-w-[104px] shrink-0 flex-col items-center gap-1 rounded-xl px-2.5 py-2 text-white shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 ${action.tint}`}
           >
-            <action.icon size={20} />
+            <action.icon size={18} />
             <span className="text-xs font-bold leading-none">{action.label}</span>
             <span className="text-[10px] font-medium leading-none opacity-80">
               {action.sub}
@@ -926,35 +959,37 @@ export default function NouvelleVente() {
         ))}
       </div>
 
-      <div className="flex min-h-0 flex-1 gap-4 p-4">
+      <div className="flex min-h-0 flex-1 gap-3 p-3">
         {/* Ticket in progress */}
         <div
-          className={`card min-h-0 w-full flex-col overflow-y-auto p-0 md:order-2 md:flex md:w-[380px] md:shrink-0 lg:w-[440px] xl:w-[520px] 2xl:w-[560px] ${
+          ref={cartRef}
+          style={cartW ? { width: cartW } : undefined}
+          className={`card min-h-0 w-full flex-col overflow-hidden p-0 md:order-3 md:flex md:w-[380px] md:shrink-0 lg:w-[420px] xl:w-[460px] 2xl:w-[500px] ${
             mobileView === "cart" ? "flex" : "hidden"
           }`}
         >
-          <div className="sticky top-0 z-10 bg-white">
-          <div className="flex flex-wrap items-center gap-2 rounded-t-2xl bg-[#123a7a] px-4 py-3 text-white">
-            <span className="flex items-center gap-2 text-base font-bold">
-              <ShoppingCart size={18} />
+          <div className="shrink-0 bg-white">
+          <div className="flex flex-wrap items-center gap-2 rounded-t-2xl border-b border-slate-200 bg-white px-3 py-1">
+            <span className="flex items-center gap-2 text-sm font-bold text-slate-800">
+              <ShoppingCart size={18} className="text-brand-600" />
               Panier ({itemCount} article{itemCount > 1 ? "s" : ""})
             </span>
             <div className="ml-auto flex items-center gap-1.5">
               <button
-                className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white/90 transition hover:bg-white/15 disabled:opacity-40"
+                className="rounded-lg px-2 py-1 text-xs font-semibold text-slate-500 transition hover:bg-slate-100 disabled:opacity-40"
                 onClick={() => searchRef.current?.focus()}
               >
                 + Article
               </button>
               <button
-                className="flex items-center gap-1 rounded-lg bg-white/15 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-white/25 disabled:opacity-40"
+                className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-red-500 transition hover:bg-red-50 disabled:opacity-40"
                 onClick={clearCart}
                 disabled={cart.length === 0}
               >
-                <Trash2 size={13} /> Effacer tout
+                <Trash2 size={13} /> Vider
               </button>
               <button
-                className="rounded-lg p-1.5 text-white/80 transition hover:bg-white/15"
+                className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100"
                 onClick={() => setCartCollapsed((v) => !v)}
                 title={cartCollapsed ? "Développer le panier" : "Réduire le panier"}
                 aria-label={cartCollapsed ? "Développer le panier" : "Réduire le panier"}
@@ -967,7 +1002,7 @@ export default function NouvelleVente() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 bg-slate-100 px-4 py-2">
+          <div className="flex items-center gap-2 bg-slate-100 px-3 py-1">
             <span className="text-xs font-bold uppercase tracking-wide text-slate-500">
               Mode de prix
             </span>
@@ -1026,7 +1061,7 @@ export default function NouvelleVente() {
           </div>
 
           <div
-            className={`min-h-[120px] flex-1 overflow-y-auto ${
+            className={`min-h-0 flex-1 overflow-y-auto ${
               cartCollapsed ? "hidden" : ""
             }`}
           >
@@ -1038,19 +1073,19 @@ export default function NouvelleVente() {
               <table className="w-full text-sm">
                 <thead className="sticky top-0 z-[1] bg-white">
                   <tr className="border-b border-slate-200 text-left text-[11px] font-bold uppercase tracking-wide text-slate-400">
-                    <th className="w-7 px-2 py-1.5">#</th>
-                    <th className="px-1 py-1.5">Article</th>
-                    <th className="w-[86px] px-1 py-1.5 text-right">
+                    <th className="w-7 px-2 py-1">#</th>
+                    <th className="px-1 py-1">Article</th>
+                    <th className="w-[86px] px-1 py-1 text-right">
                       Prix unitaire
                     </th>
                     {canChangePrice && (
-                      <th className="w-14 px-1 py-1.5 text-right">Rem.</th>
+                      <th className="w-14 px-1 py-1 text-right">Rem.</th>
                     )}
-                    <th className="w-[118px] px-1 py-1.5 text-center">
+                    <th className="w-[118px] px-1 py-1 text-center">
                       Quantité
                     </th>
-                    <th className="w-[84px] px-1 py-1.5 text-right">Total</th>
-                    <th className="w-8 px-1 py-1.5" />
+                    <th className="w-[84px] px-1 py-1 text-right">Total</th>
+                    <th className="w-8 px-1 py-1" />
                   </tr>
                 </thead>
                 <tbody>
@@ -1059,19 +1094,19 @@ export default function NouvelleVente() {
                       key={l.product.id}
                       className="border-b border-slate-100 last:border-0"
                     >
-                      <td className="px-2 py-1.5 text-xs text-slate-400">
+                      <td className="px-2 py-1 text-xs text-slate-400">
                         {index + 1}
                       </td>
-                      <td className="px-1 py-1.5">
+                      <td className="px-1 py-1">
                         <div className="flex items-center gap-2">
                           {l.product.image ? (
                             <img
                               src={l.product.image}
                               alt=""
-                              className="h-9 w-9 shrink-0 rounded-lg bg-slate-50 object-contain"
+                              className="h-8 w-8 shrink-0 rounded-lg bg-slate-50 object-contain"
                             />
                           ) : (
-                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-300">
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-300">
                               <ImageIcon size={15} />
                             </span>
                           )}
@@ -1080,7 +1115,7 @@ export default function NouvelleVente() {
                           </p>
                         </div>
                       </td>
-                      <td className="px-1 py-1.5 text-right">
+                      <td className="px-1 py-1 text-right">
                         {canChangePrice ? (
                           <input
                             className="w-[76px] rounded-lg border border-slate-200 px-1.5 py-1 text-right text-sm text-slate-700"
@@ -1098,7 +1133,7 @@ export default function NouvelleVente() {
                         )}
                       </td>
                       {canChangePrice && (
-                        <td className="px-1 py-1.5 text-right">
+                        <td className="px-1 py-1 text-right">
                           <input
                             className="w-14 rounded-lg border border-slate-200 px-1 py-1 text-right text-xs text-slate-700"
                             value={l.discount ?? ""}
@@ -1111,7 +1146,7 @@ export default function NouvelleVente() {
                           />
                         </td>
                       )}
-                      <td className="px-1 py-1.5">
+                      <td className="px-1 py-1">
                         <div className="flex items-center justify-center gap-0.5">
                           <button
                             className="rounded-lg bg-slate-100 p-1 text-slate-600 hover:bg-slate-200"
@@ -1146,10 +1181,10 @@ export default function NouvelleVente() {
                           </button>
                         </div>
                       </td>
-                      <td className="whitespace-nowrap px-1 py-1.5 text-right text-sm font-bold text-slate-900">
+                      <td className="whitespace-nowrap px-1 py-1 text-right text-sm font-bold text-slate-900">
                         {formatXOF(lineNet(l, priceMode))}
                       </td>
-                      <td className="px-1 py-1.5 text-center">
+                      <td className="px-1 py-1 text-center">
                         <button
                           className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
                           onClick={() => setQuantity(l.product.id, 0)}
@@ -1173,24 +1208,16 @@ export default function NouvelleVente() {
           )}
 
           <div
-            className={`sticky bottom-0 z-10 bg-white ${
+            className={`shrink-0 bg-white ${
               cartCollapsed ? "hidden" : ""
             }`}
           >
-          <div className="space-y-2 border-t border-slate-100 px-3 py-2">
+          <div className="max-h-[24vh] space-y-1.5 overflow-y-auto border-t border-slate-100 px-3 py-1.5">
             <div className="grid gap-2 grid-cols-1">
-              <div>
-                <div className="flex items-center justify-between">
-                  <label className="label">Client</label>
-                  <button
-                    className="mb-1.5 flex items-center gap-1 text-xs font-semibold text-brand-700 hover:underline"
-                    onClick={() => setNewCustomer(true)}
-                  >
-                    <UserPlus size={13} /> Nouveau
-                  </button>
-                </div>
+              <div className="flex items-center gap-2">
+                <label className="mb-0 w-14 shrink-0 text-xs font-bold uppercase tracking-wide text-slate-500">Client</label>
                 {customer ? (
-                  <div className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm">
+                  <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-slate-200 px-3 py-1 text-sm">
                     <span className="truncate font-semibold text-slate-700">
                       {customer.name}
                     </span>
@@ -1203,7 +1230,7 @@ export default function NouvelleVente() {
                     </button>
                   </div>
                 ) : (
-                  <div className="relative">
+                  <div className="relative min-w-0 flex-1">
                     <input
                       className="input"
                       placeholder="Client de passage — tapez un nom"
@@ -1231,6 +1258,12 @@ export default function NouvelleVente() {
                     )}
                   </div>
                 )}
+                <button
+                  className="flex shrink-0 items-center gap-1 text-xs font-semibold text-brand-700 hover:underline"
+                  onClick={() => setNewCustomer(true)}
+                >
+                  <UserPlus size={13} /> Nouveau
+                </button>
               </div>
               {payment === "Mixte" && (
                 <div className="sm:col-span-2 xl:col-span-3">
@@ -1275,7 +1308,7 @@ export default function NouvelleVente() {
             <div className="flex gap-3">
               <div className="w-[58%] shrink-0">
               <label className="label">Mode de paiement</label>
-              <div className="grid grid-cols-4 gap-1.5">
+              <div className="grid grid-cols-4 gap-1">
                 {PAYMENTS.map((p) => {
                   const meta = PAYMENT_STYLE[p];
                   const Icon = meta.icon;
@@ -1283,7 +1316,7 @@ export default function NouvelleVente() {
                     <button
                       key={p}
                       onClick={() => setPayment(p)}
-                      className={`flex flex-col items-center justify-center gap-1 rounded-lg px-1 py-2 text-[10px] font-bold leading-tight text-white shadow-sm transition hover:opacity-90 ${
+                      className={`flex flex-col items-center justify-center gap-0.5 rounded-lg px-1 py-1 text-[10px] font-bold leading-tight text-white shadow-sm transition hover:opacity-90 ${
                         meta.tint
                       } ${
                         payment === p
@@ -1291,7 +1324,7 @@ export default function NouvelleVente() {
                           : "opacity-85"
                       }`}
                     >
-                      <Icon size={15} />
+                      <Icon size={13} />
                       <span className="text-center">
                         {p === "Crédit (à régler plus tard)" ? "Crédit" : p}
                       </span>
@@ -1338,7 +1371,7 @@ export default function NouvelleVente() {
                 )}
               </div>
             </div>
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="grid grid-cols-3 gap-2">
               <div>
                 <label className="label">Montant reçu</label>
                 <input
@@ -1378,67 +1411,43 @@ export default function NouvelleVente() {
             </div>
           </div>
 
-          <div className="bg-[#123a7a] px-4 py-2.5 text-white">
-            {vat && (
-              <div className="flex items-center justify-between text-sm text-slate-300">
-                <span>Total HT</span>
-                <span>{formatXOF(vat.excluded)}</span>
+          <div className="relative flex items-stretch gap-2 p-1.5">
+            <div className="w-[46%] shrink-0 rounded-xl bg-[#1d4ed8] px-2.5 py-1 text-white">
+              {vat && (
+                <div className="flex items-center justify-between text-[11px] text-slate-300">
+                  <span>Total HT</span>
+                  <span>{formatXOF(vat.excluded)}</span>
+                </div>
+              )}
+              {vat && (
+                <div className="flex items-center justify-between text-[11px] text-slate-300">
+                  <span>TVA ({vat.rate} %)</span>
+                  <span>{formatXOF(vat.vat)}</span>
+                </div>
+              )}
+              {discount > 0 && (
+                <div className="flex items-center justify-between text-[11px] text-slate-300">
+                  <span>Remise</span>
+                  <span>- {formatXOF(discount)}</span>
+                </div>
+              )}
+              {change > 0 && (
+                <div className="flex items-center justify-between text-[11px] text-emerald-300">
+                  <span>Monnaie à rendre</span>
+                  <span>{formatXOF(change)}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase">
+                  {vat ? "Total TTC" : "Total"}
+                </span>
+                <span className="text-base font-extrabold">
+                  {formatXOF(total)}
+                </span>
               </div>
-            )}
-            {vat && (
-              <div className="mt-1 flex items-center justify-between text-sm text-slate-300">
-                <span>TVA ({vat.rate} %)</span>
-                <span>{formatXOF(vat.vat)}</span>
-              </div>
-            )}
-            {discount > 0 && (
-              <div className="mt-1 flex items-center justify-between text-sm text-slate-300">
-                <span>Remise</span>
-                <span>- {formatXOF(discount)}</span>
-              </div>
-            )}
-            {change > 0 && (
-              <div className="mt-1 flex items-center justify-between text-sm text-emerald-300">
-                <span>Monnaie à rendre</span>
-                <span>{formatXOF(change)}</span>
-              </div>
-            )}
-            <div className="mt-2 flex items-center justify-between border-t border-slate-600 pt-2">
-              <span className="text-base font-bold uppercase">
-                {vat ? "Total TTC" : "Total"}
-              </span>
-              <span className="text-2xl font-extrabold">
-                {formatXOF(total)}
-              </span>
             </div>
-          </div>
-
-          <div className="flex gap-2 p-2.5">
             <button
-              className="btn-ghost flex-1 justify-center py-3"
-              onClick={parkCart}
-              disabled={cart.length === 0}
-            >
-              Attente
-            </button>
-            <button
-              className="btn-ghost flex-1 justify-center py-3"
-              onClick={clearCart}
-              disabled={cart.length === 0}
-            >
-              Vider
-            </button>
-            {canQuote && (
-              <button
-                className="btn-ghost flex-1 justify-center py-3"
-                onClick={() => saveQuote("devis")}
-                disabled={saving || cart.length === 0}
-              >
-                Devis
-              </button>
-            )}
-            <button
-              className="flex flex-[2] items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 text-base font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-600 py-2 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
               onClick={checkout}
               disabled={saving || cart.length === 0}
             >
@@ -1447,9 +1456,103 @@ export default function NouvelleVente() {
                 ? "Encaissement..."
                 : `Valider la vente · ${formatXOF(total)}`}
             </button>
+            <button
+              className="flex w-11 items-center justify-center rounded-xl bg-emerald-700 text-white transition hover:bg-emerald-800 disabled:opacity-50"
+              onClick={() => setValidMenu((v) => !v)}
+              title="Actions du ticket"
+              aria-label="Actions du ticket"
+            >
+              <ChevronDown
+                size={18}
+                className={`transition ${validMenu ? "rotate-180" : ""}`}
+              />
+            </button>
+            {validMenu && (
+              <>
+                <div
+                  className="fixed inset-0 z-20"
+                  onClick={() => setValidMenu(false)}
+                />
+                <div className="absolute bottom-full right-2 z-30 mb-1 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl">
+                  <button
+                    className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                    onClick={() => {
+                      setValidMenu(false);
+                      parkCart();
+                    }}
+                    disabled={cart.length === 0}
+                  >
+                    <Pause size={15} /> Mettre en attente
+                  </button>
+                  {canQuote && (
+                    <>
+                      <button
+                        className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                        onClick={() => {
+                          setValidMenu(false);
+                          void saveQuote("devis");
+                        }}
+                        disabled={saving || cart.length === 0}
+                      >
+                        <FilePenLine size={15} /> Enregistrer un devis
+                      </button>
+                      <button
+                        className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                        onClick={() => {
+                          setValidMenu(false);
+                          void saveQuote("proforma");
+                        }}
+                        disabled={saving || cart.length === 0}
+                      >
+                        <FileCheck2 size={15} /> Enregistrer une pro forma
+                      </button>
+                    </>
+                  )}
+                  <button
+                    className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-40"
+                    onClick={() => {
+                      setValidMenu(false);
+                      clearCart();
+                    }}
+                    disabled={cart.length === 0}
+                  >
+                    <Trash2 size={15} /> Vider le panier
+                  </button>
+                </div>
+              </>
+            )}
           </div>
           </div>
         </div>
+
+        {/* Poignée de redimensionnement catalogue / panier */}
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          title="Glisser pour redimensionner le panier"
+          className="hidden w-1.5 shrink-0 cursor-col-resize rounded-full bg-slate-200 transition hover:bg-brand-400 md:order-2 md:block"
+          onPointerDown={(e) => {
+            e.preventDefault();
+            const startX = e.clientX;
+            const startW =
+              cartRef.current?.getBoundingClientRect().width ?? 420;
+            const maxW = Math.min(760, Math.round(window.innerWidth * 0.6));
+            const onMove = (ev: PointerEvent) => {
+              const w = Math.round(startW + (startX - ev.clientX));
+              setCartW(Math.max(300, Math.min(maxW, w)));
+            };
+            const onUp = () => {
+              window.removeEventListener("pointermove", onMove);
+              window.removeEventListener("pointerup", onUp);
+              setCartW((w) => {
+                if (w) localStorage.setItem("ri_cart_w", String(w));
+                return w;
+              });
+            };
+            window.addEventListener("pointermove", onMove);
+            window.addEventListener("pointerup", onUp);
+          }}
+        />
 
         {/* Article picker */}
         <div
@@ -1458,7 +1561,7 @@ export default function NouvelleVente() {
           }`}
         >
           {!query && (
-            <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
+            <div className="mb-2 flex gap-2 overflow-x-auto pb-1 sm:hidden">
               {[
                 {
                   id: "all" as number | "top" | "all",
@@ -1484,8 +1587,8 @@ export default function NouvelleVente() {
                     onClick={() => setActiveCategory(chip.id)}
                     className={`flex min-w-[74px] shrink-0 flex-col items-center gap-1 rounded-xl border px-3 py-2 text-[11px] font-semibold transition ${
                       active
-                        ? "border-[#123a7a] bg-[#123a7a] text-white shadow-sm"
-                        : "border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:text-slate-900"
+                        ? "border-brand-600 bg-brand-600 text-white shadow-sm"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-brand-300 hover:text-slate-900"
                     }`}
                   >
                     <Icon size={17} />
@@ -1495,6 +1598,47 @@ export default function NouvelleVente() {
               })}
             </div>
           )}
+          <div className="flex min-h-0 flex-1 gap-3">
+            {/* Colonne des catégories — défilement indépendant */}
+            {!query && (
+              <div className="hidden w-[124px] shrink-0 flex-col gap-1 overflow-y-auto sm:flex">
+                {[
+                  {
+                    id: "all" as number | "top" | "all",
+                    label: "Tous",
+                    icon: LayoutGrid,
+                  },
+                  {
+                    id: "top" as number | "top" | "all",
+                    label: "Meilleures ventes",
+                    icon: Flame,
+                  },
+                  ...categories.map((c) => ({
+                    id: c.id as number | "top" | "all",
+                    label: c.name,
+                    icon: categoryIcon(c.name),
+                  })),
+                ].map((chip) => {
+                  const Icon = chip.icon;
+                  const active = activeCategory === chip.id;
+                  return (
+                    <button
+                      key={chip.id}
+                      onClick={() => setActiveCategory(chip.id)}
+                      className={`flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-[11px] font-semibold transition ${
+                        active
+                          ? "border-brand-600 bg-brand-600 text-white shadow-sm"
+                          : "border-slate-200 bg-white text-slate-600 hover:border-brand-300 hover:text-slate-900"
+                      }`}
+                    >
+                      <Icon size={15} className="shrink-0" />
+                      <span className="truncate">{chip.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="mb-3 flex items-center gap-2">
             <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
               <input
@@ -1522,23 +1666,6 @@ export default function NouvelleVente() {
                 </button>
               )}
             </div>
-            <select
-              className="hidden w-36 shrink-0 rounded-xl border border-slate-200 bg-white px-2 py-2.5 text-xs font-semibold text-slate-600 sm:block"
-              value={activeCategory === "top" ? "all" : activeCategory}
-              onChange={(e) =>
-                setActiveCategory(
-                  e.target.value === "all" ? "all" : Number(e.target.value)
-                )
-              }
-              aria-label="Filtrer par catégorie"
-            >
-              <option value="all">Toutes les catégories</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
             {suppliers.length > 0 && (
               <select
                 className="hidden w-32 shrink-0 rounded-xl border border-slate-200 bg-white px-2 py-2.5 text-xs font-semibold text-slate-600 sm:block"
@@ -1641,7 +1768,7 @@ export default function NouvelleVente() {
                   {p.name}
                 </p>
                 <p className="truncate text-[11px] text-slate-400">
-                  {categoryName(p.category_id)}
+                  Réf : {p.sku || categoryName(p.category_id)}
                 </p>
                 <p className="mt-0.5 text-sm font-extrabold text-brand-700">
                   {formatXOF(unitPrice(p, priceMode))}
@@ -1711,6 +1838,8 @@ export default function NouvelleVente() {
               </div>
             </div>
           )}
+            </div>
+          </div>
         </div>
       </div>
 

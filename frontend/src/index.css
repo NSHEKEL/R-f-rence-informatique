@@ -332,6 +332,12 @@ html.dark .bg-brand-50,
 html.dark .bg-brand-100 {
   background-color: #16264a !important;
 }
+html.dark .bg-\[\#eaf1fa\] {
+  background-color: #0f1a30 !important;
+}
+html.dark .hover\:bg-white\/70:hover {
+  background-color: #26344f !important;
+}
 html.dark .text-slate-900,
 html.dark .text-ink,
 html.dark .text-slate-800,
