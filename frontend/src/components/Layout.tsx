@@ -291,6 +291,15 @@ const pageTitles: Record<string, string> = {
 
 export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [uiScale, setUiScale] = useState(
+    () => Number(localStorage.getItem("ri_ui_scale")) || 1
+  );
+  useEffect(() => {
+    const onChange = () =>
+      setUiScale(Number(localStorage.getItem("ri_ui_scale")) || 1);
+    window.addEventListener("ri_ui_scale_change", onChange);
+    return () => window.removeEventListener("ri_ui_scale_change", onChange);
+  }, []);
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem(COLLAPSED_KEY) === "1"
   );
@@ -430,7 +439,7 @@ export default function Layout() {
     .toUpperCase();
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen overflow-hidden" style={{ zoom: uiScale }}>
       <TillGate />
       <a className="skip-link" href="#contenu">
         Aller au contenu

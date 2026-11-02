@@ -227,6 +227,7 @@ export default function NouvelleVente() {
     const s = Math.min(1.3, Math.max(0.7, Math.round(v * 10) / 10));
     setUiScale(s);
     localStorage.setItem("ri_ui_scale", String(s));
+    window.dispatchEvent(new Event("ri_ui_scale_change"));
   };
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [supplierFilter, setSupplierFilter] = useState<number | "all">("all");
@@ -903,7 +904,7 @@ export default function NouvelleVente() {
   }
 
   return (
-    <div className="flex h-full flex-col bg-slate-100" style={{ zoom: uiScale }}>
+    <div className="flex h-full flex-col bg-slate-100">
       <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 bg-white px-5 py-2">
         <h1 className="text-base font-bold text-slate-900">Nouvelle vente</h1>
         {session && (
