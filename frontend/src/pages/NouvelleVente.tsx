@@ -1499,7 +1499,7 @@ export default function NouvelleVente() {
           }`}
         >
           {!query && (
-            <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
+            <div className="mb-2 flex gap-2 overflow-x-auto pb-1 sm:hidden">
               {[
                 {
                   id: "all" as number | "top" | "all",
@@ -1525,8 +1525,8 @@ export default function NouvelleVente() {
                     onClick={() => setActiveCategory(chip.id)}
                     className={`flex min-w-[74px] shrink-0 flex-col items-center gap-1 rounded-xl border px-3 py-2 text-[11px] font-semibold transition ${
                       active
-                        ? "border-[#123a7a] bg-[#123a7a] text-white shadow-sm"
-                        : "border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:text-slate-900"
+                        ? "border-brand-600 bg-brand-600 text-white shadow-sm"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-brand-300 hover:text-slate-900"
                     }`}
                   >
                     <Icon size={17} />
@@ -1536,6 +1536,47 @@ export default function NouvelleVente() {
               })}
             </div>
           )}
+          <div className="flex min-h-0 flex-1 gap-3">
+            {/* Colonne des catégories — défilement indépendant */}
+            {!query && (
+              <div className="hidden w-[124px] shrink-0 flex-col gap-1 overflow-y-auto sm:flex">
+                {[
+                  {
+                    id: "all" as number | "top" | "all",
+                    label: "Tous",
+                    icon: LayoutGrid,
+                  },
+                  {
+                    id: "top" as number | "top" | "all",
+                    label: "Meilleures ventes",
+                    icon: Flame,
+                  },
+                  ...categories.map((c) => ({
+                    id: c.id as number | "top" | "all",
+                    label: c.name,
+                    icon: categoryIcon(c.name),
+                  })),
+                ].map((chip) => {
+                  const Icon = chip.icon;
+                  const active = activeCategory === chip.id;
+                  return (
+                    <button
+                      key={chip.id}
+                      onClick={() => setActiveCategory(chip.id)}
+                      className={`flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-[11px] font-semibold transition ${
+                        active
+                          ? "border-brand-600 bg-brand-600 text-white shadow-sm"
+                          : "border-slate-200 bg-white text-slate-600 hover:border-brand-300 hover:text-slate-900"
+                      }`}
+                    >
+                      <Icon size={15} className="shrink-0" />
+                      <span className="truncate">{chip.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="mb-3 flex items-center gap-2">
             <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
               <input
@@ -1563,23 +1604,6 @@ export default function NouvelleVente() {
                 </button>
               )}
             </div>
-            <select
-              className="hidden w-36 shrink-0 rounded-xl border border-slate-200 bg-white px-2 py-2.5 text-xs font-semibold text-slate-600 sm:block"
-              value={activeCategory === "top" ? "all" : activeCategory}
-              onChange={(e) =>
-                setActiveCategory(
-                  e.target.value === "all" ? "all" : Number(e.target.value)
-                )
-              }
-              aria-label="Filtrer par catégorie"
-            >
-              <option value="all">Toutes les catégories</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
             {suppliers.length > 0 && (
               <select
                 className="hidden w-32 shrink-0 rounded-xl border border-slate-200 bg-white px-2 py-2.5 text-xs font-semibold text-slate-600 sm:block"
@@ -1752,6 +1776,8 @@ export default function NouvelleVente() {
               </div>
             </div>
           )}
+            </div>
+          </div>
         </div>
       </div>
 
