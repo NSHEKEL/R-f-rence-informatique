@@ -328,7 +328,7 @@ export default function Products() {
     if (!code) return;
     try {
       const { data } = await api.get<Product>(
-        `/products/scan/${encodeURIComponent(code)}`
+        `/products/by-code/${encodeURIComponent(code)}`
       );
       if (editing?.id === data.id) return;
       setNotice(`Article reconnu : ${data.name} — fiche chargée`);
