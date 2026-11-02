@@ -220,6 +220,7 @@ export default function NouvelleVente() {
   const [supplierFilter, setSupplierFilter] = useState<number | "all">("all");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [cartCollapsed, setCartCollapsed] = useState(false);
+  const [validMenu, setValidMenu] = useState(false);
   const discountRef = useRef<HTMLInputElement>(null);
 
   const [newCustomer, setNewCustomer] = useState(false);
@@ -891,7 +892,7 @@ export default function NouvelleVente() {
 
   return (
     <div className="flex h-full flex-col bg-slate-100">
-      <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 bg-white px-5 py-3">
+      <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 bg-white px-5 py-2">
         <h1 className="text-base font-bold text-slate-900">Nouvelle vente</h1>
         {session && (
           <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
@@ -909,15 +910,15 @@ export default function NouvelleVente() {
       </div>
 
       {/* Barre d'actions rapides */}
-      <div className="flex gap-2 overflow-x-auto border-b border-slate-200 bg-white px-4 py-2">
+      <div className="flex gap-2 overflow-x-auto border-b border-slate-200 bg-white px-4 py-1.5">
         {quickActions.map((action) => (
           <button
             key={action.label}
             onClick={action.onClick}
             disabled={action.disabled}
-            className={`flex min-w-[118px] shrink-0 flex-col items-center gap-1.5 rounded-xl px-3 py-3 text-white shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 ${action.tint}`}
+            className={`flex min-w-[104px] shrink-0 flex-col items-center gap-1 rounded-xl px-2.5 py-2 text-white shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 ${action.tint}`}
           >
-            <action.icon size={20} />
+            <action.icon size={18} />
             <span className="text-xs font-bold leading-none">{action.label}</span>
             <span className="text-[10px] font-medium leading-none opacity-80">
               {action.sub}
@@ -926,35 +927,35 @@ export default function NouvelleVente() {
         ))}
       </div>
 
-      <div className="flex min-h-0 flex-1 gap-4 p-4">
+      <div className="flex min-h-0 flex-1 gap-3 p-3">
         {/* Ticket in progress */}
         <div
-          className={`card min-h-0 w-full flex-col overflow-y-auto p-0 md:order-2 md:flex md:w-[380px] md:shrink-0 lg:w-[440px] xl:w-[520px] 2xl:w-[560px] ${
+          className={`card min-h-0 w-full flex-col overflow-hidden p-0 md:order-2 md:flex md:w-[380px] md:shrink-0 lg:w-[420px] xl:w-[460px] 2xl:w-[500px] ${
             mobileView === "cart" ? "flex" : "hidden"
           }`}
         >
-          <div className="sticky top-0 z-10 bg-white">
-          <div className="flex flex-wrap items-center gap-2 rounded-t-2xl bg-[#123a7a] px-4 py-3 text-white">
-            <span className="flex items-center gap-2 text-base font-bold">
-              <ShoppingCart size={18} />
+          <div className="shrink-0 bg-white">
+          <div className="flex flex-wrap items-center gap-2 rounded-t-2xl border-b border-slate-200 bg-white px-4 py-2">
+            <span className="flex items-center gap-2 text-base font-bold text-slate-800">
+              <ShoppingCart size={18} className="text-brand-600" />
               Panier ({itemCount} article{itemCount > 1 ? "s" : ""})
             </span>
             <div className="ml-auto flex items-center gap-1.5">
               <button
-                className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white/90 transition hover:bg-white/15 disabled:opacity-40"
+                className="rounded-lg px-2 py-1 text-xs font-semibold text-slate-500 transition hover:bg-slate-100 disabled:opacity-40"
                 onClick={() => searchRef.current?.focus()}
               >
                 + Article
               </button>
               <button
-                className="flex items-center gap-1 rounded-lg bg-white/15 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-white/25 disabled:opacity-40"
+                className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-red-500 transition hover:bg-red-50 disabled:opacity-40"
                 onClick={clearCart}
                 disabled={cart.length === 0}
               >
-                <Trash2 size={13} /> Effacer tout
+                <Trash2 size={13} /> Vider
               </button>
               <button
-                className="rounded-lg p-1.5 text-white/80 transition hover:bg-white/15"
+                className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100"
                 onClick={() => setCartCollapsed((v) => !v)}
                 title={cartCollapsed ? "Développer le panier" : "Réduire le panier"}
                 aria-label={cartCollapsed ? "Développer le panier" : "Réduire le panier"}
@@ -967,7 +968,7 @@ export default function NouvelleVente() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 bg-slate-100 px-4 py-2">
+          <div className="flex items-center gap-2 bg-slate-100 px-4 py-1.5">
             <span className="text-xs font-bold uppercase tracking-wide text-slate-500">
               Mode de prix
             </span>
@@ -1026,7 +1027,7 @@ export default function NouvelleVente() {
           </div>
 
           <div
-            className={`min-h-[120px] flex-1 overflow-y-auto ${
+            className={`min-h-0 flex-1 overflow-y-auto ${
               cartCollapsed ? "hidden" : ""
             }`}
           >
@@ -1173,24 +1174,16 @@ export default function NouvelleVente() {
           )}
 
           <div
-            className={`sticky bottom-0 z-10 bg-white ${
+            className={`shrink-0 bg-white ${
               cartCollapsed ? "hidden" : ""
             }`}
           >
-          <div className="space-y-2 border-t border-slate-100 px-3 py-2">
+          <div className="max-h-[30vh] space-y-2 overflow-y-auto border-t border-slate-100 px-3 py-2">
             <div className="grid gap-2 grid-cols-1">
-              <div>
-                <div className="flex items-center justify-between">
-                  <label className="label">Client</label>
-                  <button
-                    className="mb-1.5 flex items-center gap-1 text-xs font-semibold text-brand-700 hover:underline"
-                    onClick={() => setNewCustomer(true)}
-                  >
-                    <UserPlus size={13} /> Nouveau
-                  </button>
-                </div>
+              <div className="flex items-center gap-2">
+                <label className="mb-0 w-14 shrink-0 text-xs font-bold uppercase tracking-wide text-slate-500">Client</label>
                 {customer ? (
-                  <div className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm">
+                  <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-slate-200 px-3 py-1.5 text-sm">
                     <span className="truncate font-semibold text-slate-700">
                       {customer.name}
                     </span>
@@ -1203,7 +1196,7 @@ export default function NouvelleVente() {
                     </button>
                   </div>
                 ) : (
-                  <div className="relative">
+                  <div className="relative min-w-0 flex-1">
                     <input
                       className="input"
                       placeholder="Client de passage — tapez un nom"
@@ -1231,6 +1224,12 @@ export default function NouvelleVente() {
                     )}
                   </div>
                 )}
+                <button
+                  className="flex shrink-0 items-center gap-1 text-xs font-semibold text-brand-700 hover:underline"
+                  onClick={() => setNewCustomer(true)}
+                >
+                  <UserPlus size={13} /> Nouveau
+                </button>
               </div>
               {payment === "Mixte" && (
                 <div className="sm:col-span-2 xl:col-span-3">
@@ -1338,7 +1337,7 @@ export default function NouvelleVente() {
                 )}
               </div>
             </div>
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="grid grid-cols-3 gap-2">
               <div>
                 <label className="label">Montant reçu</label>
                 <input
@@ -1378,7 +1377,7 @@ export default function NouvelleVente() {
             </div>
           </div>
 
-          <div className="bg-[#123a7a] px-4 py-2.5 text-white">
+          <div className="bg-[#1d4ed8] px-4 py-2 text-white">
             {vat && (
               <div className="flex items-center justify-between text-sm text-slate-300">
                 <span>Total HT</span>
@@ -1407,38 +1406,15 @@ export default function NouvelleVente() {
               <span className="text-base font-bold uppercase">
                 {vat ? "Total TTC" : "Total"}
               </span>
-              <span className="text-2xl font-extrabold">
+              <span className="text-xl font-extrabold">
                 {formatXOF(total)}
               </span>
             </div>
           </div>
 
-          <div className="flex gap-2 p-2.5">
+          <div className="relative flex gap-2 p-2">
             <button
-              className="btn-ghost flex-1 justify-center py-3"
-              onClick={parkCart}
-              disabled={cart.length === 0}
-            >
-              Attente
-            </button>
-            <button
-              className="btn-ghost flex-1 justify-center py-3"
-              onClick={clearCart}
-              disabled={cart.length === 0}
-            >
-              Vider
-            </button>
-            {canQuote && (
-              <button
-                className="btn-ghost flex-1 justify-center py-3"
-                onClick={() => saveQuote("devis")}
-                disabled={saving || cart.length === 0}
-              >
-                Devis
-              </button>
-            )}
-            <button
-              className="flex flex-[2] items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 text-base font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-600 py-2.5 text-base font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
               onClick={checkout}
               disabled={saving || cart.length === 0}
             >
@@ -1447,6 +1423,71 @@ export default function NouvelleVente() {
                 ? "Encaissement..."
                 : `Valider la vente · ${formatXOF(total)}`}
             </button>
+            <button
+              className="flex w-11 items-center justify-center rounded-xl bg-emerald-700 text-white transition hover:bg-emerald-800 disabled:opacity-50"
+              onClick={() => setValidMenu((v) => !v)}
+              title="Actions du ticket"
+              aria-label="Actions du ticket"
+            >
+              <ChevronDown
+                size={18}
+                className={`transition ${validMenu ? "rotate-180" : ""}`}
+              />
+            </button>
+            {validMenu && (
+              <>
+                <div
+                  className="fixed inset-0 z-20"
+                  onClick={() => setValidMenu(false)}
+                />
+                <div className="absolute bottom-full right-2 z-30 mb-1 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl">
+                  <button
+                    className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                    onClick={() => {
+                      setValidMenu(false);
+                      parkCart();
+                    }}
+                    disabled={cart.length === 0}
+                  >
+                    <Pause size={15} /> Mettre en attente
+                  </button>
+                  {canQuote && (
+                    <>
+                      <button
+                        className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                        onClick={() => {
+                          setValidMenu(false);
+                          void saveQuote("devis");
+                        }}
+                        disabled={saving || cart.length === 0}
+                      >
+                        <FilePenLine size={15} /> Enregistrer un devis
+                      </button>
+                      <button
+                        className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                        onClick={() => {
+                          setValidMenu(false);
+                          void saveQuote("proforma");
+                        }}
+                        disabled={saving || cart.length === 0}
+                      >
+                        <FileCheck2 size={15} /> Enregistrer une pro forma
+                      </button>
+                    </>
+                  )}
+                  <button
+                    className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-40"
+                    onClick={() => {
+                      setValidMenu(false);
+                      clearCart();
+                    }}
+                    disabled={cart.length === 0}
+                  >
+                    <Trash2 size={15} /> Vider le panier
+                  </button>
+                </div>
+              </>
+            )}
           </div>
           </div>
         </div>
@@ -1641,7 +1682,7 @@ export default function NouvelleVente() {
                   {p.name}
                 </p>
                 <p className="truncate text-[11px] text-slate-400">
-                  {categoryName(p.category_id)}
+                  Réf : {p.sku || categoryName(p.category_id)}
                 </p>
                 <p className="mt-0.5 text-sm font-extrabold text-brand-700">
                   {formatXOF(unitPrice(p, priceMode))}
