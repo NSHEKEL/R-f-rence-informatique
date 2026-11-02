@@ -159,7 +159,35 @@ def _refresh_cache() -> Path:
     return storage
 
 
-def _open_window(url: str) -> bool:
+SPLASH_HTML = """<!doctype html>
+<html><body style="margin:0;height:100vh;display:flex;align-items:center;
+justify-content:center;background:#0f2a5c;color:#fff;
+font-family:'Segoe UI',Arial,sans-serif">
+<div style="text-align:center">
+<div style="font-size:24px;font-weight:600">EasyGest Admin</div>
+<div style="margin-top:14px;opacity:.85">Connexion au serveur central\u2026</div>
+</div></body></html>"""
+
+ERROR_HTML = """<!doctype html>
+<html><body style="margin:0;height:100vh;display:flex;align-items:center;
+justify-content:center;background:#fff;color:#333;
+font-family:'Segoe UI',Arial,sans-serif">
+<div style="text-align:center;max-width:420px">
+<div style="font-size:20px;font-weight:600">Console injoignable</div>
+<div style="margin-top:14px;line-height:1.5">Le serveur central n'a pas
+r\u00e9pondu et le service local n'a pas pu d\u00e9marrer. V\u00e9rifiez votre
+connexion Internet et votre antivirus, puis relancez l'application.</div>
+</div></body></html>"""
+
+
+def _open_window(resolve_url) -> bool:
+    """Open the console window immediately, then navigate to the real URL.
+
+    Probing the hosted server used to block for up to 12 s before any window
+    appeared: the app looked dead, and when the probe failed the window opened
+    on an empty local console (the 'blank page'). The window now shows a
+    splash at once while a background thread decides where to go.
+    """
     try:
         import webview
     except Exception:  # noqa: BLE001
@@ -169,7 +197,7 @@ def _open_window(url: str) -> bool:
         storage = _refresh_cache()
         window = webview.create_window(
             ADMIN_NAME,
-            f"{url}/console/connexion?v={APP_VERSION}",
+            html=SPLASH_HTML,
             width=1400,
             height=900,
             min_size=(1024, 700),
@@ -177,6 +205,18 @@ def _open_window(url: str) -> bool:
             text_select=True,
         )
         window.events.closed += lambda: os._exit(0)
+
+        def _navigate() -> None:
+            try:
+                url = resolve_url()
+                if url:
+                    window.load_url(f"{url}/console/connexion?v={APP_VERSION}")
+                else:
+                    window.load_html(ERROR_HTML)
+            except Exception:  # noqa: BLE001
+                traceback.print_exc()
+
+        threading.Thread(target=_navigate, daemon=True).start()
         webview.start(
             private_mode=False,
             storage_path=str(storage),
@@ -204,39 +244,39 @@ def _selftest(url: str) -> None:
     print(f"SELFTEST OK — {ADMIN_NAME} {APP_VERSION}")
 
 
+def _start_local_server() -> str | None:
+    """Run the bundled central server; return its base URL when it answers."""
+    port = _free_port(DEFAULT_PORT)
+    url = f"http://127.0.0.1:{port}"
+    threading.Thread(target=_serve, args=(port,), daemon=True).start()
+    return url if _wait_until_ready(url) else None
+
+
 def main() -> None:
     _redirect_output()
 
     hosted = "" if FORCE_LOCAL else _hosted_url()
-    if hosted and _wait_until_ready(hosted, timeout=12):
-        if SELFTEST:
-            _selftest(hosted)
-            return
-        if _open_window(hosted):
-            return
-        import webbrowser
 
-        _report(
-            "La fenêtre de la console n'a pas pu s'ouvrir (composant "
-            "d'affichage Microsoft Edge WebView2 manquant).\nLa console "
-            "continue dans votre navigateur ; installez WebView2 puis "
-            "relancez l'application."
-        )
-        webbrowser.open(f"{hosted}/console/connexion")
-        while True:
-            time.sleep(3600)
-
-    port = _free_port(DEFAULT_PORT)
-    url = f"http://127.0.0.1:{port}"
-    threading.Thread(target=_serve, args=(port,), daemon=True).start()
+    def resolve() -> str | None:
+        """Pick the console base URL: hosted first, local server as fallback."""
+        if hosted and _wait_until_ready(hosted, timeout=15):
+            return hosted
+        return _start_local_server()
 
     if SELFTEST:
+        url = hosted if hosted and _wait_until_ready(hosted, timeout=60) else None
+        if url is None:
+            port = _free_port(DEFAULT_PORT)
+            url = f"http://127.0.0.1:{port}"
+            threading.Thread(target=_serve, args=(port,), daemon=True).start()
         _selftest(url)
         return
 
-    ready = _wait_until_ready(url)
-
     if HEADLESS:
+        port = _free_port(DEFAULT_PORT)
+        url = f"http://127.0.0.1:{port}"
+        threading.Thread(target=_serve, args=(port,), daemon=True).start()
+        _wait_until_ready(url)
         print(f"{ADMIN_NAME} {APP_VERSION} — serveur central")
         print(f" Console           : {url}/console")
         if HOST != "127.0.0.1":
@@ -245,15 +285,7 @@ def main() -> None:
         while True:
             time.sleep(3600)
 
-    if not ready:
-        _report(
-            "La console Administrateur Global n'a pas pu démarrer son service "
-            "interne.\nVérifiez qu'aucun antivirus ne bloque l'application, "
-            "puis relancez-la."
-        )
-        raise SystemExit(1)
-
-    if _open_window(url):
+    if _open_window(resolve):
         return
 
     import webbrowser
@@ -263,6 +295,7 @@ def main() -> None:
         "Microsoft Edge WebView2 manquant).\nLa console continue dans votre "
         "navigateur ; installez WebView2 puis relancez l'application."
     )
+    url = resolve() or (hosted or f"http://127.0.0.1:{DEFAULT_PORT}")
     webbrowser.open(f"{url}/console/connexion")
     while True:
         time.sleep(3600)
