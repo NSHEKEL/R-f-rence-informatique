@@ -95,9 +95,13 @@ def register(
     uid = payload.installation_uid.strip()
     if len(uid) < 16:
         raise HTTPException(status_code=400, detail="Identifiant d'installation invalide")
+    # No formula chosen: a first activation starts the free 30-day trial.
     plan = (
         db.query(Plan)
-        .filter(Plan.code == payload.plan_code, Plan.is_active.is_(True))
+        .filter(
+            Plan.code == (payload.plan_code or "essai"),
+            Plan.is_active.is_(True),
+        )
         .first()
     )
     if plan is None:
@@ -115,6 +119,8 @@ def register(
         installation.token = new_installation_token()
         installation.version = payload.version
         installation.hostname = payload.hostname
+        if payload.installation_name.strip():
+            installation.shop_name = payload.installation_name.strip()
         installation.last_seen = utcnow()
         db.commit()
         return LicenseAnswer(
@@ -131,6 +137,8 @@ def register(
         email=payload.email,
         address=payload.address,
         city=payload.city,
+        rccm=payload.rccm,
+        sector=payload.sector,
     )
     db.add(client)
     db.commit()
@@ -142,6 +150,7 @@ def register(
         uid=uid,
         token=new_installation_token(),
         hostname=payload.hostname,
+        shop_name=payload.installation_name.strip(),
         version=payload.version,
         users_count=payload.users_count,
         last_seen=utcnow(),

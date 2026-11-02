@@ -327,10 +327,65 @@ class CashSession(Base):
     expected_balance = Column(Float, nullable=True)  # opening + cash sales
     difference = Column(Float, nullable=True)  # counted - expected
     note = Column(Text, default="")
+    # Immutable Z-report snapshot (JSON) written once the session is closed.
+    z_report = Column(Text, default="")
 
     opened_by = relationship("User", foreign_keys=[opened_by_id])
     closed_by = relationship("User", foreign_keys=[closed_by_id])
     sales = relationship("Sale", backref="cash_session")
+
+
+class BankAccount(Base):
+    """A company bank account receiving deposits from the tills."""
+
+    __tablename__ = "bank_accounts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    bank_name = Column(String, nullable=False)
+    holder = Column(String, default="")  # titulaire du compte
+    account_number = Column(String, default="")  # numéro ou IBAN
+    label = Column(String, default="")  # intitulé
+    currency = Column(String, default="FCFA")
+    is_active = Column(Boolean, default=True, nullable=False)
+    note = Column(Text, default="")
+    created_at = Column(DateTime, default=utcnow)
+
+    deposits = relationship("BankDeposit", back_populates="account")
+
+
+class BankDeposit(Base):
+    """Cash deposit from a till (or cash desk) to a bank account.
+
+    A deposit is an internal treasury transfer: it never counts as revenue.
+    """
+
+    __tablename__ = "bank_deposits"
+
+    id = Column(Integer, primary_key=True, index=True)
+    account_id = Column(Integer, ForeignKey("bank_accounts.id"), nullable=False)
+    cash_session_id = Column(
+        Integer, ForeignKey("cash_sessions.id"), nullable=True
+    )
+    amount = Column(Float, nullable=False)
+    deposit_date = Column(DateTime, default=utcnow)
+    method = Column(String, default="Espèces")  # mode de versement
+    reference = Column(String, default="")  # référence de transaction
+    slip_number = Column(String, default="")  # numéro de bordereau
+    note = Column(Text, default="")
+    attachment = Column(String, default="")  # justificatif (nom du fichier)
+    # en attente -> validé / rejeté / annulé (traçable)
+    status = Column(String, default="en attente", nullable=False, index=True)
+    reconciled = Column(Boolean, default=False, nullable=False)
+    statement_ref = Column(String, default="")  # réf. du relevé bancaire
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    decided_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    decided_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+
+    account = relationship("BankAccount", back_populates="deposits")
+    cash_session = relationship("CashSession")
+    created_by = relationship("User", foreign_keys=[created_by_id])
+    decided_by = relationship("User", foreign_keys=[decided_by_id])
 
 
 class Expense(Base):
@@ -816,6 +871,8 @@ class LicenseState(Base):
     # What the owner's last instructions already changed here, so a local
     # password change is not undone at every synchronisation.
     directives_state = Column(Text, default="")
+    # Support contacts signed inside the licence (JSON {phone,email,whatsapp}).
+    support = Column(Text, default="")
     registered_at = Column(DateTime, default=utcnow)
 
 

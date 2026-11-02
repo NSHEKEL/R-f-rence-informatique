@@ -16,6 +16,7 @@ import {
   Calculator,
   HandCoins,
   ClipboardList,
+  Landmark,
   Wallet,
   Undo2,
   Plus,
@@ -140,6 +141,12 @@ const navItems: NavItem[] = [
     access: "proformas",
   },
   {
+    to: "/banque",
+    label: "Versements bancaires",
+    icon: Landmark,
+    access: "caisse",
+  },
+  {
     to: "/comptabilite",
     label: "Comptabilité",
     icon: Calculator,
@@ -200,6 +207,7 @@ const NAV_TINTS: Record<string, string> = {
   "/": "bg-sky-500",
   "/tableau-de-bord": "bg-indigo-500",
   "/caisse": "bg-emerald-600",
+  "/banque": "bg-teal-600",
   "/ventes/nouvelle": "bg-blue-600",
   "/ventes": "bg-blue-500",
   "/commandes": "bg-orange-500",
@@ -265,7 +273,7 @@ const navGroups: NavGroup[] = [
   {
     label: "Clients & finances",
     icon: HandCoins,
-    items: pick("/clients", "/dettes", "/comptabilite", "/paie"),
+    items: pick("/clients", "/dettes", "/banque", "/comptabilite", "/paie"),
   },
   {
     label: "Pilotage",

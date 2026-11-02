@@ -123,6 +123,7 @@ export default function ConsoleClients() {
           className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
         >
           <option value="">Tous les statuts</option>
+          <option value="trial">En essai</option>
           <option value="active">Active</option>
           <option value="suspended">Suspendue</option>
           <option value="expired">Expirée</option>

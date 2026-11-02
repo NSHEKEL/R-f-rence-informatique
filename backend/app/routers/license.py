@@ -42,6 +42,7 @@ def _status(db: Session) -> LicenseStatus:
         last_error=view.last_error,
         central_url=view.central_url,
         installation_uid=view.installation_uid,
+        support=view.support,
         features=sorted(view.features) if view.mode != licensing.MODE_LOCAL
         else [spec.code for spec in FEATURES],
         catalogue=[
@@ -97,6 +98,9 @@ def register(
             email=payload.email,
             address=payload.address,
             city=payload.city,
+            rccm=payload.rccm,
+            sector=payload.sector,
+            installation_name=payload.installation_name,
             users_count=db.query(User).filter(User.is_active.is_(True)).count(),
         )
     except licensing.CentralError as exc:

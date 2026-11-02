@@ -14,6 +14,18 @@ from .security import hash_password
 # others: nothing below is enforced afterwards.
 STARTER_PLANS = (
     {
+        # Trial created automatically at the first activation: 30 days,
+        # all features, no grace — the shop is locked exactly at expiry.
+        "code": "essai",
+        "name": "Essai 30 jours",
+        "description": "Période d'essai gratuite à la première installation",
+        "price": 0,
+        "duration_days": 30,
+        "grace_days": 0,
+        "position": 0,
+        "features": {spec.code for spec in FEATURES},
+    },
+    {
         "code": "business",
         "name": "Business",
         "description": "Gestion quotidienne d'un point de vente",
@@ -128,7 +140,12 @@ def _seed_admin(db: Session) -> None:
 # Columns added after the first release; create_all() never adds them to a
 # table the deployed database already has.
 ADDED_COLUMNS: dict[str, dict[str, str]] = {
-    "clients": {"about": "TEXT DEFAULT ''", "mobile_code": "VARCHAR"},
+    "clients": {
+        "about": "TEXT DEFAULT ''",
+        "mobile_code": "VARCHAR",
+        "rccm": "VARCHAR DEFAULT ''",
+        "sector": "VARCHAR DEFAULT ''",
+    },
     "installations": {
         "shop_name": "VARCHAR DEFAULT ''",
         "city": "VARCHAR DEFAULT ''",

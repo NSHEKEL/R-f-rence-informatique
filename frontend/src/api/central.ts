@@ -194,12 +194,15 @@ export interface Dashboard {
   clients: number;
   per_plan: Record<string, number>;
   active: number;
+  trials: number;
   expired: number;
   suspended: number;
   revoked: number;
   expiring_soon: number;
   online: number;
   offline: number;
+  installations: number;
+  new_installations: number;
   signups: { month: string; clients: number }[];
 }
 

@@ -7,6 +7,7 @@ import {
   LayoutGrid,
   LogOut,
   MessageSquareText,
+  Settings,
 } from "lucide-react";
 import central, {
   getCentralToken,
@@ -25,6 +26,7 @@ const entries = [
     badge: true,
   },
   { to: "/console/journal", label: "Journal", icon: ClipboardList },
+  { to: "/console/parametres", label: "Paramètres", icon: Settings },
 ];
 
 /** Frame of the console: only the Global Administrator gets past it. */

@@ -12,6 +12,7 @@ that is what every existing shop runs today.
 import json
 import os
 import socket
+import sys
 import urllib.error
 import urllib.request
 import uuid
@@ -83,6 +84,30 @@ def central_url() -> str:
     return override.strip().rstrip("/")
 
 
+def _machine_uid() -> str:
+    """Identifier surviving a reinstall of the application files.
+
+    On Windows the registry MachineGuid identifies the computer itself: wiping
+    the EasyGest folder and installing again produces the same uid, so the
+    central server recognises the machine and keeps its licence history
+    (no fresh 30-day trial).
+    """
+    if sys.platform == "win32":
+        try:
+            import winreg
+
+            with winreg.OpenKey(
+                winreg.HKEY_LOCAL_MACHINE,
+                r"SOFTWARE\Microsoft\Cryptography",
+            ) as key:
+                guid, _ = winreg.QueryValueEx(key, "MachineGuid")
+            if guid:
+                return "mg-" + str(guid).strip().lower()
+        except OSError:
+            pass
+    return uuid.uuid4().hex
+
+
 def installation_uid() -> str:
     """Identifier of this computer, kept beside the database."""
     path = data_dir() / UID_FILE
@@ -90,7 +115,7 @@ def installation_uid() -> str:
         existing = path.read_text(encoding="utf-8").strip()
         if len(existing) >= 16:
             return existing
-    generated = uuid.uuid4().hex
+    generated = _machine_uid()
     path.write_text(generated, encoding="utf-8")
     return generated
 
@@ -130,6 +155,7 @@ class LicenseView:
     last_error: str = ""
     central_url: str = ""
     installation_uid: str = ""
+    support: dict = field(default_factory=dict)
 
     @property
     def blocked(self) -> bool:
@@ -244,6 +270,9 @@ def current(db: Session) -> LicenseView:
         last_error=row.last_error or "",
         central_url=row.central_url or central_url(),
         installation_uid=row.installation_uid or installation_uid(),
+        support=payload.get("support")
+        if isinstance(payload.get("support"), dict)
+        else {},
     )
     if mode == MODE_GRACE:
         view.message = (
@@ -336,6 +365,8 @@ def _store(
     row.ends_at = _parse(payload.get("ends_at"))
     row.grace_days = int(payload.get("grace_days", 0) or 0)
     row.offline_days = int(payload.get("offline_days", 7) or 7)
+    support = payload.get("support")
+    row.support = json.dumps(support) if isinstance(support, dict) else ""
     db.commit()
     directives = payload.get("directives")
     if isinstance(directives, dict):
@@ -424,6 +455,9 @@ def register(
     email: str = "",
     address: str = "",
     city: str = "",
+    rccm: str = "",
+    sector: str = "",
+    installation_name: str = "",
     users_count: int = 1,
 ) -> LicenseView:
     """First configuration: create the client and receive its licence."""
@@ -439,6 +473,9 @@ def register(
             "email": email,
             "address": address,
             "city": city,
+            "rccm": rccm,
+            "sector": sector,
+            "installation_name": installation_name,
             "plan_code": plan_code,
             "installation_uid": installation_uid(),
             "hostname": socket.gethostname(),

@@ -105,6 +105,10 @@ class Client(Base):
     email = Column(String, default="", index=True)
     address = Column(String, default="")
     city = Column(String, default="")
+    # RCCM / identifiant fiscal et secteur d'activité, fournis (avec
+    # consentement) par la boutique lors de sa première configuration.
+    rccm = Column(String, default="")
+    sector = Column(String, default="")
     note = Column(Text, default="")
     # "À propos de nous" pushed to the shop at the next synchronisation.
     about = Column(Text, default="")
@@ -359,3 +363,15 @@ class PendingTransfer(Base):
     status = Column(String, default="pending", index=True)
     created_at = Column(DateTime, default=utcnow)
     received_at = Column(DateTime, nullable=True)
+
+
+class CentralSetting(Base):
+    """Owner-level configuration editable from the console.
+
+    Key/value rows, e.g. the support contacts shown to a blocked shop.
+    """
+
+    __tablename__ = "central_settings"
+
+    key = Column(String, primary_key=True)
+    value = Column(Text, default="")

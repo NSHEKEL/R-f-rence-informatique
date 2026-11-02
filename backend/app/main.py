@@ -22,6 +22,7 @@ from .routers import (
     accounting,
     auth,
     backups,
+    bank,
     cash,
     categories,
     customers,
@@ -104,6 +105,7 @@ app.include_router(notifications.router)
 app.include_router(permissions.router)
 app.include_router(security.router)
 app.include_router(cash.router, dependencies=feature("versements"))
+app.include_router(bank.router, dependencies=feature("versements"))
 app.include_router(inventory.router, dependencies=feature("inventaire"))
 app.include_router(transfers.router, dependencies=feature("inventaire"))
 app.include_router(accounting.router, dependencies=feature("comptabilite"))

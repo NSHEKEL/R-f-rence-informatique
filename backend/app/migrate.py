@@ -130,9 +130,11 @@ COLUMNS: dict[str, dict[str, str]] = {
     },
     "cash_sessions": {
         "business_day": "VARCHAR DEFAULT ''",
+        "z_report": "TEXT DEFAULT ''",
     },
     "license_state": {
         "directives_state": "TEXT DEFAULT ''",
+        "support": "TEXT DEFAULT ''",
     },
 }
 
