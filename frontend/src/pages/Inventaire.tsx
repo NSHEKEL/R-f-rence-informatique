@@ -245,16 +245,20 @@ export default function Inventaire() {
     }
   }
 
-  /** Blank count sheet the team fills in by hand during the physical count. */
+  /** Count sheet the team fills in by hand during the physical count. */
   function printCountSheet() {
-    // Only the identity of the article is printed: the counting team must not
-    // see the expected quantity, otherwise the count is biased.
+    // En comptage à l'aveugle, la quantité théorique n'est pas imprimée : la
+    // feuille ne doit pas biaiser le comptage. Sinon elle est affichée.
     const rows = filtered
       .map(
         (p) =>
           `<tr><td>${p.name}</td><td>${p.sku}</td>` +
           `<td>${p.barcode || ""}</td>` +
-          `<td class="blank"></td><td class="blank"></td></tr>`
+          (blind
+            ? `<td class="blank"></td><td class="blank"></td>`
+            : `<td class="num">${p.quantity}</td>` +
+              `<td class="blank"></td><td class="blank"></td>`) +
+          `</tr>`
       )
       .join("");
     printSheet(
@@ -264,6 +268,7 @@ export default function Inventaire() {
         ` · ${filtered.length} article(s)<br/>Compté par : ______________________` +
         ` · Signature : ______________________</p>` +
         `<table><thead><tr><th>Article</th><th>SKU</th><th>Code-barres</th>` +
+        (blind ? "" : `<th>Quantité disponible</th>`) +
         `<th>Quantité comptée</th><th>Observation</th>` +
         `</tr></thead><tbody>${rows}</tbody></table>`
     );
