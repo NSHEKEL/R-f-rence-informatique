@@ -44,6 +44,13 @@ class CompanySettings(Base):
     email = Column(String, default="")
     website = Column(String, default="")
     tax_id = Column(String, default="")  # NCC / RCCM
+    # Administrative details printed on the commercial documents.
+    phone2 = Column(String, default="")
+    country = Column(String, default="")
+    rccm = Column(String, default="")
+    ncc = Column(String, default="")
+    capital_social = Column(String, default="")
+    regime_fiscal = Column(String, default="")
     currency = Column(String, default="FCFA")
     # VAT shown on receipts; prices are already tax inclusive.
     vat_rate = Column(Float, default=0.0, nullable=False)
@@ -63,6 +70,8 @@ class CompanySettings(Base):
     # Receipt and label printer settings, kept as JSON: they are a long list of
     # display switches that only the printing code reads.
     printing_config = Column(Text, default="")
+    # Per-document-type layout overrides (JSON): logo position, blocks shown.
+    document_layouts = Column(Text, default="")
     # Outgoing mail used by the "forgot password" flow (optional).
     smtp_host = Column(String, default="")
     smtp_port = Column(Integer, default=587)
@@ -198,6 +207,8 @@ class Sale(Base):
     paid_amount = Column(Float, default=0, nullable=False)
     # Discount granted at the counter, already deducted from the total.
     discount = Column(Float, default=0, nullable=False)
+    # Gift sale: items leave the stock but are excluded from revenue.
+    is_gift = Column(Boolean, default=False, nullable=False)
     # Idempotency key of tickets recorded offline, replayed once back online.
     client_id = Column(String, unique=True, index=True, nullable=True)
 

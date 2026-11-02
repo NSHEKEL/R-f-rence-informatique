@@ -77,6 +77,8 @@ export interface LabelPrinterConfig {
 /** A4/A5 commercial documents: purchase orders and delivery notes. */
 export interface DocumentConfig {
   format: "A4" | "A5";
+  /** Printer assigned to commercial documents on this workstation. */
+  printer_name: string;
   order_prefix: string;
   delivery_prefix: string;
   show_logo: boolean;
@@ -153,6 +155,7 @@ export const DEFAULT_PRINTING: PrintingConfig = {
   },
   documents: {
     format: "A4",
+    printer_name: "",
     order_prefix: "BC",
     delivery_prefix: "BL",
     show_logo: true,
@@ -176,9 +179,21 @@ export interface CompanySettings {
   logo: string;
   address: string;
   phone: string;
+  /** Secondary phone number shown under the main one. */
+  phone2: string;
   email: string;
   website: string;
   tax_id: string;
+  /** Country printed with the city in the letterhead. */
+  country: string;
+  /** Trade register number. */
+  rccm: string;
+  /** Tax identification number. */
+  ncc: string;
+  capital_social: string;
+  regime_fiscal: string;
+  /** Per-document-type layout overrides, stored as JSON. */
+  document_layouts: string;
   currency: string;
   /** VAT rate shown on receipts, in percent (0 = none). */
   vat_rate: number;
@@ -407,6 +422,8 @@ export interface Sale {
   paid_amount: number;
   /** Discount granted on the whole ticket, already deducted. */
   discount: number;
+  /** Gift sale: items left the stock, revenue excluded, ticket marked OFFERT. */
+  is_gift?: boolean;
   /** Tender legs for a « Mixte » payment; empty for single-method sales. */
   payments?: SalePayment[];
   /** Set on tickets queued offline and not yet pushed to the server. */

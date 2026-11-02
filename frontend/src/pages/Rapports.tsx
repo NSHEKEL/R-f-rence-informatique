@@ -133,7 +133,7 @@ export default function Rapports() {
     const period = `${new Date(report.period_start).toLocaleDateString("fr-FR")} au ${new Date(report.period_end).toLocaleDateString("fr-FR")}`;
     printSheet(
       "Rapport des ventes",
-      documentHeader(company) +
+      documentHeader(company, undefined, "etat") +
         `<p class="meta">Rapport des ventes — du ${period}</p>` +
         `<table><tbody>` +
         `<tr><td>Chiffre d'affaires</td><td class="num">${formatXOF(report.revenue)}</td></tr>` +

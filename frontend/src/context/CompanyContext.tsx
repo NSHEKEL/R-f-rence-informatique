@@ -43,6 +43,43 @@ function withDefaults(config: PrintingConfig | null): PrintingConfig {
   };
 }
 
+const POSTE_PRINTERS_KEY = "ri_printers_poste";
+
+/** Printer names chosen on this workstation, kept out of the shared config. */
+export function readPostePrinters(): Record<string, string> {
+  try {
+    return JSON.parse(
+      localStorage.getItem(POSTE_PRINTERS_KEY) || "{}"
+    ) as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
+export function writePostePrinters(names: Record<string, string>): void {
+  localStorage.setItem(POSTE_PRINTERS_KEY, JSON.stringify(names));
+}
+
+/** Server config overlaid with the printer names chosen on this poste. */
+export function applyPostePrinters(config: PrintingConfig): PrintingConfig {
+  const poste = readPostePrinters();
+  return {
+    ...config,
+    receipt: {
+      ...config.receipt,
+      printer_name: poste.receipt ?? config.receipt.printer_name,
+    },
+    label: {
+      ...config.label,
+      printer_name: poste.label ?? config.label.printer_name,
+    },
+    documents: {
+      ...config.documents,
+      printer_name: poste.documents ?? config.documents.printer_name,
+    },
+  };
+}
+
 export function CompanyProvider({ children }: { children: ReactNode }) {
   const [company, setCompanyState] = useState<CompanySettings | null>(() =>
     cacheRead<CompanySettings>(COMPANY_CACHE_KEY)
@@ -103,7 +140,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
         logoSrc: company?.logo || defaultLogo,
         hasCustomLogo: Boolean(company?.logo),
         setCompany,
-        printing,
+        printing: applyPostePrinters(printing),
         setPrinting,
         reload,
       }}

@@ -55,9 +55,15 @@ class CompanySettingsOut(BaseModel):
     logo: str = ""
     address: str = ""
     phone: str = ""
+    phone2: str = ""
     email: str = ""
     website: str = ""
     tax_id: str = ""
+    country: str = ""
+    rccm: str = ""
+    ncc: str = ""
+    capital_social: str = ""
+    regime_fiscal: str = ""
     currency: str = "FCFA"
     vat_rate: float = 0.0
     about: str = ""
@@ -66,6 +72,7 @@ class CompanySettingsOut(BaseModel):
     receipt_footer: str = ""
     receipt_format: str = "A4"
     printer_name: str = ""
+    document_layouts: str = ""
     auto_print_cash: bool = True
     drawer_enabled: bool = False
     drawer_port: str = ""
@@ -92,12 +99,19 @@ class CompanySettingsUpdate(BaseModel):
     logo: Optional[str] = None
     address: Optional[str] = None
     phone: Optional[str] = None
+    phone2: Optional[str] = None
     email: Optional[str] = None
     website: Optional[str] = None
     tax_id: Optional[str] = None
+    country: Optional[str] = None
+    rccm: Optional[str] = None
+    ncc: Optional[str] = None
+    capital_social: Optional[str] = None
+    regime_fiscal: Optional[str] = None
     currency: Optional[str] = None
     vat_rate: Optional[float] = None
     city: Optional[str] = None
+    document_layouts: Optional[str] = None
     support_whatsapp: Optional[str] = None
     support_email: Optional[str] = None
     # "about" is intentionally absent: the page is read-only.
@@ -229,6 +243,8 @@ class DocumentConfig(BaseModel):
     """A4/A5 commercial documents: purchase orders and delivery notes."""
 
     format: str = "A4"  # A4, A5
+    # Printer assigned to commercial documents on this workstation.
+    printer_name: str = ""
     order_prefix: str = "BC"
     delivery_prefix: str = "BL"
     show_logo: bool = True
@@ -371,6 +387,8 @@ class SaleCreate(BaseModel):
     paid_amount: float = 0
     # Discount granted on the whole ticket, deducted from the total.
     discount: float = 0
+    # Gift sale: stock moves, revenue excluded, ticket marked OFFERT.
+    is_gift: bool = False
     items: List[SaleItemCreate]
     # Idempotency key set by tills recording offline; replaying the same key
     # returns the existing ticket instead of duplicating it.
@@ -431,6 +449,7 @@ class SaleOut(BaseModel):
     paid_amount: float = 0
     payments: List[SalePaymentOut] = []
     discount: float = 0
+    is_gift: bool = False
 
 
 # ---------- Returns (avoirs) ----------

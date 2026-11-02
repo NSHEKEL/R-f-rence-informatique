@@ -122,6 +122,13 @@ def _consume_lots_fefo(db: Session, product: Product, quantity: int) -> None:
 
 
 def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
+    if payload.is_gift and not has_permission(
+        db, current_user, "ventes_cadeau"
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Vous n'avez pas le droit d'enregistrer une vente cadeau",
+        )
     session = current_session(db, current_user)
     if session is None:
         raise HTTPException(
@@ -138,6 +145,7 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
         price_mode="gros" if payload.price_mode == "gros" else "detail",
         paid_amount=max(payload.paid_amount, 0.0),
         discount=max(payload.discount, 0.0),
+        is_gift=bool(payload.is_gift),
         created_by_id=current_user.id,
         cash_session_id=session.id,
         total=0,

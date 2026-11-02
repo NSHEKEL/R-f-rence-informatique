@@ -23,6 +23,8 @@ export interface SalePayload {
   }[];
   /** Tender legs for a « Mixte » payment; must add up to the total. */
   payments?: { method: string; amount: number }[];
+  /** Gift sale: articles offerts, excluded from revenue. */
+  is_gift?: boolean;
 }
 
 export interface PendingSale {

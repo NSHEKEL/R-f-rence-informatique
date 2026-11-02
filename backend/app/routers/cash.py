@@ -70,7 +70,11 @@ def require_open_till(
 def _totals(db: Session, session: CashSession) -> dict:
     sales = (
         db.query(Sale)
-        .filter(Sale.cash_session_id == session.id, Sale.status != "Annulée")
+        .filter(
+            Sale.cash_session_id == session.id,
+            Sale.status != "Annulée",
+            Sale.is_gift.is_(False),
+        )
         .all()
     )
     cash = 0.0

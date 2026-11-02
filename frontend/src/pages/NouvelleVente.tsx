@@ -12,6 +12,7 @@ import {
   FileCheck2,
   FilePenLine,
   Flame,
+  Gift,
   HandCoins,
   Home,
   Image as ImageIcon,
@@ -144,7 +145,8 @@ function offlineSale(
   priceMode: PriceMode,
   discount: number,
   paidAmount: number,
-  legs?: { method: string; amount: number }[]
+  legs?: { method: string; amount: number }[],
+  isGift = false
 ): Sale {
   const gross = cart.reduce((s, l) => s + lineNet(l, priceMode), 0);
   return {
@@ -174,6 +176,7 @@ function offlineSale(
     returned_total: 0,
     paid_amount: paidAmount,
     discount,
+    is_gift: isGift,
     payments: legs?.map((leg, index) => ({ id: index, ...leg })),
     pending_sync: true,
   };
@@ -182,6 +185,7 @@ function offlineSale(
 export default function NouvelleVente() {
   const { user, can } = useAuth();
   const canChangePrice = can("prix_modifier");
+  const canGift = can("ventes_cadeau");
   const canQuote = can("proformas");
   const { company, printing } = useCompany();
   const { online } = useNetwork();
@@ -210,6 +214,10 @@ export default function NouvelleVente() {
   const [parked, setParked] = useState<ParkedCart[]>(readParked());
   const [note, setNote] = useState("");
   const [discount, setDiscount] = useState(0);
+  /** Discount input mode: percent of the subtotal (default) or fixed FCFA. */
+  const [discountPercent, setDiscountPercent] = useState(true);
+  /** Gift sale: items offerted, excluded from revenue. */
+  const [gift, setGift] = useState(false);
   const [paidAmount, setPaidAmount] = useState(0);
   const [error, setError] = useState("");
   const [flash, setFlash] = useState("");
@@ -574,7 +582,7 @@ export default function NouvelleVente() {
       setError("Le panier est vide.");
       return;
     }
-    if (payment === "Mixte") {
+    if (payment === "Mixte" && !gift) {
       const legTotal = Object.values(legs).reduce((s, a) => s + a, 0);
       if (Math.abs(legTotal - total) > 0.01 || legTotal <= 0) {
         setError(
@@ -589,12 +597,13 @@ export default function NouvelleVente() {
     const payload: SalePayload = {
       client_id: newClientId(),
       customer_id: customer?.id ?? null,
-      payment_method: payment,
+      payment_method: gift ? "Cadeau" : payment,
       status: "Payée",
       price_mode: priceMode,
       note,
       discount,
-      paid_amount: paidAmount,
+      is_gift: gift,
+      paid_amount: gift ? 0 : paidAmount,
       items: cart.map((l) => ({
         product_id: l.product.id,
         quantity: l.quantity,
@@ -602,7 +611,7 @@ export default function NouvelleVente() {
         discount: l.discount ?? 0,
       })),
       payments:
-        payment === "Mixte"
+        payment === "Mixte" && !gift
           ? Object.entries(legs)
               .filter(([, amount]) => amount > 0)
               .map(([method, amount]) => ({ method, amount }))
@@ -635,7 +644,8 @@ export default function NouvelleVente() {
         priceMode,
         discount,
         paidAmount,
-        payload.payments
+        payload.payments,
+        gift
       );
       queueSale({ payload, snapshot });
       finishSale(snapshot);
@@ -651,6 +661,7 @@ export default function NouvelleVente() {
     setDiscount(0);
     setPaidAmount(0);
     setLegs({});
+    setGift(false);
     setCustomer(null);
     setCustomerQuery("");
     setCustomers([]);
@@ -1306,33 +1317,6 @@ export default function NouvelleVente() {
               )}
             </div>
             <div className="flex gap-3">
-              <div className="w-[58%] shrink-0">
-              <label className="label">Mode de paiement</label>
-              <div className="grid grid-cols-4 gap-1">
-                {PAYMENTS.map((p) => {
-                  const meta = PAYMENT_STYLE[p];
-                  const Icon = meta.icon;
-                  return (
-                    <button
-                      key={p}
-                      onClick={() => setPayment(p)}
-                      className={`flex flex-col items-center justify-center gap-0.5 rounded-lg px-1 py-1 text-[10px] font-bold leading-tight text-white shadow-sm transition hover:opacity-90 ${
-                        meta.tint
-                      } ${
-                        payment === p
-                          ? "ring-2 ring-slate-900 ring-offset-1"
-                          : "opacity-85"
-                      }`}
-                    >
-                      <Icon size={13} />
-                      <span className="text-center">
-                        {p === "Crédit (à régler plus tard)" ? "Crédit" : p}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-              </div>
               <div className="min-w-0 flex-1 space-y-1">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-semibold text-slate-500">
@@ -1352,15 +1336,33 @@ export default function NouvelleVente() {
                       className="input w-20 px-2 py-1 text-right"
                       type="number"
                       min={0}
-                      value={discount || ""}
-                      onChange={(e) =>
-                        setDiscount(Math.max(Number(e.target.value) || 0, 0))
+                      max={discountPercent ? 100 : undefined}
+                      step={discountPercent ? 0.5 : 1}
+                      value={
+                        discountPercent
+                          ? (subtotal > 0
+                              ? Math.round((discount / subtotal) * 1000) / 10
+                              : 0) || ""
+                          : discount || ""
                       }
+                      onChange={(e) => {
+                        const v = Math.max(Number(e.target.value) || 0, 0);
+                        setDiscount(
+                          discountPercent
+                            ? (Math.min(v, 100) * subtotal) / 100
+                            : v
+                        );
+                      }}
                       placeholder="0"
                     />
-                    <span className="text-[10px] font-semibold text-slate-400">
-                      FCFA
-                    </span>
+                    <button
+                      type="button"
+                      className="rounded-md bg-slate-100 px-1.5 py-1 text-[10px] font-bold text-slate-500 hover:bg-slate-200"
+                      title="Basculer remise en % ou en FCFA"
+                      onClick={() => setDiscountPercent((v) => !v)}
+                    >
+                      {discountPercent ? "%" : "F"}
+                    </button>
                   </span>
                 </div>
                 {vat && (
@@ -1378,7 +1380,8 @@ export default function NouvelleVente() {
                   className="input"
                   type="number"
                   min={0}
-                  value={paidAmount || ""}
+                  disabled={gift}
+                  value={gift ? "" : paidAmount || ""}
                   onChange={(e) =>
                     setPaidAmount(Math.max(Number(e.target.value) || 0, 0))
                   }
@@ -1838,6 +1841,49 @@ export default function NouvelleVente() {
               </div>
             </div>
           )}
+            </div>
+            {/* Modes de paiement — sous la liste des articles */}
+            <div className="border-t border-slate-100 pt-2">
+              <label className="label">Mode de paiement</label>
+              <div className="grid grid-cols-4 gap-1 sm:grid-cols-8">
+                {PAYMENTS.map((p) => {
+                  const meta = PAYMENT_STYLE[p];
+                  const Icon = meta.icon;
+                  return (
+                    <button
+                      key={p}
+                      onClick={() => {
+                        setPayment(p);
+                        setGift(false);
+                      }}
+                      className={`flex flex-col items-center justify-center gap-0.5 rounded-lg px-1 py-1 text-[10px] font-bold leading-tight text-white shadow-sm transition hover:opacity-90 ${
+                        meta.tint
+                      } ${
+                        !gift && payment === p
+                          ? "ring-2 ring-slate-900 ring-offset-1"
+                          : "opacity-85"
+                      }`}
+                    >
+                      <Icon size={13} />
+                      <span className="text-center">
+                        {p === "Crédit (à régler plus tard)" ? "Crédit" : p}
+                      </span>
+                    </button>
+                  );
+                })}
+                {canGift && (
+                  <button
+                    onClick={() => setGift((g) => !g)}
+                    title="Vente cadeau : articles offerts, hors chiffre d'affaires"
+                    className={`flex flex-col items-center justify-center gap-0.5 rounded-lg px-1 py-1 text-[10px] font-bold leading-tight text-white shadow-sm transition hover:opacity-90 bg-amber-500 ${
+                      gift ? "ring-2 ring-slate-900 ring-offset-1" : "opacity-85"
+                    }`}
+                  >
+                    <Gift size={13} />
+                    <span className="text-center">CADEAU</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
