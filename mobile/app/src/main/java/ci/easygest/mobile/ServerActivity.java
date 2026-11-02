@@ -22,11 +22,16 @@ public class ServerActivity extends AppCompatActivity {
 
     private final ExecutorService workers = Executors.newSingleThreadExecutor();
     private final Handler ui = new Handler(Looper.getMainLooper());
+    /** Last connectivity failure, shown to the user instead of a generic hint. */
+    private String lastReachError = "";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_server);
+        // Note: the TLS/security-provider update for older Androids runs in
+        // EasyGestApp.onCreate — it covers every launch, including the ones
+        // that skip this screen with a saved URL.
 
         EditText address = findViewById(R.id.address);
         Button connect = findViewById(R.id.connect);
@@ -47,7 +52,8 @@ public class ServerActivity extends AppCompatActivity {
                 ui.post(() -> {
                     remote.setEnabled(true);
                     if (!reachable) {
-                        status.setText(R.string.central_ko);
+                        status.setText(
+                                getString(R.string.central_ko) + detailSuffix());
                         return;
                     }
                     ServerStore.save(this, ServerStore.CENTRAL_MOBILE_URL);
@@ -70,7 +76,8 @@ public class ServerActivity extends AppCompatActivity {
                 ui.post(() -> {
                     connect.setEnabled(true);
                     if (!reachable) {
-                        status.setText(R.string.server_ko);
+                        status.setText(
+                                getString(R.string.server_ko) + detailSuffix());
                         return;
                     }
                     status.setText(R.string.server_ok);
@@ -82,15 +89,28 @@ public class ServerActivity extends AppCompatActivity {
         });
     }
 
+    /** Technical cause of the last failed probe, appended to the hint. */
+    private String detailSuffix() {
+        return lastReachError.isEmpty() ? "" : "\n" + lastReachError;
+    }
+
     /** A health address answers 200 as soon as the server runs. */
     private boolean reachable(String url) {
+        // Ne pas sonder en HTTPS avant la fin (ou l'échec borné) de la mise à
+        // jour TLS ; une IP locale en HTTP clair n'a pas besoin d'attendre.
+        if (url.startsWith("https://")) {
+            EasyGestApp.awaitProvider(5000);
+        }
         HttpURLConnection connection = null;
         try {
             connection = (HttpURLConnection) new URL(url).openConnection();
             connection.setConnectTimeout(4000);
             connection.setReadTimeout(4000);
-            return connection.getResponseCode() == 200;
+            int code = connection.getResponseCode();
+            lastReachError = code == 200 ? "" : "HTTP " + code;
+            return code == 200;
         } catch (IOException error) {
+            lastReachError = error.toString();
             return false;
         } finally {
             if (connection != null) {

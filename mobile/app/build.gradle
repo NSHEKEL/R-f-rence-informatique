@@ -38,4 +38,8 @@ dependencies {
     // merged into the main artifact and clash otherwise).
     implementation platform("org.jetbrains.kotlin:kotlin-bom:1.8.22")
     implementation "androidx.appcompat:appcompat:1.7.0"
+    // TLS update on older Androids (7/8): they don't trust the Google Trust
+    // Services root serving the central server. ProviderInstaller installs an
+    // updated security provider; see EasyGestApp.
+    implementation "com.google.android.gms:play-services-base:18.5.0"
 }
