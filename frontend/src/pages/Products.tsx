@@ -44,6 +44,7 @@ const empty = {
   qr_code: "",
   barcode: "",
   image: "",
+  expiry_date: "",
 };
 
 const MAX_IMAGE_BYTES = 700_000;
@@ -224,6 +225,7 @@ export default function Products() {
       qr_code: p.qr_code ?? "",
       barcode: p.barcode ?? "",
       image: p.image ?? "",
+      expiry_date: "",
     });
     setError("");
     setModalOpen(true);
@@ -246,7 +248,22 @@ export default function Products() {
       if (editing) {
         await api.put(`/products/${editing.id}`, payload);
       } else {
-        await api.post("/products", payload);
+        const res = await api.post<Product>("/products", payload);
+        // Date de péremption saisie → le stock initial devient un lot
+        // périssable (les ventes le consommeront en FEFO).
+        if (form.expiry_date && Number(form.quantity) > 0) {
+          try {
+            await api.post(`/products/${res.data.id}/lots`, {
+              lot_number: "",
+              expiry_date: `${form.expiry_date}T00:00:00`,
+              quantity: Number(form.quantity),
+            });
+          } catch {
+            setNotice(
+              "Produit enregistré, mais le lot périssable n'a pas pu être créé — utilisez « Lots et péremptions »."
+            );
+          }
+        }
       }
       setModalOpen(false);
       await load();
@@ -772,6 +789,25 @@ export default function Products() {
               onChange={(e) => setForm({ ...form, min_stock: Number(e.target.value) })}
             />
           </div>
+          {!editing && (
+            <div>
+              <label className="label">
+                Date de péremption (laisser vide si non périssable)
+              </label>
+              <input
+                type="date"
+                className="input"
+                value={form.expiry_date}
+                onChange={(e) =>
+                  setForm({ ...form, expiry_date: e.target.value })
+                }
+              />
+              <p className="mt-1 text-xs text-slate-400">
+                Le stock initial sera enregistré comme lot périssable ; les
+                ventes le consommeront en priorité (FEFO).
+              </p>
+            </div>
+          )}
           <div className="sm:col-span-2">
             <label className="label">
               Code-barres de l'article (chiffres imprimés sur l'emballage)
