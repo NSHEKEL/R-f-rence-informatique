@@ -206,6 +206,8 @@ class ClientDetail(BaseModel):
     email: str = ""
     address: str = ""
     city: str = ""
+    rccm: str = ""
+    sector: str = ""
     note: str = ""
     about: str = ""
     created_at: Optional[datetime] = None
@@ -222,6 +224,8 @@ class ClientCreate(BaseModel):
     email: str = ""
     address: str = ""
     city: str = ""
+    rccm: str = ""
+    sector: str = ""
     note: str = ""
     plan_code: str
     duration_days: Optional[int] = None
@@ -234,6 +238,8 @@ class ClientUpdate(BaseModel):
     email: Optional[str] = None
     address: Optional[str] = None
     city: Optional[str] = None
+    rccm: Optional[str] = None
+    sector: Optional[str] = None
     note: Optional[str] = None
 
 
@@ -269,12 +275,15 @@ class DashboardStats(BaseModel):
     clients: int = 0
     per_plan: dict[str, int] = {}
     active: int = 0
+    trials: int = 0
     expired: int = 0
     suspended: int = 0
     revoked: int = 0
     expiring_soon: int = 0
     online: int = 0
     offline: int = 0
+    installations: int = 0
+    new_installations: int = 0
     signups: list[dict] = []
 
 
@@ -287,6 +296,10 @@ class RegisterRequest(BaseModel):
     email: str = ""
     address: str = ""
     city: str = ""
+    rccm: str = ""
+    sector: str = ""
+    # Display name of this workstation/shop in the console.
+    installation_name: str = ""
     plan_code: str = ""  # empty -> trial "essai" (30 days)
     installation_uid: str
     hostname: str = ""

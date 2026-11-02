@@ -455,6 +455,9 @@ def register(
     email: str = "",
     address: str = "",
     city: str = "",
+    rccm: str = "",
+    sector: str = "",
+    installation_name: str = "",
     users_count: int = 1,
 ) -> LicenseView:
     """First configuration: create the client and receive its licence."""
@@ -470,6 +473,9 @@ def register(
             "email": email,
             "address": address,
             "city": city,
+            "rccm": rccm,
+            "sector": sector,
+            "installation_name": installation_name,
             "plan_code": plan_code,
             "installation_uid": installation_uid(),
             "hostname": socket.gethostname(),

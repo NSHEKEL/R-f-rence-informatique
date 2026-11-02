@@ -119,6 +119,8 @@ def register(
         installation.token = new_installation_token()
         installation.version = payload.version
         installation.hostname = payload.hostname
+        if payload.installation_name.strip():
+            installation.shop_name = payload.installation_name.strip()
         installation.last_seen = utcnow()
         db.commit()
         return LicenseAnswer(
@@ -135,6 +137,8 @@ def register(
         email=payload.email,
         address=payload.address,
         city=payload.city,
+        rccm=payload.rccm,
+        sector=payload.sector,
     )
     db.add(client)
     db.commit()
@@ -146,6 +150,7 @@ def register(
         uid=uid,
         token=new_installation_token(),
         hostname=payload.hostname,
+        shop_name=payload.installation_name.strip(),
         version=payload.version,
         users_count=payload.users_count,
         last_seen=utcnow(),

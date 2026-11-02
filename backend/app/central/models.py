@@ -105,6 +105,10 @@ class Client(Base):
     email = Column(String, default="", index=True)
     address = Column(String, default="")
     city = Column(String, default="")
+    # RCCM / identifiant fiscal et secteur d'activité, fournis (avec
+    # consentement) par la boutique lors de sa première configuration.
+    rccm = Column(String, default="")
+    sector = Column(String, default="")
     note = Column(Text, default="")
     # "À propos de nous" pushed to the shop at the next synchronisation.
     about = Column(Text, default="")

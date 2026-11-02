@@ -738,6 +738,7 @@ class CashSessionDetail(CashSessionOut):
     cash_sales: float = 0
     other_sales: float = 0
     sales_count: int = 0
+    deposits_total: float = 0
     expected_cash: float = 0
 
 
@@ -1214,6 +1215,9 @@ class LicenseRegister(BaseModel):
     email: str = ""
     address: str = ""
     city: str = ""
+    rccm: str = ""
+    sector: str = ""
+    installation_name: str = ""
 
 
 class OfferedPlan(BaseModel):
@@ -1526,3 +1530,101 @@ class FneInvoiceOut(BaseModel):
     attempts: int = 0
     submitted_at: Optional[datetime] = None
     certified_at: Optional[datetime] = None
+
+
+# ---------- Bank accounts & deposits ----------
+class BankAccountIn(BaseModel):
+    bank_name: str
+    holder: str = ""
+    account_number: str = ""
+    label: str = ""
+    currency: str = "FCFA"
+    is_active: bool = True
+    note: str = ""
+
+
+class BankAccountOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    bank_name: str
+    holder: str = ""
+    account_number: str = ""
+    label: str = ""
+    currency: str = "FCFA"
+    is_active: bool = True
+    note: str = ""
+    created_at: Optional[datetime] = None
+    balance: float = 0  # validated deposits minus cancelled, after assembly
+
+
+class BankDepositIn(BaseModel):
+    account_id: int
+    amount: float
+    deposit_date: Optional[datetime] = None
+    method: str = "Espèces"
+    reference: str = ""
+    slip_number: str = ""
+    note: str = ""
+    attachment: str = ""
+    cash_session_id: Optional[int] = None
+
+
+class BankDepositOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    account_id: int
+    cash_session_id: Optional[int] = None
+    amount: float
+    deposit_date: Optional[datetime] = None
+    method: str = "Espèces"
+    reference: str = ""
+    slip_number: str = ""
+    note: str = ""
+    attachment: str = ""
+    status: str = "en attente"
+    reconciled: bool = False
+    statement_ref: str = ""
+    created_at: Optional[datetime] = None
+    decided_at: Optional[datetime] = None
+    bank_name: str = ""
+    account_label: str = ""
+    created_by_name: str = ""
+    decided_by_name: str = ""
+
+
+class BankDepositDecision(BaseModel):
+    action: str  # valider | rejeter | annuler
+    note: str = ""
+
+
+class BankDepositReconcile(BaseModel):
+    reconciled: bool = True
+    statement_ref: str = ""
+
+
+# ---------- Z de caisse ----------
+class CashSessionZ(BaseModel):
+    """État Z de caisse: definitive recap of a till session."""
+
+    session_id: int
+    company: str = ""
+    cashier: str = ""
+    opened_at: Optional[datetime] = None
+    closed_at: Optional[datetime] = None
+    business_day: str = ""
+    opening_balance: float = 0
+    total_sales: float = 0
+    sales_count: int = 0
+    cancelled_total: float = 0
+    cancelled_count: int = 0
+    gift_total: float = 0
+    payments: dict[str, float] = {}  # per payment method
+    expenses_total: float = 0
+    expenses: list[dict] = []
+    deposits_total: float = 0
+    deposits: list[dict] = []
+    expected_cash: float = 0
+    counted_cash: Optional[float] = None
+    difference: Optional[float] = None
+    note: str = ""
+    generated_at: Optional[datetime] = None

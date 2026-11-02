@@ -97,6 +97,8 @@ def dashboard(
         status = effective_status(license_)
         if status == STATUS_ACTIVE:
             stats.active += 1
+            if license_.plan and license_.plan.code == "essai":
+                stats.trials += 1
             left = days_left(license_)
             if left is not None and 0 <= left <= EXPIRING_SOON_DAYS:
                 stats.expiring_soon += 1
@@ -113,6 +115,13 @@ def dashboard(
             seen_clients.add(installation.client_id)
     stats.online = len(seen_clients)
     stats.offline = max(stats.clients - stats.online, 0)
+    stats.installations = len(installations)
+    threshold = utcnow() - timedelta(days=30)
+    stats.new_installations = sum(
+        1
+        for row in installations
+        if row.created_at and row.created_at >= threshold
+    )
     stats.signups = _signups(clients)
     return stats
 
@@ -348,20 +357,26 @@ def list_clients(
     size: int = Query(25, ge=1, le=200),
 ):
     query = db.query(Client)
-    needle = search.strip()
-    if needle:
-        like = f"%{needle}%"
-        query = query.filter(
-            or_(
-                Client.company.ilike(like),
-                Client.manager.ilike(like),
-                Client.email.ilike(like),
-                Client.phone.ilike(like),
-                Client.city.ilike(like),
-            )
-        )
     rows = [_client_row(db, client) for client in query.all()]
-    if status:
+    needle = search.strip().lower()
+    if needle:
+        rows = [
+            row
+            for row in rows
+            if needle in row.company.lower()
+            or needle in row.manager.lower()
+            or needle in row.email.lower()
+            or needle in row.phone.lower()
+            or needle in row.city.lower()
+            or needle in row.installation_uid.lower()
+        ]
+    if status == "trial":
+        rows = [
+            row
+            for row in rows
+            if row.status == STATUS_ACTIVE and row.plan_code == "essai"
+        ]
+    elif status:
         rows = [row for row in rows if row.status == status]
     if plan:
         rows = [row for row in rows if row.plan_code == plan]
@@ -425,6 +440,8 @@ def _client_detail(db: Session, client: Client) -> ClientDetail:
         email=client.email or "",
         address=client.address or "",
         city=client.city or "",
+        rccm=client.rccm or "",
+        sector=client.sector or "",
         note=client.note or "",
         about=client.about or "",
         created_at=aware(client.created_at),
@@ -499,6 +516,8 @@ def create_client(
         email=payload.email,
         address=payload.address,
         city=payload.city,
+        rccm=payload.rccm,
+        sector=payload.sector,
         note=payload.note,
     )
     db.add(client)
@@ -530,6 +549,10 @@ def update_client(
         client.address = payload.address
     if payload.city is not None:
         client.city = payload.city
+    if payload.rccm is not None:
+        client.rccm = payload.rccm
+    if payload.sector is not None:
+        client.sector = payload.sector
     if payload.note is not None:
         client.note = payload.note
     db.commit()

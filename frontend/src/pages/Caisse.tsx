@@ -5,6 +5,7 @@ import { CheckCircle2, Lock, Printer, ShoppingCart, Unlock, Wallet } from "lucid
 import api, { formatXOF } from "../api/client";
 import type { CashSession, CashSessionDetail, ReceiptFormat } from "../types";
 import CashTicket, { type CashTicketKind } from "../components/CashTicket";
+import ZReport, { type ZReportData } from "../components/ZReport";
 import Modal from "../components/Modal";
 import PrinterHint from "../components/PrinterHint";
 import { enterFullscreen, leaveFullscreen } from "../lib/fullscreen";
@@ -39,6 +40,7 @@ export default function Caisse() {
     session: CashSessionDetail;
     kind: CashTicketKind;
   } | null>(null);
+  const [zReport, setZReport] = useState<ZReportData | null>(null);
   const format: ReceiptFormat = printing.receipt.width;
 
   const load = useCallback(async () => {
@@ -110,6 +112,18 @@ export default function Caisse() {
       }
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function showZ(sessionId: number) {
+    setError("");
+    try {
+      const res = await api.get<ZReportData>(`/cash-sessions/${sessionId}/z`);
+      setZReport(res.data);
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        setError(err.response?.data?.detail ?? "État Z indisponible");
+      }
     }
   }
 
@@ -208,6 +222,9 @@ export default function Caisse() {
                 onClick={() => showTicket(today, "open", false)}
               >
                 <Printer size={16} /> Ticket d'ouverture
+              </button>
+              <button className="btn-ghost" onClick={() => showZ(today.id)}>
+                <Printer size={16} /> État Z
               </button>
               {closed && (
                 <button
@@ -323,6 +340,33 @@ export default function Caisse() {
                     >
                       {s.closed_at ? "Fermée" : "Ouverte"}
                     </span>
+                    <button
+                      className="ml-2 text-xs font-semibold text-brand-600 underline"
+                      onClick={() => showZ(s.id)}
+                    >
+                      État Z
+                    </button>
+                    {isAdmin && s.closed_at && (
+                      <button
+                        className="ml-2 text-xs font-semibold text-amber-600 underline"
+                        onClick={async () => {
+                          try {
+                            await api.post(`/cash-sessions/${s.id}/reopen`);
+                            await load();
+                            await refreshTill();
+                          } catch (err) {
+                            if (axios.isAxiosError(err)) {
+                              setError(
+                                err.response?.data?.detail ??
+                                  "Réouverture impossible"
+                              );
+                            }
+                          }
+                        }}
+                      >
+                        Rouvrir
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -382,7 +426,9 @@ export default function Caisse() {
             />
           </div>
           <div>
-            <label className="label">Note (facultatif)</label>
+            <label className="label">
+              Note {Math.abs(countedDifference) >= 1 ? "(obligatoire : justification de l'écart)" : "(facultatif)"}
+            </label>
             <input
               className="input"
               value={closeNote}
@@ -402,6 +448,30 @@ export default function Caisse() {
               : `Écart : ${formatXOF(countedDifference)}`}
           </p>
         </div>
+      </Modal>
+
+      <Modal
+        open={zReport !== null}
+        onClose={() => setZReport(null)}
+        title={`État Z de caisse — session #${zReport?.session_id ?? ""}`}
+        footer={
+          <div className="no-print flex w-full justify-end gap-3">
+            <button className="btn-ghost" onClick={() => setZReport(null)}>
+              Fermer
+            </button>
+            <PrinterHint />
+            <button
+              className="btn-primary"
+              onClick={() => printReceipt(format, printing.receipt)}
+            >
+              <Printer size={16} /> Imprimer
+            </button>
+          </div>
+        }
+      >
+        {zReport && (
+          <ZReport report={zReport} company={company} format={format} />
+        )}
       </Modal>
 
       <Modal

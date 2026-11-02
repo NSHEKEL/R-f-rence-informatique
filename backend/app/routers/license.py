@@ -98,6 +98,9 @@ def register(
             email=payload.email,
             address=payload.address,
             city=payload.city,
+            rccm=payload.rccm,
+            sector=payload.sector,
+            installation_name=payload.installation_name,
             users_count=db.query(User).filter(User.is_active.is_(True)).count(),
         )
     except licensing.CentralError as exc:

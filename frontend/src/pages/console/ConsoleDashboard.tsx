@@ -61,8 +61,23 @@ export default function ConsoleDashboard() {
     <div className="space-y-6">
       <h1 className="text-xl font-bold text-slate-900">Tableau de bord</h1>
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         <Card label="Clients" value={stats.clients} />
+        <Card
+          label="Installations"
+          value={stats.installations}
+          tone="text-slate-900"
+        />
+        <Card
+          label="Nouvelles installations (30 j)"
+          value={stats.new_installations}
+          tone="text-sky-600"
+        />
+        <Card
+          label="En période d'essai"
+          value={stats.trials}
+          tone="text-violet-600"
+        />
         <Card label="Licences actives" value={stats.active} tone="text-emerald-600" />
         <Card label="Suspendues" value={stats.suspended} tone="text-amber-600" />
         <Card label="Expirées" value={stats.expired} tone="text-slate-600" />
@@ -73,7 +88,6 @@ export default function ConsoleDashboard() {
         />
         <Card label="Révoquées" value={stats.revoked} tone="text-red-600" />
         <Card label="Connectés" value={stats.online} tone="text-sky-600" />
-        <Card label="Hors ligne" value={stats.offline} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">

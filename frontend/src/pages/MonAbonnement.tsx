@@ -53,7 +53,11 @@ export default function MonAbonnement() {
     email: "",
     address: "",
     city: "",
+    rccm: "",
+    sector: "",
+    installation_name: "",
   });
+  const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -254,11 +258,47 @@ export default function MonAbonnement() {
               onChange={(e) => setForm({ ...form, city: e.target.value })}
               className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
             />
+            <input
+              placeholder="RCCM / identifiant fiscal (facultatif)"
+              value={form.rccm}
+              onChange={(e) => setForm({ ...form, rccm: e.target.value })}
+              className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+            />
+            <input
+              placeholder="Secteur d'activité"
+              value={form.sector}
+              onChange={(e) => setForm({ ...form, sector: e.target.value })}
+              className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+            />
+            <input
+              placeholder="Nom de cette installation (ex. Boutique Abidjan)"
+              value={form.installation_name}
+              onChange={(e) =>
+                setForm({ ...form, installation_name: e.target.value })
+              }
+              className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+            />
           </div>
+
+          <label className="flex items-start gap-2 text-xs text-slate-600">
+            <input
+              type="checkbox"
+              required
+              checked={consent}
+              onChange={(e) => setConsent(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              J'accepte que les informations ci-dessus (entreprise, responsable,
+              coordonnées, identifiant d'installation et version du logiciel)
+              soient transmises au serveur central EasyGest pour la gestion de
+              ma licence. Aucune donnée de vente ou de stock n'est transmise.
+            </span>
+          </label>
 
           <button
             type="submit"
-            disabled={busy || !chosen}
+            disabled={busy || !chosen || !consent}
             className="rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
           >
             {busy ? "Activation..." : "Activer ma licence"}
