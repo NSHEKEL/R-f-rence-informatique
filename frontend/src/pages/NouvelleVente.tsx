@@ -1308,7 +1308,7 @@ export default function NouvelleVente() {
             <div className="flex gap-3">
               <div className="w-[58%] shrink-0">
               <label className="label">Mode de paiement</label>
-              <div className="grid grid-cols-4 gap-1.5">
+              <div className="grid grid-cols-4 gap-1">
                 {PAYMENTS.map((p) => {
                   const meta = PAYMENT_STYLE[p];
                   const Icon = meta.icon;
@@ -1316,7 +1316,7 @@ export default function NouvelleVente() {
                     <button
                       key={p}
                       onClick={() => setPayment(p)}
-                      className={`flex flex-col items-center justify-center gap-1 rounded-lg px-1 py-1.5 text-[10px] font-bold leading-tight text-white shadow-sm transition hover:opacity-90 ${
+                      className={`flex flex-col items-center justify-center gap-0.5 rounded-lg px-1 py-1 text-[10px] font-bold leading-tight text-white shadow-sm transition hover:opacity-90 ${
                         meta.tint
                       } ${
                         payment === p
@@ -1324,7 +1324,7 @@ export default function NouvelleVente() {
                           : "opacity-85"
                       }`}
                     >
-                      <Icon size={15} />
+                      <Icon size={13} />
                       <span className="text-center">
                         {p === "Crédit (à régler plus tard)" ? "Crédit" : p}
                       </span>
@@ -1411,42 +1411,41 @@ export default function NouvelleVente() {
             </div>
           </div>
 
-          <div className="bg-[#1d4ed8] px-3 py-1.5 text-white">
-            {vat && (
-              <div className="flex items-center justify-between text-sm text-slate-300">
-                <span>Total HT</span>
-                <span>{formatXOF(vat.excluded)}</span>
+          <div className="relative flex items-stretch gap-2 p-1.5">
+            <div className="w-[46%] shrink-0 rounded-xl bg-[#1d4ed8] px-2.5 py-1 text-white">
+              {vat && (
+                <div className="flex items-center justify-between text-[11px] text-slate-300">
+                  <span>Total HT</span>
+                  <span>{formatXOF(vat.excluded)}</span>
+                </div>
+              )}
+              {vat && (
+                <div className="flex items-center justify-between text-[11px] text-slate-300">
+                  <span>TVA ({vat.rate} %)</span>
+                  <span>{formatXOF(vat.vat)}</span>
+                </div>
+              )}
+              {discount > 0 && (
+                <div className="flex items-center justify-between text-[11px] text-slate-300">
+                  <span>Remise</span>
+                  <span>- {formatXOF(discount)}</span>
+                </div>
+              )}
+              {change > 0 && (
+                <div className="flex items-center justify-between text-[11px] text-emerald-300">
+                  <span>Monnaie à rendre</span>
+                  <span>{formatXOF(change)}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase">
+                  {vat ? "Total TTC" : "Total"}
+                </span>
+                <span className="text-base font-extrabold">
+                  {formatXOF(total)}
+                </span>
               </div>
-            )}
-            {vat && (
-              <div className="mt-1 flex items-center justify-between text-sm text-slate-300">
-                <span>TVA ({vat.rate} %)</span>
-                <span>{formatXOF(vat.vat)}</span>
-              </div>
-            )}
-            {discount > 0 && (
-              <div className="mt-1 flex items-center justify-between text-sm text-slate-300">
-                <span>Remise</span>
-                <span>- {formatXOF(discount)}</span>
-              </div>
-            )}
-            {change > 0 && (
-              <div className="mt-1 flex items-center justify-between text-sm text-emerald-300">
-                <span>Monnaie à rendre</span>
-                <span>{formatXOF(change)}</span>
-              </div>
-            )}
-            <div className="mt-1 flex items-center justify-between border-t border-slate-600 pt-1">
-              <span className="text-base font-bold uppercase">
-                {vat ? "Total TTC" : "Total"}
-              </span>
-              <span className="text-lg font-extrabold">
-                {formatXOF(total)}
-              </span>
             </div>
-          </div>
-
-          <div className="relative flex gap-2 p-1.5">
             <button
               className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-600 py-2 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
               onClick={checkout}
