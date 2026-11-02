@@ -17,6 +17,7 @@ import type { Product, StockLot, StockMovement } from "../types";
 import { documentHeader, printSheet } from "../lib/print";
 import { exportCsv, stampedName } from "../lib/exportCsv";
 import { useCompany } from "../context/CompanyContext";
+import { useLicense } from "../context/LicenseContext";
 import { useSyncVersion } from "../context/SyncContext";
 
 type Counted = Record<number, { rayon: string; stock: string }>;
@@ -53,6 +54,7 @@ interface PendingTransfer {
 export default function Inventaire() {
   const version = useSyncVersion();
   const { company } = useCompany();
+  const { hasFeature } = useLicense();
   const [products, setProducts] = useState<Product[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [counted, setCounted] = useState<Counted>({});
@@ -255,29 +257,32 @@ export default function Inventaire() {
 
   /** Feuille Excel : état du comptage (rayon + stock = quantité disponible). */
   function exportInventaire() {
+    // En comptage à l'aveugle, le stock théorique et l'écart ne sont pas exportés.
+    const headers = blind
+      ? ["Article", "SKU", "Code-barres", "Quantité en rayon", "Quantité en stock"]
+      : [
+          "Article",
+          "SKU",
+          "Code-barres",
+          "Quantité disponible",
+          "Quantité en rayon",
+          "Quantité en stock",
+          "Écart",
+        ];
     exportCsv(
       stampedName("inventaire"),
-      [
-        "Article",
-        "SKU",
-        "Code-barres",
-        "Quantité disponible",
-        "Quantité en rayon",
-        "Quantité en stock",
-        "Écart",
-      ],
+      headers,
       filtered.map((p) => {
         const entry = counted[p.id] ?? { rayon: "", stock: "" };
         const total = countedTotal(entry);
-        return [
-          p.name,
-          p.sku,
-          p.barcode || "",
-          p.quantity,
+        const row: (string | number)[] = [p.name, p.sku, p.barcode || ""];
+        if (!blind) row.push(p.quantity);
+        row.push(
           entry.rayon === "" ? "" : Number(entry.rayon),
-          entry.stock === "" ? "" : Number(entry.stock),
-          total === null ? "" : total - p.quantity,
-        ];
+          entry.stock === "" ? "" : Number(entry.stock)
+        );
+        if (!blind) row.push(total === null ? "" : total - p.quantity);
+        return row;
       })
     )
       .then((saved) =>
@@ -571,9 +576,11 @@ export default function Inventaire() {
           <button className="btn-ghost" onClick={printCountSheet}>
             <Printer size={16} /> Fiche de comptage
           </button>
-          <button className="btn-ghost" onClick={exportInventaire}>
-            <Download size={16} /> Exporter Excel
-          </button>
+          {hasFeature("export_excel") && (
+            <button className="btn-ghost" onClick={exportInventaire}>
+              <Download size={16} /> Exporter Excel
+            </button>
+          )}
           <button
             className="btn-ghost"
             onClick={printDifferences}
