@@ -399,13 +399,13 @@ export default function Layout() {
         } ${
           isActive
             ? "bg-[#2563eb] text-white shadow-sm"
-            : "text-slate-600 hover:bg-white/70 hover:text-slate-900"
+            : "text-blue-100/80 hover:bg-white/10 hover:text-white"
         }`}
       >
         <item.icon size={20} className="shrink-0" />
         <span
           className={`${collapsed ? "lg:hidden" : ""} ${
-            locked ? "text-slate-300" : ""
+            locked ? "text-blue-200/50" : ""
           }`}
         >
           {item.label}
@@ -413,7 +413,7 @@ export default function Layout() {
         {locked && (
           <Lock
             size={14}
-            className={`ml-auto shrink-0 text-slate-400 ${
+            className={`ml-auto shrink-0 text-blue-200/70 ${
               collapsed ? "lg:hidden" : ""
             }`}
           />
@@ -437,7 +437,7 @@ export default function Layout() {
       </a>
       {/* Sidebar */}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex flex-col border-r border-slate-200 bg-[#eaf1fa] text-slate-700 transition-all duration-200 lg:static lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 flex flex-col border-r border-slate-200 bg-gradient-to-b from-[#0b2559] via-[#0d2f6e] to-[#0a1f4a] text-white transition-all duration-200 lg:static lg:translate-x-0 ${
           collapsed ? "w-[208px] lg:w-[76px]" : "w-[208px]"
         } ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}
       >
@@ -456,15 +456,15 @@ export default function Layout() {
           <div
             className={`min-w-0 leading-tight ${collapsed ? "lg:hidden" : ""}`}
           >
-            <p className="truncate text-sm font-extrabold uppercase tracking-tight text-brand-700">
+            <p className="truncate text-sm font-extrabold uppercase tracking-tight text-white">
               {brandName}
             </p>
-            <p className="text-[11px] font-semibold tracking-widest text-slate-400">
+            <p className="text-[11px] font-semibold tracking-widest text-blue-200/70">
               Gestion Commerciale &amp; Stock
             </p>
           </div>
           <button
-            className="ml-auto rounded-lg p-1.5 text-slate-400 hover:bg-white/70 lg:hidden"
+            className="ml-auto rounded-lg p-1.5 text-blue-200 hover:bg-white/10 lg:hidden"
             onClick={() => setMobileOpen(false)}
             title="Fermer le menu" aria-label="Fermer le menu"
           >
@@ -502,7 +502,7 @@ export default function Layout() {
                   } ${
                     active
                       ? "bg-[#2563eb] text-white shadow-sm"
-                      : "text-slate-600 hover:bg-white/70 hover:text-slate-900"
+                      : "text-blue-100/80 hover:bg-white/10 hover:text-white"
                   }`}
                 >
                   <group.icon size={20} className="shrink-0" />
@@ -549,23 +549,23 @@ export default function Layout() {
               </div>
             )}
             <div className={`min-w-0 flex-1 ${collapsed ? "lg:hidden" : ""}`}>
-              <p className="truncate text-sm font-semibold text-slate-800">
+              <p className="truncate text-sm font-semibold text-white">
                 {user?.name ?? "Administrateur"}
               </p>
-              <p className="truncate text-xs text-slate-400">
+              <p className="truncate text-xs text-blue-200/70">
                 {roleLabels[user?.role ?? "admin"] ?? user?.role}
               </p>
             </div>
             <button
               onClick={logout}
               title="Se déconnecter" aria-label="Se déconnecter"
-              className="rounded-lg p-2 text-slate-400 hover:bg-white hover:text-red-500"
+              className="rounded-lg p-2 text-blue-200/70 hover:bg-white/10 hover:text-red-300"
             >
               <LogOut size={18} />
             </button>
           </div>
           <div className={collapsed ? "lg:hidden" : ""}>
-            <div className="mt-3 flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+            <div className="mt-3 flex items-center gap-2 rounded-xl border border-white/15 bg-white/10 px-3 py-2">
               <img
                 src={logoSrc}
                 alt=""
@@ -575,13 +575,13 @@ export default function Layout() {
                 <p className="truncate text-xs font-bold text-brand-700">
                   {brandName}
                 </p>
-                <p className="truncate text-[10px] italic text-slate-400">
+                <p className="truncate text-[10px] italic text-blue-200/70">
                   Votre succès, notre priorité !
                 </p>
               </div>
             </div>
             {appVersion && (
-              <p className="mt-1.5 text-center text-[10px] text-slate-400">
+              <p className="mt-1.5 text-center text-[10px] text-blue-200/70">
                 Version {appVersion}
               </p>
             )}
@@ -599,7 +599,7 @@ export default function Layout() {
 
       {/* Main */}
       <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="relative z-30 flex items-center gap-4 border-b border-slate-200 bg-[#eaf1fa] px-5 py-2 text-slate-700">
+        <header className="relative z-30 flex items-center gap-4 border-b border-slate-200 bg-white px-5 py-2 text-slate-700">
           <button
             className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 lg:hidden"
             onClick={() => setMobileOpen(true)}
