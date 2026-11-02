@@ -96,6 +96,8 @@ public class ServerActivity extends AppCompatActivity {
 
     /** A health address answers 200 as soon as the server runs. */
     private boolean reachable(String url) {
+        // Ne pas sonder avant la fin (ou l'échec borné) de la mise à jour TLS.
+        EasyGestApp.awaitProvider(5000);
         HttpURLConnection connection = null;
         try {
             connection = (HttpURLConnection) new URL(url).openConnection();
