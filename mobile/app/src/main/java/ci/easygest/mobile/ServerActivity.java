@@ -29,22 +29,9 @@ public class ServerActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_server);
-
-        // Older Androids (7/8) don't know the Google Trust Services root that
-        // serves easygest-central.vercel.app: the TLS handshake then fails and
-        // the remote sales look "injoignable" while the server is fine. Google
-        // Play services can refresh the security provider (updated root store
-        // and TLS stack); invoked by reflection so no SDK dependency is needed
-        // and phones without Play services just skip it.
-        workers.execute(() -> {
-            try {
-                Class.forName("com.google.android.gms.security.ProviderInstaller")
-                        .getMethod("installIfNeeded", android.content.Context.class)
-                        .invoke(null, getApplicationContext());
-            } catch (Throwable ignored) {
-                // No Play services or provider unavailable: keep the system TLS.
-            }
-        });
+        // Note: the TLS/security-provider update for older Androids runs in
+        // EasyGestApp.onCreate — it covers every launch, including the ones
+        // that skip this screen with a saved URL.
 
         EditText address = findViewById(R.id.address);
         Button connect = findViewById(R.id.connect);
