@@ -220,6 +220,14 @@ export default function NouvelleVente() {
     () => Number(localStorage.getItem("ri_cart_w")) || 0
   );
   const cartRef = useRef<HTMLDivElement>(null);
+  const [uiScale, setUiScale] = useState(
+    () => Number(localStorage.getItem("ri_ui_scale")) || 1
+  );
+  const setScale = (v: number) => {
+    const s = Math.min(1.3, Math.max(0.7, Math.round(v * 10) / 10));
+    setUiScale(s);
+    localStorage.setItem("ri_ui_scale", String(s));
+  };
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [supplierFilter, setSupplierFilter] = useState<number | "all">("all");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
@@ -895,7 +903,7 @@ export default function NouvelleVente() {
   }
 
   return (
-    <div className="flex h-full flex-col bg-slate-100">
+    <div className="flex h-full flex-col bg-slate-100" style={{ zoom: uiScale }}>
       <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 bg-white px-5 py-2">
         <h1 className="text-base font-bold text-slate-900">Nouvelle vente</h1>
         {session && (
@@ -908,7 +916,26 @@ export default function NouvelleVente() {
             <WifiOff size={13} /> Mode local
           </span>
         )}
-        <Link className="btn-ghost ml-auto" to="/ventes">
+        <div className="ml-auto flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-1 py-0.5">
+          <button
+            className="rounded-lg px-2 py-0.5 text-sm font-bold text-slate-600 hover:bg-slate-100"
+            onClick={() => setScale(uiScale - 0.1)}
+            title="Réduire la taille de l'interface"
+          >
+            −
+          </button>
+          <span className="w-10 text-center text-[11px] font-semibold text-slate-500">
+            {Math.round(uiScale * 100)}%
+          </span>
+          <button
+            className="rounded-lg px-2 py-0.5 text-sm font-bold text-slate-600 hover:bg-slate-100"
+            onClick={() => setScale(uiScale + 0.1)}
+            title="Agrandir la taille de l'interface"
+          >
+            +
+          </button>
+        </div>
+        <Link className="btn-ghost" to="/ventes">
           Historique des ventes
         </Link>
       </div>
