@@ -232,7 +232,7 @@ const navGroups: NavGroup[] = [
   {
     label: "Pilotage",
     icon: BarChart3,
-    items: pick("/tableau-de-bord", "/rapports"),
+    items: pick("/rapports"),
   },
   {
     label: "Administration",
@@ -248,7 +248,7 @@ const navGroups: NavGroup[] = [
   },
 ];
 
-const topLevel = pick("/", "/caisse");
+const topLevel = pick("/", "/tableau-de-bord", "/caisse");
 const GROUPS_KEY = "ri_sidebar_groups";
 
 /** Pages the dashboard's « Récemment utilisés » strip offers back. */
