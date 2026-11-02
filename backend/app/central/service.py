@@ -13,6 +13,7 @@ from .models import (
     STATUS_REVOKED,
     STATUS_SUSPENDED,
     AdminLog,
+    CentralSetting,
     Client,
     ClientAdmin,
     Feature,
@@ -172,6 +173,17 @@ def client_directives(db: Session, client: Optional[Client]) -> dict:
     }
 
 
+def support_contacts(db: Session) -> dict:
+    """How a blocked shop reaches the sales team, from the console settings."""
+    rows = db.query(CentralSetting).all()
+    values = {row.key: row.value or "" for row in rows}
+    return {
+        "phone": values.get("support_phone", ""),
+        "email": values.get("support_email", ""),
+        "whatsapp": values.get("support_whatsapp", ""),
+    }
+
+
 def license_answer(
     db: Session, installation: Installation, license_: License
 ) -> str:
@@ -199,6 +211,7 @@ def license_answer(
         "offline_days": max(license_.grace_days, 7),
         "issued_at": utcnow().isoformat(),
         "directives": client_directives(db, installation.client),
+        "support": support_contacts(db),
     }
     return sign_license(payload)
 

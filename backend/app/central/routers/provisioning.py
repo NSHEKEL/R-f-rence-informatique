@@ -95,9 +95,13 @@ def register(
     uid = payload.installation_uid.strip()
     if len(uid) < 16:
         raise HTTPException(status_code=400, detail="Identifiant d'installation invalide")
+    # No formula chosen: a first activation starts the free 30-day trial.
     plan = (
         db.query(Plan)
-        .filter(Plan.code == payload.plan_code, Plan.is_active.is_(True))
+        .filter(
+            Plan.code == (payload.plan_code or "essai"),
+            Plan.is_active.is_(True),
+        )
         .first()
     )
     if plan is None:

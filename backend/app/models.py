@@ -816,6 +816,8 @@ class LicenseState(Base):
     # What the owner's last instructions already changed here, so a local
     # password change is not undone at every synchronisation.
     directives_state = Column(Text, default="")
+    # Support contacts signed inside the licence (JSON {phone,email,whatsapp}).
+    support = Column(Text, default="")
     registered_at = Column(DateTime, default=utcnow)
 
 

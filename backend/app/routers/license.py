@@ -42,6 +42,7 @@ def _status(db: Session) -> LicenseStatus:
         last_error=view.last_error,
         central_url=view.central_url,
         installation_uid=view.installation_uid,
+        support=view.support,
         features=sorted(view.features) if view.mode != licensing.MODE_LOCAL
         else [spec.code for spec in FEATURES],
         catalogue=[

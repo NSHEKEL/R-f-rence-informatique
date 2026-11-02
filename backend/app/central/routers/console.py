@@ -18,6 +18,7 @@ from ..models import (
     STATUS_REVOKED,
     STATUS_SUSPENDED,
     AdminLog,
+    CentralSetting,
     Client,
     ClientAdmin,
     Feature,
@@ -56,6 +57,7 @@ from ..schemas import (
     PlanUpdate,
     SupportRequestOut,
     SupportRequestUpdate,
+    SupportSettings,
 )
 from ..security import current_admin, hash_password
 from ..service import (
@@ -68,6 +70,7 @@ from ..service import (
     log,
     plan_feature_codes,
     status_label,
+    support_contacts,
     utcnow,
 )
 
@@ -1052,3 +1055,46 @@ def console_events(token: str = Query(...)):
             events.unsubscribe(q)
 
     return StreamingResponse(_stream(), media_type="text/event-stream")
+
+
+# ---------------------------------------------------------------- settings
+
+
+SUPPORT_KEYS = {
+    "phone": "support_phone",
+    "email": "support_email",
+    "whatsapp": "support_whatsapp",
+}
+
+
+@router.get("/settings", response_model=SupportSettings)
+def read_settings(
+    db: Session = Depends(get_db), _: GlobalAdmin = Depends(current_admin)
+):
+    """Contact channels displayed to a shop whose licence has expired."""
+    return SupportSettings(**support_contacts(db))
+
+
+@router.put("/settings", response_model=SupportSettings)
+def update_settings(
+    payload: SupportSettings,
+    db: Session = Depends(get_db),
+    admin: GlobalAdmin = Depends(current_admin),
+):
+    for field, key in SUPPORT_KEYS.items():
+        value = getattr(payload, field).strip()
+        row = db.get(CentralSetting, key)
+        if row is None:
+            row = CentralSetting(key=key)
+            db.add(row)
+        row.value = value
+    db.commit()
+    log(
+        db,
+        admin,
+        None,
+        "Coordonnées support",
+        "",
+        f"{payload.phone} / {payload.email} / {payload.whatsapp}",
+    )
+    return payload

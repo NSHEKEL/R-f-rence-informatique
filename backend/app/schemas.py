@@ -1198,6 +1198,7 @@ class LicenseStatus(BaseModel):
     last_error: str = ""
     central_url: str = ""
     installation_uid: str = ""
+    support: dict = {}
     features: List[str] = []
     catalogue: List[LicenseFeature] = []
 

@@ -4,6 +4,7 @@ import { useLicense } from "./context/LicenseContext";
 import { TILL_GATED, useTill } from "./context/TillContext";
 import { ADMIN_FEATURE, PLAN_FEATURE } from "./lib/planFeatures";
 import Layout from "./components/Layout";
+import LicenseLocked from "./components/LicenseLocked";
 import Login from "./pages/Login";
 import Accueil from "./pages/Accueil";
 import Dashboard from "./pages/Dashboard";
@@ -37,6 +38,7 @@ import ConsoleClients from "./pages/console/ConsoleClients";
 import ConsoleClient from "./pages/console/ConsoleClient";
 import ConsolePlans from "./pages/console/ConsolePlans";
 import ConsoleJournal from "./pages/console/ConsoleJournal";
+import ConsoleSettings from "./pages/console/ConsoleSettings";
 import ConsoleSuggestions from "./pages/console/ConsoleSuggestions";
 import Mobile from "./pages/Mobile";
 
@@ -135,11 +137,14 @@ export default function App() {
         <Route path="formules" element={<ConsolePlans />} />
         <Route path="suggestions" element={<ConsoleSuggestions />} />
         <Route path="journal" element={<ConsoleJournal />} />
+        <Route path="parametres" element={<ConsoleSettings />} />
       </Route>
       <Route
         element={
           <ProtectedRoute>
-            <Layout />
+            <LicenseLocked>
+              <Layout />
+            </LicenseLocked>
           </ProtectedRoute>
         }
       >

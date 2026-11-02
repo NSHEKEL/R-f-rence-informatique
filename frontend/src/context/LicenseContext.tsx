@@ -32,6 +32,7 @@ export interface LicenseStatus {
   last_error: string;
   central_url: string;
   installation_uid: string;
+  support: { phone?: string; email?: string; whatsapp?: string };
   features: string[];
   catalogue: LicenseFeature[];
 }

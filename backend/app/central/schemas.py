@@ -287,7 +287,7 @@ class RegisterRequest(BaseModel):
     email: str = ""
     address: str = ""
     city: str = ""
-    plan_code: str
+    plan_code: str = ""  # empty -> trial "essai" (30 days)
     installation_uid: str
     hostname: str = ""
     version: str = ""
@@ -447,3 +447,11 @@ class TransferPendingOut(BaseModel):
 class TransferReceivedIn(BaseModel):
     installation_uid: str
     token: str
+
+
+class SupportSettings(BaseModel):
+    """Contact channels shown to a shop whose licence has expired."""
+
+    phone: str = ""
+    email: str = ""
+    whatsapp: str = ""

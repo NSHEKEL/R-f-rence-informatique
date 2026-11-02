@@ -133,6 +133,7 @@ COLUMNS: dict[str, dict[str, str]] = {
     },
     "license_state": {
         "directives_state": "TEXT DEFAULT ''",
+        "support": "TEXT DEFAULT ''",
     },
 }
 

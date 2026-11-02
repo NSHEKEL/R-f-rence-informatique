@@ -359,3 +359,15 @@ class PendingTransfer(Base):
     status = Column(String, default="pending", index=True)
     created_at = Column(DateTime, default=utcnow)
     received_at = Column(DateTime, nullable=True)
+
+
+class CentralSetting(Base):
+    """Owner-level configuration editable from the console.
+
+    Key/value rows, e.g. the support contacts shown to a blocked shop.
+    """
+
+    __tablename__ = "central_settings"
+
+    key = Column(String, primary_key=True)
+    value = Column(Text, default="")

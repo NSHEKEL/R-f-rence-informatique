@@ -14,6 +14,18 @@ from .security import hash_password
 # others: nothing below is enforced afterwards.
 STARTER_PLANS = (
     {
+        # Trial created automatically at the first activation: 30 days,
+        # all features, no grace — the shop is locked exactly at expiry.
+        "code": "essai",
+        "name": "Essai 30 jours",
+        "description": "Période d'essai gratuite à la première installation",
+        "price": 0,
+        "duration_days": 30,
+        "grace_days": 0,
+        "position": 0,
+        "features": {spec.code for spec in FEATURES},
+    },
+    {
         "code": "business",
         "name": "Business",
         "description": "Gestion quotidienne d'un point de vente",
