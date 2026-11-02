@@ -216,6 +216,10 @@ export default function NouvelleVente() {
   const [saving, setSaving] = useState(false);
   const [mobileView, setMobileView] = useState<"catalog" | "cart">("catalog");
   const [showParked, setShowParked] = useState(true);
+  const [cartW, setCartW] = useState(
+    () => Number(localStorage.getItem("ri_cart_w")) || 0
+  );
+  const cartRef = useRef<HTMLDivElement>(null);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [supplierFilter, setSupplierFilter] = useState<number | "all">("all");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
@@ -930,7 +934,9 @@ export default function NouvelleVente() {
       <div className="flex min-h-0 flex-1 gap-3 p-3">
         {/* Ticket in progress */}
         <div
-          className={`card min-h-0 w-full flex-col overflow-hidden p-0 md:order-2 md:flex md:w-[380px] md:shrink-0 lg:w-[420px] xl:w-[460px] 2xl:w-[500px] ${
+          ref={cartRef}
+          style={cartW ? { width: cartW } : undefined}
+          className={`card min-h-0 w-full flex-col overflow-hidden p-0 md:order-3 md:flex md:w-[380px] md:shrink-0 lg:w-[420px] xl:w-[460px] 2xl:w-[500px] ${
             mobileView === "cart" ? "flex" : "hidden"
           }`}
         >
@@ -1491,6 +1497,35 @@ export default function NouvelleVente() {
           </div>
           </div>
         </div>
+
+        {/* Poignée de redimensionnement catalogue / panier */}
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          title="Glisser pour redimensionner le panier"
+          className="hidden w-1.5 shrink-0 cursor-col-resize rounded-full bg-slate-200 transition hover:bg-brand-400 md:order-2 md:block"
+          onPointerDown={(e) => {
+            e.preventDefault();
+            const startX = e.clientX;
+            const startW =
+              cartRef.current?.getBoundingClientRect().width ?? 420;
+            const maxW = Math.min(760, Math.round(window.innerWidth * 0.6));
+            const onMove = (ev: PointerEvent) => {
+              const w = Math.round(startW + (startX - ev.clientX));
+              setCartW(Math.max(300, Math.min(maxW, w)));
+            };
+            const onUp = () => {
+              window.removeEventListener("pointermove", onMove);
+              window.removeEventListener("pointerup", onUp);
+              setCartW((w) => {
+                if (w) localStorage.setItem("ri_cart_w", String(w));
+                return w;
+              });
+            };
+            window.addEventListener("pointermove", onMove);
+            window.addEventListener("pointerup", onUp);
+          }}
+        />
 
         {/* Article picker */}
         <div
