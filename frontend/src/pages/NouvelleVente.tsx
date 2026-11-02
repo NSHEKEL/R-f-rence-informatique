@@ -1841,7 +1841,6 @@ export default function NouvelleVente() {
               </div>
             </div>
           )}
-            </div>
             {/* Modes de paiement — sous la liste des articles */}
             <div className="border-t border-slate-100 pt-2">
               <label className="label">Mode de paiement</label>
@@ -1884,6 +1883,7 @@ export default function NouvelleVente() {
                   </button>
                 )}
               </div>
+            </div>
             </div>
           </div>
         </div>
