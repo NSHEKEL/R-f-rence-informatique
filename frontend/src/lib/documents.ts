@@ -296,7 +296,12 @@ export function deliveryDocumentHtml(
 export function printCommercialDocument(
   title: string,
   html: string,
-  config: DocumentConfig
+  config: DocumentConfig,
+  /** Dedicated queue for this document kind; empty uses config.printer_name. */
+  printerName?: string
 ): void {
-  printDocument(title, pageStyle(config), html);
+  printDocument(title, pageStyle(config), html, {
+    printerName: printerName ?? config.printer_name,
+    direct: config.direct_print,
+  });
 }

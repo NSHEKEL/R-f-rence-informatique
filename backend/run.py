@@ -16,6 +16,7 @@ Modes:
                         build to prove the packaged executable really runs).
 """
 
+import ctypes
 import json
 import os
 import socket
@@ -265,6 +266,72 @@ class DesktopApi:
         except Exception:  # noqa: BLE001 - already on that thread
             send()
         return done["ok"]
+
+    def print_to(
+        self, width_mm: float, height_mm: float, margin_mm: float,
+        printer_name: str,
+    ) -> bool:
+        """Print to a chosen printer without any dialog.
+
+        WebView2's silent printing only ever goes to the Windows default
+        printer, so the default is swapped for the duration of the call and
+        restored afterwards — the only reliable way to reach another queue
+        without showing the print dialog.
+        """
+        if sys.platform != "win32":
+            return False
+        try:
+            from System import Action
+            from webview.platforms.winforms import BrowserView
+
+            form = BrowserView.instances[self.window.uid]
+            core = form.browser.webview.CoreWebView2
+            spooler = ctypes.windll.winspool
+        except Exception:  # noqa: BLE001 - Linux, older runtime, no window
+            traceback.print_exc()
+            return False
+
+        holder: dict = {}
+
+        def send() -> None:
+            try:
+                settings = core.Environment.CreatePrintSettings()
+                settings.ShouldPrintHeaderAndFooter = False
+                settings.ShouldPrintBackgrounds = True
+                settings.PageWidth = max(width_mm, 20.0) / 25.4
+                settings.PageHeight = max(height_mm, 20.0) / 25.4
+                inches = max(margin_mm, 0.0) / 25.4
+                settings.MarginTop = inches
+                settings.MarginBottom = inches
+                settings.MarginLeft = inches
+                settings.MarginRight = inches
+                holder["task"] = core.PrintAsync(settings)
+            except Exception:  # noqa: BLE001
+                traceback.print_exc()
+
+        size = ctypes.c_uint32(0)
+        spooler.GetDefaultPrinterW(None, ctypes.byref(size))
+        buffer = ctypes.create_unicode_buffer(size.value)
+        previous = ""
+        if spooler.GetDefaultPrinterW(buffer, ctypes.byref(size)):
+            previous = buffer.value
+        try:
+            if printer_name:
+                spooler.SetDefaultPrinterW(printer_name)
+            form.Invoke(Action(send))
+            task = holder.get("task")
+            if task is None:
+                return False
+            # Waiting off the window thread: the job is fully spooled when
+            # the task completes, so the default can be restored safely.
+            task.Wait(30000)
+            return True
+        except Exception:  # noqa: BLE001
+            traceback.print_exc()
+            return False
+        finally:
+            if printer_name and previous:
+                spooler.SetDefaultPrinterW(previous)
 
     def toggle_fullscreen(self) -> bool:
         """Full screen for the counter: the web API alone cannot resize the

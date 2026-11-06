@@ -44,7 +44,7 @@ export default function Proformas() {
   const version = useSyncVersion();
   const navigate = useNavigate();
   const { can } = useAuth();
-  const { company } = useCompany();
+  const { company, printing } = useCompany();
   const [documents, setDocuments] = useState<Proforma[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -267,7 +267,13 @@ export default function Proformas() {
         `<th class="num">${formatXOF(document.total)}</th></tr></tbody></table>` +
         `<p class="meta">Document non contractuel : ce ${
           kind ? "devis" : "document"
-        } ne vaut pas facture et n'engage aucun mouvement de stock.</p>`
+        } ne vaut pas facture et n'engage aucun mouvement de stock.</p>`,
+      {
+        printerName:
+          printing.documents.quote_printer_name ||
+          printing.documents.printer_name,
+        direct: printing.documents.direct_print,
+      }
     );
   }
 

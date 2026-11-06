@@ -12,7 +12,7 @@ import { applyPostePrinters, writePostePrinters } from "../context/CompanyContex
 import api from "../api/client";
 import Modal from "../components/Modal";
 import Receipt from "../components/Receipt";
-import { printLabels, printReceipt } from "../lib/print";
+import { printDocument, printLabels, printReceipt } from "../lib/print";
 import { priceLabelHtml } from "../lib/labels";
 import { useCompany } from "../context/CompanyContext";
 import { useLicense } from "../context/LicenseContext";
@@ -243,6 +243,7 @@ export default function PrintingSettings({
   const drawerPort = isPortPath(company.drawer_port);
   const [drawerTesting, setDrawerTesting] = useState(false);
   const [drawerMessage, setDrawerMessage] = useState("");
+  const [actionMessage, setActionMessage] = useState("");
 
   useEffect(() => {
     setForm(applyPostePrinters(printing));
@@ -287,6 +288,8 @@ export default function PrintingSettings({
         receipt: form.receipt.printer_name,
         label: form.label.printer_name,
         documents: form.documents.printer_name,
+        delivery: form.documents.delivery_printer_name,
+        quote: form.documents.quote_printer_name,
       });
       await saveCompany();
       setSaved(true);
@@ -298,6 +301,50 @@ export default function PrintingSettings({
       );
     } finally {
       setSaving(false);
+    }
+  }
+
+  /** Sends a real A4 test page through the Windows driver of that queue. */
+  function testPrinter(name: string) {
+    setActionMessage(`Page de test envoyée vers ${name}.`);
+    printDocument(
+      "Page de test EasyGest",
+      "@page { size: A4 portrait; margin: 0; } body { font-family: sans-serif; padding: 20mm; }",
+      `<h2>Page de test EasyGest</h2><p>Imprimante : ${name}</p>` +
+        `<p>${new Date().toLocaleString("fr-FR")}</p>` +
+        "<p>Si cette page s'imprime, la liaison fonctionne.</p>",
+      { printerName: name, direct: true }
+    );
+  }
+
+  async function makeDefault(name: string) {
+    setActionMessage("");
+    try {
+      await api.post("/settings/printers/default", { printer_name: name });
+      setActionMessage(`${name} est maintenant l'imprimante par défaut.`);
+      loadPrinters();
+    } catch (err) {
+      setActionMessage(
+        axios.isAxiosError(err)
+          ? err.response?.data?.detail ?? "Changement impossible"
+          : "Changement impossible"
+      );
+    }
+  }
+
+  async function configure(name: string) {
+    setActionMessage("");
+    try {
+      await api.post("/settings/printers/preferences", {
+        printer_name: name,
+      });
+      setActionMessage(`Préférences du pilote ouvertes pour ${name}.`);
+    } catch (err) {
+      setActionMessage(
+        axios.isAxiosError(err)
+          ? err.response?.data?.detail ?? "Ouverture impossible"
+          : "Ouverture impossible"
+      );
     }
   }
 
@@ -348,6 +395,117 @@ export default function PrintingSettings({
 
   return (
     <div className="space-y-6">
+      {/* Printers installed on this computer */}
+      <div className="card p-6">
+        <div className="mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Printer size={18} className="text-brand-600" />
+            <h3 className="text-base font-bold text-slate-900">
+              Imprimantes détectées
+            </h3>
+          </div>
+          <button
+            type="button"
+            className="btn-ghost"
+            onClick={loadPrinters}
+            disabled={loadingPrinters}
+          >
+            <RefreshCw size={16} /> Actualiser
+          </button>
+        </div>
+        {devices.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            {loadingPrinters
+              ? "Lecture des imprimantes installées..."
+              : "Aucune imprimante détectée sur ce poste."}
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-slate-500">
+                  <th className="py-1 pr-4">Imprimante</th>
+                  <th className="py-1 pr-4">Type</th>
+                  <th className="py-1 pr-4">État</th>
+                  <th className="py-1 pr-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {devices.map((device) => (
+                  <tr key={device.name} className="border-t border-slate-100">
+                    <td className="py-2 pr-4 font-medium text-slate-800">
+                      {device.name}
+                      {device.is_default && (
+                        <span className="ml-2 rounded bg-brand-50 px-1.5 py-0.5 text-xs text-brand-700">
+                          Par défaut
+                        </span>
+                      )}
+                      {device.driver && (
+                        <span className="block text-xs font-normal text-slate-400">
+                          {device.driver}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2 pr-4 text-slate-600">
+                      {device.kind || device.port || "—"}
+                    </td>
+                    <td className="py-2 pr-4">
+                      <span
+                        className={
+                          device.available
+                            ? "text-emerald-600"
+                            : "text-red-600"
+                        }
+                      >
+                        {device.status}
+                      </span>
+                      {device.jobs > 0 && (
+                        <span className="ml-1 text-xs text-slate-400">
+                          · {device.jobs} en file
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2 pr-4">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          className="btn-ghost px-2 py-1 text-xs"
+                          onClick={() => testPrinter(device.name)}
+                          title="Envoyer une page de test à cette imprimante"
+                        >
+                          Tester
+                        </button>
+                        {!device.is_default && (
+                          <button
+                            type="button"
+                            className="btn-ghost px-2 py-1 text-xs"
+                            onClick={() => makeDefault(device.name)}
+                            title="Définir comme imprimante Windows par défaut"
+                          >
+                            Défaut
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="btn-ghost px-2 py-1 text-xs"
+                          onClick={() => configure(device.name)}
+                          title="Ouvrir les préférences du pilote"
+                        >
+                          Configurer
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {actionMessage && (
+          <p className="mt-3 text-sm text-slate-600">{actionMessage}</p>
+        )}
+      </div>
+
       {/* Receipt printer */}
       <div className="card p-6">
         <div className="mb-4 flex items-center gap-2">
@@ -812,6 +970,49 @@ export default function PrintingSettings({
               onChange={(name) => patchDocuments({ printer_name: name })}
               hint="Imprimante A4 pour les bons de commande et de livraison."
             />
+          </div>
+          <div>
+            <PrinterSelect
+              label="Imprimante des bons de livraison"
+              value={form.documents.delivery_printer_name}
+              devices={devices}
+              loading={loadingPrinters}
+              onRefresh={loadPrinters}
+              onChange={(name) =>
+                patchDocuments({ delivery_printer_name: name })
+              }
+              hint="Vide : utilise l'imprimante des documents commerciaux."
+            />
+          </div>
+          <div>
+            <PrinterSelect
+              label="Imprimante des devis"
+              value={form.documents.quote_printer_name}
+              devices={devices}
+              loading={loadingPrinters}
+              onRefresh={loadPrinters}
+              onChange={(name) =>
+                patchDocuments({ quote_printer_name: name })
+              }
+              hint="Vide : utilise l'imprimante des documents commerciaux."
+            />
+          </div>
+          <div>
+            <label className="label">Mode d'impression</label>
+            <select
+              className="input"
+              value={form.documents.direct_print ? "direct" : "apercu"}
+              onChange={(e) =>
+                patchDocuments({
+                  direct_print: e.target.value === "direct",
+                })
+              }
+            >
+              <option value="direct">
+                Directe (sans boîte de dialogue)
+              </option>
+              <option value="apercu">Avec aperçu avant impression</option>
+            </select>
           </div>
           <div>
             <label className="label">Format du papier</label>

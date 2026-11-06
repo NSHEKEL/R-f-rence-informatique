@@ -374,7 +374,10 @@ export default function Dettes() {
         balances.reduce((sum, row) => sum + row.overdue, 0)
       )}</b></td><td></td></tr>` +
       "</tbody></table>";
-    printSheet(title, body);
+    printSheet(title, body, {
+      printerName: printing.documents.printer_name,
+      direct: printing.documents.direct_print,
+    });
   }
 
   /** Settlements grouped by day, to see the cash coming in and going out. */

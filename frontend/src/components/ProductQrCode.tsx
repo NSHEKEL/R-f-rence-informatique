@@ -16,7 +16,7 @@ export default function ProductQrCode({
   product,
   size = 240,
 }: ProductQrCodeProps) {
-  const { company } = useCompany();
+  const { company, printing } = useCompany();
   const value = scanCode(product);
   const dataUrl = useMemo(() => barcodeDataUrl(value, 70), [value]);
 
@@ -43,7 +43,12 @@ export default function ProductQrCode({
         ".doc-head .meta { margin: 0; font-size: 12px; color: #475569; }",
       documentHeader(company) +
         `<img class="code-img" src="${dataUrl}" alt="" />` +
-        `<p class="name">${product.name}</p>`
+        `<p class="name">${product.name}</p>`,
+      {
+        printerName:
+          printing.documents.printer_name || printing.label.printer_name,
+        direct: printing.documents.direct_print,
+      }
     );
   }
 

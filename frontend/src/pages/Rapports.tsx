@@ -96,7 +96,7 @@ function rowsTable(title: string, rows: ReportRow[], unit: string): string {
 
 export default function Rapports() {
   const version = useSyncVersion();
-  const { company } = useCompany();
+  const { company, printing } = useCompany();
   const { hasFeature } = useLicense();
   const [start, setStart] = useState(daysAgo(29));
   const [end, setEnd] = useState(today());
@@ -145,7 +145,11 @@ export default function Rapports() {
         rowsTable("Par mode de paiement", report.by_payment, "") +
         rowsTable("Par vendeuse / caissière", report.by_seller, "ventes") +
         rowsTable("Par catégorie", report.by_category, "u.") +
-        rowsTable("Meilleurs articles", report.by_product, "u.")
+        rowsTable("Meilleurs articles", report.by_product, "u."),
+      {
+        printerName: printing.documents.printer_name,
+        direct: printing.documents.direct_print,
+      }
     );
   }
 

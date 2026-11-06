@@ -53,7 +53,7 @@ interface PendingTransfer {
 
 export default function Inventaire() {
   const version = useSyncVersion();
-  const { company } = useCompany();
+  const { company, printing } = useCompany();
   const { hasFeature } = useLicense();
   const [products, setProducts] = useState<Product[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
@@ -322,7 +322,11 @@ export default function Inventaire() {
         `<table><thead><tr><th>Article</th><th>SKU</th><th>Code-barres</th>` +
         (blind ? "" : `<th>Quantité disponible</th>`) +
         `<th>Quantité en rayon</th><th>Quantité en stock</th><th>Observation</th>` +
-        `</tr></thead><tbody>${rows}</tbody></table>`
+        `</tr></thead><tbody>${rows}</tbody></table>`,
+      {
+        printerName: printing.documents.printer_name,
+        direct: printing.documents.direct_print,
+      }
     );
   }
 
@@ -348,7 +352,11 @@ export default function Inventaire() {
         `<th class="num">Écart</th><th class="num">Valorisation</th>` +
         `</tr></thead><tbody>${rows}` +
         `<tr><th colspan="5">Impact total</th>` +
-        `<th class="num">${formatXOF(impact)}</th></tr></tbody></table>`
+        `<th class="num">${formatXOF(impact)}</th></tr></tbody></table>`,
+      {
+        printerName: printing.documents.printer_name,
+        direct: printing.documents.direct_print,
+      }
     );
   }
 

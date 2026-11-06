@@ -38,7 +38,7 @@ const OPEN_STATUSES = ["En attente", "Reçu partiellement"];
 export default function Approvisionnements() {
   const version = useSyncVersion();
   const { can } = useAuth();
-  const { company } = useCompany();
+  const { company, printing } = useCompany();
   const manage = can("approvisionnements_gerer");
 
   const [purchases, setPurchases] = useState<Purchase[]>([]);
@@ -282,7 +282,11 @@ export default function Approvisionnements() {
         `<th class="num">${formatXOF(purchase.paid)}</th></tr>` +
         `<tr><th colspan="4">Reste à payer</th>` +
         `<th class="num">${formatXOF(purchase.balance)}</th></tr></tbody></table>` +
-        documentBarcode(purchase.reference)
+        documentBarcode(purchase.reference),
+      {
+        printerName: printing.documents.printer_name,
+        direct: printing.documents.direct_print,
+      }
     );
   }
 

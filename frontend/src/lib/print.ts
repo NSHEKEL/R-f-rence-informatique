@@ -74,6 +74,35 @@ function desktopTicket():
   ).pywebview?.api?.print_ticket;
 }
 
+/**
+ * Silent print to a *chosen* printer: the desktop window swaps the Windows
+ * default for the duration of the job, so the document leaves with no
+ * dialog at all. Only available inside the packaged application.
+ */
+function desktopPrintTo():
+  | ((
+      width: number,
+      height: number,
+      margin: number,
+      printer: string
+    ) => Promise<boolean>)
+  | undefined {
+  return (
+    window as unknown as {
+      pywebview?: {
+        api?: {
+          print_to?: (
+            width: number,
+            height: number,
+            margin: number,
+            printer: string
+          ) => Promise<boolean>;
+        };
+      };
+    }
+  ).pywebview?.api?.print_to;
+}
+
 function pageRule(format: ReceiptFormat, marginMm: number): string {
   if (format === "80mm" || format === "58mm") {
     // Thermal roll: `auto` is invalid next to a length, so the exact ticket
@@ -115,33 +144,63 @@ const SHEET_STYLE = `
   @page { size: A4 portrait; margin: 0; }
 `;
 
+export interface PrintOptions {
+  /** Queue the document goes to; empty keeps the Windows default. */
+  printerName?: string;
+  /** False shows the preview dialog even when a printer is assigned. */
+  direct?: boolean;
+}
+
 /**
  * Prints a standalone document without opening a second window: the desktop
  * application has no browser to pop up, so the page is rendered in a hidden
- * frame and only that frame reaches the paper.
+ * frame and only that frame reaches the paper. When a printer is assigned
+ * and the desktop bridge is available, the sheet leaves straight for that
+ * queue — no preview, no Windows dialog.
  */
 export function printDocument(
   title: string,
   style: string,
-  bodyHtml: string
+  bodyHtml: string,
+  options?: PrintOptions
 ): void {
-  const frame = document.createElement("iframe");
-  frame.setAttribute("aria-hidden", "true");
-  frame.style.cssText =
-    "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden";
-  frame.srcdoc =
-    `<html><head><title>${title}</title><style>${style}</style></head>` +
-    `<body>${bodyHtml}</body></html>`;
-  frame.onload = () => {
-    const view = frame.contentWindow;
-    if (view) {
-      view.focus();
-      view.print();
-    }
-    // The dialog is modal, so the frame is only dropped afterwards.
-    window.setTimeout(() => frame.remove(), 1000);
+  const preview = () => {
+    const frame = document.createElement("iframe");
+    frame.setAttribute("aria-hidden", "true");
+    frame.style.cssText =
+      "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden";
+    frame.srcdoc =
+      `<html><head><title>${title}</title><style>${style}</style></head>` +
+      `<body>${bodyHtml}</body></html>`;
+    frame.onload = () => {
+      const view = frame.contentWindow;
+      if (view) {
+        view.focus();
+        view.print();
+      }
+      // The dialog is modal, so the frame is only dropped afterwards.
+      window.setTimeout(() => frame.remove(), 1000);
+    };
+    document.body.appendChild(frame);
   };
-  document.body.appendChild(frame);
+
+  const bridge = desktopPrintTo();
+  if (options?.direct === false || !bridge) {
+    preview();
+    return;
+  }
+  // The print stylesheet shows only body > #receipt-print-root: the sheet is
+  // mounted there for the duration of the job, like a ticket.
+  const root = document.createElement("div");
+  root.id = PRINT_ROOT_ID;
+  root.innerHTML = `<style>${style}</style>${bodyHtml}`;
+  document.body.appendChild(root);
+  bridge(210, 297, 0, options?.printerName?.trim() ?? "")
+    .then((done) => {
+      if (!done) preview();
+    })
+    .catch(() => preview())
+    .finally(() => root.remove());
 }
 
 /**
@@ -234,8 +293,12 @@ export function documentBarcode(reference: string): string {
 }
 
 /** Prints an A4 sheet (report, inventory count sheet, delivery note). */
-export function printSheet(title: string, bodyHtml: string): void {
-  printDocument(title, SHEET_STYLE, bodyHtml);
+export function printSheet(
+  title: string,
+  bodyHtml: string,
+  options?: PrintOptions
+): void {
+  printDocument(title, SHEET_STYLE, bodyHtml, options);
 }
 
 const LABEL_STYLE = `
@@ -274,7 +337,8 @@ export function printLabels(
   printDocument(
     title,
     LABEL_STYLE + sizing,
-    `<div class="grid">${labelsHtml}</div>`
+    `<div class="grid">${labelsHtml}</div>`,
+    { printerName: config.printer_name }
   );
 }
 
