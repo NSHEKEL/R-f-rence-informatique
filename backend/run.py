@@ -327,12 +327,18 @@ def _selftest(url: str) -> None:
     if not _wait_until_ready(url, timeout=60):
         problems.append("le serveur ne répond pas sur /api/health")
     if sys.platform == "win32":
-        try:
-            import clr  # noqa: F401
-            import webview  # noqa: F401
-            from webview.platforms import winforms  # noqa: F401
-        except Exception as exc:  # noqa: BLE001
-            problems.append(f"fenêtre native indisponible : {exc!r}")
+        # The 32-bit package is built without the native window (no pythonnet
+        # wheel exists for x86): there the browser fallback is the expected
+        # mode, so only a *bundled-but-broken* webview fails the selftest.
+        import importlib.util
+
+        if importlib.util.find_spec("webview") is not None:
+            try:
+                import clr  # noqa: F401
+                import webview  # noqa: F401
+                from webview.platforms import winforms  # noqa: F401
+            except Exception as exc:  # noqa: BLE001
+                problems.append(f"fenêtre native indisponible : {exc!r}")
     if problems:
         print("SELFTEST KO : " + " ; ".join(problems))
         raise SystemExit(1)

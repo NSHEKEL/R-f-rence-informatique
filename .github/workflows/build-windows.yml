@@ -178,3 +178,84 @@ jobs:
 
             **Mise à jour d'un poste existant :** Paramètres → Mise à jour de
             l'application → Rechercher → Installer.
+
+  build-x86:
+    # 32-bit package for the older office PCs still on Windows x86 / low RAM.
+    # No native window there: pythonnet has no 32-bit wheel, so this build
+    # runs headless and opens EasyGest in the default browser.
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Setup Python 32 bits
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: "x86"
+
+      - name: Install Python dependencies
+        run: |
+          pip install -r backend/requirements-x86.txt
+          pip install pyinstaller==6.11.1
+
+      - name: Build the application (x86)
+        run: |
+          python packaging/make_version_info.py
+          pyinstaller packaging/EasyGest-x86.spec
+
+      - name: Check the executable really starts
+        shell: pwsh
+        run: |
+          $log = "$env:ProgramData\EasyGest\easygest.log"
+          if (Test-Path $log) { Remove-Item $log }
+          $run = Start-Process -FilePath dist\EasyGest_x86.exe `
+            -ArgumentList '--selftest' -PassThru -Wait
+          if (Test-Path $log) { Get-Content $log }
+          if ($run.ExitCode -ne 0) {
+            throw "EasyGest_x86.exe ne démarre pas (code $($run.ExitCode))"
+          }
+
+      - name: Download the WebView2 bootstrapper
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=2124703" `
+            -OutFile "packaging/MicrosoftEdgeWebview2Setup.exe"
+
+      - name: Build the 32-bit installer
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path backend/app/version.py `
+            -Pattern 'APP_VERSION = "(.+)"').Matches[0].Groups[1].Value
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
+            "/DAppVersion=$version" /DArch32 "/DAppExe=EasyGest_x86.exe" `
+            packaging\EasyGest.iss
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: EasyGest-windows-x86
+          path: |
+            dist/EasyGest_x86.exe
+            dist/EasyGest_Setup_x86.exe
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/EasyGest_Setup_x86.exe
+            dist/EasyGest_x86.exe

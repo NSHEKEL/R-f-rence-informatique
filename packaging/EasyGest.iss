@@ -15,7 +15,9 @@
 #endif
 
 #define AppName "EasyGest"
-#define AppExe "EasyGest.exe"
+#ifndef AppExe
+  #define AppExe "EasyGest.exe"
+#endif
 
 [Setup]
 AppId={{8F1B2A5E-6D3C-4C9A-9E0D-EASYGEST0001}
@@ -27,14 +29,20 @@ DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 AllowNoIcons=yes
 OutputDir=..\dist
+#ifdef Arch32
+OutputBaseFilename=EasyGest_Setup_x86
+#else
 OutputBaseFilename=EasyGest_Setup
+#endif
 SetupIconFile=EasyGest.ico
 UninstallDisplayIcon={app}\{#AppExe}
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=admin
+#ifndef Arch32
 ArchitecturesInstallIn64BitMode=x64compatible
+#endif
 CloseApplications=yes
 RestartApplications=yes
 
