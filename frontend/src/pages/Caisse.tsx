@@ -20,7 +20,7 @@ import { useSyncVersion } from "../context/SyncContext";
  * happens on the dedicated POS screen.
  */
 export default function Caisse() {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, can } = useAuth();
   const { refresh: refreshTill } = useTill();
   const { company, printing } = useCompany();
   const version = useSyncVersion();
@@ -236,16 +236,18 @@ export default function Caisse() {
               )}
               {!closed && (
                 <>
-                  <button
-                    className="btn-ghost"
-                    onClick={() => {
-                      setCountedBalance(String(today.expected_cash));
-                      setCloseNote("");
-                      setCloseOpen(true);
-                    }}
-                  >
-                    <Lock size={16} /> Fermer ma caisse
-                  </button>
+                  {can("caisse_fermer") && (
+                    <button
+                      className="btn-ghost"
+                      onClick={() => {
+                        setCountedBalance(String(today.expected_cash));
+                        setCloseNote("");
+                        setCloseOpen(true);
+                      }}
+                    >
+                      <Lock size={16} /> Fermer ma caisse
+                    </button>
+                  )}
                   <Link className="btn-primary" to="/ventes/nouvelle">
                     <ShoppingCart size={16} /> Aller à la vente
                   </Link>

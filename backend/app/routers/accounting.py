@@ -137,7 +137,7 @@ def list_expenses(
 def create_expense(
     payload: ExpenseCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permission("comptabilite")),
+    current_user: User = Depends(require_permission("depenses_gerer")),
 ):
     if payload.amount <= 0:
         raise HTTPException(status_code=400, detail="Montant invalide")
@@ -159,7 +159,7 @@ def create_expense(
 def delete_expense(
     expense_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("comptabilite")),
+    _: User = Depends(require_permission("depenses_gerer")),
 ):
     expense = db.query(Expense).get(expense_id)
     if not expense:

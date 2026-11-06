@@ -22,6 +22,7 @@ import api, {
   formatDateTime,
   localApi,
   normalizeServerUrl,
+  probeServer,
   setServerUrl,
 } from "../api/client";
 import type {
@@ -438,13 +439,16 @@ export default function Settings() {
   async function testServer() {
     setServerStatus("Test en cours...");
     const base = normalizeServerUrl(serverUrl);
-    try {
-      const res = await axios.get<{ status: string; app: string }>(
-        `${base}/api/health`,
-        { timeout: 5000 }
+    const probe = await probeServer(base);
+    if (probe.kind === "shop") {
+      setServerStatus(`Connexion réussie : ${probe.app}`);
+    } else if (probe.kind === "central") {
+      setServerStatus(
+        "Cette adresse est le serveur central EasyGest (console d'administration), " +
+          "pas le serveur de la boutique — les écrans afficheront des erreurs " +
+          "(ex. « method not allowed »). Indiquez l'adresse du poste serveur."
       );
-      setServerStatus(`Connexion réussie : ${res.data.app}`);
-    } catch {
+    } else {
       setServerStatus("Serveur injoignable à cette adresse.");
     }
   }

@@ -32,6 +32,7 @@ from ..models import (
     User,
 )
 from ..permissions import require_permission
+from .cash import current_session
 from ..receivables import open_order_receivable, settle_order_receivable
 from ..schemas import (
     DeliveryCreate,
@@ -267,6 +268,14 @@ def deliver_order(
     remaining = [item for item in order.items if item.remaining_quantity > 0]
     if not remaining:
         raise HTTPException(status_code=400, detail="Commande déjà livrée")
+    # Same rule as the till: no sale without an open cash session.
+    session = current_session(db, current_user)
+    if session is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Votre caisse est fermée. Veuillez ouvrir une session de "
+            "caisse avant d'effectuer une vente.",
+        )
     lines: list[DeliveryItem] = []
     sale = Sale(
         reference=next_reference(
@@ -278,6 +287,7 @@ def deliver_order(
         note=f"Commande {order.reference}",
         price_mode=order.price_mode,
         created_by_id=current_user.id,
+        cash_session_id=session.id,
         total=sum(
             item.unit_price * item.remaining_quantity for item in remaining
         ),

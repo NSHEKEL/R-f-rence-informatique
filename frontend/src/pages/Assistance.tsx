@@ -77,9 +77,16 @@ export default function Assistance() {
       setSubject("");
       setMessage("");
     } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response
+        ?.status;
       const detail =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data
-          ?.detail || "L'envoi a échoué. Réessayez ou utilisez WhatsApp.";
+        status === 405
+          ? "Le serveur configuré n'est pas le serveur de la boutique " +
+            "(« method not allowed »). Corrigez l'adresse du serveur dans " +
+            "Paramètres → Réseau & postes, ou utilisez WhatsApp ci-contre."
+          : (err as { response?: { data?: { detail?: string } } })?.response
+              ?.data?.detail ||
+            "L'envoi a échoué. Réessayez ou utilisez WhatsApp.";
       setFeedback({ kind: "error", text: detail });
     } finally {
       setSending(false);

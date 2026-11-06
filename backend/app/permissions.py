@@ -80,13 +80,29 @@ PERMISSIONS: dict[str, tuple[str, str]] = {
         "Transformer un bon de commande en livraison ou en facture",
         "Actions",
     ),
+    "caisse_fermer": ("Clôturer une session de caisse", "Actions"),
+    "caisse_z": ("Consulter et imprimer l'état Z de caisse", "Actions"),
+    "versements_gerer": ("Enregistrer un versement bancaire", "Actions"),
+    "versements_valider": (
+        "Valider, rejeter, annuler ou rapprocher un versement",
+        "Actions",
+    ),
+    "depenses_gerer": ("Enregistrer et annuler une dépense", "Actions"),
 }
 
 CONFIGURABLE_ROLES = ("vendeur", "gestionnaire")
 
 # Rights each role had before they became configurable.
 DEFAULTS: dict[str, set[str]] = {
-    "vendeur": {"caisse", "vente_nouvelle", "assistance"},
+    "vendeur": {
+        "caisse",
+        "caisse_fermer",
+        "caisse_z",
+        "vente_nouvelle",
+        "versements_gerer",
+        "depenses_gerer",
+        "assistance",
+    },
     "gestionnaire": {
         "produits",
         "inventaire",

@@ -10,12 +10,15 @@ from ..models import (
     BankDeposit,
     CashSession,
     CompanySettings,
+    DebtPayment,
     Expense,
     Notification,
+    Order,
     Sale,
+    SaleReturn,
     User,
 )
-from ..permissions import require_permission
+from ..permissions import has_permission, require_permission
 from ..schemas import (
     CashSessionClose,
     CashSessionDetail,
@@ -202,7 +205,7 @@ def open_session(
 def close_session(
     payload: CashSessionClose,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permission("caisse")),
+    current_user: User = Depends(require_permission("caisse_fermer")),
 ):
     session = current_session(db, current_user)
     if not session:
@@ -303,14 +306,59 @@ def _z_report(db: Session, session: CashSession) -> CashSessionZ:
         d.amount or 0 for d in deposits if d.status == "validé"
     )
     company = db.query(CompanySettings).first()
+
+    # Credit notes (remboursements / retours) issued inside the session window.
+    returns = (
+        db.query(SaleReturn)
+        .filter(
+            SaleReturn.date >= opened_at,
+            SaleReturn.date <= closed_at,
+        )
+        .all()
+    )
+    # Client settlements received during the session: cash legs sit in the
+    # drawer, the other methods only show up in the breakdown.
+    settlements = (
+        db.query(DebtPayment)
+        .filter(
+            DebtPayment.cancelled.is_(False),
+            DebtPayment.date >= opened_at,
+            DebtPayment.date <= closed_at,
+        )
+        .all()
+    )
+    settlement_payments: dict[str, float] = {}
+    cash_settlements = 0.0
+    for p in settlements:
+        method = p.method or CASH_PAYMENT
+        settlement_payments[method] = (
+            settlement_payments.get(method, 0.0) + (p.amount or 0)
+        )
+        if method == CASH_PAYMENT:
+            cash_settlements += p.amount or 0
+    # Order deposits (acomptes) booked during the session.
+    advances = (
+        db.query(Order)
+        .filter(
+            Order.date >= opened_at,
+            Order.date <= closed_at,
+            Order.deposit > 0,
+        )
+        .all()
+    )
+
     expected = (
         session.opening_balance
         + payments.get(CASH_PAYMENT, 0.0)
+        + cash_settlements
         - validated_deposits
     )
     return CashSessionZ(
         session_id=session.id,
         company=company.name if company else "",
+        company_address=company.address if company else "",
+        company_phone=(company.phone or company.phone2) if company else "",
+        company_logo=company.logo if company else "",
         cashier=session.opened_by.name if session.opened_by else "",
         opened_at=opened_at,
         closed_at=session.closed_at,
@@ -322,6 +370,22 @@ def _z_report(db: Session, session: CashSession) -> CashSessionZ:
         cancelled_count=cancelled_count,
         gift_total=gift_total,
         payments=payments,
+        refunds_total=sum(r.total or 0 for r in returns),
+        refunds=[
+            {
+                "reference": r.reference,
+                "sale_reference": r.sale_reference,
+                "total": r.total,
+            }
+            for r in returns
+        ],
+        advances_total=sum(o.deposit or 0 for o in advances),
+        advances=[
+            {"reference": o.reference, "customer": o.customer_name, "amount": o.deposit}
+            for o in advances
+        ],
+        settlements_total=sum(p.amount or 0 for p in settlements),
+        settlements=settlement_payments,
         expenses_total=sum(e.amount or 0 for e in expenses),
         expenses=[
             {"label": e.label, "category": e.category, "amount": e.amount}
@@ -358,6 +422,7 @@ def z_report(
     if (
         current_user.role != "admin"
         and session.opened_by_id != current_user.id
+        and not has_permission(db, current_user, "caisse_z")
     ):
         raise HTTPException(status_code=403, detail="Session d'un autre caissier")
     if session.z_report:

@@ -1608,6 +1608,9 @@ class CashSessionZ(BaseModel):
 
     session_id: int
     company: str = ""
+    company_address: str = ""
+    company_phone: str = ""
+    company_logo: str = ""
     cashier: str = ""
     opened_at: Optional[datetime] = None
     closed_at: Optional[datetime] = None
@@ -1619,6 +1622,12 @@ class CashSessionZ(BaseModel):
     cancelled_count: int = 0
     gift_total: float = 0
     payments: dict[str, float] = {}  # per payment method
+    refunds_total: float = 0
+    refunds: list[dict] = []
+    advances_total: float = 0  # acomptes de commandes encaissés
+    advances: list[dict] = []
+    settlements_total: float = 0  # règlements de créances clients
+    settlements: dict[str, float] = {}  # per payment method
     expenses_total: float = 0
     expenses: list[dict] = []
     deposits_total: float = 0
