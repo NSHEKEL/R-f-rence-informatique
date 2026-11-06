@@ -29,6 +29,9 @@ class User(Base):
     role = Column(String, default="admin")  # admin, vendeur, gestionnaire
     photo = Column(Text, default="")  # data URL, optional
     is_active = Column(Boolean, default=True, nullable=False)
+    # Comma-separated notification kinds the admin lets this user receive;
+    # empty means "all" (admins are always subscribed to everything).
+    notification_kinds = Column(String, default="")
     created_at = Column(DateTime, default=utcnow)
 
 
@@ -788,6 +791,8 @@ class Notification(Base):
     link = Column(String, default="")
     sale_id = Column(Integer, ForeignKey("sales.id"), nullable=True)
     is_read = Column(Boolean, default=False, nullable=False)
+    # JSON list of user ids who marked it read (per-user read state).
+    read_by = Column(Text, default="[]")
     created_at = Column(DateTime, default=utcnow)
 
 

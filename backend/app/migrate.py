@@ -20,6 +20,10 @@ COLUMNS: dict[str, dict[str, str]] = {
         "is_active": f"BOOLEAN DEFAULT {TRUE_LITERAL}",
         "role": "VARCHAR DEFAULT 'admin'",
         "photo": "TEXT DEFAULT ''",
+        "notification_kinds": "VARCHAR DEFAULT ''",
+    },
+    "notifications": {
+        "read_by": "TEXT DEFAULT '[]'",
     },
     "suppliers": {
         "logo": "TEXT DEFAULT ''",

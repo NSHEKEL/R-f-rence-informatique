@@ -142,6 +142,11 @@ def update_user(
         if payload.is_active != user.is_active:
             changes.append("réactivation" if payload.is_active else "désactivation")
         user.is_active = payload.is_active
+    if payload.notification_kinds is not None:
+        user.notification_kinds = ",".join(
+            k.strip() for k in payload.notification_kinds if k.strip()
+        )
+        changes.append("notifications configurées")
     if payload.password:
         weak = password_error(payload.password)
         if weak:

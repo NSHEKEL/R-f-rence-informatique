@@ -5,6 +5,7 @@ export interface User {
   role: string;
   photo?: string;
   is_active: boolean;
+  notification_kinds?: string;
 }
 
 export type ReceiptFormat = "A4" | "80mm" | "58mm";
