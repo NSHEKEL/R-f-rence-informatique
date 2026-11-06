@@ -26,6 +26,7 @@ from ..models import (
     MirrorReturn,
     MirrorSale,
     MirrorUser,
+    MobileOperation,
     utcnow,
 )
 from ..security import ALGORITHM, session_key, verify_password
@@ -442,3 +443,96 @@ def friendly_update_error(exc: Exception) -> str:
     if "403" in text or "429" in text:
         return "Trop de requêtes vers GitHub, réessayez plus tard."
     return f"Vérification impossible : {text}"
+
+
+# ---------- Write operations relayed to the shop ----------
+
+# Operations accepted from the phone. Kinds marked "management" require a
+# management role even to be queued; for the rest, the shop re-checks the
+# caller's real permission when applying — the exact same rules as Windows.
+OPERATION_KINDS = {
+    "return_create",
+    "expense_create",
+    "expense_delete",
+    "deposit_create",
+    "payslip_create",
+}
+MANAGEMENT_ONLY = {"payslip_create", "expense_delete"}
+
+
+class OperationIn(BaseModel):
+    remote_id: str
+    kind: str
+    payload: dict = {}
+
+
+@router.post("/operations", status_code=201)
+def create_operation(
+    payload: OperationIn,
+    session: tuple[MirrorUser, Client] = Depends(current_mobile),
+    db: Session = Depends(get_db),
+):
+    """Queue a shop operation sent from the phone (applied by the shop)."""
+    user, client = session
+    kind = payload.kind.strip()
+    if kind not in OPERATION_KINDS:
+        raise HTTPException(status_code=400, detail="Opération inconnue")
+    role = (user.role or "").strip().lower()
+    if kind in MANAGEMENT_ONLY and role not in FULL_VIEW_ROLES:
+        raise HTTPException(status_code=403, detail="Droit insuffisant")
+    remote_id = payload.remote_id.strip()
+    if not remote_id:
+        raise HTTPException(status_code=400, detail="remote_id manquant")
+    existing = (
+        db.query(MobileOperation)
+        .filter(
+            MobileOperation.client_id == client.id,
+            MobileOperation.remote_id == remote_id,
+        )
+        .first()
+    )
+    if existing:
+        return {"id": existing.id, "status": existing.status, "detail": existing.detail}
+
+    installation = (
+        db.query(Installation).filter(Installation.client_id == client.id).first()
+    )
+    op = MobileOperation(
+        client_id=client.id,
+        installation_uid=installation.uid if installation else "",
+        remote_id=remote_id,
+        kind=kind,
+        payload=json.dumps(payload.payload, ensure_ascii=False),
+        created_by_email=user.email,
+        created_by_name=user.name,
+    )
+    db.add(op)
+    db.commit()
+    return {"id": op.id, "status": "pending"}
+
+
+@router.get("/operations")
+def list_operations(
+    session: tuple[MirrorUser, Client] = Depends(current_mobile),
+    db: Session = Depends(get_db),
+):
+    """Statuses of the operations this user sent (pending/applied/rejected)."""
+    user, client = session
+    rows = (
+        db.query(MobileOperation)
+        .filter(MobileOperation.client_id == client.id)
+        .order_by(MobileOperation.created_at.desc())
+        .limit(50)
+        .all()
+    )
+    return [
+        {
+            "id": row.id,
+            "remote_id": row.remote_id,
+            "kind": row.kind,
+            "status": row.status,
+            "detail": row.detail or "",
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+        }
+        for row in rows
+    ]

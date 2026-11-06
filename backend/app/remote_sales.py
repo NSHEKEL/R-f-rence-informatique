@@ -171,6 +171,14 @@ def push(db: Session) -> dict:
     if not base:
         raise licensing.CentralError("Adresse du serveur central manquante")
     company = db.query(CompanySettings).first()
+    # Operations the phone queued for this shop: apply them to the real
+    # database (same rules as the desktop app) before pushing fresh data.
+    from . import mobile_ops
+
+    try:
+        mobile_ops.process_pending(db)
+    except Exception as exc:  # noqa: BLE001 - best effort, never blocks sync
+        print(f"Opérations mobiles : {exc}")
     return licensing._post(  # noqa: SLF001 - same module family
         f"{base}/api/central/public/mirror",
         {

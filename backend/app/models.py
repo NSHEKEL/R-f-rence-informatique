@@ -1179,3 +1179,16 @@ class SupportRequest(Base):
 
 
 SUPPORT_CATEGORIES = ("assistance", "bug", "suggestion", "critique", "autre")
+
+
+class MobileOpApplied(Base):
+    """Phone-issued operations already applied to this database.
+
+    Guard against re-processing when the acknowledgement back to the central
+    server was lost: a duplicated op is skipped instead of double-applied.
+    """
+
+    __tablename__ = "mobile_op_applied"
+
+    remote_id = Column(String, primary_key=True)
+    applied_at = Column(DateTime, default=utcnow)

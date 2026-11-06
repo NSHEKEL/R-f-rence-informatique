@@ -396,3 +396,33 @@ class CentralSetting(Base):
 
     key = Column(String, primary_key=True)
     value = Column(Text, default="")
+
+
+class MobileOperation(Base):
+    """A write operation sent from the phone, relayed to the shop database.
+
+    The phone only ever queues the operation; the shop installation pulls it,
+    applies it to its own database with the same business rules as the desktop
+    app, then acknowledges the outcome. Nothing is ever written to a parallel
+    store: the shop database stays the single source of truth.
+    """
+
+    __tablename__ = "mobile_operations"
+    __table_args__ = (
+        UniqueConstraint("client_id", "remote_id", name="uq_mobile_op_remote"),
+    )
+
+    STATUSES = ("pending", "applied", "rejected")
+
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    installation_uid = Column(String, default="", index=True)
+    remote_id = Column(String, default="")
+    kind = Column(String, default="", index=True)
+    payload = Column(Text, default="")  # JSON
+    status = Column(String, default="pending", index=True)
+    detail = Column(Text, default="")
+    created_by_email = Column(String, default="")
+    created_by_name = Column(String, default="")
+    created_at = Column(DateTime, default=utcnow)
+    applied_at = Column(DateTime, nullable=True)

@@ -24,6 +24,7 @@ from ..models import (
     MirrorSupportRequest,
     PendingTransfer,
     MirrorUser,
+    MobileOperation,
     Plan,
 )
 from ..schemas import (
@@ -498,3 +499,57 @@ def transfer_received(
     row.received_at = utcnow()
     db.commit()
     return {"received": True}
+
+
+# ---------- Mobile write operations (phone -> relay -> shop DB) ----------
+
+
+@router.get("/mobile-ops")
+def pending_mobile_ops(
+    installation_uid: str,
+    token: str,
+    db: Session = Depends(get_db),
+):
+    """Operations the phone queued, waiting for the shop to apply them."""
+    installation = _installation(db, installation_uid, token)
+    rows = (
+        db.query(MobileOperation)
+        .filter(
+            MobileOperation.installation_uid == installation.uid,
+            MobileOperation.status == "pending",
+        )
+        .order_by(MobileOperation.created_at.asc())
+        .limit(100)
+        .all()
+    )
+    return [
+        {
+            "id": row.id,
+            "remote_id": row.remote_id,
+            "kind": row.kind,
+            "payload": json.loads(row.payload or "{}"),
+            "created_by_email": row.created_by_email,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+        }
+        for row in rows
+    ]
+
+
+@router.post("/mobile-ops/ack")
+def ack_mobile_ops(payload: dict, db: Session = Depends(get_db)):
+    """The shop reports the outcome of each operation it processed."""
+    _installation(db, payload.get("installation_uid", ""), payload.get("token", ""))
+    updated = 0
+    for result in payload.get("results") or []:
+        row = db.query(MobileOperation).get(result.get("id"))
+        if row is None:
+            continue
+        status = result.get("status")
+        if status not in MobileOperation.STATUSES[1:]:
+            continue
+        row.status = status
+        row.detail = (result.get("detail") or "")[:2000]
+        row.applied_at = utcnow()
+        updated += 1
+    db.commit()
+    return {"updated": updated}
