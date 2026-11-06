@@ -11,9 +11,11 @@ from ..schemas import NotificationOut
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 
 # Kinds produced across routers (sales, stock, cash, bank, ...). The admin
-# chooses per user which kinds each one receives (Users page); an empty
-# ``notification_kinds`` on the user means "all kinds" — the historical
-# behaviour for admins.
+# chooses per user which kinds each one receives (Users page). Only the shop
+# administrator sees everything by default; a seller, stock manager or any
+# other employee only receives the kinds explicitly granted to them — an
+# empty ``notification_kinds`` on a non-admin means *no* notification at all,
+# and the filter is enforced here, on the server, not just by hiding a menu.
 NOTIFICATION_KINDS: dict[str, str] = {
     "vente": "Ventes et commandes",
     "stock": "Stock faible ou rupture",
@@ -31,8 +33,10 @@ NOTIFICATION_KINDS: dict[str, str] = {
 
 
 def _allowed_kinds(user: User) -> list[str]:
-    if user.role == "admin" or not (user.notification_kinds or "").strip():
+    if user.role == "admin":
         return list(NOTIFICATION_KINDS)
+    if not (user.notification_kinds or "").strip():
+        return []
     return [k for k in user.notification_kinds.split(",") if k in NOTIFICATION_KINDS]
 
 
