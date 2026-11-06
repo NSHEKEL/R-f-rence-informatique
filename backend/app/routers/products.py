@@ -10,11 +10,14 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import (
     Category,
+    CompanySettings,
     PriceHistory,
     Product,
     Sale,
     SaleItem,
     StockLot,
+    StockMovement,
+    Supplier,
     User,
 )
 from ..permissions import require_permission
@@ -528,6 +531,217 @@ def create_lot(
     db.commit()
     db.refresh(lot)
     return _lot_out(lot)
+
+
+# ---------- Stock valuation dashboard & expired stock ----------
+
+
+def _expiry_thresholds(db: Session) -> tuple[int, int, int]:
+    settings = db.query(CompanySettings).first()
+    if not settings:
+        return 7, 30, 60
+    return (
+        settings.expiry_critical_days or 7,
+        settings.expiry_alert_days or 30,
+        settings.expiry_watch_days or 60,
+    )
+
+
+def _expired_map(db: Session, today) -> dict[int, int]:
+    """product_id -> quantity still sitting in expired lots."""
+    rows = (
+        db.query(StockLot.product_id, func.sum(StockLot.quantity))
+        .filter(StockLot.quantity > 0, StockLot.expiry_date < today)
+        .group_by(StockLot.product_id)
+        .all()
+    )
+    return {pid: int(qty or 0) for pid, qty in rows}
+
+
+@router.get("/stock/dashboard")
+def stock_dashboard(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission("produits")),
+):
+    """Quantitative + financial overview of the stock, computed live."""
+    today = datetime.now().date()
+    critical_days, alert_days, watch_days = _expiry_thresholds(db)
+
+    products = db.query(Product).all()
+    expired = _expired_map(db, today)
+
+    qty_total = 0
+    cost_total = 0.0
+    sale_total = 0.0
+    out_count = 0
+    low_count = 0
+    expired_qty_total = 0
+    expired_value_total = 0.0
+    usable_value = 0.0
+
+    for product in products:
+        qty = product.quantity or 0
+        expired_qty = min(expired.get(product.id, 0), qty)
+        qty_total += qty
+        cost_total += qty * (product.purchase_price or 0)
+        sale_total += qty * (product.sale_price or 0)
+        if qty <= 0:
+            out_count += 1
+        elif qty <= (product.min_stock or 0):
+            low_count += 1
+        expired_qty_total += expired_qty
+        expired_value_total += expired_qty * (product.purchase_price or 0)
+        usable_value += max(qty - expired_qty, 0) * (product.purchase_price or 0)
+
+    # Lots about to expire (not expired yet), per bucket.
+    near: dict[str, dict[str, float]] = {
+        "critical": {"quantity": 0, "value": 0.0},
+        "alert": {"quantity": 0, "value": 0.0},
+        "watch": {"quantity": 0, "value": 0.0},
+    }
+    lot_price = {p.id: p.purchase_price or 0 for p in products}
+    lots = (
+        db.query(StockLot)
+        .filter(StockLot.quantity > 0, StockLot.expiry_date.isnot(None))
+        .all()
+    )
+    for lot in lots:
+        days = (lot.expiry_date.date() - today).days
+        if days < 0:
+            continue  # counted in the expired figures
+        bucket = (
+            "critical"
+            if days <= critical_days
+            else "alert"
+            if days <= alert_days
+            else "watch"
+            if days <= watch_days
+            else None
+        )
+        if bucket:
+            near[bucket]["quantity"] += lot.quantity
+            near[bucket]["value"] += lot.quantity * lot_price.get(lot.product_id, 0)
+
+    return {
+        "quantity_total": qty_total,
+        "references": len(products),
+        "cost_value": cost_total,
+        "sale_value": sale_total,
+        "out_of_stock": out_count,
+        "low_stock": low_count,
+        "expiring": near,
+        "expired_quantity": expired_qty_total,
+        "expired_value": expired_value_total,
+        "usable_value": usable_value,
+        "loss_value": expired_value_total,
+        "thresholds": {
+            "critical": critical_days,
+            "alert": alert_days,
+            "watch": watch_days,
+        },
+    }
+
+
+@router.get("/stock/perimes")
+def expired_lots(
+    category_id: int = 0,
+    supplier_id: int = 0,
+    search: str = "",
+    date_from: str = "",
+    date_to: str = "",
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission("produits")),
+):
+    """Expired lots still on hand: the write-off candidates, with their loss."""
+    today = datetime.now().date()
+    query = (
+        db.query(StockLot)
+        .join(Product, Product.id == StockLot.product_id)
+        .filter(StockLot.quantity > 0, StockLot.expiry_date < today)
+    )
+    if category_id:
+        query = query.filter(Product.category_id == category_id)
+    if supplier_id:
+        query = query.filter(Product.supplier_id == supplier_id)
+    if date_from:
+        query = query.filter(StockLot.expiry_date >= date_from)
+    if date_to:
+        query = query.filter(StockLot.expiry_date <= date_to + " 23:59:59")
+    rows = []
+    for lot in query.order_by(StockLot.expiry_date.asc()).all():
+        product = lot.product
+        if not product:
+            continue
+        if search:
+            text = search.strip().lower()
+            haystack = f"{product.name} {product.sku} {product.barcode} {lot.lot_number}".lower()
+            if text not in haystack:
+                continue
+        unit_cost = product.purchase_price or 0
+        rows.append(
+            {
+                "lot_id": lot.id,
+                "product_id": product.id,
+                "name": product.name,
+                "sku": product.sku,
+                "barcode": product.barcode or "",
+                "category": product.category.name if product.category else "",
+                "supplier": product.supplier.name if product.supplier else "",
+                "lot_number": lot.lot_number,
+                "expiry_date": lot.expiry_date.date().isoformat(),
+                "expired_since": (today - lot.expiry_date.date()).days,
+                "quantity": lot.quantity,
+                "unit_cost": unit_cost,
+                "loss_value": lot.quantity * unit_cost,
+            }
+        )
+    return rows
+
+
+@router.post("/lots/{lot_id}/sortie")
+def write_off_lot(
+    lot_id: int,
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("stocks")),
+):
+    """Write off an expired lot: a traced stock-out, never a silent delete."""
+    lot = db.query(StockLot).get(lot_id)
+    if not lot:
+        raise HTTPException(status_code=404, detail="Lot introuvable")
+    reason = (payload.get("reason") or "").strip()
+    if not reason:
+        raise HTTPException(status_code=400, detail="Le motif est obligatoire")
+    product = db.query(Product).get(lot.product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Produit introuvable")
+    quantity = int(payload.get("quantity") or lot.quantity)
+    if quantity <= 0 or quantity > lot.quantity:
+        raise HTTPException(status_code=400, detail="Quantité invalide")
+
+    stock_before = product.quantity or 0
+    product.quantity = max(stock_before - quantity, 0)
+    lot.quantity -= quantity
+    db.add(
+        StockMovement(
+            product_id=product.id,
+            product_name=product.name,
+            kind="peremption",
+            quantity=-quantity,
+            stock_before=stock_before,
+            stock_after=product.quantity,
+            reason=f"Péremption ({reason})"
+            + (f" — lot {lot.lot_number}" if lot.lot_number else ""),
+            created_by_id=current_user.id,
+        )
+    )
+    db.commit()
+    return {
+        "status": "ok",
+        "removed": quantity,
+        "lot_remaining": lot.quantity,
+        "product_quantity": product.quantity,
+    }
 
 
 @router.delete("/lots/{lot_id}", status_code=204)

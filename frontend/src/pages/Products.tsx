@@ -18,6 +18,8 @@ import api, { formatDateTime, formatXOF } from "../api/client";
 import type { Category, Product, StockLot, Supplier } from "../types";
 import Modal from "../components/Modal";
 import ProductQrCode from "../components/ProductQrCode";
+import StockDashboard from "../components/StockDashboard";
+import Perimes from "../components/Perimes";
 import BulkDelete, { SelectBox } from "../components/BulkDelete";
 import { useSelection } from "../lib/selection";
 import { scanCode } from "../lib/scan";
@@ -89,6 +91,7 @@ export default function Products() {
   const [saving, setSaving] = useState(false);
   const [qrProduct, setQrProduct] = useState<Product | null>(null);
   const [historyProduct, setHistoryProduct] = useState<Product | null>(null);
+  const [perimesOpen, setPerimesOpen] = useState(false);
   const [historyItems, setHistoryItems] = useState<PriceChange[]>([]);
   const [lotsProduct, setLotsProduct] = useState<Product | null>(null);
   const [lots, setLots] = useState<StockLot[]>([]);
@@ -411,6 +414,8 @@ export default function Products() {
 
   return (
     <div className="space-y-5">
+      <StockDashboard onShowExpired={() => setPerimesOpen(true)} />
+      {perimesOpen && <Perimes onClose={() => setPerimesOpen(false)} />}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative sm:w-80">
           <Search
