@@ -62,6 +62,10 @@ Name: "{commonappdata}\{#AppName}"; Permissions: users-modify
 Source: "..\dist\{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "MicrosoftEdgeWebview2Setup.exe"; DestDir: "{tmp}"; \
   Flags: deleteafterinstall skipifsourcedoesntexist
+; Kept next to the exe so the launcher can repair a missing WebView2 runtime
+; by itself (poste sans Internet, installation interrompue, runtime désinstallé).
+Source: "MicrosoftEdgeWebview2Setup.exe"; DestDir: "{app}"; \
+  Flags: ignoreversion skipifsourcedoesntexist
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"
