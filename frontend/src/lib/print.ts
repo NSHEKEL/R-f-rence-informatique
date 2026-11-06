@@ -103,6 +103,20 @@ function desktopPrintTo():
   ).pywebview?.api?.print_to;
 }
 
+// The system print preview stamps the page title and its address around the
+// paper: the title is emptied for the duration of the job so the document
+// alone reaches the printer. Only the desktop bridge prints without any
+// surrounding text at all.
+let savedTitle: string | null = null;
+window.addEventListener("beforeprint", () => {
+  savedTitle = document.title;
+  document.title = "";
+});
+window.addEventListener("afterprint", () => {
+  if (savedTitle !== null) document.title = savedTitle;
+  savedTitle = null;
+});
+
 function pageRule(format: ReceiptFormat, marginMm: number): string {
   if (format === "80mm" || format === "58mm") {
     // Thermal roll: `auto` is invalid next to a length, so the exact ticket
@@ -159,7 +173,7 @@ export interface PrintOptions {
  * queue — no preview, no Windows dialog.
  */
 export function printDocument(
-  title: string,
+  _title: string,
   style: string,
   bodyHtml: string,
   options?: PrintOptions
@@ -170,7 +184,7 @@ export function printDocument(
     frame.style.cssText =
       "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden";
     frame.srcdoc =
-      `<html><head><title>${title}</title><style>${style}</style></head>` +
+      `<html><head><title></title><style>${style}</style></head>` +
       `<body>${bodyHtml}</body></html>`;
     frame.onload = () => {
       const view = frame.contentWindow;
@@ -185,8 +199,59 @@ export function printDocument(
   };
 
   const bridge = desktopPrintTo();
+
+  // Preview mode inside the desktop window: the native dialog would stamp the
+  // page address and title on the paper, so the sheet is shown in an in-app
+  // lightbox and the job itself still goes through the silent bridge.
+  const appPreview = (printer?: string) => {
+    const overlay = document.createElement("div");
+    overlay.style.cssText =
+      "position:fixed;inset:0;z-index:2147483000;" +
+      "background:rgba(15,23,42,.55);display:flex;flex-direction:column;" +
+      "align-items:center;gap:10px;padding:24px;";
+    const bar = document.createElement("div");
+    bar.style.cssText = "display:flex;gap:10px;";
+    const base =
+      "border:0;border-radius:8px;padding:8px 20px;font:600 14px " +
+      "Arial,Helvetica,sans-serif;cursor:pointer;";
+    const send = document.createElement("button");
+    send.textContent = "Imprimer";
+    send.style.cssText = base + "background:#1e3a8a;color:#fff;";
+    const close = document.createElement("button");
+    close.textContent = "Fermer";
+    close.style.cssText = base + "background:#fff;color:#0f172a;";
+    const frame = document.createElement("iframe");
+    frame.style.cssText =
+      "width:min(210mm,92vw);flex:1;background:#fff;border:0;" +
+      "border-radius:6px;box-shadow:0 12px 40px rgba(0,0,0,.4);";
+    frame.srcdoc =
+      `<html><head><title></title><style>${style}</style></head>` +
+      `<body>${bodyHtml}</body></html>`;
+    const finish = () => overlay.remove();
+    send.onclick = () => {
+      const root = document.createElement("div");
+      root.id = PRINT_ROOT_ID;
+      root.innerHTML = `<style>${style}</style>${bodyHtml}`;
+      document.body.appendChild(root);
+      (bridge as NonNullable<typeof bridge>)(
+        210,
+        297,
+        0,
+        printer?.trim() ?? ""
+      ).finally(() => {
+        root.remove();
+        finish();
+      });
+    };
+    close.onclick = finish;
+    bar.append(send, close);
+    overlay.append(bar, frame);
+    document.body.appendChild(overlay);
+  };
+
   if (options?.direct === false || !bridge) {
-    preview();
+    if (bridge) appPreview(options?.printerName);
+    else preview();
     return;
   }
   // The print stylesheet shows only body > #receipt-print-root: the sheet is
