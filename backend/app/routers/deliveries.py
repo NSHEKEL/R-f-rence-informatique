@@ -26,6 +26,7 @@ from ..models import (
     User,
 )
 from ..permissions import require_permission
+from .cash import current_session
 from ..receivables import open_order_receivable, settle_order_receivable
 from ..schemas import (
     DeliveryNoteCreate,
@@ -221,6 +222,15 @@ def validate_note(
     if delivery.status == "Annulé":
         raise HTTPException(status_code=400, detail="Bon annulé")
 
+    # Same rule as the till: a delivery that books a sale needs an open till.
+    session = current_session(db, current_user)
+    if session is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Votre caisse est fermée. Veuillez ouvrir une session de "
+            "caisse avant d'effectuer une vente.",
+        )
+
     order = delivery.order
     sale = Sale(
         reference=next_reference(
@@ -232,6 +242,7 @@ def validate_note(
         note=f"Livraison {delivery.reference}",
         price_mode=order.price_mode if order else "detail",
         created_by_id=current_user.id,
+        cash_session_id=session.id,
         total=sum(line.subtotal for line in delivery.items),
     )
     for line in delivery.items:

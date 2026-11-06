@@ -12,6 +12,7 @@ import logo from "../assets/logo-easygest.png";
 import api, {
   getServerUrl,
   normalizeServerUrl,
+  probeServer,
   setServerUrl,
 } from "../api/client";
 import Modal from "../components/Modal";
@@ -109,13 +110,19 @@ export default function Login() {
     const base = normalizeServerUrl(serverInput);
     setServerOk(false);
     setServerStatus("Test en cours...");
-    try {
-      const res = await axios.get<{ app: string }>(`${base}/api/health`, {
-        timeout: 5000,
-      });
+    const probe = await probeServer(base);
+    if (probe.kind === "shop") {
       setServerOk(true);
-      setServerStatus(`Connecté à ${res.data.app} (${base || "ce poste"})`);
-    } catch {
+      setServerStatus(`Connecté à ${probe.app} (${base || "ce poste"})`);
+    } else if (probe.kind === "central") {
+      // Pointing the shop app at the hosted console makes every call fail
+      // (HTTP 405); it is a frequent mix-up, so spell it out.
+      setServerStatus(
+        "Cette adresse est le serveur central EasyGest (console d'administration), " +
+          "pas le serveur de la boutique. Indiquez l'adresse du poste serveur " +
+          "(ex. http://192.168.1.20:8000)."
+      );
+    } else {
       setServerStatus(
         `Aucune réponse de ${base || "ce poste"} — vérifiez que ` +
           "l'application est lancée sur le serveur et que le pare-feu " +

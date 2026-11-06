@@ -37,6 +37,30 @@ export function getServerUrl(): string {
 /** Kept for call sites that only display the configured address. */
 export const API_BASE = getServerUrl();
 
+/**
+ * Identify what answers at an address the user typed as "server": a shop
+ * backend (EasyGest server poste), the hosted central console — a common
+ * mix-up that makes every call fail with HTTP 405 — or nothing at all.
+ */
+export async function probeServer(
+  base: string
+): Promise<{ kind: "shop"; app: string } | { kind: "central" } | { kind: "down" }> {
+  try {
+    const res = await axios.get<{ app: string }>(`${base}/api/health`, {
+      timeout: 5000,
+    });
+    return { kind: "shop", app: res.data.app || "EasyGest" };
+  } catch {
+    // not a shop server — maybe the hosted central console?
+  }
+  try {
+    await axios.get(`${base}/api/central/health`, { timeout: 5000 });
+    return { kind: "central" };
+  } catch {
+    return { kind: "down" };
+  }
+}
+
 export function setServerUrl(url: string): void {
   const clean = normalizeServerUrl(url);
   if (clean) localStorage.setItem(SERVER_URL_KEY, clean);

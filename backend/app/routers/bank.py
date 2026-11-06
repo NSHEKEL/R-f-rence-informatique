@@ -135,7 +135,7 @@ def list_deposits(
 def create_deposit(
     payload: BankDepositIn,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permission("caisse")),
+    current_user: User = Depends(require_permission("versements_gerer")),
 ):
     """Record a cash deposit from a till to a bank account.
 
@@ -202,7 +202,7 @@ def decide_deposit(
     deposit_id: int,
     payload: BankDepositDecision,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_permission("versements_valider")),
 ):
     """Validation par un responsable: en attente -> validé / rejeté ; un
     versement validé ne peut plus qu'être annulé (tracé)."""
@@ -251,7 +251,7 @@ def reconcile_deposit(
     deposit_id: int,
     payload: BankDepositReconcile,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_permission("versements_valider")),
 ):
     """Manual reconciliation against the bank statement."""
     deposit = _deposit_or_404(db, deposit_id)

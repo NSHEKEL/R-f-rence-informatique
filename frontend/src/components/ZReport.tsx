@@ -4,6 +4,9 @@ import type { CompanySettings, ReceiptFormat } from "../types";
 export interface ZReportData {
   session_id: number;
   company: string;
+  company_address?: string;
+  company_phone?: string;
+  company_logo?: string;
   cashier: string;
   opened_at: string | null;
   closed_at: string | null;
@@ -15,6 +18,12 @@ export interface ZReportData {
   cancelled_count: number;
   gift_total: number;
   payments: Record<string, number>;
+  refunds_total?: number;
+  refunds?: { reference: string; sale_reference: string; total: number }[];
+  advances_total?: number;
+  advances?: { reference: string; customer: string; amount: number }[];
+  settlements_total?: number;
+  settlements?: Record<string, number>;
   expenses_total: number;
   expenses: { label: string; category: string; amount: number }[];
   deposits_total: number;
@@ -60,7 +69,24 @@ export default function ZReport({
   return (
     <div id="receipt-print-root" className={`receipt receipt-${format}`}>
       <div className="text-center">
+        {(company?.logo || report.company_logo) && (
+          <img
+            src={company?.logo || report.company_logo}
+            alt=""
+            className="mx-auto mb-1 max-h-14 object-contain"
+          />
+        )}
         <p className="text-sm font-bold">{company?.name || report.company}</p>
+        {(company?.address || report.company_address) && (
+          <p className="text-[10px]">
+            {company?.address || report.company_address}
+          </p>
+        )}
+        {(company?.phone || report.company_phone) && (
+          <p className="text-[10px]">
+            {company?.phone || report.company_phone}
+          </p>
+        )}
         <p className="text-xs font-bold">ÉTAT Z DE CAISSE</p>
         <p className="text-[10px]">Session #{report.session_id}</p>
       </div>
@@ -88,6 +114,58 @@ export default function ZReport({
         <Row key={method} label={method} value={formatXOF(amount)} />
       ))}
       {methods.length === 0 && <Row label="Aucun encaissement" value="—" />}
+      {(report.refunds?.length ?? 0) > 0 && (
+        <>
+          <hr className="my-2 border-dashed" />
+          <p className="text-[10px] font-bold uppercase">
+            Remboursements / retours
+          </p>
+          {report.refunds!.map((r) => (
+            <Row
+              key={r.reference}
+              label={`${r.reference} (${r.sale_reference})`}
+              value={formatXOF(r.total)}
+            />
+          ))}
+          <Row
+            label="Total remboursements"
+            value={formatXOF(report.refunds_total ?? 0)}
+          />
+        </>
+      )}
+      {(report.advances?.length ?? 0) > 0 && (
+        <>
+          <hr className="my-2 border-dashed" />
+          <p className="text-[10px] font-bold uppercase">Acomptes reçus</p>
+          {report.advances!.map((a) => (
+            <Row
+              key={a.reference}
+              label={`${a.reference} — ${a.customer}`}
+              value={formatXOF(a.amount)}
+            />
+          ))}
+          <Row
+            label="Total acomptes"
+            value={formatXOF(report.advances_total ?? 0)}
+          />
+        </>
+      )}
+      {report.settlements &&
+        Object.keys(report.settlements).length > 0 && (
+          <>
+            <hr className="my-2 border-dashed" />
+            <p className="text-[10px] font-bold uppercase">
+              Règlements de créances
+            </p>
+            {Object.entries(report.settlements).map(([method, amount]) => (
+              <Row key={method} label={method} value={formatXOF(amount)} />
+            ))}
+            <Row
+              label="Total règlements"
+              value={formatXOF(report.settlements_total ?? 0)}
+            />
+          </>
+        )}
       {report.expenses.length > 0 && (
         <>
           <hr className="my-2 border-dashed" />

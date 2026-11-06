@@ -70,7 +70,8 @@ const emptyDeposit = {
 
 /** Versements bancaires: transfert interne caisse → banque, jamais du CA. */
 export default function Banque() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, can } = useAuth();
+  const canValidate = isAdmin || can("versements_valider");
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [deposits, setDeposits] = useState<Deposit[]>([]);
   const [status, setStatus] = useState("");
@@ -292,7 +293,7 @@ export default function Banque() {
                     )}
                   </td>
                   <td className="whitespace-nowrap text-right">
-                    {isAdmin && d.status === "en attente" && (
+                    {canValidate && d.status === "en attente" && (
                       <>
                         <button
                           title="Valider"
@@ -310,7 +311,7 @@ export default function Banque() {
                         </button>
                       </>
                     )}
-                    {isAdmin && d.status === "validé" && (
+                    {canValidate && d.status === "validé" && (
                       <>
                         {!d.reconciled && (
                           <button

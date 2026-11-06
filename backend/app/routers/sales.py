@@ -133,7 +133,8 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
     if session is None:
         raise HTTPException(
             status_code=400,
-            detail="Ouvrez votre caisse avant d'enregistrer une vente",
+            detail="Votre caisse est fermée. Veuillez ouvrir une session de "
+            "caisse avant d'effectuer une vente.",
         )
     sale = Sale(
         reference=_generate_reference(db),
