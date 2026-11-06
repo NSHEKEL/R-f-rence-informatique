@@ -99,8 +99,6 @@ DEFAULTS: dict[str, set[str]] = {
         "caisse_fermer",
         "caisse_z",
         "vente_nouvelle",
-        "versements_gerer",
-        "depenses_gerer",
         "assistance",
     },
     "gestionnaire": {

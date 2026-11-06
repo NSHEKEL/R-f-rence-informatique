@@ -12,7 +12,7 @@ from ..models import (
     Notification,
     User,
 )
-from ..permissions import require_permission
+from ..permissions import has_permission, require_permission
 from ..schemas import (
     BankAccountIn,
     BankAccountOut,
@@ -24,6 +24,22 @@ from ..schemas import (
 from .cash import current_session
 
 router = APIRouter(prefix="/api/bank", tags=["bank"])
+
+
+def require_versements_reader(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """Treasury screens are for the roles explicitly allowed to read them:
+    a plain `get_current_user` would let any seller list the accounts."""
+    if not (
+        has_permission(db, current_user, "versements_gerer")
+        or has_permission(db, current_user, "versements_valider")
+    ):
+        raise HTTPException(
+            status_code=403, detail="Accès refusé : trésorerie"
+        )
+    return current_user
 
 FINAL_STATUSES = {"rejeté", "annulé"}
 
@@ -66,7 +82,7 @@ def _deposit_out(row: BankDeposit) -> BankDepositOut:
 @router.get("/accounts", response_model=list[BankAccountOut])
 def list_accounts(
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_versements_reader),
 ):
     accounts = (
         db.query(BankAccount).order_by(BankAccount.bank_name).all()
@@ -118,7 +134,7 @@ def list_deposits(
     reconciled: str = "",
     limit: int = 200,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_versements_reader),
 ):
     query = db.query(BankDeposit)
     if account_id:

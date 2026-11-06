@@ -580,11 +580,22 @@ export interface CashSession {
   note: string;
 }
 
+export interface CashSessionSaleLine {
+  id: number;
+  reference: string;
+  total: number;
+  paid_amount: number;
+  payment_method: string;
+  status: string;
+  date?: string | null;
+}
+
 export interface CashSessionDetail extends CashSession {
   cash_sales: number;
   other_sales: number;
   sales_count: number;
   expected_cash: number;
+  sales?: CashSessionSaleLine[];
 }
 
 export interface Expense {

@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { formatXOF } from "../api/client";
 import type { CompanySettings, ReceiptFormat } from "../types";
 
@@ -65,9 +66,9 @@ export default function ZReport({
   company: CompanySettings | null;
   format: ReceiptFormat;
 }) {
-  const methods = Object.entries(report.payments);
-  return (
-    <div id="receipt-print-root" className={`receipt receipt-${format}`}>
+  const methods = Object.entries(report.payments ?? {});
+  const body = (
+    <div className={`receipt receipt-${format}`}>
       <div className="text-center">
         {(company?.logo || report.company_logo) && (
           <img
@@ -215,5 +216,20 @@ export default function ZReport({
         Généré le {dt(report.generated_at)} — EasyGest
       </p>
     </div>
+  );
+  // Same double render as Receipt: a preview inside the modal, and a
+  // print-only copy portaled to <body> — the print stylesheet only keeps
+  // #receipt-print-root among body's children, so a copy left inside the
+  // modal printed a blank page.
+  return (
+    <>
+      {body}
+      {createPortal(
+        <div id="receipt-print-root" className={`receipt receipt-${format}`}>
+          {body.props.children}
+        </div>,
+        document.body
+      )}
+    </>
   );
 }

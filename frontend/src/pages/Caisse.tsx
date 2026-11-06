@@ -277,6 +277,55 @@ export default function Caisse() {
             ))}
           </div>
 
+          <div className="mt-4">
+            <h3 className="mb-2 text-sm font-bold text-slate-900">
+              Ventes de la session
+            </h3>
+            {(today.sales ?? []).length === 0 ? (
+              <p className="text-xs text-slate-400">
+                Aucune vente enregistrée dans cette session.
+              </p>
+            ) : (
+              <div className="max-h-64 overflow-y-auto rounded-xl border border-slate-100">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-white">
+                    <tr className="text-left text-xs uppercase text-slate-400">
+                      <th className="py-2 pl-3">Réf.</th>
+                      <th>Heure</th>
+                      <th>Paiement</th>
+                      <th className="text-right">Total</th>
+                      <th className="pr-3 text-right">Encaissé</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(today.sales ?? []).map((s) => (
+                      <tr key={s.id} className="border-t border-slate-100">
+                        <td className="py-2 pl-3 font-medium text-slate-700">
+                          {s.reference}
+                        </td>
+                        <td className="text-slate-500">
+                          {s.date
+                            ? new Date(s.date).toLocaleTimeString("fr-FR", {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
+                            : "—"}
+                        </td>
+                        <td className="text-slate-500">{s.payment_method}</td>
+                        <td className="text-right font-semibold text-slate-800">
+                          {formatXOF(s.total)}
+                        </td>
+                        <td className="pr-3 text-right text-emerald-700">
+                          {formatXOF(s.paid_amount)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
           {closed && (
             <p
               className={`rounded-xl px-4 py-3 text-sm font-semibold ${
