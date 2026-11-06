@@ -4,15 +4,22 @@ Bump APP_VERSION and tag the repository with the same value ("vX.Y.Z"): the
 update checker compares the tag of the latest GitHub release with this number.
 """
 
+import struct
+
 APP_NAME = "EasyGest"
 APP_VERSION = "2.17.22"
 
 # Repository publishing the Windows releases consumed by the update checker.
 UPDATE_REPO = "NSHEKEL/R-f-rence-informatique"
-# Portable executable replaced in place by the built-in updater.
-UPDATE_ASSET = "EasyGest.exe"
+# Portable executable replaced in place by the built-in updater. The 32-bit
+# build is published under distinct asset names so the updater of an x86
+# machine never downloads the 64-bit binary it cannot run.
+_IS_32BIT = struct.calcsize("P") * 8 == 32
+UPDATE_ASSET = "EasyGest_x86.exe" if _IS_32BIT else "EasyGest.exe"
 # Installer downloaded when the app was installed with EasyGest_Setup.exe.
-UPDATE_INSTALLER_ASSET = "EasyGest_Setup.exe"
+UPDATE_INSTALLER_ASSET = (
+    "EasyGest_Setup_x86.exe" if _IS_32BIT else "EasyGest_Setup.exe"
+)
 
 
 def parse(version: str) -> tuple[int, ...]:
