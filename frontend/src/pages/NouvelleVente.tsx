@@ -243,6 +243,8 @@ export default function NouvelleVente() {
   const [cartCollapsed, setCartCollapsed] = useState(false);
   const [validMenu, setValidMenu] = useState(false);
   const discountRef = useRef<HTMLInputElement>(null);
+  const paidRef = useRef<HTMLInputElement>(null);
+  const validateRef = useRef<HTMLButtonElement>(null);
 
   const [newCustomer, setNewCustomer] = useState(false);
   const [customerForm, setCustomerForm] = useState({
@@ -404,6 +406,21 @@ export default function NouvelleVente() {
       );
     });
   }, []);
+
+  /**
+   * Enter moves the cashier forward: each field hands the focus to the next
+   * step of the ticket, so a full sale is typed and confirmed from the
+   * keyboard only — the last Enter presses the « Valider la vente » button,
+   * which runs the same guarded checkout as a click.
+   */
+  function nextOnEnter(target: { current: HTMLElement | null }) {
+    return (e: React.KeyboardEvent) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        target.current?.focus();
+      }
+    };
+  }
 
   /** Enter validates the search: exact code first (scanner), else best match. */
   function submitSearch() {
@@ -570,6 +587,9 @@ export default function NouvelleVente() {
   }
 
   async function checkout() {
+    // A double Enter (or a scanner that sends two returns) must never open
+    // two sales: while one encaissement is running, the next press is ignored.
+    if (saving) return;
     if (cart.length === 0) {
       setError("Le panier est vide.");
       return;
@@ -1126,6 +1146,7 @@ export default function NouvelleVente() {
                             onChange={(e) =>
                               setLinePrice(l.product.id, e.target.value)
                             }
+                            onKeyDown={nextOnEnter(paidRef)}
                             title="Prix de vente pour cette ligne"
                             aria-label={`Prix de ${l.product.name}`}
                           />
@@ -1144,6 +1165,7 @@ export default function NouvelleVente() {
                             onChange={(e) =>
                               setLineDiscount(l.product.id, e.target.value)
                             }
+                            onKeyDown={nextOnEnter(paidRef)}
                             title="Remise pour cette ligne"
                             aria-label={`Remise de ${l.product.name}`}
                           />
@@ -1170,6 +1192,7 @@ export default function NouvelleVente() {
                                 Number(e.target.value) || 0
                               )
                             }
+                            onKeyDown={nextOnEnter(paidRef)}
                             aria-label={`Quantité de ${l.product.name}`}
                           />
                           <button
@@ -1288,6 +1311,7 @@ export default function NouvelleVente() {
                               ),
                             }))
                           }
+                          onKeyDown={nextOnEnter(validateRef)}
                           placeholder="0"
                         />
                       </div>
@@ -1330,6 +1354,7 @@ export default function NouvelleVente() {
                       min={0}
                       max={discountPercent ? 100 : undefined}
                       step={discountPercent ? 0.5 : 1}
+                      onKeyDown={nextOnEnter(paidRef)}
                       value={
                         discountPercent
                           ? (subtotal > 0
@@ -1369,6 +1394,7 @@ export default function NouvelleVente() {
               <div>
                 <label className="label">Montant reçu</label>
                 <input
+                  ref={paidRef}
                   className="input"
                   type="number"
                   min={0}
@@ -1377,6 +1403,7 @@ export default function NouvelleVente() {
                   onChange={(e) =>
                     setPaidAmount(Math.max(Number(e.target.value) || 0, 0))
                   }
+                  onKeyDown={nextOnEnter(validateRef)}
                   placeholder="0"
                 />
               </div>
@@ -1387,6 +1414,7 @@ export default function NouvelleVente() {
                   placeholder="Facultatif"
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
+                  onKeyDown={nextOnEnter(validateRef)}
                 />
               </div>
               <div>
@@ -1442,9 +1470,11 @@ export default function NouvelleVente() {
               </div>
             </div>
             <button
+              ref={validateRef}
               className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-600 py-2 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
               onClick={checkout}
               disabled={saving || cart.length === 0}
+              title="Valider la vente (Entrée)"
             >
               <ReceiptText size={18} />
               {saving

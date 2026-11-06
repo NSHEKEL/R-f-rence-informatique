@@ -30,7 +30,8 @@ class User(Base):
     photo = Column(Text, default="")  # data URL, optional
     is_active = Column(Boolean, default=True, nullable=False)
     # Comma-separated notification kinds the admin lets this user receive;
-    # empty means "all" (admins are always subscribed to everything).
+    # empty means "none" for a non-admin (admins are always subscribed to
+    # everything).
     notification_kinds = Column(String, default="")
     created_at = Column(DateTime, default=utcnow)
 
