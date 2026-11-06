@@ -27,15 +27,32 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-import uvicorn
+# app.paths is light: import it before the heavy modules so the boot markers
+# can be written even when one of them fails (a crash there used to leave no
+# log at all, which made the frozen selftest undebuggable).
+from app.paths import data_dir
+
+
+def _boot(message: str) -> None:
+    try:
+        with open(data_dir() / "easygest.log", "a", encoding="utf-8") as log:
+            log.write(f"{time.strftime('%H:%M:%S')} BOOT {message}\n")
+    except OSError:
+        pass
+
+
+_boot("demarrage")
+import uvicorn  # noqa: E402
 
 # Importing the database module reads the .env of the data directory, so the
 # settings below already see EASYGEST_HOST/EASYGEST_PORT when they are set
 # there rather than in the system environment.
-import app.database  # noqa: F401
-from app import escpos
-from app.paths import data_dir
-from app.version import APP_NAME, APP_VERSION
+_boot("uvicorn")
+import app.database  # noqa: E402,F401
+from app import escpos  # noqa: E402
+from app.version import APP_NAME, APP_VERSION  # noqa: E402
+
+_boot("imports ok")
 
 DEFAULT_PORT = int(os.getenv("EASYGEST_PORT", "8000"))
 HOST = os.getenv("EASYGEST_HOST", "0.0.0.0").strip() or "0.0.0.0"
@@ -340,9 +357,13 @@ def _selftest(url: str) -> None:
             except Exception as exc:  # noqa: BLE001
                 problems.append(f"fenêtre native indisponible : {exc!r}")
     if problems:
-        print("SELFTEST KO : " + " ; ".join(problems))
-        raise SystemExit(1)
-    print(f"SELFTEST OK — {APP_NAME} {APP_VERSION}")
+        print("SELFTEST KO : " + " ; ".join(problems), flush=True)
+        # Hard exit: a clean interpreter shutdown can hang in a frozen build
+        # (non-daemon threads left by a dependency), which made the CI check
+        # wait forever even though the verdict was already known.
+        os._exit(1)
+    print(f"SELFTEST OK — {APP_NAME} {APP_VERSION}", flush=True)
+    os._exit(0)
 
 
 def _auto_update() -> None:
