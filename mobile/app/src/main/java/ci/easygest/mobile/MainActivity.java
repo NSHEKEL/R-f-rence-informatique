@@ -65,6 +65,9 @@ public class MainActivity extends AppCompatActivity {
 
         forgetCacheOfPreviousVersion();
 
+        // window.EasyGestAndroid.notify(title, body) -> real Android notification.
+        webView.addJavascriptInterface(new PushBridge(this), "EasyGestAndroid");
+
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageFinished(WebView view, String url) {
@@ -115,6 +118,14 @@ public class MainActivity extends AppCompatActivity {
                 != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this,
                     new String[]{Manifest.permission.CAMERA}, 1);
+        }
+        // Android 13+ asks before the app may raise notifications.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                && ContextCompat.checkSelfPermission(this,
+                        Manifest.permission.POST_NOTIFICATIONS)
+                        != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.POST_NOTIFICATIONS}, 2);
         }
 
         Button options = findViewById(R.id.options);

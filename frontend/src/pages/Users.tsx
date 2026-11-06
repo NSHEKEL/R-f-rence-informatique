@@ -30,6 +30,7 @@ const empty = {
   password: "",
   role: "vendeur",
   photo: "",
+  notification_kinds: [] as string[],
 };
 
 export default function Users() {
@@ -39,6 +40,7 @@ export default function Users() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<User | null>(null);
   const [form, setForm] = useState({ ...empty });
+  const [kinds, setKinds] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -49,6 +51,10 @@ export default function Users() {
 
   useEffect(() => {
     load();
+    api
+      .get<Record<string, string>>("/notifications/kinds")
+      .then((res) => setKinds(res.data))
+      .catch(() => undefined);
   }, []);
 
   const filtered = useMemo(() => {
@@ -74,6 +80,10 @@ export default function Users() {
       password: "",
       role: u.role,
       photo: u.photo ?? "",
+      // Empty stored value = every kind allowed.
+      notification_kinds: u.notification_kinds
+        ? u.notification_kinds.split(",").filter((k) => k !== "aucun")
+        : Object.keys(kinds),
     });
     setError("");
     setOpen(true);
@@ -97,6 +107,13 @@ export default function Users() {
           email: form.email,
           role: form.role,
           photo: form.photo,
+          // "" = all kinds ; ["aucun"] survives the kind filter => none.
+          notification_kinds:
+            form.notification_kinds.length === Object.keys(kinds).length
+              ? []
+              : form.notification_kinds.length === 0
+                ? ["aucun"]
+                : form.notification_kinds,
         };
         if (form.password) payload.password = form.password;
         await api.put(`/users/${editing.id}`, payload);
@@ -363,6 +380,39 @@ export default function Users() {
             onChange={(photo) => setForm({ ...form, photo })}
             onError={setError}
           />
+          {form.role !== "admin" && Object.keys(kinds).length > 0 && (
+            <div>
+              <label className="label">Notifications reçues</label>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 rounded-xl border border-slate-200 p-3">
+                {Object.entries(kinds).map(([kind, label]) => (
+                  <label
+                    key={kind}
+                    className="flex items-center gap-2 text-sm text-slate-700"
+                  >
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4"
+                      checked={form.notification_kinds.includes(kind)}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          notification_kinds: e.target.checked
+                            ? [...form.notification_kinds, kind]
+                            : form.notification_kinds.filter(
+                                (k) => k !== kind
+                              ),
+                        })
+                      }
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+              <p className="mt-1 text-xs text-slate-400">
+                Les administrateurs reçoivent toutes les notifications.
+              </p>
+            </div>
+          )}
         </div>
       </Modal>
     </div>

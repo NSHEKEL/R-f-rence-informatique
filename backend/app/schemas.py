@@ -23,6 +23,7 @@ class UserOut(BaseModel):
     role: str
     photo: str = ""
     is_active: bool = True
+    notification_kinds: str = ""
 
 
 class UserCreate(BaseModel):
@@ -40,6 +41,7 @@ class UserUpdate(BaseModel):
     role: Optional[str] = None
     photo: Optional[str] = None
     is_active: Optional[bool] = None
+    notification_kinds: Optional[list[str]] = None
 
 
 class UserPhoto(BaseModel):

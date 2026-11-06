@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Bell, CheckCheck, Package, ShoppingCart, Wallet } from "lucide-react";
+import { Bell, CheckCheck, ClipboardList, Landmark, Package, ShoppingCart, Truck, Undo2, Wallet } from "lucide-react";
 import api, { formatDateTime } from "../api/client";
 import type { Notification } from "../types";
 
@@ -10,6 +10,12 @@ const icons: Record<string, typeof Bell> = {
   vente: ShoppingCart,
   stock: Package,
   caisse: Wallet,
+  banque: Landmark,
+  livraison: Truck,
+  approvisionnement: Truck,
+  retour: Undo2,
+  inventaire: ClipboardList,
+  creance: Wallet,
 };
 
 function timeAgo(iso: string): string {
@@ -37,20 +43,54 @@ export default function NotificationBell() {
   const navigate = useNavigate();
   const boxRef = useRef<HTMLDivElement>(null);
 
+  const seenIds = useRef<Set<number>>(new Set());
+  const firstLoad = useRef(true);
+
+  // Native push for a fresh notification: Android bridge when running inside
+  // the APK WebView, else the Web Notifications API (WebView2 raises a real
+  // Windows toast).
+  const pushNative = useCallback((item: Notification) => {
+    const android = (
+      window as unknown as {
+        EasyGestAndroid?: { notify: (title: string, body: string) => void };
+      }
+    ).EasyGestAndroid;
+    if (android?.notify) {
+      android.notify(item.title, item.message || "");
+      return;
+    }
+    if ("Notification" in window) {
+      if (window.Notification.permission === "granted") {
+        new window.Notification(item.title, { body: item.message || "" });
+      } else if (window.Notification.permission === "default") {
+        window.Notification.requestPermission();
+      }
+    }
+  }, []);
+
   const refresh = useCallback(async () => {
     try {
       const [list, count] = await Promise.all([
         api.get<Notification[]>("/notifications", { params: { limit: 20 } }),
         api.get<{ count: number }>("/notifications/unread-count"),
       ]);
+      const fresh = list.data.filter(
+        (n) => !n.is_read && !seenIds.current.has(n.id)
+      );
+      if (!firstLoad.current) fresh.forEach(pushNative);
+      list.data.forEach((n) => seenIds.current.add(n.id));
+      firstLoad.current = false;
       setItems(list.data);
       setUnread(count.data.count);
     } catch {
       /* silently ignore polling errors (offline, session expired) */
     }
-  }, []);
+  }, [pushNative]);
 
   useEffect(() => {
+    if ("Notification" in window && window.Notification.permission === "default") {
+      window.Notification.requestPermission();
+    }
     refresh();
     const id = window.setInterval(refresh, POLL_MS);
     return () => window.clearInterval(id);

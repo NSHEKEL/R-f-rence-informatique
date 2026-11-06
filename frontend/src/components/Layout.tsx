@@ -709,7 +709,7 @@ export default function Layout() {
               {theme === "dark" ? <Sun size={20} /> : <Moon size={20} />}
             </button>
             {isAdmin && <UndoRedo />}
-            {isAdmin && <NotificationBell />}
+            <NotificationBell />
             <button
               onClick={() => void switchFullscreen()}
               className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"
