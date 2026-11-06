@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from . import licensing
 from .database import SessionLocal
-from .models import CompanySettings, Sale, SaleReturn, SupportRequest, User
+from .models import CompanySettings, Expense, Sale, SaleReturn, SupportRequest, User
 
 # Window of sales kept on the central server for the phone.
 MIRROR_DAYS = 120
@@ -106,6 +106,31 @@ def _returns(db: Session) -> list[dict]:
     return copies
 
 
+def _expenses(db: Session) -> list[dict]:
+    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(
+        days=MIRROR_DAYS
+    )
+    rows = (
+        db.query(Expense)
+        .filter(Expense.date >= since)
+        .order_by(Expense.date.desc())
+        .limit(MIRROR_LIMIT)
+        .all()
+    )
+    return [
+        {
+            "remote_id": row.id,
+            "date": row.date.isoformat() if row.date else None,
+            "label": row.label or "",
+            "category": row.category or "",
+            "amount": row.amount or 0,
+            "seller": row.created_by.name if row.created_by else "",
+            "seller_email": row.created_by.email if row.created_by else "",
+        }
+        for row in rows
+    ]
+
+
 def _users(db: Session) -> list[dict]:
     return [
         {
@@ -154,6 +179,7 @@ def push(db: Session) -> dict:
             "users": _users(db),
             "sales": _sales(db),
             "returns": _returns(db),
+            "expenses": _expenses(db),
             "support_requests": _support_requests(db),
             # Magasin identity, so the console can name each installation.
             "shop_name": (company.name if company else "") or "",

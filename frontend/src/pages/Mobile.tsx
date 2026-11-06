@@ -96,6 +96,17 @@ interface Accounting {
   period_count: number;
 }
 
+interface Expenses {
+  items: {
+    date: string | null;
+    label: string;
+    category: string;
+    amount: number;
+    seller: string;
+  }[];
+  total: number;
+}
+
 interface About {
   company: string;
   manager: string;
@@ -181,6 +192,8 @@ export default function Mobile() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [accounting, setAccounting] = useState<Accounting | null>(null);
+  const [expenses, setExpenses] = useState<Expenses | null>(null);
+  const [accDays, setAccDays] = useState(7);
   const [about, setAbout] = useState<About | null>(null);
   const [update, setUpdate] = useState<MobileUpdate | null>(null);
   const [search, setSearch] = useState("");
@@ -266,9 +279,19 @@ export default function Mobile() {
     }
     if (tab === "comptabilite") {
       api
-        .get<Accounting>("/accounting", { headers })
+        .get<Accounting>("/accounting", {
+          headers,
+          params: { days: accDays },
+        })
         .then((res) => setAccounting(res.data))
         .catch(() => setAccounting(null));
+      api
+        .get<Expenses>("/expenses", {
+          headers,
+          params: { days: accDays },
+        })
+        .then((res) => setExpenses(res.data))
+        .catch(() => setExpenses(null));
     }
     if (tab === "ventes") {
       api
@@ -288,7 +311,7 @@ export default function Mobile() {
         .then((res) => setUpdate(res.data))
         .catch(() => setUpdate(null));
     }
-  }, [tab, session, sales.length]);
+  }, [tab, session, sales.length, accDays]);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -802,10 +825,25 @@ export default function Mobile() {
 
         {tab === "comptabilite" && (
           <div className="space-y-3">
+            <div className="flex rounded-xl bg-white p-1 text-sm shadow-sm dark:bg-slate-900">
+              {[7, 30].map((span) => (
+                <button
+                  key={span}
+                  onClick={() => setAccDays(span)}
+                  className={`flex-1 rounded-lg py-2 ${
+                    accDays === span
+                      ? "bg-brand-600 font-medium text-white"
+                      : "text-slate-500 dark:text-slate-400"
+                  }`}
+                >
+                  {span === 7 ? "7 derniers jours" : "30 derniers jours"}
+                </button>
+              ))}
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-xl bg-white p-3 shadow-sm dark:bg-slate-900">
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  7 derniers jours
+                  Ventes de la période
                 </p>
                 <p className="text-lg font-semibold">
                   {money(accounting?.period_total || 0)}
@@ -879,6 +917,33 @@ export default function Mobile() {
               ) : (
                 <p className="text-sm text-slate-500 dark:text-slate-400">
                   Aucun article vendu.
+                </p>
+              )}
+            </section>
+            <section className="rounded-xl bg-white p-3 shadow-sm dark:bg-slate-900">
+              <div className="mb-2 flex items-center justify-between">
+                <h2 className="text-sm font-semibold">Dépenses</h2>
+                {expenses && (
+                  <span className="text-sm font-semibold text-red-600 dark:text-red-300">
+                    −{money(expenses.total)}
+                  </span>
+                )}
+              </div>
+              {expenses?.items.length ? (
+                expenses.items.map((row, index) => (
+                  <div key={index} className="flex justify-between py-1 text-sm">
+                    <span className="text-slate-500 dark:text-slate-400">
+                      {row.label}
+                      <span className="ml-1 text-[11px] text-slate-400">
+                        {row.category}
+                      </span>
+                    </span>
+                    <span className="font-medium">{money(row.amount)}</span>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  Aucune dépense sur la période.
                 </p>
               )}
             </section>

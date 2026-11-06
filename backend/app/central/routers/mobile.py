@@ -22,6 +22,7 @@ from ..database import get_db
 from ..models import (
     Client,
     Installation,
+    MirrorExpense,
     MirrorReturn,
     MirrorSale,
     MirrorUser,
@@ -134,6 +135,13 @@ def _visible(db: Session, user: MirrorUser, client: Client):
     query = db.query(MirrorSale).filter(MirrorSale.client_id == client.id)
     if (user.role or "").lower() not in FULL_VIEW_ROLES:
         query = query.filter(MirrorSale.seller_email == user.email)
+    return query
+
+
+def _visible_expenses(db: Session, user: MirrorUser, client: Client):
+    query = db.query(MirrorExpense).filter(MirrorExpense.client_id == client.id)
+    if (user.role or "").lower() not in FULL_VIEW_ROLES:
+        query = query.filter(MirrorExpense.seller_email == user.email)
     return query
 
 
@@ -277,6 +285,39 @@ def accounting(
         ],
         "period_total": sum(value["total"] for value in per_day.values()),
         "period_count": int(sum(value["count"] for value in per_day.values())),
+    }
+
+
+@router.get("/expenses")
+def expenses(
+    days: int = 30,
+    session: tuple[MirrorUser, Client] = Depends(current_mobile),
+    db: Session = Depends(get_db),
+):
+    """Shop expenses readable from the phone."""
+    user, client = session
+    span = max(1, min(days, 120))
+    start = (utcnow() - timedelta(days=span - 1)).date()
+    rows = (
+        _visible_expenses(db, user, client)
+        .order_by(MirrorExpense.date.desc())
+        .limit(500)
+        .all()
+    )
+    items = [
+        {
+            "date": row.date.isoformat() if row.date else None,
+            "label": row.label,
+            "category": row.category,
+            "amount": row.amount or 0,
+            "seller": row.seller,
+        }
+        for row in rows
+        if row.date and row.date.date() >= start
+    ]
+    return {
+        "items": items,
+        "total": sum(item["amount"] for item in items),
     }
 
 

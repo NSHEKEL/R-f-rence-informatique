@@ -291,6 +291,27 @@ class MirrorReturn(Base):
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
 
+class MirrorExpense(Base):
+    """Copy of a shop expense, so spending shows up on the phone as well."""
+
+    __tablename__ = "mirror_expenses"
+    __table_args__ = (
+        UniqueConstraint("client_id", "remote_id", name="uq_mirror_expense"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    installation_uid = Column(String, default="", index=True)
+    remote_id = Column(Integer, nullable=False)
+    date = Column(DateTime, nullable=True, index=True)
+    label = Column(String, default="")
+    category = Column(String, default="")
+    amount = Column(Float, default=0)
+    seller = Column(String, default="")
+    seller_email = Column(String, default="", index=True)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
 class AdminLog(Base):
     """Every administrative action, with what changed."""
 

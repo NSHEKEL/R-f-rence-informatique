@@ -19,6 +19,7 @@ from ..models import (
     Installation,
     License,
     MirrorReturn,
+    MirrorExpense,
     MirrorSale,
     MirrorSupportRequest,
     PendingTransfer,
@@ -249,6 +250,25 @@ def mirror(payload: MirrorRequest, db: Session = Depends(get_db)):
         row.seller = credit.seller
         row.seller_email = credit.seller_email.strip().lower()
         row.items = json.dumps(credit.items, ensure_ascii=False)
+
+    expenses = {
+        row.remote_id: row
+        for row in db.query(MirrorExpense).filter(
+            MirrorExpense.client_id == client.id
+        )
+    }
+    for expense in payload.expenses:
+        row = expenses.get(expense.remote_id)
+        if row is None:
+            row = MirrorExpense(client_id=client.id, remote_id=expense.remote_id)
+            db.add(row)
+        row.installation_uid = installation.uid
+        row.date = _naive(expense.date)
+        row.label = expense.label
+        row.category = expense.category
+        row.amount = expense.amount
+        row.seller = expense.seller
+        row.seller_email = expense.seller_email.strip().lower()
 
     # Magasin identity self-declared by the shop (never overwrites a name or
     # city the console set by hand).
