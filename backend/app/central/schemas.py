@@ -356,6 +356,16 @@ class MirrorSupportRequestIn(BaseModel):
     created_at: Optional[datetime] = None
 
 
+class MirrorExpenseIn(BaseModel):
+    remote_id: int
+    date: Optional[datetime] = None
+    label: str = ""
+    category: str = ""
+    amount: float = 0
+    seller: str = ""
+    seller_email: str = ""
+
+
 class MirrorRequest(BaseModel):
     """Copy a shop pushes so its sales can be read from a phone."""
 
@@ -364,6 +374,7 @@ class MirrorRequest(BaseModel):
     users: list[MirrorUserIn] = []
     sales: list[MirrorSaleIn] = []
     returns: list[MirrorReturnIn] = []
+    expenses: list[MirrorExpenseIn] = []
     support_requests: list[MirrorSupportRequestIn] = []
     # Magasin identity self-declared by the shop (its own company settings).
     shop_name: str = ""
