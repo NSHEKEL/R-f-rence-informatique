@@ -28,6 +28,23 @@ from ..version import APP_VERSION
 
 router = APIRouter(prefix="/api/updates", tags=["updates"])
 
+
+def _recent_backup_exists() -> bool:
+    """A local backup written in the last minutes: safe to proceed."""
+    from datetime import datetime, timedelta, timezone
+
+    from ..paths import backups_dir
+
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
+    try:
+        for path in backups_dir().glob("easygest-*"):
+            stamp = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
+            if stamp >= cutoff:
+                return True
+    except OSError:
+        pass
+    return False
+
 LOOPBACK = {"127.0.0.1", "::1", "localhost"}
 
 
@@ -77,14 +94,17 @@ def install_update(
             )
         # The process exits right after install: take a backup first so an
         # upgrade gone wrong never means lost data. A failed backup blocks
-        # the update — safer than upgrading unprotected.
+        # the update — safer than upgrading unprotected. Exception: the copy
+        # towards a configured USB/network folder may fail after the local
+        # backup file was already written; that must not block the update.
         try:
             backup.create(db, reason="pre-maj")
         except Exception as exc:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Sauvegarde avant mise à jour impossible : {exc}",
-            )
+            if not _recent_backup_exists():
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Sauvegarde avant mise à jour impossible : {exc}",
+                )
         install(release)
     except UpdateError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
