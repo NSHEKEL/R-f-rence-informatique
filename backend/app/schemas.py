@@ -80,6 +80,9 @@ class CompanySettingsOut(BaseModel):
     drawer_port: str = ""
     drawer_code: str = "27,112,0,25,250"
     drawer_open_after_sale: bool = True
+    expiry_critical_days: int = 7
+    expiry_alert_days: int = 30
+    expiry_watch_days: int = 60
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
@@ -126,6 +129,9 @@ class CompanySettingsUpdate(BaseModel):
     drawer_port: Optional[str] = None
     drawer_code: Optional[str] = None
     drawer_open_after_sale: Optional[bool] = None
+    expiry_critical_days: Optional[int] = None
+    expiry_alert_days: Optional[int] = None
+    expiry_watch_days: Optional[int] = None
     smtp_host: Optional[str] = None
     smtp_port: Optional[int] = None
     smtp_user: Optional[str] = None

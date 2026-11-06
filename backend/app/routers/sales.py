@@ -109,7 +109,12 @@ def _consume_lots_fefo(db: Session, product: Product, quantity: int) -> None:
     remaining = quantity
     lots = (
         db.query(StockLot)
-        .filter(StockLot.product_id == product.id, StockLot.quantity > 0)
+        .filter(
+            StockLot.product_id == product.id,
+            StockLot.quantity > 0,
+            # Expired lots never reach the customer.
+            (StockLot.expiry_date.is_(None)) | (StockLot.expiry_date >= datetime.now()),
+        )
         .order_by(StockLot.expiry_date.is_(None), StockLot.expiry_date.asc(), StockLot.id.asc())
         .all()
     )

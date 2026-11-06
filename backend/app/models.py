@@ -70,6 +70,10 @@ class CompanySettings(Base):
     drawer_port = Column(String, default="")  # COM1, LPT1, \\\\PC\\CAISSE...
     drawer_code = Column(String, default="27,112,0,25,250")  # ESC p 0 25 250
     drawer_open_after_sale = Column(Boolean, default=True, nullable=False)
+    # Expiry watch thresholds, in days: critical (soon), alert, watch.
+    expiry_critical_days = Column(Integer, default=7, nullable=False)
+    expiry_alert_days = Column(Integer, default=30, nullable=False)
+    expiry_watch_days = Column(Integer, default=60, nullable=False)
     # Receipt and label printer settings, kept as JSON: they are a long list of
     # display switches that only the printing code reads.
     printing_config = Column(Text, default="")
