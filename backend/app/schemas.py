@@ -740,6 +740,18 @@ class CashSessionOut(BaseModel):
     note: str = ""
 
 
+class CashSessionSaleLine(BaseModel):
+    """One sale of the session, for the "ventes de la session" list."""
+
+    id: int
+    reference: str
+    total: float
+    paid_amount: float = 0
+    payment_method: str = ""
+    status: str = ""
+    date: Optional[datetime] = None
+
+
 class CashSessionDetail(CashSessionOut):
     """Open session enriched with live totals."""
 
@@ -748,6 +760,7 @@ class CashSessionDetail(CashSessionOut):
     sales_count: int = 0
     deposits_total: float = 0
     expected_cash: float = 0
+    sales: list[CashSessionSaleLine] = []
 
 
 # ---------- Expenses ----------

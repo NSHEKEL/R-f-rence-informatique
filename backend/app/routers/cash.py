@@ -121,6 +121,18 @@ def _totals(db: Session, session: CashSession) -> dict:
         # A validated bank deposit is a cash outflow of the till: the
         # theoretical cash left no longer includes it.
         "expected_cash": session.opening_balance + cash - deposited,
+        "sales": [
+            {
+                "id": s.id,
+                "reference": s.reference,
+                "total": s.total or 0,
+                "paid_amount": s.paid_amount or 0,
+                "payment_method": s.payment_method or "",
+                "status": s.status or "",
+                "date": s.date,
+            }
+            for s in sorted(sales, key=lambda s: s.date or datetime.min, reverse=True)
+        ],
     }
 
 
@@ -168,15 +180,11 @@ def open_session(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("caisse")),
 ):
-    existing = day_session(db, current_user)
+    existing = current_session(db, current_user)
     if existing:
         raise HTTPException(
             status_code=400,
-            detail=(
-                "Votre caisse a déjà été ouverte aujourd'hui"
-                if existing.closed_at
-                else "Votre caisse est déjà ouverte"
-            ),
+            detail="Votre caisse est déjà ouverte",
         )
     session = CashSession(
         opening_balance=payload.opening_balance,

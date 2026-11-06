@@ -6,7 +6,7 @@ databases created by earlier versions keep working, on SQLite as well as on the
 shared PostgreSQL server.
 """
 
-from sqlalchemy import inspect, text
+from sqlalchemy import bindparam, inspect, text
 
 from .database import engine
 from .models import Delivery
@@ -211,6 +211,27 @@ def migrate() -> None:
                 conn.execute(text(statement))
         if "deliveries" in tables:
             _relax_delivery_order(conn, inspect(conn))
+        if "role_permissions" in tables:
+            # Sellers lose the treasury rights granted before the separation
+            # of duties: the administrator may grant them back consciously.
+            conn.execute(
+                text(
+                    "DELETE FROM role_permissions WHERE role = :role "
+                    "AND permission IN :perms"
+                ).bindparams(bindparam("perms", expanding=True)),
+                {
+                    "role": "vendeur",
+                    "perms": [
+                        "versements_gerer",
+                        "versements_valider",
+                        "depenses_gerer",
+                        "comptabilite",
+                        "dettes",
+                        "dettes_gerer",
+                        "dettes_regler",
+                    ],
+                },
+            )
         if "company_settings" in tables:
             conn.execute(
                 text(

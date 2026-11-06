@@ -144,7 +144,7 @@ const navItems: NavItem[] = [
     to: "/banque",
     label: "Versements bancaires",
     icon: Landmark,
-    access: "caisse",
+    access: "versements_gerer",
   },
   {
     to: "/comptabilite",
