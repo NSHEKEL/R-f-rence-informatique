@@ -86,6 +86,8 @@ export interface DocumentConfig {
   /** Optional dedicated queues; empty falls back on printer_name. */
   delivery_printer_name: string;
   quote_printer_name: string;
+  reports_printer_name: string;
+  settlement_printer_name: string;
   /** True: print straight to the queue; False: preview first. */
   direct_print: boolean;
   order_prefix: string;
@@ -167,6 +169,8 @@ export const DEFAULT_PRINTING: PrintingConfig = {
     printer_name: "",
     delivery_printer_name: "",
     quote_printer_name: "",
+    reports_printer_name: "",
+    settlement_printer_name: "",
     direct_print: true,
     order_prefix: "BC",
     delivery_prefix: "BL",

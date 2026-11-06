@@ -290,6 +290,8 @@ export default function PrintingSettings({
         documents: form.documents.printer_name,
         delivery: form.documents.delivery_printer_name,
         quote: form.documents.quote_printer_name,
+        reports: form.documents.reports_printer_name,
+        settlement: form.documents.settlement_printer_name,
       });
       await saveCompany();
       setSaved(true);
@@ -313,6 +315,70 @@ export default function PrintingSettings({
       `<h2>Page de test EasyGest</h2><p>Imprimante : ${name}</p>` +
         `<p>${new Date().toLocaleString("fr-FR")}</p>` +
         "<p>Si cette page s'imprime, la liaison fonctionne.</p>",
+      { printerName: name, direct: true }
+    );
+  }
+
+  /** Real ESC/POS ticket spooled on the chosen printer (58 or 80 mm). */
+  async function testTicketOn(name: string, width: "58mm" | "80mm") {
+    setActionMessage("");
+    const bridge = (
+      window as unknown as {
+        pywebview?: { api?: { print_ticket?: (p: string) => Promise<string> } };
+      }
+    ).pywebview?.api?.print_ticket;
+    if (!bridge) {
+      // Outside the desktop window there is no RAW channel: send a page at
+      // the ticket geometry through the Windows driver instead.
+      setActionMessage(`Ticket de test ${width} envoyé vers ${name}.`);
+      printDocument(
+        "Ticket de test EasyGest",
+        `@page { size: ${width === "58mm" ? 58 : 80}mm 120mm; margin: 0; }` +
+          "body { font-family: monospace; padding: 2mm; font-size: 11px; }",
+        `<h3 style="text-align:center">TEST ${width}</h3>` +
+          `<p>Imprimante : ${name}</p><p>${new Date().toLocaleString("fr-FR")}</p>` +
+          "<hr><p>1 x Article de test ......... 1 000</p><hr>" +
+          "<p><b>TOTAL .................... 1 000</b></p>",
+        { printerName: name, direct: true }
+      );
+      return;
+    }
+    try {
+      const problem = await bridge(
+        JSON.stringify({
+          printer: name,
+          copies: 1,
+          cut: true,
+          lines: [
+            { text: "**TEST EASYGEST**", align: "center", big: true },
+            { text: `Ticket ${width} — ${name}`, align: "center" },
+            { text: new Date().toLocaleString("fr-FR"), align: "center" },
+            { text: "--------------------------------" },
+            { text: "1 x Article de test      1 000" },
+            { text: "--------------------------------" },
+            { text: "**TOTAL : 1 000 FCFA**", align: "right" },
+            { text: "", barcode: "TEST-0001" },
+          ],
+        })
+      );
+      setActionMessage(
+        problem
+          ? `Ticket non imprimé : ${problem}`
+          : `Ticket de test ${width} spoulé sur ${name}.`
+      );
+    } catch {
+      setActionMessage(`Ticket non imprimé sur ${name}.`);
+    }
+  }
+
+  /** Real label sheet through the driver: name, price, code and barcode. */
+  function testLabelOn(name: string) {
+    setActionMessage(`Étiquette de test envoyée vers ${name}.`);
+    printDocument(
+      "Étiquette de test EasyGest",
+      "@page { size: 60mm 40mm; margin: 0; } body { font-family: sans-serif; padding: 2mm; font-size: 9px; }",
+      "<b>Article de test</b><br>Réf : TEST-0001<br>" +
+        `<b>1 000 FCFA</b><br><small>${name}</small>`,
       { printerName: name, direct: true }
     );
   }
@@ -471,9 +537,33 @@ export default function PrintingSettings({
                           type="button"
                           className="btn-ghost px-2 py-1 text-xs"
                           onClick={() => testPrinter(device.name)}
-                          title="Envoyer une page de test à cette imprimante"
+                          title="Envoyer une page de test A4 à cette imprimante"
                         >
                           Tester
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-ghost px-2 py-1 text-xs"
+                          onClick={() => testTicketOn(device.name, "58mm")}
+                          title="Imprimer un ticket de test 58 mm sur cette imprimante"
+                        >
+                          T58
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-ghost px-2 py-1 text-xs"
+                          onClick={() => testTicketOn(device.name, "80mm")}
+                          title="Imprimer un ticket de test 80 mm sur cette imprimante"
+                        >
+                          T80
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-ghost px-2 py-1 text-xs"
+                          onClick={() => testLabelOn(device.name)}
+                          title="Imprimer une étiquette de test sur cette imprimante"
+                        >
+                          Étiquette
                         </button>
                         {!device.is_default && (
                           <button
@@ -993,6 +1083,32 @@ export default function PrintingSettings({
               onRefresh={loadPrinters}
               onChange={(name) =>
                 patchDocuments({ quote_printer_name: name })
+              }
+              hint="Vide : utilise l'imprimante des documents commerciaux."
+            />
+          </div>
+          <div>
+            <PrinterSelect
+              label="Imprimante des rapports"
+              value={form.documents.reports_printer_name}
+              devices={devices}
+              loading={loadingPrinters}
+              onRefresh={loadPrinters}
+              onChange={(name) =>
+                patchDocuments({ reports_printer_name: name })
+              }
+              hint="Vide : utilise l'imprimante des documents commerciaux."
+            />
+          </div>
+          <div>
+            <PrinterSelect
+              label="Imprimante des reçus de règlement"
+              value={form.documents.settlement_printer_name}
+              devices={devices}
+              loading={loadingPrinters}
+              onRefresh={loadPrinters}
+              onChange={(name) =>
+                patchDocuments({ settlement_printer_name: name })
               }
               hint="Vide : utilise l'imprimante des documents commerciaux."
             />

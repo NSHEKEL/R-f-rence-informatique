@@ -80,6 +80,10 @@ export function applyPostePrinters(config: PrintingConfig): PrintingConfig {
         poste.delivery ?? config.documents.delivery_printer_name,
       quote_printer_name:
         poste.quote ?? config.documents.quote_printer_name,
+      reports_printer_name:
+        poste.reports ?? config.documents.reports_printer_name,
+      settlement_printer_name:
+        poste.settlement ?? config.documents.settlement_printer_name,
     },
   };
 }
