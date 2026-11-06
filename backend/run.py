@@ -307,6 +307,14 @@ def _open_window(url: str) -> bool:
         traceback.print_exc()
         return False
     try:
+        if sys.platform == "win32" and os.getenv("EASYGEST_GPU") != "1":
+            # Old or weak GPUs leave the WebView2 window white; software
+            # rasterisation always renders. EASYGEST_GPU=1 restores hardware
+            # acceleration on machines where it works.
+            os.environ.setdefault(
+                "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+                "--disable-gpu --disable-gpu-compositing",
+            )
         api = DesktopApi()
         window = webview.create_window(
             APP_NAME,
