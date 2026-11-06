@@ -280,7 +280,8 @@ export default function Livraisons() {
         printing.documents,
         showPrices
       ),
-      printing.documents
+      printing.documents,
+      printing.documents.delivery_printer_name
     );
   }
 

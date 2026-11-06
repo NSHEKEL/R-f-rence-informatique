@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from .. import drawer, printing
@@ -10,6 +11,7 @@ from ..models import CompanySettings, User
 from ..schemas import (
     CompanySettingsOut,
     CompanySettingsUpdate,
+    PrinterDevice,
     PrinterList,
     PrintingConfig,
 )
@@ -102,6 +104,98 @@ def list_printers(_: User = Depends(get_current_user)):
         printers=[device.name for device in devices],
         default=printing.default_printer(),
     )
+
+
+class _PrinterName(BaseModel):
+    name: str
+
+
+@router.get("/printers/status", response_model=PrinterDevice)
+def printer_status(name: str, _: User = Depends(get_current_user)):
+    """Live state of one queue: jobs waiting, paused, offline, no paper."""
+    device = printing.queue_status(name)
+    if device is None:
+        raise HTTPException(
+            status_code=404, detail=f"Imprimante « {name} » introuvable."
+        )
+    return device
+
+
+@router.post("/printers/default")
+def set_default_printer(
+    payload: _PrinterName, _: User = Depends(require_admin)
+):
+    """Make a queue the Windows default printer of this computer."""
+    if not printing.set_default_printer(payload.name):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Impossible de définir « {payload.name} » par défaut.",
+        )
+    return {"default": payload.name}
+
+
+@router.post("/printers/preferences")
+def printer_preferences(
+    payload: _PrinterName, _: User = Depends(get_current_user)
+):
+    """Open the driver's own preferences dialog for a queue."""
+    if printing.queue_status(payload.name) is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Imprimante « {payload.name} » introuvable.",
+        )
+    try:
+        printing.open_preferences(payload.name)
+    except OSError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"opened": payload.name}
+
+
+class _PrintTest(BaseModel):
+    printer_name: str = ""
+    document: str = "ticket"  # ticket, a4, labels
+
+
+@router.post("/printers/test")
+def test_printer(
+    payload: _PrintTest, _: User = Depends(get_current_user)
+):
+    """Really send a small document through the spooler, then report the
+    queue's state — « envoyé » alone does not mean « imprimé »."""
+    target = payload.printer_name.strip() or printing.default_printer()
+    if not target:
+        raise HTTPException(
+            status_code=400, detail="Aucune imprimante n'est configurée."
+        )
+    device = printing.queue_status(target)
+    if device is not None and not device.available:
+        raise HTTPException(
+            status_code=400,
+            detail=f"« {target} » signale : {device.status}.",
+        )
+    try:
+        from .. import escpos
+
+        escpos.send(
+            escpos.build(
+                [
+                    escpos.Line(text="TEST EASYGEST", align="center", big=True),
+                    escpos.Line(text="Imprimante : " + target, align="center"),
+                    escpos.Line(
+                        text="Document de test " + payload.document,
+                        align="center",
+                    ),
+                ],
+                cut=True,
+            ),
+            target,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    device = printing.queue_status(target)
+    note = f"{device.jobs} travail/travaux en file" if device else ""
+    return {"sent": True, "printer": target, "queue": note,
+            "status": device.status if device else ""}
 
 
 @router.post("/company/open-drawer")

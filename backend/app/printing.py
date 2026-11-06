@@ -107,6 +107,20 @@ def _status_label(status: int) -> str:
     return ""
 
 
+def _connection_kind(port: str) -> str:
+    """How the printer is attached, guessed from its port name."""
+    value = (port or "").upper()
+    if value.startswith(("USB", "DOT4")):
+        return "USB"
+    if value.startswith("\\\\") or "WSD" in value or value.startswith("IP_"):
+        return "Réseau"
+    if value.startswith(("COM", "LPT")):
+        return "Série"
+    if "PORTPROMPT" in value or "FILE" in value:
+        return "Virtuelle"
+    return ""
+
+
 def _windows_devices() -> list[PrinterDevice]:
     """Queues declared in Windows, read straight from the print spooler.
 
@@ -139,21 +153,82 @@ def _windows_devices() -> list[PrinterDevice]:
     ).contents
     default = default_printer()
     devices: list[PrinterDevice] = []
+    seen: set[str] = set()
     for entry in entries:
         name = entry.pPrinterName or ""
-        if not name:
+        if not name or name in seen:
             continue
+        seen.add(name)
         problem = _status_label(int(entry.Status))
         devices.append(
             PrinterDevice(
                 name=name,
                 port=entry.pPortName or "",
+                driver=entry.pDriverName or "",
+                kind=_connection_kind(entry.pPortName or ""),
+                jobs=int(entry.cJobs),
                 is_default=name == default,
                 available=not problem,
-                status=problem or "Disponible",
+                status=problem or "Prête",
             )
         )
     return devices
+
+
+def queue_status(name: str) -> PrinterDevice | None:
+    """Live status of one queue: jobs waiting and the current problem."""
+    if sys.platform != "win32":
+        return None
+    from ctypes import wintypes
+
+    spooler = ctypes.windll.winspool
+    handle = wintypes.HANDLE()
+    if not spooler.OpenPrinterW(name, ctypes.byref(handle), None):
+        return None
+    try:
+        needed = ctypes.c_uint32(0)
+        spooler.GetPrinterW(handle, 2, None, 0, ctypes.byref(needed))
+        if needed.value == 0:
+            return None
+        buffer = ctypes.create_string_buffer(needed.value)
+        if not spooler.GetPrinterW(
+            handle, 2, buffer, needed.value, ctypes.byref(needed)
+        ):
+            return None
+        info = ctypes.cast(buffer, ctypes.POINTER(_PrinterInfo2)).contents
+        problem = _status_label(int(info.Status))
+        if not problem and int(info.Status) & 0x00000008:
+            problem = "En pause"
+        return PrinterDevice(
+            name=info.pPrinterName or name,
+            port=info.pPortName or "",
+            driver=info.pDriverName or "",
+            kind=_connection_kind(info.pPortName or ""),
+            jobs=int(info.cJobs),
+            is_default=name == default_printer(),
+            available=not problem,
+            status=problem or "Prête",
+        )
+    finally:
+        spooler.ClosePrinter(handle)
+
+
+def set_default_printer(name: str) -> bool:
+    """Make a queue the Windows default printer."""
+    if sys.platform != "win32" or not name:
+        return False
+    return bool(ctypes.windll.winspool.SetDefaultPrinterW(name))
+
+
+def open_preferences(name: str) -> str:
+    """Open the driver's own preferences dialog for a queue."""
+    if sys.platform != "win32":
+        raise OSError("Disponible uniquement sous Windows.")
+    subprocess.Popen(
+        ["rundll32", "printui.dll,PrintUIEntry", "/e", "/n", name],
+        shell=False,
+    )
+    return name
 
 
 def default_printer() -> str:

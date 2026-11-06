@@ -16,6 +16,7 @@ Modes:
                         build to prove the packaged executable really runs).
 """
 
+import ctypes
 import json
 import os
 import socket
@@ -118,7 +119,7 @@ def _lan_ip() -> str:
         sock.close()
 
 
-def _wait_until_ready(url: str, timeout: float = 40.0) -> bool:
+def _wait_until_ready(url: str, timeout: float = 90.0) -> bool:
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
@@ -266,6 +267,72 @@ class DesktopApi:
             send()
         return done["ok"]
 
+    def print_to(
+        self, width_mm: float, height_mm: float, margin_mm: float,
+        printer_name: str,
+    ) -> bool:
+        """Print to a chosen printer without any dialog.
+
+        WebView2's silent printing only ever goes to the Windows default
+        printer, so the default is swapped for the duration of the call and
+        restored afterwards — the only reliable way to reach another queue
+        without showing the print dialog.
+        """
+        if sys.platform != "win32":
+            return False
+        try:
+            from System import Action
+            from webview.platforms.winforms import BrowserView
+
+            form = BrowserView.instances[self.window.uid]
+            core = form.browser.webview.CoreWebView2
+            spooler = ctypes.windll.winspool
+        except Exception:  # noqa: BLE001 - Linux, older runtime, no window
+            traceback.print_exc()
+            return False
+
+        holder: dict = {}
+
+        def send() -> None:
+            try:
+                settings = core.Environment.CreatePrintSettings()
+                settings.ShouldPrintHeaderAndFooter = False
+                settings.ShouldPrintBackgrounds = True
+                settings.PageWidth = max(width_mm, 20.0) / 25.4
+                settings.PageHeight = max(height_mm, 20.0) / 25.4
+                inches = max(margin_mm, 0.0) / 25.4
+                settings.MarginTop = inches
+                settings.MarginBottom = inches
+                settings.MarginLeft = inches
+                settings.MarginRight = inches
+                holder["task"] = core.PrintAsync(settings)
+            except Exception:  # noqa: BLE001
+                traceback.print_exc()
+
+        size = ctypes.c_uint32(0)
+        spooler.GetDefaultPrinterW(None, ctypes.byref(size))
+        buffer = ctypes.create_unicode_buffer(size.value)
+        previous = ""
+        if spooler.GetDefaultPrinterW(buffer, ctypes.byref(size)):
+            previous = buffer.value
+        try:
+            if printer_name:
+                spooler.SetDefaultPrinterW(printer_name)
+            form.Invoke(Action(send))
+            task = holder.get("task")
+            if task is None:
+                return False
+            # Waiting off the window thread: the job is fully spooled when
+            # the task completes, so the default can be restored safely.
+            task.Wait(30000)
+            return True
+        except Exception:  # noqa: BLE001
+            traceback.print_exc()
+            return False
+        finally:
+            if printer_name and previous:
+                spooler.SetDefaultPrinterW(previous)
+
     def toggle_fullscreen(self) -> bool:
         """Full screen for the counter: the web API alone cannot resize the
         native window."""
@@ -299,8 +366,82 @@ FRENCH = {
 }
 
 
+def _webview2_installed() -> bool:
+    """True when the Edge WebView2 runtime is registered on this machine."""
+    if sys.platform != "win32":
+        return True
+    import winreg
+
+    key = r"Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+    for hive, path in (
+        (winreg.HKEY_LOCAL_MACHINE, "SOFTWARE\\WOW6432Node\\" + key),
+        (winreg.HKEY_LOCAL_MACHINE, "SOFTWARE\\" + key),
+        (winreg.HKEY_CURRENT_USER, "SOFTWARE\\" + key),
+    ):
+        try:
+            with winreg.OpenKey(hive, path) as opened:
+                if winreg.QueryValueEx(opened, "pv")[0]:
+                    return True
+        except OSError:
+            continue
+    return False
+
+
+def _ensure_webview2() -> bool:
+    """Repair a missing WebView2 runtime with the installer shipped next to
+    the executable, so the window comes back without a manual download."""
+    if _webview2_installed():
+        return True
+    _boot("webview2 absent")
+    candidates = [
+        Path(sys.executable).parent / "MicrosoftEdgeWebview2Setup.exe",
+        Path(getattr(sys, "_MEIPASS", "")) / "MicrosoftEdgeWebview2Setup.exe",
+    ]
+    for setup in candidates:
+        if not setup.is_file():
+            continue
+        try:
+            import subprocess
+
+            _boot(f"webview2 install via {setup}")
+            subprocess.run(
+                [str(setup), "/silent", "/install"],
+                timeout=300,
+                check=False,
+            )
+        except Exception:  # noqa: BLE001 - no right, offline, AV block
+            traceback.print_exc()
+        if _webview2_installed():
+            _boot("webview2 installe")
+            return True
+    _boot("webview2 toujours absent")
+    return False
+
+
+# Shown inside the window when the interface never finishes loading, so a
+# white page is replaced by an explanation and a retry instead of silence.
+_LOAD_ERROR_HTML = (
+    "<div style='font-family:Arial,sans-serif;min-height:100vh;display:flex;"
+    "flex-direction:column;align-items:center;justify-content:center;"
+    "background:#0f2a5c;color:#fff;text-align:center;padding:24px'>"
+    "<h1 style='font-size:22px'>EasyGest</h1>"
+    "<p style='max-width:460px'>L'interface n'a pas pu se charger. "
+    "Le service interne est pourtant d&eacute;marr&eacute;.</p>"
+    "<p style='font-size:13px;opacity:.8'>Fermez puis relancez EasyGest. "
+    "Si le probl&egrave;me persiste, red&eacute;marrez l'ordinateur ou "
+    "r&eacute;installez l'application.</p>"
+    "<button onclick='location.reload()' style='margin-top:12px;padding:"
+    "10px 26px;border:0;border-radius:8px;font-size:15px;cursor:pointer'>"
+    "R&eacute;essayer</button></div>"
+)
+
+
 def _open_window(url: str) -> bool:
     """Show the application in a native window. False if unavailable."""
+    if sys.platform == "win32":
+        # A missing runtime used to end in a blank window plus a browser
+        # opening on localhost: repair it first so the native window works.
+        _ensure_webview2()
     try:
         import webview
     except Exception:  # noqa: BLE001 - missing runtime, broken install...
@@ -309,11 +450,15 @@ def _open_window(url: str) -> bool:
     try:
         if sys.platform == "win32" and os.getenv("EASYGEST_GPU") != "1":
             # Old or weak GPUs leave the WebView2 window white; software
-            # rasterisation always renders. EASYGEST_GPU=1 restores hardware
-            # acceleration on machines where it works.
+            # rasterisation always renders. The extra flags keep the memory
+            # footprint low on 4 GB machines. EASYGEST_GPU=1 restores
+            # hardware acceleration on machines where it works.
             os.environ.setdefault(
                 "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
-                "--disable-gpu --disable-gpu-compositing",
+                "--disable-gpu --disable-gpu-compositing "
+                "--disable-background-networking --disable-component-update "
+                "--disable-sync --disable-extensions --no-first-run "
+                "--mute-audio",
             )
         api = DesktopApi()
         window = webview.create_window(
@@ -331,6 +476,24 @@ def _open_window(url: str) -> bool:
         )
         api.window = window
         window.events.closed += lambda: os._exit(0)
+
+        # Anti-blank-page watchdog: if the interface has not mounted after
+        # 30 s, replace the white page with an explanation and a retry.
+        loaded = {"ok": False}
+        window.events.loaded += lambda: loaded.__setitem__("ok", True)
+
+        def _watchdog() -> None:
+            time.sleep(30)
+            if loaded["ok"]:
+                return
+            _boot("watchdog: interface non chargee apres 30 s")
+            try:
+                window.load_html(_LOAD_ERROR_HTML)
+            except Exception:  # noqa: BLE001 - window already gone
+                pass
+
+        threading.Thread(target=_watchdog, daemon=True).start()
+
         # Without an explicit storage path the window runs in private mode and
         # forgets everything the page saved (session, last user name, screen
         # preferences) as soon as the computer is restarted.

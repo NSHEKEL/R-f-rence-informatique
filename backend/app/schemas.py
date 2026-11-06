@@ -177,6 +177,9 @@ class PrinterDevice(BaseModel):
 
     name: str
     port: str = ""
+    driver: str = ""
+    kind: str = ""
+    jobs: int = 0
     is_default: bool = False
     available: bool = True
     status: str = "Disponible"
@@ -253,6 +256,12 @@ class DocumentConfig(BaseModel):
     format: str = "A4"  # A4, A5
     # Printer assigned to commercial documents on this workstation.
     printer_name: str = ""
+    # Optional dedicated queues; empty falls back on printer_name.
+    delivery_printer_name: str = ""
+    quote_printer_name: str = ""
+    # True: the document goes straight to the assigned printer without the
+    # preview; False: the user reviews the preview first.
+    direct_print: bool = True
     order_prefix: str = "BC"
     delivery_prefix: str = "BL"
     show_logo: bool = True

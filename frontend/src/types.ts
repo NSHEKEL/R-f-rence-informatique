@@ -14,6 +14,9 @@ export type ReceiptFormat = "A4" | "80mm" | "58mm";
 export interface PrinterDevice {
   name: string;
   port: string;
+  driver: string;
+  kind: string;
+  jobs: number;
   is_default: boolean;
   available: boolean;
   status: string;
@@ -80,6 +83,11 @@ export interface DocumentConfig {
   format: "A4" | "A5";
   /** Printer assigned to commercial documents on this workstation. */
   printer_name: string;
+  /** Optional dedicated queues; empty falls back on printer_name. */
+  delivery_printer_name: string;
+  quote_printer_name: string;
+  /** True: print straight to the queue; False: preview first. */
+  direct_print: boolean;
   order_prefix: string;
   delivery_prefix: string;
   show_logo: boolean;
@@ -157,6 +165,9 @@ export const DEFAULT_PRINTING: PrintingConfig = {
   documents: {
     format: "A4",
     printer_name: "",
+    delivery_printer_name: "",
+    quote_printer_name: "",
+    direct_print: true,
     order_prefix: "BC",
     delivery_prefix: "BL",
     show_logo: true,
