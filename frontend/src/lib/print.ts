@@ -439,6 +439,15 @@ export function printReceipt(
   const root = document.getElementById(PRINT_ROOT_ID);
   const copies = Math.min(Math.max(Math.round(config.copies) || 1, 1), 5);
   const extras: HTMLElement[] = [];
+  const printer = config.printer_name.trim();
+  const failed = (problem: unknown = "impression silencieuse indisponible ou refusée") => {
+    if (printer) {
+      window.alert(`Ticket non envoyé sur ${printer} : ${problem}`);
+    } else {
+      window.print();
+    }
+    return false;
+  };
   if (root && copies > 1) {
     for (let i = 1; i < copies; i += 1) {
       const copy = root.cloneNode(true) as HTMLElement;
@@ -451,7 +460,7 @@ export function printReceipt(
   const direct = desktopTicket();
   if (direct && thermal && root) {
     const payload = JSON.stringify({
-      printer: config.printer_name,
+      printer,
       copies,
       cut: config.cut_paper,
       kick,
@@ -461,10 +470,7 @@ export function printReceipt(
     extras.length = 0;
     return direct(payload).then((problem) => {
       if (!problem) return kick.length > 0;
-      if (config.printer_name) {
-        window.alert(`Ticket non envoyé sur ${config.printer_name} : ${problem}`);
-        return false;
-      }
+      if (printer) return failed(problem);
       // No thermal printer on this computer: fall back on the page printer,
       // still at the ticket geometry so the roll is not padded to a sheet.
       const fallback = desktopPrint();
@@ -481,23 +487,24 @@ export function printReceipt(
       }
       window.print();
       return false;
-    });
+    }).catch(failed);
   }
-  const native = desktopPrint();
+  const targeted = desktopPrintTo();
+  const native = printer
+    ? targeted && ((width: number, height: number, margin: number) =>
+        targeted(width, height, margin, printer))
+    : desktopPrint();
   if (native) {
     const width = thermal ? widthMm(format) : 210;
     return native(width, pageHeight, 0)
       .then((done) => {
-        if (!done) window.print();
+        if (!done) return failed();
         return false;
       })
-      .catch(() => {
-        window.print();
-        return false;
-      })
+      .catch(failed)
       .finally(() => extras.forEach((copy) => copy.remove()));
   }
-  window.print();
+  failed();
   extras.forEach((copy) => copy.remove());
   return Promise.resolve(false);
 }
