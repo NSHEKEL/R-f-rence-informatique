@@ -189,6 +189,7 @@ const RECEIPT_SWITCHES: { key: keyof ReceiptPrinterConfig; label: string }[] = [
   { key: "show_change", label: "Monnaie rendue" },
   { key: "show_payment", label: "Mode de paiement" },
   { key: "show_barcode", label: "Code-barres" },
+  { key: "show_qr", label: "QR code" },
   { key: "show_footer", label: "Message de pied" },
 ];
 

@@ -178,6 +178,35 @@ class DesktopApi:
         path.write_text(content, encoding="utf-8-sig")
         return str(path)
 
+    @staticmethod
+    def _pref_path(filename: str) -> Path:
+        """Where the workstation's own files live: next to the exe when
+        installed, the home folder during development. No dialog, so the
+        app can read and rewrite them silently at every start."""
+        base = (
+            Path(sys.executable).parent
+            if getattr(sys, "frozen", False)
+            else Path.home()
+        )
+        return base / filename
+
+    def write_pref_file(self, filename: str, content: str) -> str:
+        """Backup of the per-workstation preferences (no dialog)."""
+        try:
+            path = self._pref_path(filename)
+            path.write_text(content, encoding="utf-8")
+            return str(path)
+        except OSError:
+            return ""
+
+    def read_pref_file(self, filename: str) -> str:
+        """Restore of the per-workstation preferences; empty when absent."""
+        try:
+            path = self._pref_path(filename)
+            return path.read_text(encoding="utf-8") if path.exists() else ""
+        except OSError:
+            return ""
+
     def print_ticket(self, payload: str) -> str:
         """Print a receipt straight on the counter printer.
 

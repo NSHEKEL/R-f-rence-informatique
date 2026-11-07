@@ -60,6 +60,8 @@ export interface ReceiptPrinterConfig {
   show_change: boolean;
   show_payment: boolean;
   show_barcode: boolean;
+  /** QR code at the foot of the ticket (opt-in per poste). */
+  show_qr: boolean;
 }
 
 /** Price labels: a separate printer with its own settings. */
@@ -149,6 +151,7 @@ export const DEFAULT_PRINTING: PrintingConfig = {
     show_change: true,
     show_payment: true,
     show_barcode: true,
+    show_qr: false,
   },
   label: {
     printer_name: "",

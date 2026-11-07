@@ -31,6 +31,9 @@ class Line:
     bold: bool = False
     big: bool = False
     barcode: str = ""
+    # QR code payload; qr_size is the module width in dots (58mm: 4, 80mm: 6).
+    qr: str = ""
+    qr_size: int = 6
     # Monochrome bitmap of the logo: base64 rows of packed pixels.
     image: str = ""
     image_width: int = 0
@@ -39,6 +42,19 @@ class Line:
 
 def _text(value: str) -> bytes:
     return value.encode(CODEPAGE, errors="replace")
+
+
+def _qr(data: str, size: int = 6) -> bytes:
+    """Native ESC/POS QR code (GS ( k): model 2, error correction M."""
+    payload = data.encode("utf-8")
+    n = len(payload) + 3
+    return (
+        GS + b"(k" + bytes([4, 0, 49, 65, 50, 0])
+        + GS + b"(k" + bytes([3, 0, 49, 67, max(1, min(size, 16))])
+        + GS + b"(k" + bytes([3, 0, 49, 69, 49])
+        + GS + b"(k" + bytes([n & 0xFF, (n >> 8) & 0xFF, 49, 80, 48]) + payload
+        + GS + b"(k" + bytes([3, 0, 49, 81, 48])
+    )
 
 
 def _barcode(value: str) -> bytes:
@@ -87,6 +103,12 @@ def build(lines: list[Line], cut: bool, kick: bytes = b"") -> bytes:
             continue
         if line.barcode:
             out += ESC + b"a\x01" + _barcode(line.barcode) + ESC + b"a\x00"
+            continue
+        if line.qr:
+            out += (
+                ESC + b"a\x01" + _qr(line.qr, line.qr_size)
+                + ESC + b"a\x00"
+            )
             continue
         out += ESC + b"a" + bytes([1 if line.align == "center" else 0])
         out += ESC + b"E" + bytes([1 if line.bold else 0])

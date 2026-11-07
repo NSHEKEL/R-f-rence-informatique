@@ -231,6 +231,8 @@ class ReceiptPrinterConfig(BaseModel):
     show_change: bool = True
     show_payment: bool = True
     show_barcode: bool = True
+    # QR code at the foot of the ticket: off by default, opt-in per poste.
+    show_qr: bool = False
 
 
 class LabelPrinterConfig(BaseModel):
