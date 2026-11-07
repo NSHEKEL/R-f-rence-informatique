@@ -10,6 +10,11 @@ from __future__ import annotations
 
 import base64
 import ctypes
+
+
+def _spooler():
+    """winspool.drv (see printing._spooler: windll appends .dll)."""
+    return ctypes.WinDLL("winspool.drv")
 import sys
 from dataclasses import dataclass
 
@@ -129,9 +134,9 @@ def _default_printer() -> str:
     # c_uint32, not wintypes.DWORD: wintypes is absent from some frozen
     # builds and its lazy import used to kill direct printing there.
     size = ctypes.c_uint32(0)
-    ctypes.windll.winspool.GetDefaultPrinterW(None, ctypes.byref(size))
+    _spooler().GetDefaultPrinterW(None, ctypes.byref(size))
     buffer = ctypes.create_unicode_buffer(size.value)
-    if not ctypes.windll.winspool.GetDefaultPrinterW(buffer, ctypes.byref(size)):
+    if not _spooler().GetDefaultPrinterW(buffer, ctypes.byref(size)):
         raise PrintError("Aucune imprimante par défaut n'est configurée.")
     return buffer.value
 
@@ -148,7 +153,7 @@ def send(data: bytes, printer_name: str = "") -> str:
         ]
 
     target = printer_name.strip() or _default_printer()
-    spooler = ctypes.windll.winspool
+    spooler = _spooler()
     handle = ctypes.c_void_p()
     if not spooler.OpenPrinterW(target, ctypes.byref(handle), None):
         raise PrintError(f"Imprimante « {target} » introuvable.")

@@ -316,7 +316,7 @@ class DesktopApi:
 
             form = BrowserView.instances[self.window.uid]
             core = form.browser.webview.CoreWebView2
-            spooler = ctypes.windll.winspool
+            spooler = ctypes.WinDLL("winspool.drv")
         except Exception:  # noqa: BLE001 - Linux, older runtime, no window
             traceback.print_exc()
             return False

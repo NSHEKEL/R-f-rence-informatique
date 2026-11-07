@@ -17,6 +17,18 @@ import sys
 
 log = logging.getLogger(__name__)
 
+
+def _spooler():
+    """The print spooler DLL.
+
+    NOT ctypes.windll.winspool: windll appends ".dll" to a bare name and
+    the real file is winspool.drv, so the attribute lookup raises
+    AttributeError on every Windows machine — this is what emptied the
+    printer list on real posts while the simulation (which faked
+    windll.winspool) kept passing.
+    """
+    return ctypes.WinDLL("winspool.drv")
+
 from .models import CompanySettings
 from .schemas import PrinterDevice, PrintingConfig, ReceiptPrinterConfig
 
@@ -192,7 +204,7 @@ def _windows_devices() -> list[PrinterDevice]:
     enriched by its own GetPrinter: one sick queue only breaks its own
     line, which reads "Non détectable".
     """
-    spooler = ctypes.windll.winspool
+    spooler = _spooler()
     names = _enumerate_names(spooler, 1)
     if not names:
         return []
@@ -236,7 +248,7 @@ def queue_status(name: str) -> PrinterDevice | None:
         return None
     # c_void_p, not ctypes.wintypes.HANDLE: wintypes is absent from some
     # frozen builds and its lazy import used to kill the whole listing.
-    spooler = ctypes.windll.winspool
+    spooler = _spooler()
     handle = ctypes.c_void_p()
     if not spooler.OpenPrinterW(name, ctypes.byref(handle), None):
         return None
@@ -272,7 +284,7 @@ def set_default_printer(name: str) -> bool:
     """Make a queue the Windows default printer."""
     if sys.platform != "win32" or not name:
         return False
-    return bool(ctypes.windll.winspool.SetDefaultPrinterW(name))
+    return bool(_spooler().SetDefaultPrinterW(name))
 
 
 def open_preferences(name: str) -> str:
@@ -291,9 +303,9 @@ def default_printer() -> str:
     if sys.platform != "win32":
         return ""
     size = ctypes.c_uint32(0)
-    ctypes.windll.winspool.GetDefaultPrinterW(None, ctypes.byref(size))
+    _spooler().GetDefaultPrinterW(None, ctypes.byref(size))
     buffer = ctypes.create_unicode_buffer(size.value)
-    if not ctypes.windll.winspool.GetDefaultPrinterW(
+    if not _spooler().GetDefaultPrinterW(
         buffer, ctypes.byref(size)
     ):
         return ""
@@ -347,7 +359,11 @@ def diagnose() -> dict:
         except Exception as exc:
             report["error"] = f"{type(exc).__name__}: {exc}"
         return report
-    spooler = ctypes.windll.winspool
+    try:
+        spooler = _spooler()
+    except Exception as exc:
+        report["error"] = f"{type(exc).__name__}: {exc}"
+        return report
     for level in (1, 2):
         try:
             names = _enumerate_names(spooler, level)
