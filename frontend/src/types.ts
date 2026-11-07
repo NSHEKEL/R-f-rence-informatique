@@ -254,6 +254,7 @@ export interface CompanySettings {
   drive_last_error: string;
   drive_last_file_id: string;
   drive_account_email: string;
+  network_restrict_workstations: boolean;
   /** Magasin's city (multi-magasins supervision). */
   city: string;
   /** Contact shown on "Assistance et support". */

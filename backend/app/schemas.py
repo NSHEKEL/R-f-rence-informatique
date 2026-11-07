@@ -110,6 +110,7 @@ class CompanySettingsOut(BaseModel):
     drive_last_error: str = ""
     drive_last_file_id: str = ""
     drive_account_email: str = ""
+    network_restrict_workstations: bool = False
     support_whatsapp: str = ""
     support_email: str = ""
 
@@ -164,12 +165,13 @@ class CompanySettingsUpdate(BaseModel):
     backup_weekday: Optional[int] = Field(default=None, ge=0, le=6)
     backup_monthday: Optional[int] = Field(default=None, ge=1, le=28)
     drive_enabled: Optional[bool] = None
+    network_restrict_workstations: Optional[bool] = None
     drive_folder_name: Optional[str] = Field(default=None, min_length=1, max_length=200)
     drive_keep: Optional[int] = Field(default=None, ge=1, le=1000)
     support_whatsapp: Optional[str] = None
     support_email: Optional[str] = None
 
-    @field_validator("backup_auto_enabled", "backup_frequency", "backup_time", "backup_weekday", "backup_monthday", "backup_keep", "drive_enabled", "drive_folder_name", "drive_keep")
+    @field_validator("backup_auto_enabled", "backup_frequency", "backup_time", "backup_weekday", "backup_monthday", "backup_keep", "drive_enabled", "drive_folder_name", "drive_keep", "network_restrict_workstations")
     @classmethod
     def backup_not_null(cls, value):
         if value is None:

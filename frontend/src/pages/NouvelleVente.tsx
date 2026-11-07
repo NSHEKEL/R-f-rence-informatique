@@ -1952,7 +1952,7 @@ export default function NouvelleVente() {
       <Modal
         open={lastSale !== null}
         onClose={() => setLastSale(null)}
-        title={lastSale ? `Vente enregistrée — ${lastSale.reference}` : ""}
+        title={lastSale ? `${lastSale.pending_sync ? "Vente en attente de synchronisation" : "Vente enregistrée"} — ${lastSale.reference}` : ""}
         footer={
           lastSale && (
             <div className="no-print flex w-full items-center justify-end gap-3">
@@ -1983,7 +1983,7 @@ export default function NouvelleVente() {
           <>
             {lastSale.pending_sync && (
               <p className="no-print mb-3 rounded-xl bg-amber-50 px-4 py-2.5 text-sm font-medium text-amber-700">
-                Ticket enregistré localement : il partira au serveur dès le
+                Ticket en attente, conservé localement : il partira au serveur dès le
                 retour du réseau.
               </p>
             )}

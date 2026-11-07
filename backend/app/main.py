@@ -12,8 +12,9 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
-from . import backup, clients, history, licensing, remote_sales
+from . import backup, clients, history, licensing, network as shop_network, remote_sales
 from .auth import ALGORITHM, SECRET_KEY, require_admin
 from .database import Base, SessionLocal, engine, get_db
 from .migrate import migrate
@@ -74,15 +75,6 @@ LAN_ORIGIN_RE = (
     r"172\.(1[6-9]|2[0-9]|3[01])\.[0-9.]+)(:\d+)?$"
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_configured_origins,
-    allow_origin_regex=None if _configured_origins else LAN_ORIGIN_RE,
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 
 def feature(code: str) -> list:
     """Guard every route of a module with the plan the client subscribed to."""
@@ -91,6 +83,7 @@ def feature(code: str) -> list:
 
 app.include_router(auth.router)
 app.include_router(backup_drive.callback_router)
+app.include_router(shop_network.router)
 app.include_router(dashboard.router, dependencies=feature("tableau_bord"))
 app.include_router(products.router, dependencies=feature("produits"))
 app.include_router(purchases.router, dependencies=feature("achats"))
@@ -163,10 +156,17 @@ def _user_id(request: Request) -> Optional[int]:
     return int(subject) if subject else None
 
 
-@app.middleware("http")
 async def record_workstation(request: Request, call_next):
     """Remember which machines use this server, to list them in the settings."""
     if request.url.path.startswith("/api/"):
+        restricted, status = await run_in_threadpool(
+            shop_network.observe, request.client.host if request.client else "", _user_id(request),
+            request.headers.get("user-agent", ""), request.headers.get("x-workstation-name", ""),
+        )
+        request.state.network_restricted = restricted
+        request.state.workstation_status = status
+        if restricted and status != "approved" and request.url.path != "/api/health":
+            return JSONResponse(status_code=403, content={"detail": shop_network.MESSAGE, "code": "workstation_not_authorized"})
         clients.record(
             request.client.host if request.client else "", _user_id(request)
         )
@@ -215,6 +215,17 @@ async def record_undoable_action(request: Request, call_next):
     return response
 
 
+app.middleware("http")(record_workstation)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_configured_origins,
+    allow_origin_regex=None if _configured_origins else LAN_ORIGIN_RE,
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
 def _license_loop() -> None:
     """Check in with the central server, quietly, for as long as we run."""
     while True:
@@ -257,12 +268,15 @@ def on_startup():
 
 
 @app.get("/api/health")
-def health():
-    return {
+def health(request: Request):
+    result = {
         "status": "ok",
         "app": APP_NAME,
         "version": APP_VERSION,
     }
+    if getattr(request.state, "network_restricted", False):
+        result["workstation_status"] = request.state.workstation_status
+    return result
 
 
 def _lan_ip() -> str:
@@ -278,11 +292,11 @@ def _lan_ip() -> str:
 
 
 @app.get("/api/network")
-def network(request: Request):
+def network(request: Request, db: Session = Depends(get_db)):
     """Address to type on the phone or on the other workstations."""
-    port = request.url.port or (443 if request.url.scheme == "https" else 80)
+    port = request.scope["server"][1]
     address = f"{_lan_ip()}:{port}"
-    return {"address": address, "url": f"http://{address}"}
+    return {"address": address, "url": f"http://{address}", **shop_network.identity(db, port)}
 
 
 @app.get("/api/network/clients")

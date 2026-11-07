@@ -90,8 +90,14 @@ def create_sale(
     for attempt in range(MAX_REFERENCE_ATTEMPTS):
         try:
             return _persist_sale(db, payload, current_user)
-        except IntegrityError:
+        except (IntegrityError, HTTPException) as exc:
             db.rollback()
+            if payload.client_id:
+                existing = db.query(Sale).filter(Sale.client_id == payload.client_id).first()
+                if existing:
+                    return existing
+            if isinstance(exc, HTTPException):
+                raise
             if attempt == MAX_REFERENCE_ATTEMPTS - 1:
                 raise HTTPException(
                     status_code=409,

@@ -9,7 +9,7 @@ shared PostgreSQL server.
 from sqlalchemy import bindparam, inspect, text
 
 from .database import engine
-from .models import Delivery
+from .models import Delivery, Workstation
 
 TRUE_LITERAL = "1" if engine.dialect.name == "sqlite" else "TRUE"
 FALSE_LITERAL = "0" if engine.dialect.name == "sqlite" else "FALSE"
@@ -93,6 +93,7 @@ COLUMNS: dict[str, dict[str, str]] = {
         "drive_last_error": "TEXT DEFAULT ''",
         "drive_last_file_id": "VARCHAR DEFAULT ''",
         "drive_account_email": "VARCHAR DEFAULT ''",
+        "network_restrict_workstations": f"BOOLEAN DEFAULT {FALSE_LITERAL}",
         "support_whatsapp": "VARCHAR DEFAULT '0710069059'",
         "support_email": "VARCHAR DEFAULT 'ankouame022@gmail.com'",
         "vat_rate": "FLOAT DEFAULT 0",
@@ -212,6 +213,7 @@ def migrate() -> None:
     tables = set(insp.get_table_names())
 
     with engine.begin() as conn:
+        Workstation.__table__.create(bind=conn, checkfirst=True)
         for table, columns in COLUMNS.items():
             if table not in tables:
                 continue

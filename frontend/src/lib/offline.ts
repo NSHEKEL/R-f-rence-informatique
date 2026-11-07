@@ -115,6 +115,7 @@ function writeQueue(queue: PendingSale[]): void {
 }
 
 export function queueSale(entry: PendingSale): void {
+  if (!entry.payload.client_id) entry.payload.client_id = newClientId();
   writeQueue([...pendingSales(), entry]);
 }
 
@@ -142,10 +143,18 @@ export async function flushPendingSales(): Promise<SyncResult> {
   let synced = 0;
 
   for (const entry of queue) {
+    if (!entry.payload.client_id) {
+      entry.payload.client_id = newClientId();
+      writeQueue(queue);
+    }
     try {
       await api.post<Sale>("/sales", entry.payload);
       synced += 1;
     } catch (err) {
+      if ((err as { response?: { data?: { code?: string } } }).response?.data?.code === "workstation_not_authorized") {
+        remaining.push(entry);
+        continue;
+      }
       const status = (err as { response?: { status?: number } }).response
         ?.status;
       if (status && status >= 400 && status < 500) {

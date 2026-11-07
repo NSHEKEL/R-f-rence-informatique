@@ -33,6 +33,7 @@ import type {
 } from "../types";
 import { documentHeader, readDocumentLayout } from "../lib/print";
 import GoogleDriveSettings from "../components/GoogleDriveSettings";
+import NetworkSettings from "../components/NetworkSettings";
 import type { DocumentLayout } from "../lib/print";
 import { useAuth } from "../context/AuthContext";
 import PhotoPicker from "../components/PhotoPicker";
@@ -129,6 +130,7 @@ const emptyCompany: CompanyForm = {
   drive_last_error: "",
   drive_last_file_id: "",
   drive_account_email: "",
+  network_restrict_workstations: false,
   city: "",
   support_whatsapp: "0710069059",
   support_email: "",
@@ -1020,6 +1022,8 @@ export default function Settings() {
       )}
 
       {/* Central server */}
+      {tab === "reseau" && <NetworkSettings restricted={company.network_restrict_workstations}
+        onRestrictionChange={(value) => update({ network_restrict_workstations: value })} />}
       {tab === "reseau" && (
       <div className="card p-6">
         <div className="mb-4 flex items-center gap-2">

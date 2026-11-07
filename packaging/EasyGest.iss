@@ -52,6 +52,8 @@ Name: "french"; MessagesFile: "compiler:Languages\French.isl"
 [Tasks]
 Name: "desktopicon"; Description: "Créer un raccourci sur le Bureau"; \
   GroupDescription: "Raccourcis :"
+Name: "principalserver"; Description: "Ordinateur principal : démarrer le serveur EasyGest au démarrage de Windows"; \
+  GroupDescription: "Réseau :"; Flags: unchecked
 
 [Dirs]
 ; Shared data folder: every account (and the program started without
@@ -81,13 +83,18 @@ Filename: "{tmp}\MicrosoftEdgeWebview2Setup.exe"; Parameters: "/silent /install"
   Check: NeedsWebView2; Flags: waituntilterminated skipifdoesntexist
 ; The other workstations and the Android application reach this computer on
 ; port 8000, so the private-network firewall is opened once at install time.
+Filename: "{cmd}"; Parameters: "/c netsh advfirewall firewall delete rule name=""EasyGest"""; Flags: runhidden waituntilterminated
 Filename: "{cmd}"; Parameters: "/c netsh advfirewall firewall add rule \
   name=""EasyGest"" dir=in action=allow protocol=TCP localport=8000 \
-  profile=private"; Flags: runhidden waituntilterminated
+  profile=private remoteip=LocalSubnet"; Flags: runhidden waituntilterminated
 ; runasoriginaluser: started as the shop's account, not as the administrator
 ; who ran the installer, so the application keeps using the same data folder.
 Filename: "{app}\{#AppExe}"; Description: "Lancer {#AppName}"; \
   Flags: nowait postinstall skipifsilent runasoriginaluser
+
+[UninstallRun]
+Filename: "{sys}\schtasks.exe"; Parameters: "/End /TN ""EasyGest Server"""; Flags: runhidden waituntilterminated
+Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /TN ""EasyGest Server"" /F"; Flags: runhidden waituntilterminated
 
 [Code]
 function NeedsWebView2: Boolean;
@@ -107,7 +114,20 @@ begin
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
+var
+  ExitCode: Integer;
+  Arguments: String;
 begin
   if CurStep = ssPostInstall then
+  begin
     ForceDirectories(ExpandConstant('{commonappdata}\EasyGest'));
+    if WizardIsTaskSelected('principalserver') then
+    begin
+      Arguments := '/Create /TN "EasyGest Server" /SC ONSTART /RU SYSTEM /RL HIGHEST /TR "\"' +
+        ExpandConstant('{app}\{#AppExe}') + '\" --server" /F';
+      if not Exec(ExpandConstant('{sys}\schtasks.exe'), Arguments, '', SW_HIDE,
+        ewWaitUntilTerminated, ExitCode) or (ExitCode <> 0) then
+        MsgBox('Impossible de créer la tâche de démarrage du serveur EasyGest.', mbError, MB_OK);
+    end;
+  end;
 end;

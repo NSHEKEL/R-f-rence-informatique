@@ -110,6 +110,7 @@ class CompanySettings(Base):
     drive_last_error = Column(Text, default="", nullable=False)
     drive_last_file_id = Column(String, default="", nullable=False)
     drive_account_email = Column(String, default="", nullable=False)
+    network_restrict_workstations = Column(Boolean, default=False, nullable=False)
     # FNE (Facture Normalisée Électronique, DGI Côte d'Ivoire) : connexion à
     # l'API officielle de l'entreprise. Les secrets ne sont jamais renvoyés par
     # l'API de lecture — seul le drapeau fne_secret_configured le dit.
@@ -125,6 +126,20 @@ class CompanySettings(Base):
     support_whatsapp = Column(String, default="0710069059")
     support_email = Column(String, default="ankouame022@gmail.com")
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class Workstation(Base):
+    __tablename__ = "workstations"
+
+    id = Column(Integer, primary_key=True)
+    ip = Column(String, unique=True, nullable=False, index=True)
+    name = Column(String, default="", nullable=False)
+    hostname = Column(String, default="", nullable=False)
+    user_agent = Column(String, default="", nullable=False)
+    status = Column(String, default="pending", nullable=False)
+    first_seen = Column(DateTime, default=utcnow, nullable=False)
+    last_seen = Column(DateTime, default=utcnow, nullable=False, index=True)
+    last_user = Column(String, default="", nullable=False)
 
 
 class Category(Base):
