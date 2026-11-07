@@ -200,7 +200,11 @@ def _windows_devices() -> list[PrinterDevice]:
         if name in seen:
             continue
         seen.add(name)
-        device = queue_status(name)
+        try:
+            device = queue_status(name)
+        except Exception:
+            # A queue that crashes the detail query stays listed, marked.
+            device = None
         if device is None:
             device = PrinterDevice(
                 name=name,
@@ -221,10 +225,10 @@ def queue_status(name: str) -> PrinterDevice | None:
     """Live status of one queue: jobs waiting and the current problem."""
     if sys.platform != "win32":
         return None
-    from ctypes import wintypes
-
+    # c_void_p, not ctypes.wintypes.HANDLE: wintypes is absent from some
+    # frozen builds and its lazy import used to kill the whole listing.
     spooler = ctypes.windll.winspool
-    handle = wintypes.HANDLE()
+    handle = ctypes.c_void_p()
     if not spooler.OpenPrinterW(name, ctypes.byref(handle), None):
         return None
     try:
@@ -322,3 +326,51 @@ def _cups_printers() -> list[str]:
     except (OSError, subprocess.SubprocessError):
         return []
     return [line.split(" ", 1)[0] for line in out.splitlines() if line.strip()]
+
+
+def diagnose() -> dict:
+    """Stage-by-stage detection report, for support: Windows call results
+    (levels 1 and 2), the default queue, and each queue's detail query."""
+    report: dict = {"platform": sys.platform}
+    if sys.platform != "win32":
+        try:
+            report["devices"] = [d.name for d in printer_devices()]
+        except Exception as exc:
+            report["error"] = f"{type(exc).__name__}: {exc}"
+        return report
+    spooler = ctypes.windll.winspool
+    for level in (1, 2):
+        try:
+            names = _enumerate_names(spooler, level)
+            report[f"level{level}"] = {"count": len(names), "names": names}
+        except Exception as exc:
+            report[f"level{level}"] = {
+                "error": f"{type(exc).__name__}: {exc}"
+            }
+    try:
+        report["default"] = default_printer()
+    except Exception as exc:
+        report["default_error"] = f"{type(exc).__name__}: {exc}"
+    queues = []
+    for name in report.get("level1", {}).get("names", []):
+        try:
+            device = queue_status(name)
+            queues.append(
+                {
+                    "name": name,
+                    "ok": device is not None,
+                    "status": device.status if device else None,
+                    "port": device.port if device else "",
+                    "driver": device.driver if device else "",
+                }
+            )
+        except Exception as exc:
+            queues.append(
+                {
+                    "name": name,
+                    "ok": False,
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+            )
+    report["queues"] = queues
+    return report

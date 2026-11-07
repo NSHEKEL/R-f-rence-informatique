@@ -126,10 +126,9 @@ def build(lines: list[Line], cut: bool, kick: bytes = b"") -> bytes:
 def _default_printer() -> str:
     if sys.platform != "win32":
         raise PrintError("L'impression directe n'est disponible que sous Windows.")
-    # ctypes.wintypes only exists on Windows, where printing happens.
-    from ctypes import wintypes
-
-    size = wintypes.DWORD(0)
+    # c_uint32, not wintypes.DWORD: wintypes is absent from some frozen
+    # builds and its lazy import used to kill direct printing there.
+    size = ctypes.c_uint32(0)
     ctypes.windll.winspool.GetDefaultPrinterW(None, ctypes.byref(size))
     buffer = ctypes.create_unicode_buffer(size.value)
     if not ctypes.windll.winspool.GetDefaultPrinterW(buffer, ctypes.byref(size)):
@@ -141,18 +140,16 @@ def send(data: bytes, printer_name: str = "") -> str:
     """Write raw bytes to a Windows printer; returns the printer used."""
     if sys.platform != "win32":
         raise PrintError("L'impression directe n'est disponible que sous Windows.")
-    from ctypes import wintypes
-
     class _DocInfo(ctypes.Structure):
         _fields_ = [
-            ("pDocName", wintypes.LPWSTR),
-            ("pOutputFile", wintypes.LPWSTR),
-            ("pDatatype", wintypes.LPWSTR),
+            ("pDocName", ctypes.c_wchar_p),
+            ("pOutputFile", ctypes.c_wchar_p),
+            ("pDatatype", ctypes.c_wchar_p),
         ]
 
     target = printer_name.strip() or _default_printer()
     spooler = ctypes.windll.winspool
-    handle = wintypes.HANDLE()
+    handle = ctypes.c_void_p()
     if not spooler.OpenPrinterW(target, ctypes.byref(handle), None):
         raise PrintError(f"Imprimante « {target} » introuvable.")
     try:
@@ -161,7 +158,7 @@ def send(data: bytes, printer_name: str = "") -> str:
             raise PrintError(f"Impression refusée par « {target} ».")
         try:
             spooler.StartPagePrinter(handle)
-            written = wintypes.DWORD(0)
+            written = ctypes.c_uint32(0)
             spooler.WritePrinter(
                 handle, data, len(data), ctypes.byref(written)
             )

@@ -118,6 +118,43 @@ function PrinterSelect({
   );
 }
 
+/** Technical report shown when detection fails: Windows calls, per-queue
+ * results — so support can tell "no printers" from "detection broken". */
+function DiagnosePanel({ data }: { data: Record<string, unknown> }) {
+  const stage = (key: string) => data[key] as
+    | { count?: number; names?: string[]; error?: string }
+    | undefined;
+  const l1 = stage("level1");
+  const l2 = stage("level2");
+  const queues = (data.queues as
+    | { name: string; ok: boolean; status?: string; error?: string }[]
+    | undefined) ?? [];
+  return (
+    <details className="mt-2 rounded border border-slate-200 bg-slate-50 p-2 text-xs">
+      <summary className="cursor-pointer font-medium">
+        Détails techniques
+      </summary>
+      <ul className="mt-1 space-y-1">
+        <li>
+          Windows niv. 1 :{" "}
+          {l1?.error ?? `${l1?.count ?? 0} file(s)`}
+        </li>
+        <li>
+          Windows niv. 2 :{" "}
+          {l2?.error ?? `${l2?.count ?? 0} file(s)`}
+        </li>
+        <li>Par défaut : {(data.default as string) || "—"}</li>
+        {queues.map((q) => (
+          <li key={q.name}>
+            {q.name} :{" "}
+            {q.ok ? q.status ?? "?" : q.error ?? "Non détectable"}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 /** Ticket used by the preview and the test print, never stored. */
 function sampleSale(): Sale {
   const line = (id: number, name: string, qty: number, price: number) => ({
@@ -237,6 +274,10 @@ export default function PrintingSettings({
   const [devices, setDevices] = useState<PrinterDevice[]>([]);
   const [loadingPrinters, setLoadingPrinters] = useState(true);
   const [printersError, setPrintersError] = useState("");
+  const [diagnostics, setDiagnostics] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
@@ -269,6 +310,11 @@ export default function PrintingSettings({
               }`
             : "Détection impossible sur ce poste."
         );
+        // Rapport technique étape par étape : aide à situer la panne.
+        localApi
+          .get<Record<string, unknown>>("/settings/printers/diagnose")
+          .then((res) => setDiagnostics(res.data))
+          .catch(() => setDiagnostics(null));
       })
       .finally(() => setLoadingPrinters(false));
   }, []);
@@ -501,6 +547,7 @@ export default function PrintingSettings({
             {loadingPrinters
               ? "Lecture des imprimantes installées..."
               : printersError || "Aucune imprimante détectée sur ce poste."}
+            {diagnostics && <DiagnosePanel data={diagnostics} />}
           </p>
         ) : (
           <div className="overflow-x-auto">
