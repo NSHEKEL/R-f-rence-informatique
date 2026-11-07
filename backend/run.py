@@ -177,15 +177,15 @@ class DesktopApi:
     """
 
     def __init__(self) -> None:
-        self.window = None
+        self._window = None
 
     def choose_folder(self) -> str:
         """Real Windows folder picker used to select the backup folder."""
         import webview
 
-        if self.window is None:
+        if self._window is None:
             return ""
-        chosen = self.window.create_file_dialog(webview.FOLDER_DIALOG)
+        chosen = self._window.create_file_dialog(webview.FOLDER_DIALOG)
         if not chosen:
             return ""
         return chosen[0] if isinstance(chosen, (list, tuple)) else str(chosen)
@@ -195,9 +195,9 @@ class DesktopApi:
         so the Excel and PDF buttons would do nothing without this."""
         import webview
 
-        if self.window is None:
+        if self._window is None:
             return ""
-        target = self.window.create_file_dialog(
+        target = self._window.create_file_dialog(
             webview.SAVE_DIALOG,
             directory=str(Path.home() / "Documents"),
             save_filename=filename,
@@ -289,13 +289,13 @@ class DesktopApi:
         sets the exact roll geometry. Returns False when the native printer is
         not reachable, so the page falls back on ``window.print()``.
         """
-        if self.window is None:
+        if self._window is None:
             return False
         try:
             from System import Action
             from webview.platforms.winforms import BrowserView
 
-            form = BrowserView.instances[self.window.uid]
+            form = BrowserView.instances[self._window.uid]
             core = form.browser.webview.CoreWebView2
         except Exception:  # noqa: BLE001 - Linux, older runtime, no window
             traceback.print_exc()
@@ -343,7 +343,7 @@ class DesktopApi:
             from System import Action
             from webview.platforms.winforms import BrowserView
 
-            form = BrowserView.instances[self.window.uid]
+            form = BrowserView.instances[self._window.uid]
             core = form.browser.webview.CoreWebView2
         except Exception:  # noqa: BLE001 - Linux, older runtime, no window
             traceback.print_exc()
@@ -384,9 +384,9 @@ class DesktopApi:
     def toggle_fullscreen(self) -> bool:
         """Full screen for the counter: the web API alone cannot resize the
         native window."""
-        if self.window is None:
+        if self._window is None:
             return False
-        self.window.toggle_fullscreen()
+        self._window.toggle_fullscreen()
         return True
 
 
@@ -522,7 +522,7 @@ def _open_window(url: str) -> bool:
             text_select=True,
             js_api=api,
         )
-        api.window = window
+        api._window = window
         window.events.closed += lambda: os._exit(0)
 
         # Anti-blank-page watchdog: if the interface has not mounted after
