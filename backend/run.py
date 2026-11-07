@@ -180,14 +180,15 @@ class DesktopApi:
 
     @staticmethod
     def _pref_path(filename: str) -> Path:
-        """Where the workstation's own files live: next to the exe when
-        installed, the home folder during development. No dialog, so the
-        app can read and rewrite them silently at every start."""
-        base = (
-            Path(sys.executable).parent
-            if getattr(sys, "frozen", False)
-            else Path.home()
-        )
+        """Where the workstation's own files live. Program Files is
+        read-only for a standard user, so the per-poste preferences go in
+        %LOCALAPPDATA% — always writable, never needing admin rights, and
+        scoped to this Windows session on this machine."""
+        base = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "EasyGest"
+        try:
+            base.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            base = Path.home()
         return base / filename
 
     def write_pref_file(self, filename: str, content: str) -> str:

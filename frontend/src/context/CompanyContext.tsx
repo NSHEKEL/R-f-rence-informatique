@@ -104,7 +104,19 @@ export async function restorePostePrinters(): Promise<Record<
   try {
     const raw = await bridge(POSTE_PRINTERS_FILE);
     if (!raw) return null;
-    const fromFile = JSON.parse(raw) as Record<string, string>;
+    // A truncated or hand-edited file must not poison the poste's choices:
+    // only a plain object of strings is accepted, anything else is ignored.
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return null;
+    }
+    const fromFile = Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>).filter(
+        ([key, value]) =>
+          POSTE_PRINTER_KEYS.includes(key) && typeof value === "string"
+      )
+    ) as Record<string, string>;
+    if (!Object.keys(fromFile).length) return null;
     const merged = { ...fromFile, ...current };
     writePostePrinters(merged);
     return merged;

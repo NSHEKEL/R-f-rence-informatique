@@ -60,4 +60,5 @@ ignore la commande).
   documents partent sur la file EasyGest, pas sur le défaut Windows.
 - Deux postes sur la même base : chacun garde ses propres affectations.
 - Reinstallation : si le fichier `easygest-imprimantes-poste.json` existe
-  encore à côté de l'exe, les affectations reviennent seules au premier lancement.
+  encore dans `%LOCALAPPDATA%\EasyGest`, les affectations reviennent seules
+  au premier lancement (jamais dans Program Files : pas de droits admin requis).
