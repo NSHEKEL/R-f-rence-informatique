@@ -98,7 +98,15 @@ def update_printing(
 @router.get("/printers", response_model=PrinterList)
 def list_printers(_: User = Depends(get_current_user)):
     """Printers installed on this computer, for the selection lists."""
-    devices = printing.printer_devices()
+    try:
+        devices = printing.printer_devices()
+    except OSError as exc:
+        # Technical reason, not a silent empty list: a failed enumeration
+        # looks the same as "no printers" otherwise.
+        raise HTTPException(
+            status_code=502,
+            detail=f"Lecture des imprimantes impossible : {exc}",
+        )
     return PrinterList(
         devices=devices,
         printers=[device.name for device in devices],

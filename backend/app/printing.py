@@ -66,6 +66,17 @@ def write_config(settings: CompanySettings, config: PrintingConfig) -> None:
     settings.drawer_open_after_sale = config.receipt.open_drawer
 
 
+class _PrinterInfo1(ctypes.Structure):
+    """PRINTER_INFO_1W: name-only listing that survives broken drivers."""
+
+    _fields_ = [
+        ("Flags", ctypes.c_uint32),
+        ("pDescription", ctypes.c_wchar_p),
+        ("pName", ctypes.c_wchar_p),
+        ("pComment", ctypes.c_wchar_p),
+    ]
+
+
 class _PrinterInfo2(ctypes.Structure):
     """PRINTER_INFO_2W: the name, the port and the live status of a queue."""
 
@@ -121,19 +132,14 @@ def _connection_kind(port: str) -> str:
     return ""
 
 
-def _windows_devices() -> list[PrinterDevice]:
-    """Queues declared in Windows, read straight from the print spooler.
-
-    The spooler is asked through ctypes rather than through pywin32: the
-    packaged executable does not ship that extension, so the selection list
-    used to come back empty and the shop had to type the printer name.
-    """
-    spooler = ctypes.windll.winspool
+def _enumerate_names(spooler, level: int) -> list[str]:
+    """Raw EnumPrintersW call: queue names, or [] when the call fails."""
     flags = PRINTER_ENUM_LOCAL | PRINTER_ENUM_CONNECTIONS
     needed = ctypes.c_uint32(0)
     returned = ctypes.c_uint32(0)
     spooler.EnumPrintersW(
-        flags, None, 2, None, 0, ctypes.byref(needed), ctypes.byref(returned)
+        flags, None, level, None, 0, ctypes.byref(needed),
+        ctypes.byref(returned),
     )
     if needed.value == 0:
         return []
@@ -141,37 +147,73 @@ def _windows_devices() -> list[PrinterDevice]:
     if not spooler.EnumPrintersW(
         flags,
         None,
-        2,
+        level,
         buffer,
         needed.value,
         ctypes.byref(needed),
         ctypes.byref(returned),
     ):
         return []
-    entries = ctypes.cast(
-        buffer, ctypes.POINTER(_PrinterInfo2 * returned.value)
-    ).contents
+    names: list[str] = []
+    if level == 1:
+        entries = ctypes.cast(
+            buffer, ctypes.POINTER(_PrinterInfo1 * returned.value)
+        ).contents
+        for entry in entries:
+            name = entry.pName or ""
+            if name:
+                names.append(name)
+    else:
+        entries = ctypes.cast(
+            buffer, ctypes.POINTER(_PrinterInfo2 * returned.value)
+        ).contents
+        for entry in entries:
+            name = entry.pPrinterName or ""
+            if name:
+                names.append(name)
+    return names
+
+
+def _windows_devices() -> list[PrinterDevice]:
+    """Queues declared in Windows, read straight from the print spooler.
+
+    The spooler is asked through ctypes rather than through pywin32: the
+    packaged executable does not ship that extension, so the selection list
+    used to come back empty and the shop had to type the printer name.
+
+    Level-2 enumeration returns full details in one call but fails
+    ENTIRELY when a single installed queue has a broken driver (an old
+    thermal printer does exactly this) — the list then looked empty while
+    PowerShell and the print dialog still showed every printer. The names
+    therefore come from the tolerant level-1 call, then each queue is
+    enriched by its own GetPrinter: one sick queue only breaks its own
+    line, which reads "Non détectable".
+    """
+    spooler = ctypes.windll.winspool
+    names = _enumerate_names(spooler, 1)
+    if not names:
+        return []
     default = default_printer()
     devices: list[PrinterDevice] = []
     seen: set[str] = set()
-    for entry in entries:
-        name = entry.pPrinterName or ""
-        if not name or name in seen:
+    for name in names:
+        if name in seen:
             continue
         seen.add(name)
-        problem = _status_label(int(entry.Status))
-        devices.append(
-            PrinterDevice(
+        device = queue_status(name)
+        if device is None:
+            device = PrinterDevice(
                 name=name,
-                port=entry.pPortName or "",
-                driver=entry.pDriverName or "",
-                kind=_connection_kind(entry.pPortName or ""),
-                jobs=int(entry.cJobs),
-                is_default=name == default,
-                available=not problem,
-                status=problem or "Prête",
+                port="",
+                driver="",
+                kind="",
+                jobs=0,
+                is_default=False,
+                available=True,
+                status="Non détectable",
             )
-        )
+        device.is_default = name == default
+        devices.append(device)
     return devices
 
 
@@ -246,12 +288,13 @@ def default_printer() -> str:
 
 
 def printer_devices() -> list[PrinterDevice]:
-    """Printers installed on this computer, with their availability."""
+    """Printers installed on this computer, with their availability.
+
+    Raises OSError on Windows when the enumeration itself fails, so the
+    API can report the technical reason instead of an empty list.
+    """
     if sys.platform == "win32":
-        try:
-            return _windows_devices()
-        except OSError:
-            return []
+        return _windows_devices()
     return [
         PrinterDevice(name=name, port="", is_default=False, available=True,
                       status="Disponible")
@@ -260,8 +303,11 @@ def printer_devices() -> list[PrinterDevice]:
 
 
 def installed_printers() -> list[str]:
-    """Printer names only, kept for the callers that just need the list."""
-    return [device.name for device in printer_devices()]
+    """Printer names only; empty rather than raising on OS errors."""
+    try:
+        return [device.name for device in printer_devices()]
+    except OSError:
+        return []
 
 
 def _cups_printers() -> list[str]:

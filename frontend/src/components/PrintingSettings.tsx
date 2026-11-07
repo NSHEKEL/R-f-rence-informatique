@@ -9,7 +9,7 @@ import {
   Tags,
 } from "lucide-react";
 import { applyPostePrinters, writePostePrinters } from "../context/CompanyContext";
-import api from "../api/client";
+import api, { localApi } from "../api/client";
 import Modal from "../components/Modal";
 import Receipt from "../components/Receipt";
 import { printDocument, printLabels, printReceipt } from "../lib/print";
@@ -236,6 +236,7 @@ export default function PrintingSettings({
   const [form, setForm] = useState<PrintingConfig>(printing);
   const [devices, setDevices] = useState<PrinterDevice[]>([]);
   const [loadingPrinters, setLoadingPrinters] = useState(true);
+  const [printersError, setPrintersError] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
@@ -252,10 +253,23 @@ export default function PrintingSettings({
 
   const loadPrinters = useCallback(() => {
     setLoadingPrinters(true);
-    api
+    setPrintersError("");
+    // localApi, pas api : les imprimantes appartiennent à CE poste, pas au
+    // serveur du magasin. Avec api, un poste branché au serveur afficherait
+    // les files du serveur et jamais les siennes (Canon USB003, ...).
+    localApi
       .get<{ devices: PrinterDevice[] }>("/settings/printers")
       .then((res) => setDevices(res.data.devices))
-      .catch(() => setDevices([]))
+      .catch((err) => {
+        setDevices([]);
+        setPrintersError(
+          axios.isAxiosError(err)
+            ? `Détection impossible : ${
+                err.response?.data?.detail ?? err.message
+              }`
+            : "Détection impossible sur ce poste."
+        );
+      })
       .finally(() => setLoadingPrinters(false));
   }, []);
 
@@ -387,7 +401,9 @@ export default function PrintingSettings({
   async function makeDefault(name: string) {
     setActionMessage("");
     try {
-      await api.post("/settings/printers/default", { printer_name: name });
+      await localApi.post("/settings/printers/default", {
+        printer_name: name,
+      });
       setActionMessage(`${name} est maintenant l'imprimante par défaut.`);
       loadPrinters();
     } catch (err) {
@@ -402,7 +418,7 @@ export default function PrintingSettings({
   async function configure(name: string) {
     setActionMessage("");
     try {
-      await api.post("/settings/printers/preferences", {
+      await localApi.post("/settings/printers/preferences", {
         printer_name: name,
       });
       setActionMessage(`Préférences du pilote ouvertes pour ${name}.`);
@@ -445,7 +461,7 @@ export default function PrintingSettings({
     setDrawerMessage("");
     try {
       await saveCompany();
-      const { data } = await api.post<{ port: string }>(
+      const { data } = await localApi.post<{ port: string }>(
         "/settings/company/open-drawer"
       );
       setDrawerMessage(`Ouverture envoyée sur ${data.port}.`);
@@ -484,7 +500,7 @@ export default function PrintingSettings({
           <p className="text-sm text-slate-500">
             {loadingPrinters
               ? "Lecture des imprimantes installées..."
-              : "Aucune imprimante détectée sur ce poste."}
+              : printersError || "Aucune imprimante détectée sur ce poste."}
           </p>
         ) : (
           <div className="overflow-x-auto">
