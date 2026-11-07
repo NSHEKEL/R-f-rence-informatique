@@ -10,13 +10,10 @@ from __future__ import annotations
 
 import base64
 import ctypes
-
-
-def _spooler():
-    """winspool.drv (see printing._spooler: windll appends .dll)."""
-    return ctypes.WinDLL("winspool.drv")
 import sys
 from dataclasses import dataclass
+
+from .printing import _spooler
 
 ESC = b"\x1b"
 GS = b"\x1d"
@@ -25,6 +22,14 @@ CODEPAGE = "cp858"  # Western European with the euro sign, the printer default
 
 class PrintError(RuntimeError):
     pass
+
+
+class _DocInfo(ctypes.Structure):
+    _fields_ = [
+        ("pDocName", ctypes.c_wchar_p),
+        ("pOutputFile", ctypes.c_wchar_p),
+        ("pDatatype", ctypes.c_wchar_p),
+    ]
 
 
 @dataclass
@@ -145,13 +150,6 @@ def send(data: bytes, printer_name: str = "") -> str:
     """Write raw bytes to a Windows printer; returns the printer used."""
     if sys.platform != "win32":
         raise PrintError("L'impression directe n'est disponible que sous Windows.")
-    class _DocInfo(ctypes.Structure):
-        _fields_ = [
-            ("pDocName", ctypes.c_wchar_p),
-            ("pOutputFile", ctypes.c_wchar_p),
-            ("pDatatype", ctypes.c_wchar_p),
-        ]
-
     target = printer_name.strip() or _default_printer()
     spooler = _spooler()
     handle = ctypes.c_void_p()
@@ -162,14 +160,23 @@ def send(data: bytes, printer_name: str = "") -> str:
         if not spooler.StartDocPrinterW(handle, 1, ctypes.byref(info)):
             raise PrintError(f"Impression refusée par « {target} ».")
         try:
-            spooler.StartPagePrinter(handle)
+            if not spooler.StartPagePrinter(handle):
+                raise PrintError(f"Début de page refusé par « {target} ».")
             written = ctypes.c_uint32(0)
-            spooler.WritePrinter(
+            ok = spooler.WritePrinter(
                 handle, data, len(data), ctypes.byref(written)
             )
-            spooler.EndPagePrinter(handle)
+            if not ok or written.value != len(data):
+                raise PrintError(
+                    f"Écriture sur « {target} » échouée : "
+                    f"{written.value}/{len(data)} octets transmis."
+                )
+            if not spooler.EndPagePrinter(handle):
+                raise PrintError(f"Fin de page refusée par « {target} ».")
         finally:
-            spooler.EndDocPrinter(handle)
+            completed = spooler.EndDocPrinter(handle)
+        if not completed:
+            raise PrintError(f"Fin de document refusée par « {target} ».")
     finally:
         spooler.ClosePrinter(handle)
     return target

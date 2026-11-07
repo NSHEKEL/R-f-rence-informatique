@@ -15,22 +15,36 @@ import shutil
 import subprocess
 import sys
 
+from .models import CompanySettings
+from .schemas import PrinterDevice, PrintingConfig, ReceiptPrinterConfig
+
 log = logging.getLogger(__name__)
 
 
 def _spooler():
-    """The print spooler DLL.
-
-    NOT ctypes.windll.winspool: windll appends ".dll" to a bare name and
-    the real file is winspool.drv, so the attribute lookup raises
-    AttributeError on every Windows machine — this is what emptied the
-    printer list on real posts while the simulation (which faked
-    windll.winspool) kept passing.
-    """
-    return ctypes.WinDLL("winspool.drv")
-
-from .models import CompanySettings
-from .schemas import PrinterDevice, PrintingConfig, ReceiptPrinterConfig
+    """Load the Windows spooler with pointer-safe Win32 signatures."""
+    dll = ctypes.WinDLL("winspool.drv", use_last_error=True)
+    ptr = ctypes.c_void_p
+    dword = ctypes.c_uint32
+    out_dword = ctypes.POINTER(dword)
+    signatures = {
+        "OpenPrinterW": ([ctypes.c_wchar_p, ctypes.POINTER(ptr), ptr], ctypes.c_int),
+        "ClosePrinter": ([ptr], ctypes.c_int),
+        "EnumPrintersW": ([dword, ctypes.c_wchar_p, dword, ptr, dword, out_dword, out_dword], ctypes.c_int),
+        "GetPrinterW": ([ptr, dword, ptr, dword, out_dword], ctypes.c_int),
+        "GetDefaultPrinterW": ([ctypes.c_wchar_p, out_dword], ctypes.c_int),
+        "SetDefaultPrinterW": ([ctypes.c_wchar_p], ctypes.c_int),
+        "StartDocPrinterW": ([ptr, dword, ptr], dword),
+        "StartPagePrinter": ([ptr], ctypes.c_int),
+        "WritePrinter": ([ptr, ptr, dword, out_dword], ctypes.c_int),
+        "EndPagePrinter": ([ptr], ctypes.c_int),
+        "EndDocPrinter": ([ptr], ctypes.c_int),
+    }
+    for name, (args, result) in signatures.items():
+        function = getattr(dll, name)
+        function.argtypes = args
+        function.restype = result
+    return dll
 
 # Windows printer status bits that mean the queue cannot print right now.
 PRINTER_STATUS_ERROR = 0x00000002
@@ -138,11 +152,13 @@ def _connection_kind(port: str) -> str:
     value = (port or "").upper()
     if value.startswith(("USB", "DOT4")):
         return "USB"
-    if value.startswith("\\\\") or "WSD" in value or value.startswith("IP_"):
+    if value.startswith("\\\\") or "WSD" in value or value.startswith(("IP_", "TCP")):
         return "Réseau"
-    if value.startswith(("COM", "LPT")):
+    if value.startswith("LPT"):
+        return "Parallèle"
+    if value.startswith("COM"):
         return "Série"
-    if "PORTPROMPT" in value or "FILE" in value:
+    if value.startswith(("PORTPROMPT", "NUL", "FILE", "/")) or (len(value) > 2 and value[1:3] == ":\\"):
         return "Virtuelle"
     return ""
 
@@ -152,11 +168,13 @@ def _enumerate_names(spooler, level: int) -> list[str]:
     flags = PRINTER_ENUM_LOCAL | PRINTER_ENUM_CONNECTIONS
     needed = ctypes.c_uint32(0)
     returned = ctypes.c_uint32(0)
-    spooler.EnumPrintersW(
+    ok = spooler.EnumPrintersW(
         flags, None, level, None, 0, ctypes.byref(needed),
         ctypes.byref(returned),
     )
     if needed.value == 0:
+        if not ok:
+            raise ctypes.WinError(ctypes.get_last_error())
         return []
     buffer = ctypes.create_string_buffer(needed.value)
     if not spooler.EnumPrintersW(
@@ -168,7 +186,7 @@ def _enumerate_names(spooler, level: int) -> list[str]:
         ctypes.byref(needed),
         ctypes.byref(returned),
     ):
-        return []
+        raise ctypes.WinError(ctypes.get_last_error())
     names: list[str] = []
     if level == 1:
         entries = ctypes.cast(
@@ -352,7 +370,13 @@ def _cups_printers() -> list[str]:
 def diagnose() -> dict:
     """Stage-by-stage detection report, for support: Windows call results
     (levels 1 and 2), the default queue, and each queue's detail query."""
-    report: dict = {"platform": sys.platform}
+    report: dict = {"platform": sys.platform, "steps": {}, "level1": {},
+                    "level2": {}, "default": "", "queues": []}
+    def stage(key: str, label: str, error: str = "") -> None:
+        report["steps"][key] = {"name": label, "ok": not error}
+        if error:
+            report["steps"][key]["error"] = error
+            log.warning("Étape %s — %s : %s", key, label, error)
     if sys.platform != "win32":
         try:
             report["devices"] = [d.name for d in printer_devices()]
@@ -361,13 +385,22 @@ def diagnose() -> dict:
         return report
     try:
         spooler = _spooler()
+        # EnumPrinters also checks that the spooler service answers.
+        _enumerate_names(spooler, 1)
+        stage("A", "Chargement winspool.drv / service spouleur")
     except Exception as exc:
         report["error"] = f"{type(exc).__name__}: {exc}"
+        stage("A", "Chargement winspool.drv / service spouleur", report["error"])
+        for key in ("B", "C", "D"):
+            stage(key, "Non exécutée", "Spouleur indisponible")
+        report["level1"] = {"error": report["error"]}
+        report["level2"] = {"error": report["error"]}
         return report
     for level in (1, 2):
         try:
             names = _enumerate_names(spooler, level)
-            report[f"level{level}"] = {"count": len(names), "names": names}
+            report[f"level{level}"] = {"ok": True, "count": len(names), "names": names}
+            stage("B" if level == 1 else "C", f"EnumPrinters niv. {level}")
         except Exception as exc:
             log.warning(
                 "Étape EnumPrinters niv. %s : %s: %s",
@@ -376,12 +409,15 @@ def diagnose() -> dict:
                 exc,
             )
             report[f"level{level}"] = {
+                "ok": False,
                 "error": f"{type(exc).__name__}: {exc}"
             }
+            stage("B" if level == 1 else "C", f"EnumPrinters niv. {level}", report[f"level{level}"]["error"])
     try:
         report["default"] = default_printer()
     except Exception as exc:
         report["default_error"] = f"{type(exc).__name__}: {exc}"
+        stage("C", "EnumPrinters niv. 2 + imprimante par défaut", report["default_error"])
     queues = []
     for name in report.get("level1", {}).get("names", []):
         try:
@@ -410,4 +446,8 @@ def diagnose() -> dict:
                 }
             )
     report["queues"] = queues
+    stage("D", "GetPrinter par file", "; ".join(
+        q["name"] + ": " + q.get("error", "Non détectable")
+        for q in queues if not q["ok"]
+    ))
     return report

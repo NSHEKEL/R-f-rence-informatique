@@ -18,6 +18,7 @@ Modes:
 
 import ctypes
 import json
+import logging
 import os
 import socket
 import sys
@@ -34,10 +35,40 @@ from pathlib import Path
 from app.paths import data_dir
 
 
+def _log_path() -> Path:
+    directory = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "EasyGest" / "Logs"
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory / "easygest.log"
+
+
+_file_handler = logging.FileHandler(_log_path(), encoding="utf-8")
+_file_handler.setLevel(logging.WARNING)
+_file_handler.setFormatter(logging.Formatter(
+    "%(asctime)s %(levelname)s %(name)s %(message)s"
+))
+logging.getLogger().addHandler(_file_handler)
+try:
+    _legacy_handler = logging.FileHandler(data_dir() / "easygest.log", encoding="utf-8")
+    _legacy_handler.setLevel(logging.WARNING)
+    _legacy_handler.setFormatter(_file_handler.formatter)
+    logging.getLogger().addHandler(_legacy_handler)
+except OSError:
+    pass
+
+
+def _append_log(message: str) -> None:
+    with open(_log_path(), "a", encoding="utf-8") as output:
+        output.write(message)
+    try:
+        with open(data_dir() / "easygest.log", "a", encoding="utf-8") as output:
+            output.write(message)
+    except OSError:
+        pass
+
+
 def _boot(message: str) -> None:
     try:
-        with open(data_dir() / "easygest.log", "a", encoding="utf-8") as log:
-            log.write(f"{time.strftime('%H:%M:%S')} BOOT {message}\n")
+        _append_log(f"{time.strftime('%H:%M:%S')} BOOT {message}\n")
     except OSError:
         pass
 
@@ -67,7 +98,7 @@ def _redirect_output() -> None:
     if sys.stdout is not None and sys.stderr is not None:
         return
     try:
-        log = open(data_dir() / "easygest.log", "a", encoding="utf-8", buffering=1)
+        log = open(_log_path(), "a", encoding="utf-8", buffering=1)
     except OSError:
         log = open(os.devnull, "w", encoding="utf-8")
     if sys.stdout is None:
@@ -79,8 +110,7 @@ def _redirect_output() -> None:
 def _report(message: str) -> None:
     """Tell the user why the window did not appear instead of exiting mute."""
     try:
-        with open(data_dir() / "easygest.log", "a", encoding="utf-8") as log:
-            log.write(f"\n--- {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n{message}\n")
+        _append_log(f"\n--- {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n{message}\n")
     except OSError:
         pass
     if sys.platform == "win32":
@@ -88,7 +118,7 @@ def _report(message: str) -> None:
 
         ctypes.windll.user32.MessageBoxW(
             None,
-            f"{message}\n\nDétails : {data_dir()}\\easygest.log",
+            f"{message}\n\nDétails : {_log_path()}",
             f"{APP_NAME} {APP_VERSION}",
             0x10,
         )
@@ -303,10 +333,9 @@ class DesktopApi:
     ) -> bool:
         """Print to a chosen printer without any dialog.
 
-        WebView2's silent printing only ever goes to the Windows default
-        printer, so the default is swapped for the duration of the call and
-        restored afterwards — the only reliable way to reach another queue
-        without showing the print dialog.
+        WebView2 selects the queue through PrintSettings.PrinterName.
+        A runtime without that API reports failure rather than printing on
+        a different queue.
         """
         if sys.platform != "win32":
             return False
@@ -316,7 +345,6 @@ class DesktopApi:
 
             form = BrowserView.instances[self.window.uid]
             core = form.browser.webview.CoreWebView2
-            spooler = ctypes.WinDLL("winspool.drv")
         except Exception:  # noqa: BLE001 - Linux, older runtime, no window
             traceback.print_exc()
             return False
@@ -326,6 +354,7 @@ class DesktopApi:
         def send() -> None:
             try:
                 settings = core.Environment.CreatePrintSettings()
+                settings.PrinterName = printer_name
                 settings.ShouldPrintHeaderAndFooter = False
                 settings.ShouldPrintBackgrounds = True
                 settings.PageWidth = max(width_mm, 20.0) / 25.4
@@ -339,29 +368,18 @@ class DesktopApi:
             except Exception:  # noqa: BLE001
                 traceback.print_exc()
 
-        size = ctypes.c_uint32(0)
-        spooler.GetDefaultPrinterW(None, ctypes.byref(size))
-        buffer = ctypes.create_unicode_buffer(size.value)
-        previous = ""
-        if spooler.GetDefaultPrinterW(buffer, ctypes.byref(size)):
-            previous = buffer.value
         try:
-            if printer_name:
-                spooler.SetDefaultPrinterW(printer_name)
             form.Invoke(Action(send))
             task = holder.get("task")
             if task is None:
                 return False
-            # Waiting off the window thread: the job is fully spooled when
-            # the task completes, so the default can be restored safely.
-            task.Wait(30000)
-            return True
+            # Wait off the window thread for the actual spool result.
+            if not task.Wait(30000):
+                return False
+            return str(task.Result) == "Succeeded"
         except Exception:  # noqa: BLE001
             traceback.print_exc()
             return False
-        finally:
-            if printer_name and previous:
-                spooler.SetDefaultPrinterW(previous)
 
     def toggle_fullscreen(self) -> bool:
         """Full screen for the counter: the web API alone cannot resize the

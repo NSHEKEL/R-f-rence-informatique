@@ -75,9 +75,8 @@ function desktopTicket():
 }
 
 /**
- * Silent print to a *chosen* printer: the desktop window swaps the Windows
- * default for the duration of the job, so the document leaves with no
- * dialog at all. Only available inside the packaged application.
+ * Silent print to a chosen printer through WebView2 PrintSettings.
+ * Only available inside the packaged application.
  */
 function desktopPrintTo():
   | ((
@@ -163,6 +162,9 @@ export interface PrintOptions {
   printerName?: string;
   /** False shows the preview dialog even when a printer is assigned. */
   direct?: boolean;
+  requireSilent?: boolean;
+  widthMm?: number;
+  heightMm?: number;
 }
 
 /**
@@ -177,7 +179,7 @@ export function printDocument(
   style: string,
   bodyHtml: string,
   options?: PrintOptions
-): void {
+): Promise<boolean> {
   const preview = () => {
     const frame = document.createElement("iframe");
     frame.setAttribute("aria-hidden", "true");
@@ -250,9 +252,10 @@ export function printDocument(
   };
 
   if (options?.direct === false || !bridge) {
+    if (options?.requireSilent) return Promise.resolve(false);
     if (bridge) appPreview(options?.printerName);
     else preview();
-    return;
+    return Promise.resolve(false);
   }
   // The print stylesheet shows only body > #receipt-print-root: the sheet is
   // mounted there for the duration of the job, like a ticket.
@@ -260,11 +263,15 @@ export function printDocument(
   root.id = PRINT_ROOT_ID;
   root.innerHTML = `<style>${style}</style>${bodyHtml}`;
   document.body.appendChild(root);
-  bridge(210, 297, 0, options?.printerName?.trim() ?? "")
+  return bridge(options?.widthMm ?? 210, options?.heightMm ?? 297, 0, options?.printerName?.trim() ?? "")
     .then((done) => {
-      if (!done) preview();
+      if (!done && !options?.requireSilent) preview();
+      return done;
     })
-    .catch(() => preview())
+    .catch(() => {
+      if (!options?.requireSilent) preview();
+      return false;
+    })
     .finally(() => root.remove());
 }
 
@@ -454,6 +461,10 @@ export function printReceipt(
     extras.length = 0;
     return direct(payload).then((problem) => {
       if (!problem) return kick.length > 0;
+      if (config.printer_name) {
+        window.alert(`Ticket non envoyé sur ${config.printer_name} : ${problem}`);
+        return false;
+      }
       // No thermal printer on this computer: fall back on the page printer,
       // still at the ticket geometry so the roll is not padded to a sheet.
       const fallback = desktopPrint();
