@@ -10,9 +10,12 @@ from __future__ import annotations
 
 import ctypes
 import json
+import logging
 import shutil
 import subprocess
 import sys
+
+log = logging.getLogger(__name__)
 
 from .models import CompanySettings
 from .schemas import PrinterDevice, PrintingConfig, ReceiptPrinterConfig
@@ -202,8 +205,14 @@ def _windows_devices() -> list[PrinterDevice]:
         seen.add(name)
         try:
             device = queue_status(name)
-        except Exception:
+        except Exception as exc:
             # A queue that crashes the detail query stays listed, marked.
+            log.warning(
+                "Étape GetPrinter — file %r : %s: %s",
+                name,
+                type(exc).__name__,
+                exc,
+            )
             device = None
         if device is None:
             device = PrinterDevice(
@@ -344,6 +353,12 @@ def diagnose() -> dict:
             names = _enumerate_names(spooler, level)
             report[f"level{level}"] = {"count": len(names), "names": names}
         except Exception as exc:
+            log.warning(
+                "Étape EnumPrinters niv. %s : %s: %s",
+                level,
+                type(exc).__name__,
+                exc,
+            )
             report[f"level{level}"] = {
                 "error": f"{type(exc).__name__}: {exc}"
             }
@@ -365,6 +380,12 @@ def diagnose() -> dict:
                 }
             )
         except Exception as exc:
+            log.warning(
+                "Étape GetPrinter — file %r : %s: %s",
+                name,
+                type(exc).__name__,
+                exc,
+            )
             queues.append(
                 {
                     "name": name,

@@ -120,7 +120,13 @@ function PrinterSelect({
 
 /** Technical report shown when detection fails: Windows calls, per-queue
  * results — so support can tell "no printers" from "detection broken". */
-function DiagnosePanel({ data }: { data: Record<string, unknown> }) {
+function DiagnosePanel({
+  data,
+  received,
+}: {
+  data: Record<string, unknown>;
+  received: number;
+}) {
   const stage = (key: string) => data[key] as
     | { count?: number; names?: string[]; error?: string }
     | undefined;
@@ -144,6 +150,7 @@ function DiagnosePanel({ data }: { data: Record<string, unknown> }) {
           {l2?.error ?? `${l2?.count ?? 0} file(s)`}
         </li>
         <li>Par défaut : {(data.default as string) || "—"}</li>
+        <li>React : {received} file(s) affichée(s)</li>
         {queues.map((q) => (
           <li key={q.name}>
             {q.name} :{" "}
@@ -547,7 +554,9 @@ export default function PrintingSettings({
             {loadingPrinters
               ? "Lecture des imprimantes installées..."
               : printersError || "Aucune imprimante détectée sur ce poste."}
-            {diagnostics && <DiagnosePanel data={diagnostics} />}
+            {diagnostics && (
+              <DiagnosePanel data={diagnostics} received={devices.length} />
+            )}
           </p>
         ) : (
           <div className="overflow-x-auto">
