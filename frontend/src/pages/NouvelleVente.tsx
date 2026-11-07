@@ -40,7 +40,7 @@ import {
   WifiOff,
   X,
 } from "lucide-react";
-import api, { formatXOF } from "../api/client";
+import api, { formatXOF, localApi } from "../api/client";
 import type {
   CashSessionDetail,
   Category,
@@ -555,7 +555,8 @@ export default function NouvelleVente() {
   /** Electronic drawer: opening it must never hold back the next customer. */
   function openDrawer() {
     if (!drawerWanted()) return;
-    api.post("/settings/company/open-drawer").catch(() => {
+    // localApi : le tiroir est branché à ce poste, pas au serveur du magasin.
+    localApi.post("/settings/company/open-drawer").catch(() => {
       setFlash("Caisse électronique : ouverture impossible.");
     });
   }

@@ -246,12 +246,13 @@ def default_printer() -> str:
 
 
 def printer_devices() -> list[PrinterDevice]:
-    """Printers installed on this computer, with their availability."""
+    """Printers installed on this computer, with their availability.
+
+    Raises OSError on Windows when the enumeration itself fails, so the
+    API can report the technical reason instead of an empty list.
+    """
     if sys.platform == "win32":
-        try:
-            return _windows_devices()
-        except OSError:
-            return []
+        return _windows_devices()
     return [
         PrinterDevice(name=name, port="", is_default=False, available=True,
                       status="Disponible")
@@ -260,8 +261,11 @@ def printer_devices() -> list[PrinterDevice]:
 
 
 def installed_printers() -> list[str]:
-    """Printer names only, kept for the callers that just need the list."""
-    return [device.name for device in printer_devices()]
+    """Printer names only; empty rather than raising on OS errors."""
+    try:
+        return [device.name for device in printer_devices()]
+    except OSError:
+        return []
 
 
 def _cups_printers() -> list[str]:
