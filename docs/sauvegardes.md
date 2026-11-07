@@ -65,3 +65,77 @@ planification, dernière réussite, état/erreur, `next_run_at` et indicateur SQ
 La configuration se sauvegarde via `PUT /api/settings/company`, comme les anciens
 paramètres. Le choix « sauvegarde quotidienne au démarrage » et la planification
 sont deux options indépendantes.
+
+## Destination Google Drive (API)
+
+### Préparer Google Cloud
+
+1. Créer un projet dans Google Cloud Console et **activer Google Drive API**.
+2. Configurer l'écran de consentement OAuth (nom de l'application, coordonnées).
+   Demander uniquement `https://www.googleapis.com/auth/drive.file` : accès aux
+   fichiers créés/ouverts par l'application, pas à l'ensemble du Drive. Ce scope
+   est **non sensible** ; aucune lecture Gmail/contacts ni scope d'identité n'est
+   demandé. L'adresse du compte vient de Drive `about`, pas d'OpenID Connect.
+3. Créer un client OAuth de type **Application de bureau**, pas Application Web.
+   Le retour utilise `http://127.0.0.1:<port réel>/api/backups/drive/callback`.
+   Les clients de bureau acceptent les ports variables de retour en boucle locale.
+4. Tant que l'application est en statut **Testing / Test**, ajouter le compte
+   Google utilisé dans la liste des utilisateurs de test. Pour ce scope Drive,
+   les autorisations hors connexion des applications externes en statut Test
+   expirent généralement après **7 jours** : une reconnexion sera nécessaire.
+   Pour les sauvegardes récurrentes, publier l'application OAuth en statut
+   **Production** ; respecter les exigences de Google (consentement, identité,
+   restrictions éventuelles de l'organisation Workspace).
+5. Définir `EASYGEST_GDRIVE_CLIENT_ID` et `EASYGEST_GDRIVE_CLIENT_SECRET` dans
+   l'environnement du serveur, ou saisir ces valeurs comme administrateur dans
+   Configuration → Sauvegarde → Google Drive. Ne pas les ajouter au dépôt.
+   Les variables d'environnement sont prioritaires. Sinon le serveur enregistre
+   `data_dir()/gdrive_client.json`. Le secret et l'identifiant complet ne sont
+   jamais renvoyés par l'API de configuration/statut (uniquement un suffixe masqué).
+6. Depuis **le poste serveur**, cliquer sur Connecter Google Drive, autoriser
+   l'application dans le navigateur, puis fermer l'onglet de confirmation.
+   Un navigateur sur un autre poste LAN ne peut pas utiliser ce retour local.
+   PKCE S256 et un état aléatoire à usage unique (10 minutes) protègent le retour ;
+   seuls les clients de boucle locale sont acceptés. Sans bridge externe existant,
+   l'interface utilise `window.open` ; autoriser les fenêtres surgissantes.
+7. Choisir le dossier et la rétention, activer l'envoi automatique, puis enregistrer
+   les paramètres Drive. Utiliser Tester la connexion : un petit fichier est
+   envoyé, vérifié, puis supprimé.
+
+Le jeton de renouvellement reste dans `data_dir()/gdrive_token.json`. Aucun de ces
+fichiers ni les copies temporaires d'envoi ne sont inclus dans une archive métier.
+Ils ne sont pas chiffrés sur disque : protéger l'accès au dossier de données.
+Déconnecter révoque l'autorisation auprès de Google et efface le jeton local même
+si la révocation réseau échoue. Un `invalid_grant` ou HTTP 401 efface également
+le jeton et impose une reconnexion. Ne pas copier ces fichiers entre boutiques.
+
+### Transferts et restauration
+
+L'option automatique envoie les sauvegardes manuelles, planifiées et du démarrage
+dans un thread, **jamais celles après vente ni avant restauration**. La réussite
+locale reste distincte de l'état Drive. Une copie temporaire sous `data_dir` évite
+qu'une purge locale supprime une archive pendant son transfert ; elle est effacée
+à la fin. Les transferts en mémoire/processus ne survivent pas à un arrêt forcé :
+les copies locales restent disponibles pour un nouvel envoi explicite.
+
+« Sauvegarder maintenant sur Drive » utilise `POST /api/backups?drive=true` :
+création locale sans double envoi, puis résultat Drive synchrone. Un échec Drive
+est renvoyé dans `drive.status=erreur`, sans prétendre que la copie locale a échoué.
+Les transferts ont un budget de 180 secondes et des délais réseau de 30 secondes,
+avec jusqu'à cinq tentatives, temporisation exponentielle et reprise selon `Range`.
+Les blocs font 8 Mio. La taille et le MD5 renvoyés par Google sont vérifiés avant
+la réussite ; SHA-256/version/date sont également placés dans `appProperties`.
+La rétention supprime uniquement les fichiers marqués `easygest=1` dans le dossier
+choisi, du plus ancien au plus récent au-delà du nombre conservé. Un dossier renommé
+dans l'interface est recherché/créé ; un identifiant en cache devenu introuvable
+est remplacé. Les anciens dossiers et leurs fichiers ne sont pas purgés.
+
+Les routes `/api/backups/drive/{status,client,connect,disconnect,test,files}` et
+`/upload/{name}`, `/download/{file_id}` sont réservées à l'administrateur ; seul
+`/callback` est sans JWT et utilise les protections OAuth ci-dessus. Le téléchargement
+Drive vérifie taille, MD5, puis l'intégrité de l'archive avant de la placer dans
+le dossier local de sauvegardes. Le bouton Restaurer ouvre ensuite l'inspection
+et la confirmation **RESTAURER**, avec sauvegarde de sécurité habituelle.
+
+Pas de Google Drive réel testé sans identifiants OAuth : les tests automatisés
+simulent les réponses Google, y compris reprise après 503 et échecs d'intégrité.

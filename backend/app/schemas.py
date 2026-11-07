@@ -101,6 +101,15 @@ class CompanySettingsOut(BaseModel):
     backup_monthday: int = 1
     last_backup_status: str = ""
     last_backup_error: str = ""
+    drive_enabled: bool = False
+    drive_folder_name: str = "EasyGest Sauvegardes"
+    drive_folder_id: str = ""
+    drive_keep: int = 30
+    drive_last_upload_at: Optional[datetime] = None
+    drive_last_status: str = ""
+    drive_last_error: str = ""
+    drive_last_file_id: str = ""
+    drive_account_email: str = ""
     support_whatsapp: str = ""
     support_email: str = ""
 
@@ -154,14 +163,19 @@ class CompanySettingsUpdate(BaseModel):
     backup_time: Optional[str] = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
     backup_weekday: Optional[int] = Field(default=None, ge=0, le=6)
     backup_monthday: Optional[int] = Field(default=None, ge=1, le=28)
+    drive_enabled: Optional[bool] = None
+    drive_folder_name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    drive_keep: Optional[int] = Field(default=None, ge=1, le=1000)
     support_whatsapp: Optional[str] = None
     support_email: Optional[str] = None
 
-    @field_validator("backup_auto_enabled", "backup_frequency", "backup_time", "backup_weekday", "backup_monthday", "backup_keep")
+    @field_validator("backup_auto_enabled", "backup_frequency", "backup_time", "backup_weekday", "backup_monthday", "backup_keep", "drive_enabled", "drive_folder_name", "drive_keep")
     @classmethod
     def backup_not_null(cls, value):
         if value is None:
             raise ValueError("Les paramètres de sauvegarde ne peuvent pas être nuls")
+        if isinstance(value, str) and not value.strip():
+            raise ValueError("Le nom du dossier ne peut pas être vide")
         return value
 
 

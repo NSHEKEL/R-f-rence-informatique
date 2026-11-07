@@ -6,12 +6,13 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from .. import backup
+from .. import backup, gdrive
 from ..auth import require_admin
 from ..database import get_db
 from ..licensing import require_feature
 from ..models import User
-from ..schemas import BackupFile, BackupResult
+from ..schemas import BackupFile
+from . import backup_drive
 
 
 class ExportRequest(BaseModel):
@@ -19,6 +20,7 @@ class ExportRequest(BaseModel):
 
 
 router = APIRouter(prefix="/api/backups", tags=["backups"])
+router.include_router(backup_drive.router)
 
 
 @router.get("", response_model=list[BackupFile])
@@ -56,15 +58,21 @@ async def inspect_backup(
         raise HTTPException(status_code=400, detail=str(exc))
 
 
-@router.post("", response_model=BackupResult)
+@router.post("")
 def create_backup(
-    db: Session = Depends(get_db), _: User = Depends(require_admin)
+    drive: bool = False, db: Session = Depends(get_db), _: User = Depends(require_admin)
 ):
     try:
-        path = backup.create(db)
+        path = backup.create(db, drive_background=not drive)
     except backup.BackupError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    return BackupResult(name=path.name, size=path.stat().st_size)
+    result = {"name": path.name, "size": path.stat().st_size}
+    if drive:
+        try:
+            result["drive"] = gdrive.upload_existing(db, path)
+        except gdrive.DriveError as exc:
+            result["drive"] = {"status": "erreur", "error": str(exc)}
+    return result
 
 
 @router.get("/{name}/download")

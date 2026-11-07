@@ -101,6 +101,15 @@ class CompanySettings(Base):
     backup_monthday = Column(Integer, default=1, nullable=False)
     last_backup_status = Column(String, default="", nullable=False)
     last_backup_error = Column(Text, default="", nullable=False)
+    drive_enabled = Column(Boolean, default=False, nullable=False)
+    drive_folder_name = Column(String, default="EasyGest Sauvegardes", nullable=False)
+    drive_folder_id = Column(String, default="", nullable=False)
+    drive_keep = Column(Integer, default=30, nullable=False)
+    drive_last_upload_at = Column(DateTime, nullable=True)
+    drive_last_status = Column(String, default="", nullable=False)
+    drive_last_error = Column(Text, default="", nullable=False)
+    drive_last_file_id = Column(String, default="", nullable=False)
+    drive_account_email = Column(String, default="", nullable=False)
     # FNE (Facture Normalisée Électronique, DGI Côte d'Ivoire) : connexion à
     # l'API officielle de l'entreprise. Les secrets ne sont jamais renvoyés par
     # l'API de lecture — seul le drapeau fne_secret_configured le dit.

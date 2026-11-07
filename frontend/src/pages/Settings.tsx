@@ -32,6 +32,7 @@ import type {
   Workstation,
 } from "../types";
 import { documentHeader, readDocumentLayout } from "../lib/print";
+import GoogleDriveSettings from "../components/GoogleDriveSettings";
 import type { DocumentLayout } from "../lib/print";
 import { useAuth } from "../context/AuthContext";
 import PhotoPicker from "../components/PhotoPicker";
@@ -119,6 +120,15 @@ const emptyCompany: CompanyForm = {
   backup_monthday: 1,
   last_backup_status: "",
   last_backup_error: "",
+  drive_enabled: false,
+  drive_folder_name: "EasyGest Sauvegardes",
+  drive_folder_id: "",
+  drive_keep: 30,
+  drive_last_upload_at: null,
+  drive_last_status: "",
+  drive_last_error: "",
+  drive_last_file_id: "",
+  drive_account_email: "",
   city: "",
   support_whatsapp: "0710069059",
   support_email: "",
@@ -156,6 +166,7 @@ export default function Settings() {
     last_backup_status?: string; last_backup_error?: string; sqlite: boolean;
   } | null>(null);
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const [restoreName, setRestoreName] = useState("");
   const [restoreReport, setRestoreReport] = useState<{
     created_at: string | null; app_version: string | null; compatible: boolean;
     integrity: string; sha256: string; row_counts: Record<string, number>;
@@ -344,6 +355,7 @@ export default function Settings() {
   async function inspectBackup(file: File | undefined) {
     setRestoreReport(null);
     setRestoreFile(null);
+    setRestoreName("");
     setRestoreConfirm("");
     if (!file) return;
     setRestoreBusy(true);
@@ -362,10 +374,11 @@ export default function Settings() {
   }
 
   async function restoreBackup() {
-    if (!restoreFile || !restoreReport?.compatible || restoreConfirm !== "RESTAURER") return;
+    if ((!restoreFile && !restoreName) || !restoreReport?.compatible || restoreConfirm !== "RESTAURER") return;
     setRestoreBusy(true);
     const body = new FormData();
-    body.append("file", restoreFile);
+    if (restoreFile) body.append("file", restoreFile);
+    else body.append("name", restoreName);
     body.append("confirm", restoreConfirm);
     try {
       const { data } = await api.post<{ detail: string }>(
@@ -374,6 +387,7 @@ export default function Settings() {
       );
       setBackupMessage(data.detail);
       setRestoreFile(null);
+      setRestoreName("");
       setRestoreReport(null);
       setRestoreConfirm("");
       await loadBackups();
@@ -1258,8 +1272,8 @@ export default function Settings() {
         </div>
 
         {restoreBusy && <p className="mt-3 text-sm text-slate-500">Vérification ou restauration en cours…</p>}
-        {restoreReport && <div className="mt-4 space-y-2 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm">
-          <p className="font-bold">Inspection : {restoreFile?.name}</p>
+        {restoreReport && <div id="backup-restore-inspection" className="mt-4 space-y-2 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm">
+          <p className="font-bold">Inspection : {restoreFile?.name || restoreName}</p>
           <p>Date : {restoreReport.created_at ? formatDateTime(restoreReport.created_at) : "Inconnue (ancien format)"}</p>
           <p>Version : {restoreReport.app_version || "Inconnue (ancien format)"} — {restoreReport.compatible ? "Compatible" : "Incompatible : version plus récente"}</p>
           <p>Intégrité : {restoreReport.integrity} — SHA-256 : {restoreReport.sha256}</p>
@@ -1268,7 +1282,7 @@ export default function Settings() {
           <label className="label">Saisissez RESTAURER pour confirmer</label>
           <input className="input" value={restoreConfirm} onChange={(e) => setRestoreConfirm(e.target.value)} autoComplete="off" />
           <button className="btn-primary" disabled={restoreBusy || !restoreReport.compatible || restoreConfirm !== "RESTAURER"} onClick={restoreBackup}>Confirmer la restauration</button>
-          <button className="btn-ghost" onClick={() => { setRestoreReport(null); setRestoreFile(null); setRestoreConfirm(""); }}>Annuler</button>
+          <button className="btn-ghost" onClick={() => { setRestoreReport(null); setRestoreFile(null); setRestoreName(""); setRestoreConfirm(""); }}>Annuler</button>
         </div>}
 
         {backups.length > 0 && (
@@ -1299,6 +1313,13 @@ export default function Settings() {
         )}
       </div>
       )}
+
+      {tab === "sauvegarde" && <GoogleDriveSettings company={company} onChange={update}
+        onRestore={(name, report) => {
+          setRestoreFile(null); setRestoreName(name); setRestoreReport(report); setRestoreConfirm("");
+          void loadBackups();
+          window.requestAnimationFrame(() => document.getElementById("backup-restore-inspection")?.scrollIntoView({ block: "center", behavior: "smooth" }));
+        }} />}
 
       {/* Remote update */}
       {tab === "maj" && (

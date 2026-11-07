@@ -29,6 +29,7 @@ from typing import Optional
 from sqlalchemy import MetaData, select, text
 from sqlalchemy.orm import Session
 
+from . import gdrive
 from .database import IS_SQLITE, SessionLocal, engine
 from .models import CompanySettings
 from .paths import backups_dir, data_dir
@@ -67,9 +68,12 @@ def _export_json(destination: Path) -> None:
     )
 
 
-def create(db: Session, *, reason: str = "manuelle") -> Path:
+def create(db: Session, *, reason: str = "manuelle", drive_background: bool = True) -> Path:
     with BACKUP_LOCK:
-        return _create(db, reason=reason)
+        target = _create(db, reason=reason)
+        if IS_SQLITE and drive_background and reason in ("manuelle", "planifiee", "auto"):
+            gdrive.enqueue(db, target)
+        return target
 
 
 def _create(db: Session, *, reason: str) -> Path:

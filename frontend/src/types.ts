@@ -245,6 +245,15 @@ export interface CompanySettings {
   backup_monthday: number;
   last_backup_status: string;
   last_backup_error: string;
+  drive_enabled: boolean;
+  drive_folder_name: string;
+  drive_folder_id: string;
+  drive_keep: number;
+  drive_last_upload_at: string | null;
+  drive_last_status: string;
+  drive_last_error: string;
+  drive_last_file_id: string;
+  drive_account_email: string;
   /** Magasin's city (multi-magasins supervision). */
   city: string;
   /** Contact shown on "Assistance et support". */

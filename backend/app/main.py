@@ -21,6 +21,7 @@ from .models import User
 from .routers import (
     accounting,
     auth,
+    backup_drive,
     backups,
     bank,
     cash,
@@ -89,6 +90,7 @@ def feature(code: str) -> list:
 
 
 app.include_router(auth.router)
+app.include_router(backup_drive.callback_router)
 app.include_router(dashboard.router, dependencies=feature("tableau_bord"))
 app.include_router(products.router, dependencies=feature("produits"))
 app.include_router(purchases.router, dependencies=feature("achats"))
