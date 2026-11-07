@@ -268,7 +268,10 @@ export default function Dettes() {
       },
       company,
       thermal,
-      printing.receipt.width
+      printing.receipt.width,
+      printing.documents.settlement_printer_name ||
+        printing.documents.printer_name ||
+        undefined
     );
   }
 
@@ -375,7 +378,9 @@ export default function Dettes() {
       )}</b></td><td></td></tr>` +
       "</tbody></table>";
     printSheet(title, body, {
-      printerName: printing.documents.printer_name,
+      printerName:
+        printing.documents.reports_printer_name ||
+        printing.documents.printer_name,
       direct: printing.documents.direct_print,
     });
   }

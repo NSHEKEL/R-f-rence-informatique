@@ -14,6 +14,10 @@ export interface TicketLine {
   bold?: boolean;
   big?: boolean;
   barcode?: string;
+  /** QR payload, printed by the printer's own GS ( k command. */
+  qr?: string;
+  /** Module width in dots: 4 on 58 mm paper, 6 on 80 mm. */
+  qr_size?: number;
   /** Logo, as base64 rows of packed black-and-white pixels. */
   image?: string;
   image_width?: number;
@@ -160,7 +164,7 @@ export function ticketLines(
   const blocks = root.querySelectorAll(
     ".receipt-company,.receipt-slogan,.receipt-contact p,.receipt-title," +
       ".receipt-duplicate,.receipt-meta,.receipt-items,.receipt-total," +
-      ".receipt-barcode,.receipt-footer"
+      ".receipt-barcode,.receipt-qr,.receipt-footer"
   );
   blocks.forEach((node) => {
     const kind = node.classList;
@@ -185,6 +189,14 @@ export function ticketLines(
     } else if (kind.contains("receipt-barcode")) {
       const reference = node.getAttribute("alt");
       if (reference) lines.push({ barcode: reference });
+    } else if (kind.contains("receipt-qr")) {
+      const payload = node.getAttribute("data-qr");
+      if (payload) {
+        lines.push({
+          qr: payload,
+          qr_size: format === "58mm" ? 4 : 6,
+        });
+      }
     } else centred(node);
   });
   return lines;

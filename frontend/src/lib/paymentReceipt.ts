@@ -152,16 +152,21 @@ export function printPaymentReceipt(
   company: CompanySettings | null,
   thermal = false,
   /** Roll width already configured for the sales receipts. */
-  width: string = "80mm"
+  width: string = "80mm",
+  /** Workstation queue assigned to settlement receipts. */
+  printerName?: string
 ): void {
   const title = `Reçu ${payment.receipt_reference}`;
   if (thermal) {
     printDocument(
       title,
       `${THERMAL_STYLE}\n  @page { size: ${width} auto; margin: 0; }`,
-      paymentTicketHtml(payment, debt, company)
+      paymentTicketHtml(payment, debt, company),
+      { printerName }
     );
     return;
   }
-  printDocument(title, STYLE, paymentReceiptHtml(payment, debt, company));
+  printDocument(title, STYLE, paymentReceiptHtml(payment, debt, company), {
+    printerName,
+  });
 }

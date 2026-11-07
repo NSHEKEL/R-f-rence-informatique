@@ -231,6 +231,8 @@ class ReceiptPrinterConfig(BaseModel):
     show_change: bool = True
     show_payment: bool = True
     show_barcode: bool = True
+    # QR code at the foot of the ticket: off by default, opt-in per poste.
+    show_qr: bool = False
 
 
 class LabelPrinterConfig(BaseModel):
@@ -259,6 +261,8 @@ class DocumentConfig(BaseModel):
     # Optional dedicated queues; empty falls back on printer_name.
     delivery_printer_name: str = ""
     quote_printer_name: str = ""
+    reports_printer_name: str = ""
+    settlement_printer_name: str = ""
     # True: the document goes straight to the assigned printer without the
     # preview; False: the user reviews the preview first.
     direct_print: bool = True

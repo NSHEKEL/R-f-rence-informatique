@@ -147,7 +147,9 @@ export default function Rapports() {
         rowsTable("Par catégorie", report.by_category, "u.") +
         rowsTable("Meilleurs articles", report.by_product, "u."),
       {
-        printerName: printing.documents.printer_name,
+        printerName:
+          printing.documents.reports_printer_name ||
+          printing.documents.printer_name,
         direct: printing.documents.direct_print,
       }
     );

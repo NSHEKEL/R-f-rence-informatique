@@ -7,7 +7,7 @@ import type {
   Sale,
 } from "../types";
 import { vatBreakdown } from "../lib/vat";
-import { barcodeDataUrl } from "../lib/barcode";
+import { barcodeDataUrl, qrDataUrl } from "../lib/barcode";
 import { useCompany } from "../context/CompanyContext";
 
 interface ReceiptProps {
@@ -30,6 +30,10 @@ function ReceiptBody({
   const money = (v: number) => formatMoney(v, currency);
   const vat = vatBreakdown(sale.total, company);
   const barcode = config.show_barcode ? barcodeDataUrl(sale.reference) : "";
+  // QR carrying the reference and the total, so a phone scan verifies the
+  // ticket; skipped entirely when the poste did not opt in.
+  const qrPayload = `EG|${sale.reference}|${Math.round(sale.total)}`;
+  const qr = config.show_qr ? qrDataUrl(qrPayload, 140) : "";
   const change = Math.max((sale.paid_amount || 0) - sale.total, 0);
   const footer =
     sale.receipt_footer ||
@@ -205,6 +209,15 @@ function ReceiptBody({
 
       {barcode && (
         <img src={barcode} alt={sale.reference} className="receipt-barcode" />
+      )}
+
+      {qr && (
+        <img
+          src={qr}
+          alt=""
+          data-qr={qrPayload}
+          className="receipt-qr"
+        />
       )}
 
       {config.show_footer && <p className="receipt-footer">{footer}</p>}

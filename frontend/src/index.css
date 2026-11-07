@@ -284,6 +284,13 @@ body {
   max-width: 100%;
   object-fit: contain;
 }
+.receipt-qr {
+  display: block;
+  margin: 0.9rem auto 0;
+  height: 22mm;
+  width: 22mm;
+  image-rendering: pixelated;
+}
 .receipt-footer {
   margin: 1rem 0 0;
   padding-top: 0.6rem;

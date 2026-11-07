@@ -178,6 +178,36 @@ class DesktopApi:
         path.write_text(content, encoding="utf-8-sig")
         return str(path)
 
+    @staticmethod
+    def _pref_path(filename: str) -> Path:
+        """Where the workstation's own files live. Program Files is
+        read-only for a standard user, so the per-poste preferences go in
+        %LOCALAPPDATA% — always writable, never needing admin rights, and
+        scoped to this Windows session on this machine."""
+        base = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "EasyGest"
+        try:
+            base.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            base = Path.home()
+        return base / filename
+
+    def write_pref_file(self, filename: str, content: str) -> str:
+        """Backup of the per-workstation preferences (no dialog)."""
+        try:
+            path = self._pref_path(filename)
+            path.write_text(content, encoding="utf-8")
+            return str(path)
+        except OSError:
+            return ""
+
+    def read_pref_file(self, filename: str) -> str:
+        """Restore of the per-workstation preferences; empty when absent."""
+        try:
+            path = self._pref_path(filename)
+            return path.read_text(encoding="utf-8") if path.exists() else ""
+        except OSError:
+            return ""
+
     def print_ticket(self, payload: str) -> str:
         """Print a receipt straight on the counter printer.
 
