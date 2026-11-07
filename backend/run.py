@@ -289,43 +289,7 @@ class DesktopApi:
         sets the exact roll geometry. Returns False when the native printer is
         not reachable, so the page falls back on ``window.print()``.
         """
-        if self._window is None:
-            return False
-        try:
-            from System import Action
-            from webview.platforms.winforms import BrowserView
-
-            form = BrowserView.instances[self._window.uid]
-            core = form.browser.webview.CoreWebView2
-        except Exception:  # noqa: BLE001 - Linux, older runtime, no window
-            traceback.print_exc()
-            return False
-
-        done = {"ok": False}
-
-        def send() -> None:
-            try:
-                settings = core.Environment.CreatePrintSettings()
-                settings.ShouldPrintHeaderAndFooter = False
-                settings.ShouldPrintBackgrounds = True
-                settings.PageWidth = max(width_mm, 20.0) / 25.4
-                settings.PageHeight = max(height_mm, 20.0) / 25.4
-                inches = max(margin_mm, 0.0) / 25.4
-                settings.MarginTop = inches
-                settings.MarginBottom = inches
-                settings.MarginLeft = inches
-                settings.MarginRight = inches
-                core.PrintAsync(settings)
-                done["ok"] = True
-            except Exception:  # noqa: BLE001 - printing API missing, no printer
-                traceback.print_exc()
-
-        try:
-            # The browser control only accepts calls from the window thread.
-            form.Invoke(Action(send))
-        except Exception:  # noqa: BLE001 - already on that thread
-            send()
-        return done["ok"]
+        return self.print_to(width_mm, height_mm, margin_mm, "")
 
     def print_to(
         self, width_mm: float, height_mm: float, margin_mm: float,
@@ -337,22 +301,31 @@ class DesktopApi:
         A runtime without that API reports failure rather than printing on
         a different queue.
         """
-        if sys.platform != "win32":
+        if sys.platform != "win32" or self._window is None:
             return False
         try:
             from System import Action
             from webview.platforms.winforms import BrowserView
 
             form = BrowserView.instances[self._window.uid]
-            core = form.browser.webview.CoreWebView2
+            if not form.InvokeRequired:
+                logging.getLogger(__name__).warning("Impression refusée depuis le thread UI")
+                return False
         except Exception:  # noqa: BLE001 - Linux, older runtime, no window
             traceback.print_exc()
             return False
 
         holder: dict = {}
+        deadline = time.monotonic() + 30.0
+        dispatched = threading.Event()
+        log = logging.getLogger(__name__)
+        log.warning("Impression HTML — demande vers %r", printer_name or "imprimante par défaut")
 
         def send() -> None:
             try:
+                if time.monotonic() >= deadline:
+                    return
+                core = form.browser.webview.CoreWebView2
                 settings = core.Environment.CreatePrintSettings()
                 settings.PrinterName = printer_name
                 settings.ShouldPrintHeaderAndFooter = False
@@ -365,20 +338,32 @@ class DesktopApi:
                 settings.MarginLeft = inches
                 settings.MarginRight = inches
                 holder["task"] = core.PrintAsync(settings)
+                log.warning("Impression HTML — PrintAsync lancé")
             except Exception:  # noqa: BLE001
-                traceback.print_exc()
+                log.exception("Impression HTML — lancement impossible")
+            finally:
+                dispatched.set()
 
         try:
-            form.Invoke(Action(send))
+            form.BeginInvoke(Action(send))
+            while not dispatched.is_set():
+                if time.monotonic() >= deadline:
+                    log.warning("Impression HTML — délai de dispatch UI dépassé")
+                    return False
+                time.sleep(0.05)
             task = holder.get("task")
             if task is None:
                 return False
-            # Wait off the window thread for the actual spool result.
-            if not task.Wait(30000):
-                return False
-            return str(task.Result) == "Succeeded"
+            while not task.IsCompleted:
+                if time.monotonic() >= deadline:
+                    log.warning("Impression HTML — délai PrintAsync dépassé ; résultat inconnu")
+                    return False
+                time.sleep(0.05)
+            result = str(task.Result)
+            log.warning("Impression HTML — résultat %s", result)
+            return result == "Succeeded"
         except Exception:  # noqa: BLE001
-            traceback.print_exc()
+            log.exception("Impression HTML — échec")
             return False
 
     def toggle_fullscreen(self) -> bool:
