@@ -250,6 +250,8 @@ def on_startup():
     seed()
     threading.Thread(target=_license_loop, daemon=True).start()
     threading.Thread(target=_housekeeping, daemon=True).start()
+    if backup.IS_SQLITE:
+        threading.Thread(target=backup.scheduler_loop, daemon=True).start()
 
 
 @app.get("/api/health")

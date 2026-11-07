@@ -94,6 +94,13 @@ class CompanySettings(Base):
     # Mirror the database into that folder after every sale.
     backup_on_sale = Column(Boolean, default=False, nullable=False)
     last_backup_at = Column(DateTime, nullable=True)
+    backup_auto_enabled = Column(Boolean, default=False, nullable=False)
+    backup_frequency = Column(String, default="daily", nullable=False)
+    backup_time = Column(String, default="20:00", nullable=False)
+    backup_weekday = Column(Integer, default=0, nullable=False)
+    backup_monthday = Column(Integer, default=1, nullable=False)
+    last_backup_status = Column(String, default="", nullable=False)
+    last_backup_error = Column(Text, default="", nullable=False)
     # FNE (Facture Normalisée Électronique, DGI Côte d'Ivoire) : connexion à
     # l'API officielle de l'entreprise. Les secrets ne sont jamais renvoyés par
     # l'API de lecture — seul le drapeau fne_secret_configured le dit.

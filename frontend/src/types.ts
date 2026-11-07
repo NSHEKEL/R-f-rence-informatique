@@ -238,6 +238,13 @@ export interface CompanySettings {
   backup_keep: number;
   backup_on_sale: boolean;
   last_backup_at: string | null;
+  backup_auto_enabled: boolean;
+  backup_frequency: "daily" | "weekly" | "monthly";
+  backup_time: string;
+  backup_weekday: number;
+  backup_monthday: number;
+  last_backup_status: string;
+  last_backup_error: string;
   /** Magasin's city (multi-magasins supervision). */
   city: string;
   /** Contact shown on "Assistance et support". */

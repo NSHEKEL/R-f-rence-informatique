@@ -1,7 +1,7 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 # ---------- Auth ----------
@@ -94,6 +94,13 @@ class CompanySettingsOut(BaseModel):
     backup_keep: int = 30
     backup_on_sale: bool = False
     last_backup_at: Optional[datetime] = None
+    backup_auto_enabled: bool = False
+    backup_frequency: Literal["daily", "weekly", "monthly"] = "daily"
+    backup_time: str = "20:00"
+    backup_weekday: int = 0
+    backup_monthday: int = 1
+    last_backup_status: str = ""
+    last_backup_error: str = ""
     support_whatsapp: str = ""
     support_email: str = ""
 
@@ -140,10 +147,22 @@ class CompanySettingsUpdate(BaseModel):
     smtp_tls: Optional[bool] = None
     backup_dir: Optional[str] = None
     backup_auto: Optional[bool] = None
-    backup_keep: Optional[int] = None
+    backup_keep: Optional[int] = Field(default=None, ge=1)
     backup_on_sale: Optional[bool] = None
+    backup_auto_enabled: Optional[bool] = None
+    backup_frequency: Optional[Literal["daily", "weekly", "monthly"]] = None
+    backup_time: Optional[str] = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    backup_weekday: Optional[int] = Field(default=None, ge=0, le=6)
+    backup_monthday: Optional[int] = Field(default=None, ge=1, le=28)
     support_whatsapp: Optional[str] = None
     support_email: Optional[str] = None
+
+    @field_validator("backup_auto_enabled", "backup_frequency", "backup_time", "backup_weekday", "backup_monthday", "backup_keep")
+    @classmethod
+    def backup_not_null(cls, value):
+        if value is None:
+            raise ValueError("Les paramètres de sauvegarde ne peuvent pas être nuls")
+        return value
 
 
 # ---------- Assistance et support ----------
