@@ -13,6 +13,8 @@ import ctypes
 import sys
 from dataclasses import dataclass
 
+from .printing import _spooler
+
 ESC = b"\x1b"
 GS = b"\x1d"
 CODEPAGE = "cp858"  # Western European with the euro sign, the printer default
@@ -20,6 +22,14 @@ CODEPAGE = "cp858"  # Western European with the euro sign, the printer default
 
 class PrintError(RuntimeError):
     pass
+
+
+class _DocInfo(ctypes.Structure):
+    _fields_ = [
+        ("pDocName", ctypes.c_wchar_p),
+        ("pOutputFile", ctypes.c_wchar_p),
+        ("pDatatype", ctypes.c_wchar_p),
+    ]
 
 
 @dataclass
@@ -126,13 +136,12 @@ def build(lines: list[Line], cut: bool, kick: bytes = b"") -> bytes:
 def _default_printer() -> str:
     if sys.platform != "win32":
         raise PrintError("L'impression directe n'est disponible que sous Windows.")
-    # ctypes.wintypes only exists on Windows, where printing happens.
-    from ctypes import wintypes
-
-    size = wintypes.DWORD(0)
-    ctypes.windll.winspool.GetDefaultPrinterW(None, ctypes.byref(size))
+    # c_uint32, not wintypes.DWORD: wintypes is absent from some frozen
+    # builds and its lazy import used to kill direct printing there.
+    size = ctypes.c_uint32(0)
+    _spooler().GetDefaultPrinterW(None, ctypes.byref(size))
     buffer = ctypes.create_unicode_buffer(size.value)
-    if not ctypes.windll.winspool.GetDefaultPrinterW(buffer, ctypes.byref(size)):
+    if not _spooler().GetDefaultPrinterW(buffer, ctypes.byref(size)):
         raise PrintError("Aucune imprimante par défaut n'est configurée.")
     return buffer.value
 
@@ -141,18 +150,9 @@ def send(data: bytes, printer_name: str = "") -> str:
     """Write raw bytes to a Windows printer; returns the printer used."""
     if sys.platform != "win32":
         raise PrintError("L'impression directe n'est disponible que sous Windows.")
-    from ctypes import wintypes
-
-    class _DocInfo(ctypes.Structure):
-        _fields_ = [
-            ("pDocName", wintypes.LPWSTR),
-            ("pOutputFile", wintypes.LPWSTR),
-            ("pDatatype", wintypes.LPWSTR),
-        ]
-
     target = printer_name.strip() or _default_printer()
-    spooler = ctypes.windll.winspool
-    handle = wintypes.HANDLE()
+    spooler = _spooler()
+    handle = ctypes.c_void_p()
     if not spooler.OpenPrinterW(target, ctypes.byref(handle), None):
         raise PrintError(f"Imprimante « {target} » introuvable.")
     try:
@@ -160,14 +160,23 @@ def send(data: bytes, printer_name: str = "") -> str:
         if not spooler.StartDocPrinterW(handle, 1, ctypes.byref(info)):
             raise PrintError(f"Impression refusée par « {target} ».")
         try:
-            spooler.StartPagePrinter(handle)
-            written = wintypes.DWORD(0)
-            spooler.WritePrinter(
+            if not spooler.StartPagePrinter(handle):
+                raise PrintError(f"Début de page refusé par « {target} ».")
+            written = ctypes.c_uint32(0)
+            ok = spooler.WritePrinter(
                 handle, data, len(data), ctypes.byref(written)
             )
-            spooler.EndPagePrinter(handle)
+            if not ok or written.value != len(data):
+                raise PrintError(
+                    f"Écriture sur « {target} » échouée : "
+                    f"{written.value}/{len(data)} octets transmis."
+                )
+            if not spooler.EndPagePrinter(handle):
+                raise PrintError(f"Fin de page refusée par « {target} ».")
         finally:
-            spooler.EndDocPrinter(handle)
+            completed = spooler.EndDocPrinter(handle)
+        if not completed:
+            raise PrintError(f"Fin de document refusée par « {target} ».")
     finally:
         spooler.ClosePrinter(handle)
     return target

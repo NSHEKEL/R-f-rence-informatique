@@ -118,6 +118,52 @@ function PrinterSelect({
   );
 }
 
+/** Technical report shown when detection fails: Windows calls, per-queue
+ * results — so support can tell "no printers" from "detection broken". */
+function DiagnosePanel({
+  data,
+  received,
+}: {
+  data: Record<string, unknown>;
+  received: number;
+}) {
+  const stage = (key: string) => data[key] as
+    | { count?: number; names?: string[]; error?: string }
+    | undefined;
+  const l1 = stage("level1");
+  const l2 = stage("level2");
+  const queues = (data.queues as
+    | { name: string; ok: boolean; status?: string; error?: string }[]
+    | undefined) ?? [];
+  return (
+    <details className="mt-2 rounded border border-slate-200 bg-slate-50 p-2 text-xs">
+      <summary className="cursor-pointer font-medium">
+        Détails techniques
+      </summary>
+      <ul className="mt-1 space-y-1">
+        <li>A — Spouleur : {(data.error as string) || "OK"}</li>
+        <li>
+          B — Windows niv. 1 :{" "}
+          {l1?.error ?? `${l1?.count ?? 0} file(s)`}
+        </li>
+        <li>
+          C — Windows niv. 2 :{" "}
+          {l2?.error ?? `${l2?.count ?? 0} file(s)`}
+        </li>
+        <li>Par défaut : {(data.default_error as string) || (data.default as string) || "—"}</li>
+        <li>D — GetPrinter par file :</li>
+        <li>React : {received} file(s) affichée(s)</li>
+        {queues.map((q) => (
+          <li key={q.name}>
+            {q.name} :{" "}
+            {q.ok ? q.status ?? "?" : q.error ?? "Non détectable"}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 /** Ticket used by the preview and the test print, never stored. */
 function sampleSale(): Sale {
   const line = (id: number, name: string, qty: number, price: number) => ({
@@ -237,6 +283,10 @@ export default function PrintingSettings({
   const [devices, setDevices] = useState<PrinterDevice[]>([]);
   const [loadingPrinters, setLoadingPrinters] = useState(true);
   const [printersError, setPrintersError] = useState("");
+  const [diagnostics, setDiagnostics] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
@@ -269,6 +319,11 @@ export default function PrintingSettings({
               }`
             : "Détection impossible sur ce poste."
         );
+        // Rapport technique étape par étape : aide à situer la panne.
+        localApi
+          .get<Record<string, unknown>>("/settings/printers/diagnose")
+          .then((res) => setDiagnostics(res.data))
+          .catch(() => setDiagnostics(null));
       })
       .finally(() => setLoadingPrinters(false));
   }, []);
@@ -322,16 +377,17 @@ export default function PrintingSettings({
   }
 
   /** Sends a real A4 test page through the Windows driver of that queue. */
-  function testPrinter(name: string) {
-    setActionMessage(`Page de test envoyée vers ${name}.`);
-    printDocument(
+  async function testPrinter(name: string) {
+    setActionMessage("");
+    const sent = await printDocument(
       "Page de test EasyGest",
       "@page { size: A4 portrait; margin: 0; } body { font-family: sans-serif; padding: 20mm; }",
       `<h2>Page de test EasyGest</h2><p>Imprimante : ${name}</p>` +
         `<p>${new Date().toLocaleString("fr-FR")}</p>` +
         "<p>Si cette page s'imprime, la liaison fonctionne.</p>",
-      { printerName: name, direct: true }
+      { printerName: name, direct: true, requireSilent: true }
     );
+    setActionMessage(sent ? `Page de test spoulée sur ${name}.` : "Page non envoyée : impression silencieuse HTML indisponible ou refusée.");
   }
 
   /** Real ESC/POS ticket spooled on the chosen printer (58 or 80 mm). */
@@ -343,19 +399,14 @@ export default function PrintingSettings({
       }
     ).pywebview?.api?.print_ticket;
     if (!bridge) {
-      // Outside the desktop window there is no RAW channel: send a page at
-      // the ticket geometry through the Windows driver instead.
-      setActionMessage(`Ticket de test ${width} envoyé vers ${name}.`);
-      printDocument(
-        "Ticket de test EasyGest",
-        `@page { size: ${width === "58mm" ? 58 : 80}mm 120mm; margin: 0; }` +
-          "body { font-family: monospace; padding: 2mm; font-size: 11px; }",
-        `<h3 style="text-align:center">TEST ${width}</h3>` +
-          `<p>Imprimante : ${name}</p><p>${new Date().toLocaleString("fr-FR")}</p>` +
-          "<hr><p>1 x Article de test ......... 1 000</p><hr>" +
-          "<p><b>TOTAL .................... 1 000</b></p>",
-        { printerName: name, direct: true }
-      );
+      try {
+        const { data } = await localApi.post<{ sent: boolean; printer: string }>(
+          "/settings/printers/test", { printer_name: name, document: width }
+        );
+        setActionMessage(data.sent ? `Ticket de test ${width} spoulé sur ${data.printer}.` : "Ticket non envoyé.");
+      } catch (err) {
+        setActionMessage(axios.isAxiosError(err) ? err.response?.data?.detail ?? err.message : "Ticket non envoyé.");
+      }
       return;
     }
     try {
@@ -387,22 +438,23 @@ export default function PrintingSettings({
   }
 
   /** Real label sheet through the driver: name, price, code and barcode. */
-  function testLabelOn(name: string) {
-    setActionMessage(`Étiquette de test envoyée vers ${name}.`);
-    printDocument(
+  async function testLabelOn(name: string) {
+    setActionMessage("");
+    const sent = await printDocument(
       "Étiquette de test EasyGest",
       "@page { size: 60mm 40mm; margin: 0; } body { font-family: sans-serif; padding: 2mm; font-size: 9px; }",
       "<b>Article de test</b><br>Réf : TEST-0001<br>" +
         `<b>1 000 FCFA</b><br><small>${name}</small>`,
-      { printerName: name, direct: true }
+      { printerName: name, direct: true, requireSilent: true, widthMm: 60, heightMm: 40 }
     );
+    setActionMessage(sent ? `Étiquette de test spoulée sur ${name}.` : "Étiquette non envoyée : impression silencieuse HTML indisponible ou refusée.");
   }
 
   async function makeDefault(name: string) {
     setActionMessage("");
     try {
       await localApi.post("/settings/printers/default", {
-        printer_name: name,
+        name,
       });
       setActionMessage(`${name} est maintenant l'imprimante par défaut.`);
       loadPrinters();
@@ -419,7 +471,7 @@ export default function PrintingSettings({
     setActionMessage("");
     try {
       await localApi.post("/settings/printers/preferences", {
-        printer_name: name,
+        name,
       });
       setActionMessage(`Préférences du pilote ouvertes pour ${name}.`);
     } catch (err) {
@@ -496,6 +548,12 @@ export default function PrintingSettings({
             <RefreshCw size={16} /> Actualiser
           </button>
         </div>
+        <button type="button" className="btn-ghost" onClick={() => {
+          localApi.get<Record<string, unknown>>("/settings/printers/diagnose")
+            .then((res) => setDiagnostics(res.data))
+            .catch(() => setActionMessage("Diagnostic indisponible."));
+        }}>Diagnostic</button>
+        {diagnostics && <DiagnosePanel data={diagnostics} received={devices.length} />}
         {devices.length === 0 ? (
           <p className="text-sm text-slate-500">
             {loadingPrinters

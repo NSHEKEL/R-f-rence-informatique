@@ -100,18 +100,27 @@ def list_printers(_: User = Depends(get_current_user)):
     """Printers installed on this computer, for the selection lists."""
     try:
         devices = printing.printer_devices()
-    except OSError as exc:
+    except Exception as exc:
         # Technical reason, not a silent empty list: a failed enumeration
         # looks the same as "no printers" otherwise.
         raise HTTPException(
             status_code=502,
-            detail=f"Lecture des imprimantes impossible : {exc}",
+            detail=(
+                "Lecture des imprimantes impossible : "
+                f"{type(exc).__name__}: {exc}"
+            ),
         )
     return PrinterList(
         devices=devices,
         printers=[device.name for device in devices],
         default=printing.default_printer(),
     )
+
+
+@router.get("/printers/diagnose")
+def diagnose_printers(_: User = Depends(get_current_user)):
+    """Per-stage detection report (Windows calls, per-queue details)."""
+    return printing.diagnose()
 
 
 class _PrinterName(BaseModel):
