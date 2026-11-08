@@ -54,6 +54,22 @@ async def get(path, ip, method="GET", headers=(), include_headers=False, target=
 
 
 class NetworkTests(unittest.TestCase):
+    def test_spa_shell_never_cached_but_hashed_assets_and_404_stay_distinct(self):
+        from app.main import FRONTEND_DIR
+
+        for path in ("/", "/index.html", "/login", "/ventes/nouvelle"):
+            status, body, headers = asyncio.run(get(path, "127.0.0.1", include_headers=True))
+            self.assertEqual(status, 200)
+            self.assertIn('<div id="root">', body)
+            self.assertEqual(headers[b"cache-control"], b"no-store")
+        asset = next((FRONTEND_DIR / "assets").glob("*.js"))
+        status, _, headers = asyncio.run(get("/assets/" + asset.name, "127.0.0.1", include_headers=True))
+        self.assertEqual(status, 200)
+        self.assertNotEqual(headers.get(b"cache-control"), b"no-store")
+        self.assertIn(b"etag", headers)
+        status, _, _ = asyncio.run(get("/assets/missing.js", "127.0.0.1", include_headers=True))
+        self.assertEqual(status, 404)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

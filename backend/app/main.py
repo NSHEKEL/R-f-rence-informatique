@@ -354,6 +354,6 @@ if FRONTEND_DIR is not None:
         if full_path.startswith("api/"):
             raise HTTPException(status_code=404, detail="Not Found")
         candidate = FRONTEND_DIR / full_path
-        if full_path and candidate.is_file():
+        if full_path and full_path != "index.html" and candidate.is_file():
             return FileResponse(str(candidate))
-        return FileResponse(str(FRONTEND_DIR / "index.html"))
+        return FileResponse(str(FRONTEND_DIR / "index.html"), headers={"Cache-Control": "no-store"})

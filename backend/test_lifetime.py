@@ -43,11 +43,13 @@ class LifetimeTests(unittest.TestCase):
             def __enter__(self): return self
             def __exit__(self, *args): pass
             def read(self, count): return json.dumps(payload).encode()
-        namespace = {'urllib': __import__('urllib'), 'json': json, 'APP_NAME': 'EasyGest', 'APP_VERSION': 'test'}
+        messages = []
+        namespace = {'urllib': __import__('urllib'), 'json': json, 'APP_NAME': 'EasyGest', 'APP_VERSION': 'test', '_report': messages.append}
         exec(compile(ast.Module(body=[function], type_ignores=[]), 'reuse-test', 'exec'), namespace)
         with patch.object(urllib.request, 'urlopen', return_value=Response()):
             with self.assertRaises(SystemExit):
                 namespace['_existing_server'](8000)
+            self.assertIn('Ancien serveur EasyGest', messages[0])
             payload['lifecycle'] = 'managed'
             self.assertTrue(namespace['_existing_server'](8000))
             payload['status'] = 'stopping'

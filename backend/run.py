@@ -183,7 +183,9 @@ def _existing_server(port: int) -> bool:
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=2) as response:
             info = json.loads(response.read(4096))
         if info.get('status') == 'ok' and info.get('app') == APP_NAME and info.get('lifecycle') not in ('managed', 'standalone'):
-            raise SystemExit("Ancien serveur EasyGest non supervisé encore actif. Arrêtez tous ses processus avant de relancer la tâche ou de restaurer la base.")
+            message = "Ancien serveur EasyGest non supervisé encore actif. Arrêtez tous ses processus avant de relancer la tâche ou de restaurer la base."
+            _report(message)
+            raise SystemExit(message)
         return info.get("status") == "ok" and info.get("app") == APP_NAME and info.get("version") == APP_VERSION and info.get("lifecycle") in ("managed", "standalone")
     except (OSError, ValueError, AttributeError):
         return False
@@ -206,6 +208,58 @@ class DesktopApi:
 
     def __init__(self) -> None:
         self._window = None
+        self._startup = None
+
+    def frontend_ready(self, token: str = "") -> None:
+        if self._startup is not None:
+            self._startup.mounted(token)
+
+    def frontend_error(self, message: str, token: str = "") -> None:
+        if self._startup is not None:
+            self._startup.failed(message, token)
+
+    def retry_frontend(self) -> bool:
+        if self._window is None or self._startup is None:
+            return False
+        startup = FrontendStartup(self, self._startup.url)
+        self._startup = startup
+        self._window.load_url(startup.page_url())
+        threading.Thread(target=startup.watch, daemon=True).start()
+        return True
+
+    def _clear_webview_cache(self, url: str) -> None:
+        from System import Action
+        from webview.platforms.winforms import BrowserView
+
+        form = BrowserView.instances[self._window.uid]
+        dispatched = threading.Event()
+        tasks = []
+        errors = []
+
+        def clear() -> None:
+            try:
+                core = form.browser.webview.CoreWebView2
+                tasks.append(core.CallDevToolsProtocolMethodAsync("Network.clearBrowserCache", "{}"))
+                tasks.append(core.CallDevToolsProtocolMethodAsync("Storage.clearDataForOrigin", json.dumps({
+                    "origin": url, "storageTypes": "service_workers,cache_storage",
+                })))
+            except Exception as error:
+                errors.append(error)
+            finally:
+                dispatched.set()
+
+        form.BeginInvoke(Action(clear))
+        deadline = time.monotonic() + 5
+        if not dispatched.wait(5):
+            raise TimeoutError("Nettoyage WebView : thread UI indisponible")
+        if errors:
+            raise errors[0]
+        for task in tasks:
+            while not task.IsCompleted:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("Nettoyage WebView : délai dépassé")
+                threading.Event().wait(0.05)
+            _ = task.Result
 
     def choose_folder(self) -> str:
         """Real Windows folder picker used to select the backup folder."""
@@ -511,15 +565,67 @@ _LOAD_ERROR_HTML = (
     "flex-direction:column;align-items:center;justify-content:center;"
     "background:#0f2a5c;color:#fff;text-align:center;padding:24px'>"
     "<h1 style='font-size:22px'>EasyGest</h1>"
-    "<p style='max-width:460px'>L'interface n'a pas pu se charger. "
+    "<p style='max-width:460px'>L'interface n'a pas pu se charger apr&egrave;s une nouvelle tentative. "
     "Le service interne est pourtant d&eacute;marr&eacute;.</p>"
     "<p style='font-size:13px;opacity:.8'>Fermez puis relancez EasyGest. "
     "Si le probl&egrave;me persiste, red&eacute;marrez l'ordinateur ou "
     "r&eacute;installez l'application.</p>"
-    "<button onclick='location.reload()' style='margin-top:12px;padding:"
+    "<button onclick='window.pywebview.api.retry_frontend()' style='margin-top:12px;padding:"
     "10px 26px;border:0;border-radius:8px;font-size:15px;cursor:pointer'>"
     "R&eacute;essayer</button></div>"
 )
+
+
+class FrontendStartup:
+    def __init__(self, api, url: str, timeout: float = 20):
+        self.api = api
+        self.url = url
+        self.timeout = timeout
+        self.token = str(time.monotonic_ns())
+        self.ready = threading.Event()
+        self.lock = threading.Lock()
+        self.reason = "aucun signal de montage React"
+
+    def page_url(self) -> str:
+        return self.url + "/?eg_boot=" + self.token
+
+    def mounted(self, token: str) -> None:
+        with self.lock:
+            if token == self.token:
+                _boot("frontend: React monte")
+                self.ready.set()
+
+    def failed(self, message: str, token: str) -> None:
+        with self.lock:
+            if token == self.token:
+                self.reason = str(message).replace("\r", " ").replace("\n", " ")[:1500] or "erreur frontend sans detail"
+                _boot("frontend erreur: " + self.reason)
+
+    def watch(self) -> None:
+        for attempt in range(2):
+            if self.ready.wait(self.timeout):
+                return
+            with self.lock:
+                if self.ready.is_set():
+                    return
+                _boot(f"watchdog: React non monte apres {self.timeout:g} s, tentative {attempt + 1}: {self.reason}")
+                self.token = str(time.monotonic_ns())
+            if attempt == 1:
+                try:
+                    self.api._window.load_html(_LOAD_ERROR_HTML)
+                except Exception:
+                    logging.getLogger(__name__).exception("Affichage de l'erreur de demarrage impossible")
+                return
+            try:
+                self.api._clear_webview_cache(self.url)
+                _boot("watchdog: cache HTTP, service workers et CacheStorage effaces; donnees hors ligne conservees")
+            except Exception:
+                logging.getLogger(__name__).exception("Nettoyage du cache WebView impossible")
+            try:
+                self.api._window.load_url(self.page_url())
+                _boot("watchdog: rechargement unique")
+            except Exception:
+                logging.getLogger(__name__).exception("Rechargement du frontend impossible")
 
 
 def _open_window(url: str) -> bool:
@@ -547,9 +653,11 @@ def _open_window(url: str) -> bool:
                 "--mute-audio",
             )
         api = DesktopApi()
+        startup = FrontendStartup(api, url)
+        api._startup = startup
         window = webview.create_window(
             APP_NAME,
-            url,
+            startup.page_url(),
             width=1400,
             height=900,
             min_size=(1024, 700),
@@ -563,22 +671,7 @@ def _open_window(url: str) -> bool:
         api._window = window
         window.events.closed += lambda: os._exit(0)
 
-        # Anti-blank-page watchdog: if the interface has not mounted after
-        # 30 s, replace the white page with an explanation and a retry.
-        loaded = {"ok": False}
-        window.events.loaded += lambda: loaded.__setitem__("ok", True)
-
-        def _watchdog() -> None:
-            time.sleep(30)
-            if loaded["ok"]:
-                return
-            _boot("watchdog: interface non chargee apres 30 s")
-            try:
-                window.load_html(_LOAD_ERROR_HTML)
-            except Exception:  # noqa: BLE001 - window already gone
-                pass
-
-        threading.Thread(target=_watchdog, daemon=True).start()
+        threading.Thread(target=startup.watch, daemon=True).start()
 
         # Without an explicit storage path the window runs in private mode and
         # forgets everything the page saved (session, last user name, screen
