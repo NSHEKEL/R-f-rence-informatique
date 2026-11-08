@@ -5,6 +5,8 @@ import api, { formatDate, formatXOF } from "../api/client";
 import type { Sale, SaleReturn } from "../types";
 import { useSyncVersion } from "../context/SyncContext";
 import { useAuth } from "../context/AuthContext";
+import PackagingQuantity from "../components/PackagingQuantity";
+import { formatQuantity, splitQuantity } from "../lib/units";
 
 export default function Returns() {
   const { can } = useAuth();
@@ -12,6 +14,7 @@ export default function Returns() {
   const [reference, setReference] = useState("");
   const [sale, setSale] = useState<Sale | null>(null);
   const [quantities, setQuantities] = useState<Record<number, number>>({});
+  const [returnUnits, setReturnUnits] = useState<Record<number, { packaging_quantity: number; piece_quantity: number }>>({});
   const [reason, setReason] = useState("");
   const [refundMethod, setRefundMethod] = useState("Avoir");
   const [credits, setCredits] = useState<SaleReturn[]>([]);
@@ -32,6 +35,7 @@ export default function Returns() {
     setError("");
     setSuccess("");
     setSale(null);
+    setReturnUnits({});
     const ref = reference.trim();
     if (!ref) return;
     try {
@@ -49,7 +53,7 @@ export default function Returns() {
 
   const total = sale
     ? sale.items.reduce(
-        (sum, it) => sum + (quantities[it.id] ?? 0) * it.unit_price,
+        (sum, it) => sum + (it.packaging_unit ? (() => { const q = returnUnits[it.id] ?? splitQuantity(it, quantities[it.id] ?? 0); return q.packaging_quantity * (it.packaging_sale_price ?? it.unit_price * (it.units_per_packaging || 1)) + q.piece_quantity * (it.base_unit_price ?? it.unit_price); })() : (quantities[it.id] ?? 0) * it.unit_price),
         0
       )
     : 0;
@@ -61,6 +65,7 @@ export default function Returns() {
       .map((it) => ({
         product_id: it.product_id as number,
         quantity: quantities[it.id],
+        ...(it.packaging_unit ? returnUnits[it.id] ?? splitQuantity(it, quantities[it.id]) : {}),
       }));
     if (lines.length === 0) {
       setError("Sélectionnez au moins un article à retourner");
@@ -79,6 +84,7 @@ export default function Returns() {
         `${refundMethod === "Espèces" ? "Remboursement" : "Avoir"} ${res.data.reference} enregistré : ${formatXOF(res.data.total)}`
       );
       setSale(null);
+      setReturnUnits({});
       setQuantities({});
       setReason("");
       setRefundMethod("Avoir");
@@ -180,7 +186,7 @@ export default function Returns() {
                         {it.product_name}
                       </td>
                       <td className="py-2.5 text-center text-slate-600">
-                        {it.quantity}
+                        {formatQuantity(it, it.quantity)}
                       </td>
                       <td className="py-2.5 text-center text-slate-600">
                         {it.returned_quantity}
@@ -189,6 +195,7 @@ export default function Returns() {
                         {formatXOF(it.unit_price)}
                       </td>
                       <td className="py-2.5 text-center">
+                        {it.packaging_unit ? <PackagingQuantity product={it} value={quantities[it.id] ?? 0} parts={returnUnits[it.id]} max={max} onChange={(quantity, packs, pieces) => { setQuantities((prev) => ({ ...prev, [it.id]: quantity })); setReturnUnits((prev) => ({ ...prev, [it.id]: { packaging_quantity: packs, piece_quantity: pieces } })); }} /> :
                         <input
                           type="number"
                           min={0}
@@ -206,6 +213,7 @@ export default function Returns() {
                             })
                           }
                         />
+                        }
                       </td>
                     </tr>
                   );

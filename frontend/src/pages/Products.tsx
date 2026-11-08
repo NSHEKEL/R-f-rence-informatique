@@ -31,8 +31,14 @@ import { stockBadge } from "../components/badges";
 import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSyncVersion } from "../context/SyncContext";
+import { formatQuantity } from "../lib/units";
+import PackagingQuantity from "../components/PackagingQuantity";
 
 const empty = {
+  base_unit: "pièce",
+  packaging_unit: "",
+  units_per_packaging: 1,
+  packaging_sale_price: "" as number | "",
   name: "",
   sku: "",
   description: "",
@@ -144,6 +150,7 @@ export default function Products() {
         "Stock",
         "Stock minimum",
         "Code-barres",
+        "Quantité et équivalence",
       ],
       filtered.map((p) => [
         p.name,
@@ -156,6 +163,7 @@ export default function Products() {
         p.quantity,
         p.min_stock,
         p.barcode ?? "",
+        formatQuantity(p, p.quantity),
       ])
     )
       .then((saved) =>
@@ -216,6 +224,10 @@ export default function Products() {
     setEditing(p);
     setForm({
       name: p.name,
+      base_unit: p.base_unit || "pièce",
+      packaging_unit: p.packaging_unit || "",
+      units_per_packaging: p.units_per_packaging || 1,
+      packaging_sale_price: p.packaging_sale_price ?? "",
       sku: p.sku,
       description: p.description,
       category_id: p.category_id ?? "",
@@ -236,9 +248,17 @@ export default function Products() {
 
   async function save() {
     setError("");
+    if (!form.base_unit.trim() || !Number.isInteger(form.quantity) || form.quantity < 0 || (form.packaging_unit.trim() && (!Number.isInteger(form.units_per_packaging) || form.units_per_packaging < 1))) {
+      setError("Unité de base requise ; stock et facteur doivent être des nombres entiers valides.");
+      return;
+    }
     setSaving(true);
     const payload = {
       ...form,
+      packaging_sale_price: form.packaging_sale_price === "" ? null : Number(form.packaging_sale_price),
+      base_unit: form.base_unit.trim(),
+      packaging_unit: form.packaging_unit.trim(),
+      units_per_packaging: form.packaging_unit.trim() ? form.units_per_packaging : 1,
       category_id: form.category_id === "" ? null : Number(form.category_id),
       supplier_id: form.supplier_id === "" ? null : Number(form.supplier_id),
       purchase_price: Number(form.purchase_price),
@@ -564,7 +584,7 @@ export default function Products() {
                     {formatXOF(p.sale_price)}
                   </td>
                   <td className="px-5 py-3.5 text-center font-semibold text-slate-700">
-                    {p.quantity}
+                    {formatQuantity(p, p.quantity)}
                   </td>
                   <td className="px-5 py-3.5 text-center">{stockBadge(p)}</td>
                   <td className="px-5 py-3.5 text-xs text-slate-500">
@@ -757,7 +777,7 @@ export default function Products() {
             />
           </div>
           <div>
-            <label className="label">Prix de vente (FCFA)</label>
+            <label className="label">Prix de vente par unité de base (FCFA)</label>
             <input
               type="number"
               className="input"
@@ -777,14 +797,22 @@ export default function Products() {
             />
           </div>
           <div>
-            <label className="label">Quantité en stock</label>
+            <label className="label">Stock en unités de base (stock initial à la création)</label>
             <input
               type="number"
               className="input"
               value={form.quantity}
               onChange={(e) => setForm({ ...form, quantity: Number(e.target.value) })}
             />
+            <p className="text-xs text-slate-500">{formatQuantity(form, form.quantity)}</p>
+            {form.packaging_unit && <PackagingQuantity product={form} value={form.quantity} onChange={(quantity) => setForm({ ...form, quantity })} />}
           </div>
+          <div><label className="label">Unité de base</label><input className="input" required value={form.base_unit} placeholder="pièce, kg, litre…" onChange={(e) => setForm({ ...form, base_unit: e.target.value })} /></div>
+          <div><label className="label">Conditionnement (facultatif)</label><input className="input" value={form.packaging_unit} placeholder="carton, paquet, boîte, sac…" onChange={(e) => setForm({ ...form, packaging_unit: e.target.value })} /></div>
+          {form.packaging_unit && <>
+            <div><label className="label">Unités de base par conditionnement</label><input className="input" type="number" min="1" step="1" value={form.units_per_packaging} onChange={(e) => setForm({ ...form, units_per_packaging: Number(e.target.value) })} /></div>
+            <div><label className="label">Prix du conditionnement (vide = prix unitaire × facteur)</label><input className="input" type="number" min="0" value={form.packaging_sale_price} onChange={(e) => setForm({ ...form, packaging_sale_price: e.target.value === "" ? "" : Number(e.target.value) })} /></div>
+          </>}
           <div>
             <label className="label">Seuil d'alerte</label>
             <input

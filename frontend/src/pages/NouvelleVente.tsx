@@ -41,6 +41,8 @@ import {
   X,
 } from "lucide-react";
 import api, { formatXOF, localApi } from "../api/client";
+import PackagingQuantity from "../components/PackagingQuantity";
+import { formatQuantity, saleUnitPrice, splitQuantity, type UnitMode } from "../lib/units";
 import type {
   CashSessionDetail,
   Category,
@@ -113,6 +115,9 @@ function unitPrice(product: Product, mode: PriceMode): number {
 }
 
 interface CartLine {
+  packagingQuantity?: number;
+  pieceQuantity?: number;
+  unitMode?: UnitMode;
   product: Product;
   quantity: number;
   /** Price agreed at the counter, when it differs from the product sheet. */
@@ -123,7 +128,11 @@ interface CartLine {
 
 /** Price actually charged for a cart line. */
 function linePrice(line: CartLine, mode: PriceMode): number {
-  return line.price ?? unitPrice(line.product, mode);
+  return line.price ?? saleUnitPrice(line.product, line.quantity, unitPrice(line.product, mode), line.unitMode, cartParts(line));
+}
+
+function cartParts(line: CartLine) {
+  return line.packagingQuantity === undefined ? splitQuantity(line.product, line.quantity, line.unitMode || "base") : { packaging_quantity: line.packagingQuantity, piece_quantity: line.pieceQuantity || 0 };
 }
 
 /** Line total after its own discount. */
@@ -167,6 +176,14 @@ function offlineSale(
       product_id: l.product.id,
       product_name: l.product.name,
       quantity: l.quantity,
+      ...(l.product.packaging_unit ? cartParts(l) : {}),
+      quantity_label: formatQuantity(l.product, l.quantity),
+      base_unit: l.product.base_unit,
+      packaging_unit: l.product.packaging_unit,
+      units_per_packaging: l.product.units_per_packaging,
+      base_quantity: l.quantity,
+      base_unit_price: l.price ?? unitPrice(l.product, priceMode),
+      packaging_sale_price: l.price !== undefined ? l.price * (l.product.units_per_packaging || 1) : l.product.packaging_sale_price ?? unitPrice(l.product, priceMode) * (l.product.units_per_packaging || 1),
       unit_price: linePrice(l, priceMode),
       discount: l.discount ?? 0,
       subtotal: lineNet(l, priceMode),
@@ -402,7 +419,13 @@ export default function NouvelleVente() {
       if (!existing) return [...prev, { product, quantity: 1 }];
       if (existing.quantity >= product.quantity) return prev;
       return prev.map((l) =>
-        l.product.id === product.id ? { ...l, quantity: l.quantity + 1 } : l
+        l.product.id === product.id ? (() => {
+          const packs = l.unitMode === "packaging" ? 1 : 0;
+          const pieces = packs ? 0 : 1;
+          const quantity = l.quantity + packs * (product.units_per_packaging || 1) + pieces;
+          const parts = cartParts(l);
+          return quantity > product.quantity ? l : { ...l, quantity, packagingQuantity: parts.packaging_quantity + packs, pieceQuantity: parts.piece_quantity + pieces };
+        })() : l
       );
     });
   }, []);
@@ -482,10 +505,19 @@ export default function NouvelleVente() {
     setCart((prev) =>
       prev.flatMap((l) => {
         if (l.product.id !== productId) return [l];
-        const capped = Math.min(Math.max(quantity, 0), l.product.quantity);
-        return capped === 0 ? [] : [{ ...l, quantity: capped }];
+        const capped = Math.min(Math.max(Math.floor(quantity), 0), l.product.quantity);
+        return capped === 0 ? [] : [{ ...l, quantity: capped, packagingQuantity: undefined, pieceQuantity: undefined }];
       })
     );
+  }
+
+  function setUnitMode(productId: number, unitMode: UnitMode) {
+    const line = cart.find((l) => l.product.id === productId);
+    if (!line) return;
+    const factor = line.product.units_per_packaging || 1;
+    const quantity = unitMode === "packaging" ? Math.max(1, Math.floor(line.quantity / factor)) * factor : line.quantity;
+    if (quantity > line.product.quantity) { setError("Stock insuffisant pour un conditionnement complet"); return; }
+    setCart((prev) => prev.map((l) => l.product.id === productId ? { ...l, unitMode, quantity, price: undefined, packagingQuantity: undefined, pieceQuantity: undefined } : l));
   }
 
   async function createCustomer() {
@@ -620,6 +652,7 @@ export default function NouvelleVente() {
       items: cart.map((l) => ({
         product_id: l.product.id,
         quantity: l.quantity,
+        ...(l.product.packaging_unit ? { ...cartParts(l), expected_units_per_packaging: l.product.units_per_packaging || 1 } : {}),
         unit_price: linePrice(l, priceMode),
         discount: l.discount ?? 0,
       })),
@@ -717,6 +750,7 @@ export default function NouvelleVente() {
     const restored = entry.cart.filter((l) => {
       const fresh = products.find((p) => p.id === l.product.id);
       if (!fresh) return false;
+      if (cartParts(l).packaging_quantity && l.product.units_per_packaging !== fresh.units_per_packaging) return false;
       l.product = fresh;
       return l.quantity <= fresh.quantity;
     });
@@ -1138,14 +1172,22 @@ export default function NouvelleVente() {
                             {l.product.name}
                           </p>
                         </div>
+                        {l.product.packaging_unit && <>
+                          <select aria-label={`Unité vendue de ${l.product.name}`} className="input mt-1" value={l.unitMode || "base"} onChange={(e) => setUnitMode(l.product.id, e.target.value as UnitMode)}>
+                            <option value="base">{l.product.base_unit || "pièce"}</option>
+                            <option value="packaging">{l.product.packaging_unit}</option>
+                            <option value="mixed">Mixte : {l.product.packaging_unit} + {l.product.base_unit || "pièce"}</option>
+                          </select>
+                          <p className="text-xs text-slate-500">{formatQuantity(l.product, l.quantity)} · {formatXOF(l.product.packaging_sale_price ?? unitPrice(l.product, priceMode) * (l.product.units_per_packaging || 1))}/{l.product.packaging_unit}</p>
+                        </>}
                       </td>
                       <td className="px-1 py-1 text-right">
                         {canChangePrice ? (
                           <input
                             className="w-[76px] rounded-lg border border-slate-200 px-1.5 py-1 text-right text-sm text-slate-700"
-                            value={l.price ?? unitPrice(l.product, priceMode)}
+                            value={linePrice(l, priceMode) * (l.unitMode === "packaging" ? l.product.units_per_packaging || 1 : 1)}
                             onChange={(e) =>
-                              setLinePrice(l.product.id, e.target.value)
+                              setLinePrice(l.product.id, l.unitMode === "packaging" ? String(Number(e.target.value.replace(",", ".")) / (l.product.units_per_packaging || 1)) : e.target.value)
                             }
                             onKeyDown={nextOnEnter(paidRef)}
                             title="Prix de vente pour cette ligne"
@@ -1153,7 +1195,7 @@ export default function NouvelleVente() {
                           />
                         ) : (
                           <span className="text-slate-600">
-                            {formatXOF(linePrice(l, priceMode))}
+                            {formatXOF(linePrice(l, priceMode) * (l.unitMode === "packaging" ? l.product.units_per_packaging || 1 : 1))}
                           </span>
                         )}
                       </td>
@@ -1173,6 +1215,7 @@ export default function NouvelleVente() {
                         </td>
                       )}
                       <td className="px-1 py-1">
+                        {l.product.packaging_unit && l.unitMode && l.unitMode !== "base" ? <PackagingQuantity product={l.product} value={l.quantity} parts={cartParts(l)} max={l.product.quantity} mode={l.unitMode} onChange={(quantity, packs, pieces) => setCart((prev) => prev.flatMap((line) => line.product.id !== l.product.id ? [line] : quantity ? [{ ...line, quantity, packagingQuantity: packs, pieceQuantity: pieces }] : []))} /> :
                         <div className="flex items-center justify-center gap-0.5">
                           <button
                             className="rounded-lg bg-slate-100 p-1 text-slate-600 hover:bg-slate-200"
@@ -1207,6 +1250,7 @@ export default function NouvelleVente() {
                             <Plus size={14} />
                           </button>
                         </div>
+                        }
                       </td>
                       <td className="whitespace-nowrap px-1 py-1 text-right text-sm font-bold text-slate-900">
                         {formatXOF(lineNet(l, priceMode))}

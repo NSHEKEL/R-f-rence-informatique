@@ -19,6 +19,8 @@ import { documentBarcode, documentHeader, printSheet } from "../lib/print";
 import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSyncVersion } from "../context/SyncContext";
+import PackagingQuantity from "../components/PackagingQuantity";
+import { formatQuantity, quantityHtml } from "../lib/units";
 
 interface DraftLine {
   product_id: number | null;
@@ -247,8 +249,8 @@ export default function Approvisionnements() {
       .map(
         (it) =>
           `<tr><td>${it.product_name}</td>` +
-          `<td class="num">${it.quantity}</td>` +
-          `<td class="num">${it.received_quantity}</td>` +
+          `<td class="num">${quantityHtml(it, it.quantity)}</td>` +
+          `<td class="num">${quantityHtml(it, it.received_quantity)}</td>` +
           `<td class="num">${formatXOF(it.unit_cost)}</td>` +
           `<td class="num">${formatXOF(it.subtotal)}</td></tr>`
       )
@@ -561,13 +563,14 @@ export default function Approvisionnements() {
                     <option value="">— Choisir —</option>
                     {products.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.name} ({p.quantity} en stock)
+                        {p.name} ({formatQuantity(p, p.quantity)} en stock)
                       </option>
                     ))}
                   </select>
                 </div>
                 <div className="w-24">
                   <label className="label">Qté</label>
+                  {products.find((p) => p.id === l.product_id)?.packaging_unit ? <PackagingQuantity product={products.find((p) => p.id === l.product_id)!} value={l.quantity} onChange={(quantity) => updateLine(index, { quantity })} /> :
                   <input
                     type="number"
                     min={1}
@@ -577,9 +580,10 @@ export default function Approvisionnements() {
                       updateLine(index, { quantity: Number(e.target.value) })
                     }
                   />
+                  }
                 </div>
                 <div className="w-36">
-                  <label className="label">Coût d'achat</label>
+                  <label className="label">Coût d'achat par unité de base</label>
                   <input
                     type="number"
                     className="input"
@@ -696,9 +700,10 @@ export default function Approvisionnements() {
                   <tr key={it.id}>
                     <td className="py-2">{it.product_name}</td>
                     <td className="py-2 text-right text-slate-500">
-                      {remaining}
+                      {formatQuantity(it, remaining)}
                     </td>
                     <td className="py-2 text-right">
+                      {it.packaging_unit ? <PackagingQuantity product={it} value={received[it.id] ?? 0} max={remaining} onChange={(quantity) => setReceived((prev) => ({ ...prev, [it.id]: quantity }))} /> :
                       <input
                         type="number"
                         min={0}
@@ -712,6 +717,7 @@ export default function Approvisionnements() {
                           }))
                         }
                       />
+                      }
                     </td>
                   </tr>
                 );

@@ -10,6 +10,7 @@ from ..database import get_db
 from ..models import Product, Sale, SaleReturn, User
 from ..permissions import require_permission
 from ..schemas import ReportRow, SalesReport
+from ..units import quantity_label
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -36,13 +37,15 @@ def _parse_range(start: str | None, end: str | None) -> tuple[datetime, datetime
 
 
 def _rows(
-    amounts: dict[str, float], quantities: dict[str, float] | None = None
+    amounts: dict[str, float], quantities: dict[str, float] | None = None,
+    units: dict | None = None,
 ) -> list[ReportRow]:
     return [
         ReportRow(
             label=label,
             amount=amount,
             quantity=(quantities or {}).get(label, 0),
+            quantity_label=(quantity_label(int((quantities or {}).get(label, 0)), *next(iter(units[label]))) if len(units[label]) == 1 else f"{int((quantities or {}).get(label, 0))} unités de base (conditionnements variables)") if units and label in units else None,
         )
         for label, amount in sorted(
             amounts.items(), key=lambda pair: pair[1], reverse=True
@@ -85,6 +88,7 @@ def sales_report(
     category_qty: dict[str, float] = defaultdict(float)
     by_product: dict[str, float] = defaultdict(float)
     product_qty: dict[str, float] = defaultdict(float)
+    product_units = defaultdict(set)
 
     for sale in sales:
         revenue += sale.total
@@ -99,6 +103,7 @@ def sales_report(
             category_qty[category] += item.quantity
             by_product[item.product_name] += item.subtotal
             product_qty[item.product_name] += item.quantity
+            product_units[item.product_name].add((item.base_unit, item.packaging_unit, item.units_per_packaging))
 
     returns_total = sum(
         credit.total
@@ -128,5 +133,5 @@ def sales_report(
         by_payment=_rows(by_payment),
         by_seller=_rows(by_seller, seller_tickets),
         by_category=_rows(by_category, category_qty),
-        by_product=_rows(by_product, product_qty)[:20],
+        by_product=_rows(by_product, product_qty, product_units)[:20],
     )

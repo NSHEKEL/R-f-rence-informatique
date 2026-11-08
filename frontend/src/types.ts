@@ -288,7 +288,7 @@ export interface HistoryState {
   redo: ActionLog | null;
 }
 
-export interface OrderItem {
+export interface OrderItem extends UnitSpec {
   id: number;
   product_id: number | null;
   product_name: string;
@@ -302,7 +302,7 @@ export interface OrderItem {
   subtotal: number;
 }
 
-export interface DeliveryItem {
+export interface DeliveryItem extends UnitSpec {
   id: number;
   product_id: number | null;
   product_name: string;
@@ -397,7 +397,15 @@ export interface Customer {
   credit_limit: number;
 }
 
-export interface Product {
+export interface UnitSpec {
+  base_unit?: string | null;
+  packaging_unit?: string | null;
+  units_per_packaging?: number | null;
+  packaging_sale_price?: number | null;
+  quantity_label?: string | null;
+}
+
+export interface Product extends UnitSpec {
   id: number;
   name: string;
   sku: string;
@@ -420,7 +428,12 @@ export interface Product {
   last_sold_at: string | null;
 }
 
-export interface SaleItem {
+export interface SaleItem extends UnitSpec {
+  sold_unit?: string | null;
+  packaging_quantity?: number | null;
+  piece_quantity?: number | null;
+  base_quantity?: number | null;
+  base_unit_price?: number | null;
   id: number;
   product_id: number | null;
   product_name: string;
@@ -466,7 +479,7 @@ export interface Sale {
   pending_sync?: boolean;
 }
 
-export interface ReturnItem {
+export interface ReturnItem extends UnitSpec {
   id: number;
   product_id: number | null;
   product_name: string;
@@ -487,7 +500,7 @@ export interface SaleReturn {
   items: ReturnItem[];
 }
 
-export interface ProformaItem {
+export interface ProformaItem extends UnitSpec {
   id: number;
   product_id: number | null;
   product_name: string;
@@ -520,6 +533,7 @@ export interface Proforma {
 }
 
 export interface ReportRow {
+  quantity_label?: string | null;
   label: string;
   quantity: number;
   amount: number;
@@ -658,7 +672,7 @@ export interface Expense {
   created_by?: User | null;
 }
 
-export interface StockMovement {
+export interface StockMovement extends UnitSpec {
   id: number;
   product_id: number | null;
   product_name: string;
@@ -691,7 +705,7 @@ export interface AccountingSummary {
   daily_revenue: AccountingCategory[];
 }
 
-export interface PurchaseItem {
+export interface PurchaseItem extends UnitSpec {
   id: number;
   product_id: number | null;
   product_name: string;

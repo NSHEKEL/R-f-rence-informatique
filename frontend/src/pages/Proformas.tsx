@@ -20,6 +20,7 @@ import { vatBreakdown } from "../lib/vat";
 import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSyncVersion } from "../context/SyncContext";
+import { quantityHtml } from "../lib/units";
 
 interface DraftLine {
   product_id: number | null;
@@ -239,7 +240,7 @@ export default function Proformas() {
       .map(
         (it) =>
           `<tr><td>${it.product_name}</td>` +
-          `<td class="num">${it.quantity}</td>` +
+          `<td class="num">${it.packaging_unit ? quantityHtml(it, it.quantity) : it.quantity}</td>` +
           `<td class="num">${formatXOF(it.unit_price)}</td>` +
           `<td class="num">${formatXOF(it.subtotal)}</td></tr>`
       )

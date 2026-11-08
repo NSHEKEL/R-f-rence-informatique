@@ -18,6 +18,9 @@ export interface SalePayload {
   items: {
     product_id: number;
     quantity: number;
+    packaging_quantity?: number;
+    piece_quantity?: number;
+    expected_units_per_packaging?: number;
     unit_price?: number;
     discount?: number;
   }[];

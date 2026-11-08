@@ -376,7 +376,23 @@ class CustomerOut(CustomerBase):
 
 
 # ---------- Product ----------
+class UnitSnapshotOut(BaseModel):
+    base_unit: Optional[str] = "pièce"
+    packaging_unit: Optional[str] = ""
+    units_per_packaging: Optional[int] = 1
+    quantity_label: Optional[str] = None
+
+
+class PackagingQuantities(BaseModel):
+    packaging_quantity: Optional[int] = Field(default=None, ge=0)
+    piece_quantity: Optional[int] = Field(default=None, ge=0)
+
+
 class ProductBase(BaseModel):
+    base_unit: str = Field(default="pièce", min_length=1, max_length=40)
+    packaging_unit: str = Field(default="", max_length=40)
+    units_per_packaging: int = Field(default=1, ge=1)
+    packaging_sale_price: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     name: str
     sku: str
     description: str = ""
@@ -401,6 +417,7 @@ class ProductUpdate(ProductBase):
 
 
 class ProductOut(ProductBase):
+    quantity_label: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
     id: int
     created_at: datetime
@@ -423,9 +440,10 @@ class PriceHistoryOut(BaseModel):
 
 
 # ---------- Sales ----------
-class SaleItemCreate(BaseModel):
+class SaleItemCreate(PackagingQuantities):
+    expected_units_per_packaging: Optional[int] = Field(default=None, ge=1)
     product_id: int
-    quantity: int
+    quantity: int = 0
     # Price agreed at the counter; ignored unless the seller holds the right
     # to change a price, and never written back to the product sheet.
     unit_price: Optional[float] = None
@@ -473,7 +491,13 @@ class SalePaymentOut(BaseModel):
     amount: float
 
 
-class SaleItemOut(BaseModel):
+class SaleItemOut(UnitSnapshotOut):
+    sold_unit: Optional[str] = None
+    packaging_quantity: Optional[int] = None
+    piece_quantity: Optional[int] = None
+    base_quantity: Optional[int] = None
+    base_unit_price: Optional[float] = None
+    packaging_sale_price: Optional[float] = None
     model_config = ConfigDict(from_attributes=True)
     id: int
     product_id: Optional[int]
@@ -509,9 +533,9 @@ class SaleOut(BaseModel):
 
 
 # ---------- Returns (avoirs) ----------
-class ReturnLine(BaseModel):
+class ReturnLine(PackagingQuantities):
     product_id: int
-    quantity: int
+    quantity: int = 0
 
 
 class ReturnCreate(BaseModel):
@@ -521,7 +545,7 @@ class ReturnCreate(BaseModel):
     lines: List[ReturnLine]
 
 
-class ReturnItemOut(BaseModel):
+class ReturnItemOut(UnitSnapshotOut):
     model_config = ConfigDict(from_attributes=True)
     id: int
     product_id: Optional[int]
@@ -583,7 +607,7 @@ class ProformaConvert(BaseModel):
     deposit: float = 0
 
 
-class ProformaItemOut(BaseModel):
+class ProformaItemOut(UnitSnapshotOut):
     model_config = ConfigDict(from_attributes=True)
     id: int
     product_id: Optional[int]
@@ -685,6 +709,7 @@ class AuthRepairResult(BaseModel):
 
 # ---------- Reports ----------
 class ReportRow(BaseModel):
+    quantity_label: Optional[str] = None
     label: str
     quantity: float = 0
     amount: float = 0
@@ -855,9 +880,9 @@ class ExpenseOut(BaseModel):
 
 
 # ---------- Inventory ----------
-class InventoryLine(BaseModel):
+class InventoryLine(PackagingQuantities):
     product_id: int
-    counted_quantity: int
+    counted_quantity: int = 0
 
 
 class InventoryApply(BaseModel):
@@ -883,9 +908,9 @@ class StockLotOut(BaseModel):
     days_left: Optional[int] = None
 
 
-class StockTransferItemCreate(BaseModel):
+class StockTransferItemCreate(PackagingQuantities):
     product_id: int
-    quantity: int
+    quantity: int = 0
 
 
 class StockTransferCreate(BaseModel):
@@ -895,7 +920,7 @@ class StockTransferCreate(BaseModel):
     items: List[StockTransferItemCreate]
 
 
-class StockTransferItemOut(BaseModel):
+class StockTransferItemOut(UnitSnapshotOut):
     model_config = ConfigDict(from_attributes=True)
     id: int
     product_id: Optional[int]
@@ -915,7 +940,7 @@ class StockTransferOut(BaseModel):
     items: List[StockTransferItemOut] = []
 
 
-class StockMovementOut(BaseModel):
+class StockMovementOut(UnitSnapshotOut):
     model_config = ConfigDict(from_attributes=True)
     id: int
     product_id: Optional[int]
@@ -1005,7 +1030,7 @@ class OrderUpdate(BaseModel):
     items: Optional[List[OrderItemCreate]] = None
 
 
-class OrderItemOut(BaseModel):
+class OrderItemOut(UnitSnapshotOut):
     model_config = ConfigDict(from_attributes=True)
     id: int
     product_id: Optional[int] = None
@@ -1072,7 +1097,7 @@ class DeliveryValidate(BaseModel):
     payment_method: str = "Espèces"
 
 
-class DeliveryItemOut(BaseModel):
+class DeliveryItemOut(UnitSnapshotOut):
     model_config = ConfigDict(from_attributes=True)
     id: int
     product_id: Optional[int] = None
@@ -1184,9 +1209,10 @@ class UserPermissions(BaseModel):
 
 
 # ---------- Supply orders (approvisionnement) ----------
-class PurchaseItemCreate(BaseModel):
+class PurchaseItemCreate(PackagingQuantities):
+    packaging_unit_cost: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     product_id: int
-    quantity: int
+    quantity: int = 0
     unit_cost: Optional[float] = None
 
 
@@ -1211,9 +1237,9 @@ class PurchaseUpdate(BaseModel):
     items: Optional[List[PurchaseItemCreate]] = None
 
 
-class PurchaseReceiveItem(BaseModel):
+class PurchaseReceiveItem(PackagingQuantities):
     item_id: int
-    quantity: int
+    quantity: int = 0
 
 
 class PurchaseReceive(BaseModel):
@@ -1224,7 +1250,7 @@ class PurchaseReceive(BaseModel):
     note: str = ""
 
 
-class PurchaseItemOut(BaseModel):
+class PurchaseItemOut(UnitSnapshotOut):
     model_config = ConfigDict(from_attributes=True)
     id: int
     product_id: Optional[int] = None

@@ -402,6 +402,8 @@ def update_product(
         raise HTTPException(status_code=400, detail="Cette référence (SKU) existe déjà")
     _check_barcode(db, payload, product_id)
     for key, value in payload.model_dump().items():
+        if key in {"base_unit", "packaging_unit", "units_per_packaging", "packaging_sale_price"} and key not in payload.model_fields_set:
+            continue
         if key in _PRICE_FIELDS and getattr(product, key) != value:
             db.add(
                 PriceHistory(

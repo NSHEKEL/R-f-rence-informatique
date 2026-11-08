@@ -165,6 +165,22 @@ COLUMNS: dict[str, dict[str, str]] = {
     },
 }
 
+for _table in ("products", "sale_items", "sale_return_items", "purchase_items", "stock_movements", "stock_transfer_items", "proforma_items", "order_items", "delivery_items"):
+    COLUMNS.setdefault(_table, {}).update({
+        "base_unit": "VARCHAR DEFAULT 'pièce'",
+        "packaging_unit": "VARCHAR DEFAULT ''",
+        "units_per_packaging": "INTEGER DEFAULT 1",
+    })
+COLUMNS["products"]["packaging_sale_price"] = "FLOAT DEFAULT NULL"
+COLUMNS["sale_items"].update({
+    "sold_unit": "VARCHAR DEFAULT 'pièce'",
+    "packaging_quantity": "INTEGER DEFAULT 0",
+    "piece_quantity": "INTEGER DEFAULT NULL",
+    "base_quantity": "INTEGER DEFAULT NULL",
+    "base_unit_price": "FLOAT DEFAULT NULL",
+    "packaging_sale_price": "FLOAT DEFAULT NULL",
+})
+
 INDEXES = [
     "CREATE UNIQUE INDEX IF NOT EXISTS ix_sales_client_id ON sales (client_id)",
 ]

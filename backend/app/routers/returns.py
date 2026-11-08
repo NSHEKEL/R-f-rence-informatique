@@ -18,6 +18,7 @@ from ..permissions import has_permission, require_permission
 from ..schemas import ReturnCreate, ReturnOut
 from ..sequences import next_reference
 from .cash import lock_current_session
+from ..units import base_quantity, snapshot
 
 router = APIRouter(prefix="/api/returns", tags=["returns"])
 
@@ -49,7 +50,7 @@ def create_return(
         raise HTTPException(
             status_code=404, detail=f"Ticket {reference} introuvable"
         )
-    lines = [line for line in payload.lines if line.quantity > 0]
+    lines = [line for line in payload.lines if line.quantity > 0 or (line.packaging_quantity or 0) > 0 or (line.piece_quantity or 0) > 0]
     if not lines:
         raise HTTPException(status_code=400, detail="Aucun article à retourner")
 
@@ -78,6 +79,10 @@ def create_return(
                 detail=f"L'article {line.product_id} n'est pas sur ce ticket",
             )
         remaining = item.quantity - item.returned_quantity
+        quantity = base_quantity(line, item)
+        if quantity <= 0:
+            raise HTTPException(status_code=400, detail="Quantité invalide")
+        line = line.model_copy(update={"quantity": quantity})
         if line.quantity > remaining:
             raise HTTPException(
                 status_code=400,
@@ -87,13 +92,19 @@ def create_return(
                 ),
             )
         subtotal = item.unit_price * line.quantity
+        if line.packaging_quantity is not None or line.piece_quantity is not None:
+            subtotal = (line.packaging_quantity or 0) * (item.packaging_sale_price if item.packaging_sale_price is not None else item.unit_price * (item.units_per_packaging or 1)) + (line.piece_quantity or 0) * (item.base_unit_price if item.base_unit_price is not None else item.unit_price)
+        if item.packaging_unit:
+            refunded = sum(returned.subtotal for previous in sale.returns for returned in previous.items if returned.product_id == item.product_id)
+            subtotal = min(subtotal, max(0, item.subtotal - refunded))
         total += subtotal
         credit.items.append(
             SaleReturnItem(
+                **snapshot(item),
                 product_id=item.product_id,
                 product_name=item.product_name,
                 quantity=line.quantity,
-                unit_price=item.unit_price,
+                unit_price=subtotal / quantity,
                 subtotal=subtotal,
             )
         )
@@ -105,6 +116,7 @@ def create_return(
             product.quantity = before + line.quantity
             db.add(
                 StockMovement(
+                    **snapshot(item),
                     product_id=product.id,
                     product_name=product.name,
                     kind="retour",

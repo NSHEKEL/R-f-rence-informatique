@@ -25,6 +25,7 @@ import { exportCsv, stampedName } from "../lib/exportCsv";
 import { useCompany } from "../context/CompanyContext";
 import { useLicense } from "../context/LicenseContext";
 import { useSyncVersion } from "../context/SyncContext";
+import { escapeUnitText } from "../lib/units";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -55,7 +56,7 @@ function RowTable({
               <td className="py-2 text-slate-600">{r.label}</td>
               {unit && (
                 <td className="py-2 text-right text-slate-500">
-                  {r.quantity} {unit}
+                  {r.quantity_label || `${r.quantity} ${unit}`}
                 </td>
               )}
               <td className="py-2 text-right font-semibold text-slate-900">
@@ -81,7 +82,7 @@ function rowsTable(title: string, rows: ReportRow[], unit: string): string {
     .map(
       (r) =>
         `<tr><td>${r.label}</td>` +
-        (unit ? `<td class="num">${r.quantity} ${unit}</td>` : "") +
+        (unit ? `<td class="num">${escapeUnitText(r.quantity_label || `${r.quantity} ${unit}`)}</td>` : "") +
         `<td class="num">${formatXOF(r.amount)}</td></tr>`
     )
     .join("");
@@ -173,7 +174,7 @@ export default function Rapports() {
     ];
     for (const [section, list] of groups) {
       for (const row of list) {
-        rows.push([section, row.label, row.amount, row.quantity]);
+        rows.push([section, row.label, row.amount, row.quantity_label || row.quantity]);
       }
     }
     exportCsv(

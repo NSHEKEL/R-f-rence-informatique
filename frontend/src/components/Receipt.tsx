@@ -9,6 +9,7 @@ import type {
 import { vatBreakdown } from "../lib/vat";
 import { barcodeDataUrl, qrDataUrl } from "../lib/barcode";
 import { useCompany } from "../context/CompanyContext";
+import { salePriceParts } from "../lib/units";
 
 interface ReceiptProps {
   sale: Sale;
@@ -148,9 +149,9 @@ function ReceiptBody({
           {sale.items.map((it) => (
             <tr key={it.id}>
               <td>{it.product_name}</td>
-              {config.show_qty && <td className="qty">{it.quantity}</td>}
+              {config.show_qty && <td className="qty">{it.quantity_label || it.quantity}</td>}
               {config.show_unit_price && (
-                <td className="num">{money(it.unit_price)}</td>
+                <td className="num">{salePriceParts(it).map((part) => <div key={part.kind}>{money(part.amount)}{part.unit && <><br /><small>/{part.unit}</small></>}</div>)}</td>
               )}
               <td className="num strong">{money(it.subtotal)}</td>
             </tr>

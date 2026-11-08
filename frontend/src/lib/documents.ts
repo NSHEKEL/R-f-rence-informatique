@@ -14,6 +14,7 @@ import type {
   Order,
 } from "../types";
 import { barcodeDataUrl } from "./barcode";
+import { quantityHtml } from "./units";
 import { printDocument } from "./print";
 
 const STYLE = `
@@ -132,7 +133,7 @@ export function orderDocumentHtml(
         `<tr><td class="num">${index + 1}</td>` +
         `<td>${item.reference || "—"}</td>` +
         `<td>${item.product_name}</td>` +
-        `<td class="num">${item.quantity}</td>` +
+        `<td class="num">${item.packaging_unit ? quantityHtml(item, item.quantity) : item.quantity}</td>` +
         `<td>${item.unit || "u"}</td>` +
         `<td class="num">${formatXOF(item.unit_price)}</td>` +
         (config.show_discount
@@ -230,7 +231,7 @@ export function deliveryDocumentHtml(
         `<td>${item.product_name}</td>` +
         `<td class="num">${item.ordered_quantity}</td>` +
         `<td class="num">${item.previously_delivered}</td>` +
-        `<td class="num">${item.quantity}</td>` +
+        `<td class="num">${item.packaging_unit ? quantityHtml(item, item.quantity) : item.quantity}</td>` +
         `<td>${item.unit || "u"}</td>` +
         (showPrices
           ? `<td class="num">${formatXOF(item.unit_price)}</td>` +

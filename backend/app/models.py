@@ -2,6 +2,8 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     Boolean,
+    event,
+    select,
     CheckConstraint,
     Column,
     DateTime,
@@ -183,7 +185,18 @@ class Customer(Base):
     sales = relationship("Sale", back_populates="customer")
 
 
-class Product(Base):
+class UnitSnapshot:
+    base_unit = Column(String, default="pièce", nullable=True)
+    packaging_unit = Column(String, default="", nullable=True)
+    units_per_packaging = Column(Integer, default=1, nullable=True)
+
+    @property
+    def quantity_label(self):
+        from .units import quantity_label
+        return quantity_label(self.quantity, self.base_unit, self.packaging_unit, self.units_per_packaging)
+
+
+class Product(UnitSnapshot, Base):
     __tablename__ = "products"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -194,6 +207,7 @@ class Product(Base):
     supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=True)
     purchase_price = Column(Float, default=0)
     sale_price = Column(Float, default=0)
+    packaging_sale_price = Column(Float, nullable=True)
     wholesale_price = Column(Float, default=0)  # 0 = no wholesale price
     quantity = Column(Integer, default=0)
     min_stock = Column(Integer, default=5)
@@ -282,11 +296,17 @@ class SalePayment(Base):
     sale = relationship("Sale", back_populates="payments")
 
 
-class SaleItem(Base):
+class SaleItem(UnitSnapshot, Base):
     __tablename__ = "sale_items"
 
     id = Column(Integer, primary_key=True, index=True)
     sale_id = Column(Integer, ForeignKey("sales.id"), nullable=False)
+    sold_unit = Column(String, default="pièce", nullable=True)
+    packaging_quantity = Column(Integer, default=0, nullable=True)
+    piece_quantity = Column(Integer, nullable=True)
+    base_quantity = Column(Integer, nullable=True)
+    base_unit_price = Column(Float, nullable=True)
+    packaging_sale_price = Column(Float, nullable=True)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
     product_name = Column(String, default="")
     quantity = Column(Integer, default=1)
@@ -337,7 +357,7 @@ class SaleReturn(Base):
         return self.sale.reference if self.sale else ""
 
 
-class SaleReturnItem(Base):
+class SaleReturnItem(UnitSnapshot, Base):
     __tablename__ = "sale_return_items"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -446,7 +466,7 @@ class Expense(Base):
     created_by = relationship("User")
 
 
-class StockMovement(Base):
+class StockMovement(UnitSnapshot, Base):
     """Traceability of every stock change (sale, inventory count, manual)."""
 
     __tablename__ = "stock_movements"
@@ -511,7 +531,7 @@ class StockTransfer(Base):
     created_by = relationship("User")
 
 
-class StockTransferItem(Base):
+class StockTransferItem(UnitSnapshot, Base):
     __tablename__ = "stock_transfer_items"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -555,7 +575,7 @@ class Proforma(Base):
     )
 
 
-class ProformaItem(Base):
+class ProformaItem(UnitSnapshot, Base):
     __tablename__ = "proforma_items"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -717,7 +737,7 @@ class Order(Base):
         return "Partiellement payé"
 
 
-class OrderItem(Base):
+class OrderItem(UnitSnapshot, Base):
     __tablename__ = "order_items"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -776,7 +796,7 @@ class Delivery(Base):
         return self.order.reference if self.order else ""
 
 
-class DeliveryItem(Base):
+class DeliveryItem(UnitSnapshot, Base):
     """One line of a delivery note: what was ordered and what really left."""
 
     __tablename__ = "delivery_items"
@@ -866,7 +886,7 @@ class Purchase(Base):
         return max(self.total - (self.paid or 0), 0)
 
 
-class PurchaseItem(Base):
+class PurchaseItem(UnitSnapshot, Base):
     __tablename__ = "purchase_items"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -1252,3 +1272,27 @@ class MobileOpApplied(Base):
 
     remote_id = Column(String, primary_key=True)
     applied_at = Column(DateTime, default=utcnow)
+
+
+@event.listens_for(SaleItem, "before_insert")
+@event.listens_for(ProformaItem, "before_insert")
+@event.listens_for(OrderItem, "before_insert")
+@event.listens_for(DeliveryItem, "before_insert")
+@event.listens_for(SaleReturnItem, "before_insert")
+@event.listens_for(PurchaseItem, "before_insert")
+@event.listens_for(StockTransferItem, "before_insert")
+@event.listens_for(StockMovement, "before_insert")
+def capture_units(mapper, connection, target):
+    if target.base_unit is None and target.product_id is not None:
+        product = connection.execute(select(Product.base_unit, Product.packaging_unit, Product.units_per_packaging).where(Product.id == target.product_id)).first()
+        if product:
+            target.base_unit = product.base_unit or "pièce"
+            target.packaging_unit = product.packaging_unit or ""
+            target.units_per_packaging = product.units_per_packaging or 1
+    if isinstance(target, SaleItem):
+        if target.base_quantity is None:
+            target.base_quantity = target.quantity
+        if target.piece_quantity is None:
+            target.piece_quantity = target.quantity
+        if target.base_unit_price is None:
+            target.base_unit_price = target.unit_price
