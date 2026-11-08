@@ -53,7 +53,7 @@ PERMISSIONS: dict[str, tuple[str, str]] = {
     "dettes_regler": ("Enregistrer un règlement de dette ou de créance", "Actions"),
     "dettes_annuler": ("Annuler un règlement (avec motif)", "Actions"),
     "dettes_recu": ("Imprimer un reçu de paiement", "Actions"),
-    "rapports_financiers": ("Voir les états des créances et des dettes", "Actions"),
+    "rapports_financiers": ("Consulter les rapports financiers", "Trésorerie"),
     "rapports_exporter": ("Exporter ou imprimer les rapports", "Actions"),
     "approvisionnements_gerer": (
         "Créer, réceptionner et supprimer un approvisionnement",
@@ -81,13 +81,18 @@ PERMISSIONS: dict[str, tuple[str, str]] = {
         "Actions",
     ),
     "caisse_fermer": ("Clôturer une session de caisse", "Actions"),
-    "caisse_z": ("Consulter et imprimer l'état Z de caisse", "Actions"),
-    "versements_gerer": ("Enregistrer un versement bancaire", "Actions"),
+    "caisse_z": ("Imprimer le ticket de clôture de sa caisse", "Trésorerie"),
+    "tresorerie_consulter": ("Consulter la trésorerie", "Trésorerie"),
+    "recette_enregistrer": ("Enregistrer une recette", "Trésorerie"),
+    "soldes_consulter": ("Consulter les soldes", "Trésorerie"),
+    "caisse_operations": ("Effectuer les opérations de caisse", "Trésorerie"),
+    "clotures_consulter": ("Consulter les clôtures", "Trésorerie"),
+    "versements_gerer": ("Enregistrer un versement bancaire", "Trésorerie"),
     "versements_valider": (
         "Valider, rejeter, annuler ou rapprocher un versement",
-        "Actions",
+        "Trésorerie",
     ),
-    "depenses_gerer": ("Enregistrer et annuler une dépense", "Actions"),
+    "depenses_gerer": ("Enregistrer une dépense", "Trésorerie"),
 }
 
 CONFIGURABLE_ROLES = ("vendeur", "gestionnaire")
@@ -97,7 +102,6 @@ DEFAULTS: dict[str, set[str]] = {
     "vendeur": {
         "caisse",
         "caisse_fermer",
-        "caisse_z",
         "vente_nouvelle",
         "assistance",
     },
@@ -172,19 +176,20 @@ def has_permission(db: Session, user: User, key: str) -> bool:
     return row.allowed if row is not None else default_allows(user.role, key)
 
 
-def require_permission(key: str):
-    """Dependency guarding an endpoint with one configurable right."""
+def require_permission(key: str, *additional: str):
+    """Dependency requiring every named right."""
 
     def guard(
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user),
     ) -> User:
-        if not has_permission(db, current_user, key):
-            label = PERMISSIONS.get(key, (key, ""))[0]
-            raise HTTPException(
-                status_code=403,
-                detail=f"Accès refusé : {label}",
-            )
+        for required in (key, *additional):
+            if not has_permission(db, current_user, required):
+                label = PERMISSIONS.get(required, (required, ""))[0]
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Accès refusé : {label}",
+                )
         return current_user
 
     return guard

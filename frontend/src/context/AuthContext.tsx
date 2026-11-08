@@ -7,6 +7,7 @@ import {
 } from "react";
 import api from "../api/client";
 import type { User } from "../types";
+import { authDenied, clearAuthCache, readAuthCache, writeAuthCache } from "../lib/authCache";
 
 interface AuthContextValue {
   user: User | null;
@@ -30,12 +31,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [rights, setRights] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
-  async function loadRights() {
+  async function loadRights(account: User | null = user) {
+    const token = localStorage.getItem("ri_token");
+    if (!token) return;
     try {
       const res = await api.get<{ allowed: string[] }>("/permissions/me");
+      if (localStorage.getItem("ri_token") !== token) return;
       setRights(res.data.allowed);
-    } catch {
-      setRights([]);
+      if (account) writeAuthCache(token, account, res.data.allowed);
+    } catch (error) {
+      const current = localStorage.getItem("ri_token");
+      if (current && current !== token) return;
+      if (authDenied(error)) { setRights([]); clearAuthCache(); }
     }
   }
 
@@ -48,10 +55,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     api
       .get<User>("/auth/me")
       .then(async (res) => {
+        if (localStorage.getItem("ri_token") !== token) return;
         setUser(res.data);
-        await loadRights();
+        setRights(readAuthCache(token)?.rights ?? []);
+        await loadRights(res.data);
       })
-      .catch(() => localStorage.removeItem("ri_token"))
+      .catch((error) => {
+        if (authDenied(error)) { localStorage.removeItem("ri_token"); clearAuthCache(); setRights([]); }
+        else { const cached = readAuthCache(token); if (cached) { setUser(cached.user); setRights(cached.rights); } }
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -73,10 +85,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       email,
       password,
     });
+    clearAuthCache();
+    setRights([]);
     localStorage.setItem("ri_token", res.data.access_token);
     const me = await api.get<User>("/auth/me");
     setUser(me.data);
-    await loadRights();
+    await loadRights(me.data);
   }
 
   async function refreshUser() {
@@ -89,6 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   function logout() {
+    clearAuthCache();
     localStorage.removeItem("ri_token");
     setUser(null);
     setRights([]);

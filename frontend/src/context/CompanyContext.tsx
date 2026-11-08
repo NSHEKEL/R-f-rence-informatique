@@ -10,7 +10,7 @@ import api from "../api/client";
 import defaultLogo from "../assets/logo-easygest.png";
 import { cacheRead, cacheWrite } from "../lib/offline";
 import type { CompanySettings, PrintingConfig } from "../types";
-import { DEFAULT_PRINTING } from "../types";
+import { mergePrinting } from "../lib/printStyle";
 
 export const COMPANY_CACHE_KEY = "company";
 export const PRINTING_CACHE_KEY = "printing";
@@ -35,12 +35,7 @@ const CompanyContext = createContext<CompanyContextValue | undefined>(
 
 /** A cache or a server older than a section still yields a usable config. */
 function withDefaults(config: PrintingConfig | null): PrintingConfig {
-  if (!config) return DEFAULT_PRINTING;
-  return {
-    receipt: { ...DEFAULT_PRINTING.receipt, ...config.receipt },
-    label: { ...DEFAULT_PRINTING.label, ...config.label },
-    documents: { ...DEFAULT_PRINTING.documents, ...config.documents },
-  };
+  return mergePrinting(config);
 }
 
 const POSTE_PRINTERS_KEY = "ri_printers_poste";

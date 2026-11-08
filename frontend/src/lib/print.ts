@@ -3,11 +3,13 @@ import type {
   LabelPrinterConfig,
   ReceiptFormat,
   ReceiptPrinterConfig,
+  DocumentConfig,
 } from "../types";
 import { DEFAULT_PRINTING } from "../types";
 import { barcodeDataUrl } from "./barcode";
 import { cacheRead } from "./offline";
 import { ticketLines } from "./ticketText";
+import { commercialMarkup, printFont, printNumber } from "./printStyle";
 
 const PAGE_STYLE_ID = "receipt-page-style";
 const PRINT_ROOT_ID = "receipt-print-root";
@@ -19,7 +21,8 @@ const TICKET_MIN_HEIGHT_MM = 60;
 const TICKET_SLACK_MM = 4;
 
 /** Paper width of a receipt format, in millimetres. */
-function widthMm(format: ReceiptFormat): number {
+function widthMm(format: ReceiptFormat, custom = 80): number {
+  if (format === "custom") return printNumber(custom, 80, 40, 216);
   return format === "58mm" ? NARROW_WIDTH_MM : TICKET_WIDTH_MM;
 }
 
@@ -27,10 +30,11 @@ function widthMm(format: ReceiptFormat): number {
 function ticketHeightMm(): number {
   const root = document.getElementById(PRINT_ROOT_ID);
   if (!root) return TICKET_MIN_HEIGHT_MM;
+  const previous = root.style.cssText;
   root.style.cssText =
-    "display:block;position:absolute;visibility:hidden;left:-9999px;top:0";
+    previous + ";display:block;position:absolute;visibility:hidden;left:-9999px;top:0";
   const height = root.scrollHeight * MM_PER_PX;
-  root.style.cssText = "";
+  root.style.cssText = previous;
   return Math.ceil(
     Math.max(TICKET_MIN_HEIGHT_MM, height + 2 * TICKET_MARGIN_MM) +
       TICKET_SLACK_MM
@@ -116,16 +120,16 @@ window.addEventListener("afterprint", () => {
   savedTitle = null;
 });
 
-function pageRule(format: ReceiptFormat, marginMm: number): string {
-  if (format === "80mm" || format === "58mm") {
+function pageRule(format: ReceiptFormat, marginMm: number, custom = 80): string {
+  if (format !== "A4") {
     // Thermal roll: `auto` is invalid next to a length, so the exact ticket
     // length is measured to avoid both blank feed and a truncated ticket.
     // Zero page margin keeps the printer from adding the URL, the date and the
     // page number around the ticket; the padding is applied to the copy itself.
     return (
-      `@page { size: ${widthMm(format)}mm ${ticketHeightMm()}mm; margin: 0; }` +
+      `@page { size: ${widthMm(format, custom)}mm ${ticketHeightMm()}mm; margin: 0; }` +
       `#${PRINT_ROOT_ID} { padding: ${marginMm}mm;` +
-      ` width: ${widthMm(format)}mm; box-sizing: border-box; }`
+      ` width: ${widthMm(format, custom)}mm; box-sizing: border-box; }`
     );
   }
   return (
@@ -158,6 +162,7 @@ const SHEET_STYLE = `
 `;
 
 export interface PrintOptions {
+  documentConfig?: DocumentConfig;
   /** Queue the document goes to; empty keeps the Windows default. */
   printerName?: string;
   /** False shows the preview dialog even when a printer is assigned. */
@@ -207,6 +212,7 @@ export function printDocument(
   // lightbox and the job itself still goes through the silent bridge.
   const appPreview = (printer?: string) => {
     const overlay = document.createElement("div");
+    overlay.setAttribute("data-easygest-print-preview", "true");
     overlay.style.cssText =
       "position:fixed;inset:0;z-index:2147483000;" +
       "background:rgba(15,23,42,.55);display:flex;flex-direction:column;" +
@@ -229,8 +235,13 @@ export function printDocument(
     frame.srcdoc =
       `<html><head><title></title><style>${style}</style></head>` +
       `<body>${bodyHtml}</body></html>`;
-    const finish = () => overlay.remove();
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") { event.preventDefault(); event.stopImmediatePropagation(); finish(); } };
+    const finish = () => { window.removeEventListener?.("keydown", escape, true); frame.contentWindow?.removeEventListener?.("keydown", escape, true); overlay.remove(); };
+    window.addEventListener?.("keydown", escape, true);
+    frame.onload = () => frame.contentWindow?.addEventListener?.("keydown", escape, true);
     send.onclick = () => {
+      if (send.disabled) return;
+      send.disabled = true;
       const root = document.createElement("div");
       root.id = PRINT_ROOT_ID;
       root.innerHTML = `<style>${style}</style>${bodyHtml}`;
@@ -240,7 +251,7 @@ export function printDocument(
         297,
         0,
         printer?.trim() ?? ""
-      ).finally(() => {
+      ).catch(() => false).finally(() => {
         root.remove();
         finish();
       });
@@ -307,7 +318,8 @@ export function documentHeader(
   /** Supplier logo printed instead of the company one on its own documents. */
   logoOverride?: string,
   /** Document kind ("facture", "devis"...) for per-type layout overrides. */
-  docType?: string
+  docType?: string,
+  config?: DocumentConfig
 ): string {
   // Printing right after start-up: the settings may still be loading, so fall
   // back on the copy kept for offline use instead of an empty letterhead.
@@ -316,10 +328,10 @@ export function documentHeader(
   const place = [company?.city, company?.country].filter(Boolean).join(", ");
   const phones = [company?.phone, company?.phone2].filter(Boolean).join(" / ");
   const contact = [
-    [company?.address, place].filter(Boolean).join(" - "),
-    phones,
-    company?.email,
-    company?.website,
+    config?.show_address === false ? '' : [company?.address, place].filter(Boolean).join(" - "),
+    config?.show_phone === false ? '' : phones,
+    config?.show_email === false ? '' : company?.email,
+    config?.show_website === false ? '' : company?.website,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -370,26 +382,26 @@ export function printSheet(
   bodyHtml: string,
   options?: PrintOptions
 ): void {
-  printDocument(title, SHEET_STYLE, bodyHtml, options);
+  printDocument(title, SHEET_STYLE, options?.documentConfig ? commercialMarkup(bodyHtml, options.documentConfig) : bodyHtml, options);
 }
 
 const LABEL_STYLE = `
-  body { font-family: Arial, Helvetica, sans-serif; color: #0f172a; margin: 0;
+  :is(#receipt-print-root, body > .grid) { font-family: Arial, Helvetica, sans-serif; color: #0f172a; margin: 0;
          padding: 6mm; }
   @page { size: A4 portrait; margin: 0; }
-  .grid { display: flex; flex-wrap: wrap; gap: 4mm; }
-  .label { width: 60mm; box-sizing: border-box; border: 1px dashed #94a3b8;
+  :is(#receipt-print-root > .grid, body > .grid) { display: flex; flex-wrap: wrap; gap: 4mm; }
+  :is(#receipt-print-root, body > .grid) .label { width: 60mm; box-sizing: border-box; border: 1px dashed #94a3b8;
            border-radius: 3mm; padding: 3mm; text-align: center;
            page-break-inside: avoid; }
-  .shop-logo { height: 8mm; max-width: 30mm; object-fit: contain;
+  :is(#receipt-print-root, body > .grid) .shop-logo { height: 8mm; max-width: 30mm; object-fit: contain;
                display: block; margin: 0 auto 1mm; }
-  .shop { font-size: 9px; text-transform: uppercase; letter-spacing: .08em;
+  :is(#receipt-print-root, body > .grid) .shop { font-size: 9px; text-transform: uppercase; letter-spacing: .08em;
           color: #64748b; margin: 0; }
-  .name { font-size: 12px; font-weight: 700; margin: 1mm 0; min-height: 9mm; }
-  .price { font-size: 20px; font-weight: 800; margin: 0; }
-  .wholesale { font-size: 10px; color: #334155; margin: 1mm 0 0; }
-  .code { font-size: 9px; color: #64748b; margin: 1mm 0 0; }
-  .qr { width: 40mm; height: 13mm; margin: 1mm auto 0; display: block;
+  :is(#receipt-print-root, body > .grid) .name { font-size: 12px; font-weight: 700; margin: .5mm 0; }
+  :is(#receipt-print-root, body > .grid) .price { font-size: 20px; font-weight: 800; margin: 0; }
+  :is(#receipt-print-root, body > .grid) .wholesale { font-size: 10px; color: #334155; margin: 1mm 0 0; }
+  :is(#receipt-print-root, body > .grid) .code { font-size: 9px; color: #64748b; margin: 1mm 0 0; }
+  :is(#receipt-print-root, body > .grid) .qr { max-width:100%;width: 40mm; height: 13mm; min-height:3mm;flex-shrink:1;margin: 1mm auto 0; display: block;
         object-fit: contain; }
 `;
 
@@ -402,16 +414,16 @@ export function printLabels(
   labelsHtml: string,
   config: LabelPrinterConfig = DEFAULT_PRINTING.label
 ): void {
+  printDocument(title, labelPrintStyle(config), `<div class="grid">${labelsHtml}</div>`, { printerName: config.printer_name });
+}
+
+export function labelPrintStyle(config: LabelPrinterConfig): string {
   const sizing =
-    `.label { width: ${config.width_mm}mm;` +
-    ` min-height: ${config.height_mm}mm;` +
-    ` font-size: ${config.font_size}px; }`;
-  printDocument(
-    title,
-    LABEL_STYLE + sizing,
-    `<div class="grid">${labelsHtml}</div>`,
-    { printerName: config.printer_name }
-  );
+    `:is(#receipt-print-root > .grid, body > .grid) {display:grid;grid-template-columns:repeat(${Math.round(printNumber(config.columns,3,1,12))},${printNumber(config.width_mm,60,20,120)}mm);}` +
+    `:is(#receipt-print-root, body > .grid) .label { width: ${config.width_mm}mm;` +
+    ` height: ${config.height_mm}mm;overflow:hidden;display:flex;flex-direction:column;align-items:center;` +
+    ` font-family:"${printFont(config.font_family)}";font-size: ${printNumber(config.font_size,12,8,36)}px; } :is(#receipt-print-root, body > .grid) .label :is(.name,.price,.code,.shop,.wholesale) {font-size:inherit} :is(#receipt-print-root, body > .grid) .label .price{font-size:1.5em} :is(#receipt-print-root, body > .grid) .label .qr-square{width:20mm;height:20mm}`;
+  return LABEL_STYLE + sizing;
 }
 
 /**
@@ -420,11 +432,12 @@ export function printLabels(
  * single dialog produces the whole set. Resolves to true when the drawer kick
  * travelled with the ticket, so the caller knows the till is already open.
  */
-export function printReceipt(
+export async function printReceipt(
   format: ReceiptFormat,
   config: ReceiptPrinterConfig = DEFAULT_PRINTING.receipt,
   /** Cash drawer kick code, sent with the ticket on the same printer. */
-  kick: number[] = []
+  kick: number[] = [],
+  options: { controlled?: boolean } = {}
 ): Promise<boolean> {
   let style = document.getElementById(PAGE_STYLE_ID);
   if (!style) {
@@ -432,15 +445,19 @@ export function printReceipt(
     style.id = PAGE_STYLE_ID;
     document.head.appendChild(style);
   }
-  style.textContent = pageRule(format, config.margin_mm);
+  style.textContent = pageRule(format, config.margin_mm, config.paper_width_mm);
   const thermal = format === "80mm" || format === "58mm";
   // Measured before the copies are added, so every copy gets its own page.
-  const pageHeight = thermal ? ticketHeightMm() : 297;
+  const pageHeight = format !== "A4" ? ticketHeightMm() : 297;
   const root = document.getElementById(PRINT_ROOT_ID);
   const copies = Math.min(Math.max(Math.round(config.copies) || 1, 1), 5);
   const extras: HTMLElement[] = [];
   const printer = config.printer_name.trim();
   const failed = (problem: unknown = "impression silencieuse indisponible ou refusée") => {
+    if (options.controlled) {
+      if (problem instanceof Error) throw problem;
+      throw new Error(`Ticket non envoyé${printer ? ` sur ${printer}` : ""} : ${problem}`);
+    }
     if (printer) {
       window.alert(`Ticket non envoyé sur ${printer} : ${problem}`);
     } else {
@@ -448,6 +465,13 @@ export function printReceipt(
     }
     return false;
   };
+  const checkPrinter = (window as unknown as {
+    pywebview?: { api?: { printer_problem?: (name: string) => Promise<string> } };
+  }).pywebview?.api?.printer_problem;
+  if (checkPrinter) {
+    const problem = await checkPrinter(printer);
+    if (problem) return failed(`Imprimante indisponible : ${problem}`);
+  }
   if (root && copies > 1) {
     for (let i = 1; i < copies; i += 1) {
       const copy = root.cloneNode(true) as HTMLElement;
@@ -464,13 +488,14 @@ export function printReceipt(
       copies,
       cut: config.cut_paper,
       kick,
-      lines: ticketLines(root, format),
+      lines: ticketLines(root, format, config),
+      line_spacing: Math.round(printNumber(config.line_height,1.35,1,2) * 24),
     });
     extras.forEach((copy) => copy.remove());
     extras.length = 0;
     return direct(payload).then((problem) => {
       if (!problem) return kick.length > 0;
-      if (printer) return failed(problem);
+      if (printer || options.controlled) return failed(problem);
       // No thermal printer on this computer: fall back on the page printer,
       // still at the ticket geometry so the roll is not padded to a sheet.
       const fallback = desktopPrint();
@@ -495,7 +520,7 @@ export function printReceipt(
         targeted(width, height, margin, printer))
     : desktopPrint();
   if (native) {
-    const width = thermal ? widthMm(format) : 210;
+    const width = format !== "A4" ? widthMm(format, config.paper_width_mm) : 210;
     return native(width, pageHeight, 0)
       .then((done) => {
         if (!done) return failed();

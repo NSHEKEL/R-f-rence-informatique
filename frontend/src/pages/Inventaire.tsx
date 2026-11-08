@@ -19,6 +19,8 @@ import { exportCsv, stampedName } from "../lib/exportCsv";
 import { useCompany } from "../context/CompanyContext";
 import { useLicense } from "../context/LicenseContext";
 import { useSyncVersion } from "../context/SyncContext";
+import PackagingQuantity from "../components/PackagingQuantity";
+import { formatQuantity, quantityHtml } from "../lib/units";
 
 type Counted = Record<number, { rayon: string; stock: string }>;
 
@@ -308,7 +310,7 @@ export default function Inventaire() {
           `<td>${p.barcode || ""}</td>` +
           (blind
             ? `<td class="blank"></td><td class="blank"></td><td class="blank"></td>`
-            : `<td class="num">${p.quantity}</td>` +
+            : `<td class="num">${quantityHtml(p, p.quantity)}</td>` +
               `<td class="blank"></td><td class="blank"></td><td class="blank"></td>`) +
           `</tr>`
       )
@@ -336,8 +338,8 @@ export default function Inventaire() {
       .map(
         (d) =>
           `<tr><td>${d.product.name}</td><td>${d.product.sku}</td>` +
-          `<td class="num">${d.product.quantity}</td>` +
-          `<td class="num">${d.product.quantity + d.delta}</td>` +
+          `<td class="num">${quantityHtml(d.product, d.product.quantity)}</td>` +
+          `<td class="num">${quantityHtml(d.product, d.product.quantity + d.delta)}</td>` +
           `<td class="num">${d.delta > 0 ? `+${d.delta}` : d.delta}</td>` +
           `<td class="num">${formatXOF(d.delta * d.product.purchase_price)}</td></tr>`
       )
@@ -509,10 +511,11 @@ export default function Inventaire() {
                     <td className="py-2 text-slate-500">{p.sku}</td>
                     {!blind && (
                       <td className="py-2 text-center text-slate-700">
-                        {p.quantity}
+                        {formatQuantity(p, p.quantity)}
                       </td>
                     )}
                     <td className="py-2 text-center">
+                      {p.packaging_unit ? <PackagingQuantity product={p} value={Number(entry.rayon) || 0} onChange={(quantity) => setCounted((prev) => ({ ...prev, [p.id]: { ...entry, rayon: String(quantity) } }))} /> :
                       <input
                         className="w-20 rounded-lg border border-slate-200 py-1 text-center"
                         type="number"
@@ -526,8 +529,10 @@ export default function Inventaire() {
                           })
                         }
                       />
+                      }
                     </td>
                     <td className="py-2 text-center">
+                      {p.packaging_unit ? <PackagingQuantity product={p} value={Number(entry.stock) || 0} onChange={(quantity) => setCounted((prev) => ({ ...prev, [p.id]: { ...entry, stock: String(quantity) } }))} /> :
                       <input
                         className="w-20 rounded-lg border border-slate-200 py-1 text-center"
                         type="number"
@@ -541,6 +546,7 @@ export default function Inventaire() {
                           })
                         }
                       />
+                      }
                     </td>
                     {!blind && (
                       <td
@@ -675,10 +681,11 @@ export default function Inventaire() {
             <option value="">— Produit —</option>
             {products.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.name} (stock {p.quantity})
+                {p.name} (stock {formatQuantity(p, p.quantity)})
               </option>
             ))}
           </select>
+          {products.find((p) => p.id === Number(lineDraft.product_id))?.packaging_unit && <PackagingQuantity product={products.find((p) => p.id === Number(lineDraft.product_id))!} value={Number(lineDraft.quantity)} onChange={(quantity) => setLineDraft((prev) => ({ ...prev, quantity: String(quantity) }))} />}
           <input
             className="input w-24"
             type="number"
@@ -704,7 +711,7 @@ export default function Inventaire() {
                       {p?.name ?? `#${l.product_id}`}
                     </td>
                     <td className="py-2 text-center font-semibold">
-                      {l.quantity}
+                      {formatQuantity(products.find((p) => p.id === l.product_id) || {}, l.quantity)}
                     </td>
                     <td className="py-2 text-right">
                       <button
@@ -813,10 +820,10 @@ export default function Inventaire() {
                     m.quantity < 0 ? "text-red-600" : "text-emerald-600"
                   }`}
                 >
-                  {m.quantity > 0 ? `+${m.quantity}` : m.quantity}
+                  {formatQuantity(m, m.quantity)}
                 </td>
                 <td className="py-2 text-center text-slate-500">
-                  {m.stock_before} → {m.stock_after}
+                  {formatQuantity(m, m.stock_before)} → {formatQuantity(m, m.stock_after)}
                 </td>
                 <td className="py-2 text-slate-500">{m.reason}</td>
                 <td className="py-2 text-slate-500">

@@ -5,6 +5,7 @@ from ..database import get_db
 from ..models import Notification, Product, StockMovement, User
 from ..permissions import require_permission
 from ..schemas import InventoryApply, StockMovementOut
+from ..units import base_quantity
 
 router = APIRouter(prefix="/api/inventory", tags=["inventory"])
 
@@ -39,6 +40,7 @@ def apply_inventory(
             raise HTTPException(
                 status_code=404, detail=f"Produit {line.product_id} introuvable"
             )
+        line = line.model_copy(update={"counted_quantity": base_quantity(line, product, "counted_quantity")})
         if line.counted_quantity < 0:
             raise HTTPException(status_code=400, detail="Quantité invalide")
         before = product.quantity

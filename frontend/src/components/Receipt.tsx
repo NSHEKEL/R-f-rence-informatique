@@ -9,8 +9,13 @@ import type {
 import { vatBreakdown } from "../lib/vat";
 import { barcodeDataUrl, qrDataUrl } from "../lib/barcode";
 import { useCompany } from "../context/CompanyContext";
+import { salePriceParts } from "../lib/units";
+import { commercialStyle, printFont, printColor, printerColorAllowed } from "../lib/printStyle";
 
 interface ReceiptProps {
+  previewOnly?: boolean;
+  printOnly?: boolean;
+  printSourceId?: string;
   sale: Sale;
   company: CompanySettings | null;
   format: ReceiptFormat;
@@ -36,6 +41,7 @@ function ReceiptBody({
   const qr = config.show_qr ? qrDataUrl(qrPayload, 140) : "";
   const change = Math.max((sale.paid_amount || 0) - sale.total, 0);
   const footer =
+    config.footer_text ||
     sale.receipt_footer ||
     company?.receipt_footer ||
     "Merci de votre confiance !";
@@ -55,7 +61,7 @@ function ReceiptBody({
             }}
           />
         )}
-        <div>
+        {config.show_company_info !== false && <div>
           {config.show_company && (
             <p className="receipt-company">{company?.name}</p>
           )}
@@ -86,7 +92,7 @@ function ReceiptBody({
               <p>RCCM/NCC : {company.tax_id}</p>
             )}
           </div>
-        </div>
+        </div>}
       </div>
 
       {config.show_header && (
@@ -103,20 +109,20 @@ function ReceiptBody({
       <div className="receipt-meta">
         {config.show_number && (
           <>
-            <span>Référence</span>
-            <span>{sale.reference}</span>
+            <span className="document-reference">Référence</span>
+            <span className="document-reference">{sale.reference}</span>
           </>
         )}
         {config.show_datetime && (
           <>
-            <span>Date</span>
-            <span>{formatDateTime(sale.date)}</span>
+            <span className="document-date">Date</span>
+            <span className="document-date">{formatDateTime(sale.date)}</span>
           </>
         )}
         {config.show_customer && (
           <>
-            <span>Client</span>
-            <span>{sale.customer?.name ?? "Client de passage"}</span>
+            <span className="customer-info">Client</span>
+            <span className="customer-info">{sale.customer?.name ?? "Client de passage"}</span>
           </>
         )}
         {config.show_payment && (
@@ -139,20 +145,20 @@ function ReceiptBody({
         <thead>
           <tr>
             <th>Article</th>
-            {config.show_qty && <th className="qty">Qté</th>}
-            {config.show_unit_price && <th className="num">P.U.</th>}
-            <th className="num">Total</th>
+            {config.show_qty && <th className="qty" data-field="qty">Qté</th>}
+            {config.show_unit_price && <th className="num" data-field="price">P.U.</th>}
+            {config.show_line_total !== false && <th className="num" data-field="total">Total</th>}
           </tr>
         </thead>
         <tbody>
           {sale.items.map((it) => (
             <tr key={it.id}>
               <td>{it.product_name}</td>
-              {config.show_qty && <td className="qty">{it.quantity}</td>}
+              {config.show_qty && <td className="qty" data-field="qty">{it.quantity_label || it.quantity}</td>}
               {config.show_unit_price && (
-                <td className="num">{money(it.unit_price)}</td>
+                <td className="num" data-field="price">{salePriceParts(it).map((part) => <div key={part.kind}>{money(part.amount)}{part.unit && <><br /><small>/{part.unit}</small></>}</div>)}</td>
               )}
-              <td className="num strong">{money(it.subtotal)}</td>
+              {config.show_line_total !== false && <td className="num strong" data-field="total">{money(it.subtotal)}</td>}
             </tr>
           ))}
         </tbody>
@@ -235,10 +241,28 @@ export default function Receipt({
   company,
   format,
   duplicate,
+  previewOnly = false,
+  printOnly = false,
+  printSourceId,
   config,
 }: ReceiptProps) {
   const { printing } = useCompany();
-  const settings = config ?? printing.receipt;
+  const original = config ?? printing.receipt;
+  const raw = format === '58mm' || format === '80mm';
+  const colorAllowed = !raw && printerColorAllowed(original.printer_name);
+  const doc = colorAllowed ? printing.documents : { ...printing.documents, text_color: '#000000', accent_color: '#000000' };
+  const settings = format === 'A4' ? {
+    ...original,
+    font_family: doc.font_family, font_size: doc.font_size, logo_size_mm: doc.logo_size_mm,
+    show_logo: doc.show_logo, show_company: doc.show_company, show_company_info: doc.show_company,
+    show_address: doc.show_address, show_phone: doc.show_phone, show_email: doc.show_email, show_website: doc.show_website,
+    show_customer: doc.show_customer, show_number: doc.show_reference, show_datetime: doc.show_date,
+    show_qty: doc.show_qty, show_unit_price: doc.show_unit_price, show_line_total: doc.show_total,
+    show_total_ht: doc.show_total, show_total_ttc: doc.show_total, show_vat: doc.show_vat, show_discount: doc.show_discount,
+    show_footer: true, footer_text: doc.footer_text || original.footer_text,
+  } : original;
+  const a4 = format === 'A4';
+  const shared = a4 ? <><style>{commercialStyle(doc)}</style><p className="shared-header">{doc.header_text}</p></> : null;
   const body = (
     <ReceiptBody
       sale={sale}
@@ -251,26 +275,29 @@ export default function Receipt({
   // configuration: they are applied to both copies so what is previewed is
   // what comes out of the printer.
   const style = {
-    fontFamily: settings.font_family,
+    fontFamily: raw ? 'monospace' : printFont(settings.font_family),
     fontSize: `${settings.font_size}px`,
-    lineHeight: settings.line_height,
-    textAlign: settings.align,
+    fontWeight: !a4 && settings.bold ? 700 : undefined,
+    color: a4 ? printColor(doc.text_color) : colorAllowed ? printColor(settings.text_color) : '#000000',
+    width: format === 'custom' ? `${settings.paper_width_mm}mm` : undefined,
+    lineHeight: a4 ? 1.5 : settings.line_height,
+    textAlign: a4 ? 'left' : settings.align,
   } as const;
   return (
     <>
-      <div
-        className={`receipt receipt-preview receipt-${format}`}
+      {!printOnly && <div
+        className={`receipt receipt-preview receipt-${format} ${a4 ? 'commercial-document' : ''} ${settings.item_layout === 'stacked' ? 'receipt-stacked' : ''}`}
         style={style}
       >
-        {body}
-      </div>
-      {createPortal(
+        {shared}{body}
+      </div>}
+      {!previewOnly && createPortal(
         <div
-          id="receipt-print-root"
-          className={`receipt receipt-${format}`}
-          style={style}
+          id={printSourceId || "receipt-print-root"}
+          className={`receipt receipt-${format} ${a4 ? 'commercial-document' : ''} ${settings.item_layout === 'stacked' ? 'receipt-stacked' : ''}`}
+          style={{ ...style, ...(printSourceId ? { display: "none" } : {}) }}
         >
-          {body}
+          {shared}{body}
         </div>,
         document.body
       )}

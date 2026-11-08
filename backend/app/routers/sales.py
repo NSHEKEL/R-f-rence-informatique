@@ -21,7 +21,8 @@ from ..models import (
 from ..permissions import has_permission, require_permission
 from ..schemas import SaleCreate, SaleOut, SaleUpdate
 from ..sequences import next_reference
-from .cash import current_session
+from .cash import lock_current_session
+from ..units import base_quantity, snapshot
 
 router = APIRouter(prefix="/api/sales", tags=["sales"])
 
@@ -90,8 +91,14 @@ def create_sale(
     for attempt in range(MAX_REFERENCE_ATTEMPTS):
         try:
             return _persist_sale(db, payload, current_user)
-        except IntegrityError:
+        except (IntegrityError, HTTPException) as exc:
             db.rollback()
+            if payload.client_id:
+                existing = db.query(Sale).filter(Sale.client_id == payload.client_id).first()
+                if existing:
+                    return existing
+            if isinstance(exc, HTTPException):
+                raise
             if attempt == MAX_REFERENCE_ATTEMPTS - 1:
                 raise HTTPException(
                     status_code=409,
@@ -134,7 +141,8 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
             status_code=403,
             detail="Vous n'avez pas le droit d'enregistrer une vente cadeau",
         )
-    session = current_session(db, current_user)
+    reference = _generate_reference(db)
+    session = lock_current_session(db, current_user)
     if session is None:
         raise HTTPException(
             status_code=400,
@@ -142,7 +150,7 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
             "caisse avant d'effectuer une vente.",
         )
     sale = Sale(
-        reference=_generate_reference(db),
+        reference=reference,
         client_id=payload.client_id,
         customer_id=payload.customer_id,
         status=payload.status,
@@ -164,8 +172,12 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
             raise HTTPException(
                 status_code=404, detail=f"Produit {item.product_id} introuvable"
             )
-        if item.quantity <= 0:
+        if item.expected_units_per_packaging is not None and item.expected_units_per_packaging != (product.units_per_packaging or 1):
+            raise HTTPException(status_code=409, detail="Conditionnement modifié : vérifiez le ticket avant synchronisation")
+        quantity = base_quantity(item, product)
+        if quantity <= 0:
             raise HTTPException(status_code=400, detail="Quantité invalide")
+        item = item.model_copy(update={"quantity": quantity})
         if product.quantity < item.quantity:
             raise HTTPException(
                 status_code=400,
@@ -175,7 +187,14 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
         unit_price = product.sale_price
         if sale.price_mode == "gros" and (product.wholesale_price or 0) > 0:
             unit_price = product.wholesale_price
-        if item.unit_price is not None and item.unit_price != unit_price:
+        base_price = unit_price
+        pack_price = product.packaging_sale_price
+        if pack_price is None:
+            pack_price = base_price * (product.units_per_packaging or 1)
+        packs = item.packaging_quantity or 0
+        pieces = item.piece_quantity if item.piece_quantity is not None else (0 if item.packaging_quantity is not None else item.quantity)
+        unit_price = (packs * pack_price + pieces * base_price) / quantity
+        if item.unit_price is not None and abs(item.unit_price - unit_price) > 0.000001:
             if not has_permission(db, current_user, "prix_modifier"):
                 raise HTTPException(
                     status_code=403,
@@ -184,6 +203,8 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
             if item.unit_price < 0:
                 raise HTTPException(status_code=400, detail="Prix invalide")
             unit_price = float(item.unit_price)
+            base_price = unit_price
+            pack_price = unit_price * (product.units_per_packaging or 1)
         line_discount = 0.0
         if (item.discount or 0) > 0:
             # A line discount is a price change: same right required.
@@ -197,6 +218,10 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
         total += subtotal
         sale.items.append(
             SaleItem(
+                **snapshot(product),
+                sold_unit="mixte" if packs and pieces else (product.packaging_unit if packs else product.base_unit),
+                packaging_quantity=packs, piece_quantity=pieces, base_quantity=quantity,
+                base_unit_price=base_price, packaging_sale_price=pack_price,
                 product_id=product.id,
                 product_name=product.name,
                 quantity=item.quantity,

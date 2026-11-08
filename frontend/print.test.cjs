@@ -3,6 +3,8 @@ const { readFileSync } = require("node:fs");
 const { test } = require("node:test");
 const vm = require("node:vm");
 const ts = require("typescript");
+const printStyle = {};
+vm.runInNewContext(ts.transpileModule(readFileSync(`${__dirname}/src/lib/printStyle.ts`, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports: printStyle, require: () => ({ DEFAULT_PRINTING: {} }) });
 
 const source = ts.transpileModule(
   readFileSync(`${__dirname}/src/lib/print.ts`, "utf8"),
@@ -44,6 +46,7 @@ function setup(api = {}) {
     exports,
     require: (name) => {
       if (name === "./ticketText") return { ticketLines: () => [] };
+      if (name === "./printStyle") return printStyle;
       return {};
     },
     document,
@@ -59,6 +62,37 @@ function setup(api = {}) {
 }
 
 const receipt = { printer_name: "Ticket Fichier Test", copies: 2, margin_mm: 3 };
+
+test("paused, offline and error queues report their reason without sending a job", async () => {
+  for (const format of ['A4', '80mm']) {
+    for (const problem of ['En pause', 'Hors ligne', 'En erreur']) {
+      const ctx = setup({
+        printer_problem: async (name) => { assert.equal(name, receipt.printer_name); return problem; },
+        print_to: () => assert.fail('HTML job must not be sent'),
+        print_ticket: () => assert.fail('RAW job must not be sent'),
+      });
+      await assert.rejects(ctx.printReceipt(format, receipt, [], { controlled: true }), new RegExp(problem));
+      assert.equal(ctx.calls.dialogs, 0);
+      assert.equal(ctx.calls.alerts.length, 0);
+    }
+  }
+  let sent = 0;
+  const ready = setup({ printer_problem: async () => '', print_to: async () => { sent++; return true; } });
+  assert.equal(await ready.printReceipt('A4', receipt, [], { controlled: true }), false);
+  assert.equal(sent, 1);
+});
+
+test("controlled POS printing reports failure without alerts or blocking dialogs", async () => {
+  for (const api of [{ print_to: async () => false }, { print_to: async () => { throw new Error('Printer disconnected'); } }, {}]) {
+    const ctx = setup(api);
+    await assert.rejects(Promise.resolve().then(() => ctx.printReceipt('A4', receipt, [], { controlled: true })));
+    assert.equal(ctx.calls.dialogs, 0);
+    assert.equal(ctx.calls.alerts.length, 0);
+  }
+  const browser = setup();
+  await assert.rejects(Promise.resolve().then(() => browser.printReceipt('A4', { ...receipt, printer_name: '' }, [], { controlled: true })));
+  assert.equal(browser.calls.dialogs, 0);
+});
 
 test("A4 receipt uses the receipt queue, never print_page, and cleans copies", async () => {
   let args;

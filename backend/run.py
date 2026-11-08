@@ -28,6 +28,7 @@ import traceback
 import urllib.error
 import urllib.request
 from pathlib import Path
+from dotenv import load_dotenv
 
 # app.paths is light: import it before the heavy modules so the boot markers
 # can be written even when one of them fails (a crash there used to leave no
@@ -36,8 +37,14 @@ from app.paths import data_dir
 
 
 def _log_path() -> Path:
-    directory = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "EasyGest" / "Logs"
-    directory.mkdir(parents=True, exist_ok=True)
+    system = os.getenv("USERNAME", "").upper() == "SYSTEM" or "systemprofile" in str(Path.home()).lower()
+    local = os.getenv("LOCALAPPDATA")
+    directory = Path(local) / "EasyGest" / "Logs" if local and not system else data_dir() / "Logs"
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        directory = data_dir() / "Logs"
+        directory.mkdir(parents=True, exist_ok=True)
     return directory / "easygest.log"
 
 
@@ -76,12 +83,14 @@ def _boot(message: str) -> None:
 _boot("demarrage")
 import uvicorn  # noqa: E402
 
-# Importing the database module reads the .env of the data directory, so the
-# settings below already see EASYGEST_HOST/EASYGEST_PORT when they are set
-# there rather than in the system environment.
+# Read deployment settings without opening the database before server reuse.
 _boot("uvicorn")
-import app.database  # noqa: E402,F401
-from app import escpos  # noqa: E402
+_env_files = [Path(__file__).resolve().parent / ".env"]
+if getattr(sys, "frozen", False):
+    _env_files = [Path(sys.executable).parent / ".env", data_dir() / ".env", *_env_files]
+for _env in _env_files:
+    load_dotenv(_env, override=False)
+from app import escpos, printing  # noqa: E402
 from app.version import APP_NAME, APP_VERSION  # noqa: E402
 
 _boot("imports ok")
@@ -169,6 +178,25 @@ def _serve(port: int) -> None:
         traceback.print_exc()
 
 
+def _existing_server(port: int) -> bool:
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=2) as response:
+            info = json.loads(response.read(4096))
+        if info.get('status') == 'ok' and info.get('app') == APP_NAME and info.get('lifecycle') not in ('managed', 'standalone'):
+            raise SystemExit("Ancien serveur EasyGest non supervisé encore actif. Arrêtez tous ses processus avant de relancer la tâche ou de restaurer la base.")
+        return info.get("status") == "ok" and info.get("app") == APP_NAME and info.get("version") == APP_VERSION and info.get("lifecycle") in ("managed", "standalone")
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
+def _start_backend(preferred: int, reuse: bool = True) -> tuple[int, bool]:
+    if reuse and _existing_server(preferred):
+        return preferred, False
+    port = _free_port(preferred)
+    threading.Thread(target=_serve, args=(port,), daemon=True).start()
+    return port, True
+
+
 class DesktopApi:
     """Bridge exposed to the page as ``window.pywebview.api``.
 
@@ -238,6 +266,17 @@ class DesktopApi:
         except OSError:
             return ""
 
+    def _printer_problem(self, printer_name: str) -> str:
+        try:
+            device = printing.queue_status(printer_name or printing.default_printer())
+            return device.status if device is not None and not device.available else ""
+        except Exception:
+            logging.getLogger(__name__).warning("Statut imprimante non lisible", exc_info=True)
+            return ""
+
+    def printer_problem(self, printer_name: str) -> str:
+        return self._printer_problem(printer_name)
+
     def print_ticket(self, payload: str) -> str:
         """Print a receipt straight on the counter printer.
 
@@ -249,6 +288,9 @@ class DesktopApi:
         """
         try:
             data = json.loads(payload)
+            problem = self._printer_problem(str(data.get("printer", "")))
+            if problem:
+                return f"Imprimante indisponible : {problem}"
             lines = [
                 escpos.Line(
                     text=str(item.get("text", "")),
@@ -256,6 +298,8 @@ class DesktopApi:
                     bold=bool(item.get("bold", False)),
                     big=bool(item.get("big", False)),
                     barcode=str(item.get("barcode", "")),
+                    qr=str(item.get("qr", "")),
+                    qr_size=int(item.get("qr_size", 6)),
                     image=str(item.get("image", "")),
                     image_width=int(item.get("image_width", 0)),
                     image_height=int(item.get("image_height", 0)),
@@ -269,7 +313,7 @@ class DesktopApi:
                 value & 0xFF for value in data.get("kick", []) if
                 isinstance(value, int)
             )
-            stream = escpos.build(lines, bool(data.get("cut", True))) * copies
+            stream = escpos.build(lines, bool(data.get("cut", True)), line_spacing=data.get('line_spacing')) * copies
             if kick:
                 stream += kick
             escpos.send(stream, str(data.get("printer", "")))
@@ -315,6 +359,10 @@ class DesktopApi:
             traceback.print_exc()
             return False
 
+        problem = self._printer_problem(printer_name)
+        if problem:
+            logging.getLogger(__name__).warning("Impression HTML — %s", problem)
+            return False
         holder: dict = {}
         deadline = time.monotonic() + 30.0
         dispatched = threading.Event()
@@ -324,6 +372,10 @@ class DesktopApi:
         def send() -> None:
             try:
                 if time.monotonic() >= deadline:
+                    return
+                pending = getattr(self, "_pending_print_task", None)
+                if pending is not None and not pending.IsCompleted:
+                    log.warning("Impression HTML — tâche précédente encore en cours, nouvel envoi refusé")
                     return
                 core = form.browser.webview.CoreWebView2
                 settings = core.Environment.CreatePrintSettings()
@@ -338,6 +390,7 @@ class DesktopApi:
                 settings.MarginLeft = inches
                 settings.MarginRight = inches
                 holder["task"] = core.PrintAsync(settings)
+                self._pending_print_task = holder["task"]
                 log.warning("Impression HTML — PrintAsync lancé")
             except Exception:  # noqa: BLE001
                 log.exception("Impression HTML — lancement impossible")
@@ -590,11 +643,13 @@ def _auto_update() -> None:
 
 def main() -> None:
     _redirect_output()
+    if getattr(sys, 'frozen', False) and sys.platform == 'win32':
+        from app.lifetime import watch_parent
+        watch_parent()
     if not SELFTEST:
         _auto_update()
-    port = _free_port(DEFAULT_PORT)
+    port, started = _start_backend(DEFAULT_PORT, reuse=not SELFTEST)
     url = f"http://127.0.0.1:{port}"
-    threading.Thread(target=_serve, args=(port,), daemon=True).start()
 
     if SELFTEST:
         _selftest(url)
@@ -603,6 +658,9 @@ def main() -> None:
     ready = _wait_until_ready(url)
 
     if HEADLESS:
+        if not started:
+            print(f"Serveur {APP_NAME} déjà actif : {url}")
+            return
         print(f"{APP_NAME} {APP_VERSION} — serveur partagé")
         print(f" Ce poste          : {url}")
         if HOST != "127.0.0.1":

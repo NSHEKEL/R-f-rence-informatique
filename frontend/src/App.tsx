@@ -1,4 +1,5 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { allowedLandingPath, canOpenTreasury } from "./lib/treasury";
 import { useAuth } from "./context/AuthContext";
 import { useLicense } from "./context/LicenseContext";
 import { TILL_GATED, useTill } from "./context/TillContext";
@@ -68,7 +69,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 /** Where a user without access lands: the first page they may open. */
 function useFallbackPath(): string {
   const { can } = useAuth();
-  return HOME_PAGES.find(([right]) => can(right))?.[1] ?? "/a-propos";
+  return allowedLandingPath(HOME_PAGES, can);
 }
 
 function AdminRoute({
@@ -108,7 +109,8 @@ function PermRoute({
   const { selling, loading } = useTill();
   const fallback = useFallbackPath();
   const feature = PLAN_FEATURE[right];
-  if (!can(right)) return <Navigate to={fallback} replace />;
+  const { pathname } = useLocation();
+  if (!can(right) || !canOpenTreasury(pathname, can)) return <Navigate to={fallback} replace />;
   if (feature && !hasFeature(feature)) {
     // Only the client administrator manages the subscription; the others are
     // simply told the page is out of their plan.
@@ -169,7 +171,7 @@ export default function App() {
         <Route
           path="/banque"
           element={
-            <PermRoute right="caisse">
+            <PermRoute right="tresorerie_consulter">
               <Banque />
             </PermRoute>
           }

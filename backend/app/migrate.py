@@ -6,16 +6,18 @@ databases created by earlier versions keep working, on SQLite as well as on the
 shared PostgreSQL server.
 """
 
-from sqlalchemy import bindparam, inspect, text
+from sqlalchemy import inspect, select, text
 
 from .database import engine
-from .models import Delivery
+from .models import AppMigration, CashMovement, Delivery, RolePermission, User, Workstation
+from .permissions import CONFIGURABLE_ROLES, DEFAULTS, PERMISSIONS
 
 TRUE_LITERAL = "1" if engine.dialect.name == "sqlite" else "TRUE"
 FALSE_LITERAL = "0" if engine.dialect.name == "sqlite" else "FALSE"
 
 # table -> column -> SQL type/default appended to "ALTER TABLE ... ADD COLUMN".
 COLUMNS: dict[str, dict[str, str]] = {
+    "sale_returns": {"cash_session_id": "INTEGER", "refund_method": "VARCHAR DEFAULT 'Avoir'"},
     "users": {
         "is_active": f"BOOLEAN DEFAULT {TRUE_LITERAL}",
         "role": "VARCHAR DEFAULT 'admin'",
@@ -77,6 +79,23 @@ COLUMNS: dict[str, dict[str, str]] = {
         "backup_keep": "INTEGER DEFAULT 30",
         "backup_on_sale": f"BOOLEAN DEFAULT {FALSE_LITERAL}",
         "last_backup_at": "TIMESTAMP",
+        "backup_auto_enabled": f"BOOLEAN DEFAULT {FALSE_LITERAL}",
+        "backup_frequency": "VARCHAR DEFAULT 'daily'",
+        "backup_time": "VARCHAR DEFAULT '20:00'",
+        "backup_weekday": "INTEGER DEFAULT 0",
+        "backup_monthday": "INTEGER DEFAULT 1",
+        "last_backup_status": "VARCHAR DEFAULT ''",
+        "last_backup_error": "TEXT DEFAULT ''",
+        "drive_enabled": f"BOOLEAN DEFAULT {FALSE_LITERAL}",
+        "drive_folder_name": "VARCHAR DEFAULT 'EasyGest Sauvegardes'",
+        "drive_folder_id": "VARCHAR DEFAULT ''",
+        "drive_keep": "INTEGER DEFAULT 30",
+        "drive_last_upload_at": "TIMESTAMP",
+        "drive_last_status": "VARCHAR DEFAULT ''",
+        "drive_last_error": "TEXT DEFAULT ''",
+        "drive_last_file_id": "VARCHAR DEFAULT ''",
+        "drive_account_email": "VARCHAR DEFAULT ''",
+        "network_restrict_workstations": f"BOOLEAN DEFAULT {FALSE_LITERAL}",
         "support_whatsapp": "VARCHAR DEFAULT '0710069059'",
         "support_email": "VARCHAR DEFAULT 'ankouame022@gmail.com'",
         "vat_rate": "FLOAT DEFAULT 0",
@@ -128,6 +147,7 @@ COLUMNS: dict[str, dict[str, str]] = {
         "discount": "FLOAT DEFAULT 0",
     },
     "debt_payments": {
+        "cash_session_id": "INTEGER",
         "reference": "VARCHAR DEFAULT ''",
         "receipt_reference": "VARCHAR DEFAULT ''",
         "cancelled": f"BOOLEAN DEFAULT {FALSE_LITERAL}",
@@ -144,6 +164,23 @@ COLUMNS: dict[str, dict[str, str]] = {
         "support": "TEXT DEFAULT ''",
     },
 }
+
+for _table in ("products", "sale_items", "sale_return_items", "purchase_items", "stock_movements", "stock_transfer_items", "proforma_items", "order_items", "delivery_items"):
+    COLUMNS.setdefault(_table, {}).update({
+        "base_unit": "VARCHAR DEFAULT 'pièce'",
+        "packaging_unit": "VARCHAR DEFAULT ''",
+        "units_per_packaging": "INTEGER DEFAULT 1",
+    })
+COLUMNS["products"]["packaging_sale_price"] = "FLOAT DEFAULT NULL"
+COLUMNS["company_settings"]["pos_display"] = "TEXT DEFAULT '{}'"
+COLUMNS["sale_items"].update({
+    "sold_unit": "VARCHAR DEFAULT 'pièce'",
+    "packaging_quantity": "INTEGER DEFAULT 0",
+    "piece_quantity": "INTEGER DEFAULT NULL",
+    "base_quantity": "INTEGER DEFAULT NULL",
+    "base_unit_price": "FLOAT DEFAULT NULL",
+    "packaging_sale_price": "FLOAT DEFAULT NULL",
+})
 
 INDEXES = [
     "CREATE UNIQUE INDEX IF NOT EXISTS ix_sales_client_id ON sales (client_id)",
@@ -191,11 +228,52 @@ def _relax_delivery_order(conn, insp) -> None:
     conn.execute(text("DROP TABLE deliveries_old"))
 
 
+def _treasury_permissions(conn) -> None:
+    marker = "treasury_permissions_v1"
+    AppMigration.__table__.create(bind=conn, checkfirst=True)
+    if conn.execute(select(AppMigration.name).where(AppMigration.name == marker)).first():
+        return
+    new_keys = {
+        "tresorerie_consulter", "recette_enregistrer", "soldes_consulter",
+        "caisse_operations", "clotures_consulter",
+    }
+    cleanup_keys = {
+        "versements_gerer", "versements_valider", "depenses_gerer",
+        "comptabilite", "dettes", "dettes_gerer", "dettes_regler",
+    }
+    rows = conn.execute(select(RolePermission.__table__)).mappings().all()
+    stored = {(row["role"], row["permission"]): row for row in rows}
+    existing_install = bool(rows) or conn.execute(select(User.id).limit(1)).first() is not None
+    legacy = {
+        "vendeur": {"caisse", "caisse_fermer", "caisse_z", "vente_nouvelle", "assistance"},
+        "gestionnaire": {"produits", "inventaire", "fournisseurs", "categories", "approvisionnements", "assistance"},
+    }
+    for role in CONFIGURABLE_ROLES:
+        legacy_defaults = legacy[role] if existing_install else DEFAULTS[role]
+        for key in PERMISSIONS:
+            row = stored.get((role, key))
+            allowed = row["allowed"] if row else key in legacy_defaults
+            if key in new_keys or (role == "vendeur" and key in cleanup_keys):
+                allowed = False
+            if row and (key in new_keys or (role == "vendeur" and key in cleanup_keys)):
+                conn.execute(RolePermission.__table__.update().where(
+                    RolePermission.role == role, RolePermission.permission == key
+                ).values(allowed=allowed))
+            elif not row:
+                conn.execute(RolePermission.__table__.insert().values(
+                    role=role, permission=key, allowed=allowed
+                ))
+    conn.execute(AppMigration.__table__.insert().values(name=marker))
+
+
 def migrate() -> None:
     insp = inspect(engine)
     tables = set(insp.get_table_names())
 
     with engine.begin() as conn:
+        Workstation.__table__.create(bind=conn, checkfirst=True)
+        if "cash_sessions" in tables:
+            CashMovement.__table__.create(bind=conn, checkfirst=True)
         for table, columns in COLUMNS.items():
             if table not in tables:
                 continue
@@ -212,26 +290,7 @@ def migrate() -> None:
         if "deliveries" in tables:
             _relax_delivery_order(conn, inspect(conn))
         if "role_permissions" in tables:
-            # Sellers lose the treasury rights granted before the separation
-            # of duties: the administrator may grant them back consciously.
-            conn.execute(
-                text(
-                    "DELETE FROM role_permissions WHERE role = :role "
-                    "AND permission IN :perms"
-                ).bindparams(bindparam("perms", expanding=True)),
-                {
-                    "role": "vendeur",
-                    "perms": [
-                        "versements_gerer",
-                        "versements_valider",
-                        "depenses_gerer",
-                        "comptabilite",
-                        "dettes",
-                        "dettes_gerer",
-                        "dettes_regler",
-                    ],
-                },
-            )
+            _treasury_permissions(conn)
         if "company_settings" in tables:
             conn.execute(
                 text(

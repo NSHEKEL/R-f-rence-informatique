@@ -2,6 +2,9 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     Boolean,
+    event,
+    select,
+    CheckConstraint,
     Column,
     DateTime,
     Float,
@@ -63,6 +66,7 @@ class CompanySettings(Base):
     receipt_header = Column(Text, default="")
     receipt_footer = Column(Text, default="Merci de votre confiance !")
     receipt_format = Column(String, default="A4")  # A4, 80mm
+    pos_display = Column(Text, default="{}", nullable=True)
     printer_name = Column(String, default="")  # printer shown in the print help
     auto_print_cash = Column(Boolean, default=True, nullable=False)
     # Electronic cash drawer: it is wired to the receipt printer (or to a
@@ -94,6 +98,23 @@ class CompanySettings(Base):
     # Mirror the database into that folder after every sale.
     backup_on_sale = Column(Boolean, default=False, nullable=False)
     last_backup_at = Column(DateTime, nullable=True)
+    backup_auto_enabled = Column(Boolean, default=False, nullable=False)
+    backup_frequency = Column(String, default="daily", nullable=False)
+    backup_time = Column(String, default="20:00", nullable=False)
+    backup_weekday = Column(Integer, default=0, nullable=False)
+    backup_monthday = Column(Integer, default=1, nullable=False)
+    last_backup_status = Column(String, default="", nullable=False)
+    last_backup_error = Column(Text, default="", nullable=False)
+    drive_enabled = Column(Boolean, default=False, nullable=False)
+    drive_folder_name = Column(String, default="EasyGest Sauvegardes", nullable=False)
+    drive_folder_id = Column(String, default="", nullable=False)
+    drive_keep = Column(Integer, default=30, nullable=False)
+    drive_last_upload_at = Column(DateTime, nullable=True)
+    drive_last_status = Column(String, default="", nullable=False)
+    drive_last_error = Column(Text, default="", nullable=False)
+    drive_last_file_id = Column(String, default="", nullable=False)
+    drive_account_email = Column(String, default="", nullable=False)
+    network_restrict_workstations = Column(Boolean, default=False, nullable=False)
     # FNE (Facture Normalisée Électronique, DGI Côte d'Ivoire) : connexion à
     # l'API officielle de l'entreprise. Les secrets ne sont jamais renvoyés par
     # l'API de lecture — seul le drapeau fne_secret_configured le dit.
@@ -109,6 +130,20 @@ class CompanySettings(Base):
     support_whatsapp = Column(String, default="0710069059")
     support_email = Column(String, default="ankouame022@gmail.com")
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class Workstation(Base):
+    __tablename__ = "workstations"
+
+    id = Column(Integer, primary_key=True)
+    ip = Column(String, unique=True, nullable=False, index=True)
+    name = Column(String, default="", nullable=False)
+    hostname = Column(String, default="", nullable=False)
+    user_agent = Column(String, default="", nullable=False)
+    status = Column(String, default="pending", nullable=False)
+    first_seen = Column(DateTime, default=utcnow, nullable=False)
+    last_seen = Column(DateTime, default=utcnow, nullable=False, index=True)
+    last_user = Column(String, default="", nullable=False)
 
 
 class Category(Base):
@@ -151,7 +186,18 @@ class Customer(Base):
     sales = relationship("Sale", back_populates="customer")
 
 
-class Product(Base):
+class UnitSnapshot:
+    base_unit = Column(String, default="pièce", nullable=True)
+    packaging_unit = Column(String, default="", nullable=True)
+    units_per_packaging = Column(Integer, default=1, nullable=True)
+
+    @property
+    def quantity_label(self):
+        from .units import quantity_label
+        return quantity_label(self.quantity, self.base_unit, self.packaging_unit, self.units_per_packaging)
+
+
+class Product(UnitSnapshot, Base):
     __tablename__ = "products"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -162,6 +208,7 @@ class Product(Base):
     supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=True)
     purchase_price = Column(Float, default=0)
     sale_price = Column(Float, default=0)
+    packaging_sale_price = Column(Float, nullable=True)
     wholesale_price = Column(Float, default=0)  # 0 = no wholesale price
     quantity = Column(Integer, default=0)
     min_stock = Column(Integer, default=5)
@@ -250,11 +297,17 @@ class SalePayment(Base):
     sale = relationship("Sale", back_populates="payments")
 
 
-class SaleItem(Base):
+class SaleItem(UnitSnapshot, Base):
     __tablename__ = "sale_items"
 
     id = Column(Integer, primary_key=True, index=True)
     sale_id = Column(Integer, ForeignKey("sales.id"), nullable=False)
+    sold_unit = Column(String, default="pièce", nullable=True)
+    packaging_quantity = Column(Integer, default=0, nullable=True)
+    piece_quantity = Column(Integer, nullable=True)
+    base_quantity = Column(Integer, nullable=True)
+    base_unit_price = Column(Float, nullable=True)
+    packaging_sale_price = Column(Float, nullable=True)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
     product_name = Column(String, default="")
     quantity = Column(Integer, default=1)
@@ -290,6 +343,8 @@ class SaleReturn(Base):
     date = Column(DateTime, default=utcnow)
     total = Column(Float, default=0)
     reason = Column(Text, default="")
+    cash_session_id = Column(Integer, ForeignKey("cash_sessions.id"), nullable=True)
+    refund_method = Column(String, default="Avoir")
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     sale = relationship("Sale", back_populates="returns")
@@ -303,7 +358,7 @@ class SaleReturn(Base):
         return self.sale.reference if self.sale else ""
 
 
-class SaleReturnItem(Base):
+class SaleReturnItem(UnitSnapshot, Base):
     __tablename__ = "sale_return_items"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -412,7 +467,7 @@ class Expense(Base):
     created_by = relationship("User")
 
 
-class StockMovement(Base):
+class StockMovement(UnitSnapshot, Base):
     """Traceability of every stock change (sale, inventory count, manual)."""
 
     __tablename__ = "stock_movements"
@@ -477,7 +532,7 @@ class StockTransfer(Base):
     created_by = relationship("User")
 
 
-class StockTransferItem(Base):
+class StockTransferItem(UnitSnapshot, Base):
     __tablename__ = "stock_transfer_items"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -521,7 +576,7 @@ class Proforma(Base):
     )
 
 
-class ProformaItem(Base):
+class ProformaItem(UnitSnapshot, Base):
     __tablename__ = "proforma_items"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -683,7 +738,7 @@ class Order(Base):
         return "Partiellement payé"
 
 
-class OrderItem(Base):
+class OrderItem(UnitSnapshot, Base):
     __tablename__ = "order_items"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -742,7 +797,7 @@ class Delivery(Base):
         return self.order.reference if self.order else ""
 
 
-class DeliveryItem(Base):
+class DeliveryItem(UnitSnapshot, Base):
     """One line of a delivery note: what was ordered and what really left."""
 
     __tablename__ = "delivery_items"
@@ -832,7 +887,7 @@ class Purchase(Base):
         return max(self.total - (self.paid or 0), 0)
 
 
-class PurchaseItem(Base):
+class PurchaseItem(UnitSnapshot, Base):
     __tablename__ = "purchase_items"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -961,6 +1016,23 @@ class Debt(Base):
         return "Partiellement payé" if self.paid > 0.009 else "Non payé"
 
 
+class CashMovement(Base):
+    __tablename__ = "cash_movements"
+    __table_args__ = (
+        CheckConstraint("type IN ('in', 'out')", name="ck_cash_movements_type"),
+        CheckConstraint("amount > 0", name="ck_cash_movements_amount"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    session_id = Column(Integer, ForeignKey("cash_sessions.id"), nullable=False, index=True)
+    type = Column(String, nullable=False)
+    amount = Column(Float, nullable=False)
+    reason = Column(Text, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=utcnow)
+    workstation = Column(String, default="")
+
+
 class DebtPayment(Base):
     """A settlement, total or partial, of a debt or of a receivable."""
 
@@ -968,6 +1040,7 @@ class DebtPayment(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     debt_id = Column(Integer, ForeignKey("debts.id"), nullable=False)
+    cash_session_id = Column(Integer, ForeignKey("cash_sessions.id"), nullable=True)
     amount = Column(Float, default=0)
     date = Column(DateTime, default=utcnow)
     method = Column(String, default="Espèces")
@@ -1109,6 +1182,13 @@ class PayslipLine(Base):
     payslip = relationship("Payslip", back_populates="lines")
 
 
+class AppMigration(Base):
+    __tablename__ = "app_migrations"
+
+    name = Column(String, primary_key=True)
+    applied_at = Column(DateTime, default=utcnow)
+
+
 class RolePermission(Base):
     """Right granted by the administrator to a role (seller, stock manager)."""
 
@@ -1193,3 +1273,27 @@ class MobileOpApplied(Base):
 
     remote_id = Column(String, primary_key=True)
     applied_at = Column(DateTime, default=utcnow)
+
+
+@event.listens_for(SaleItem, "before_insert")
+@event.listens_for(ProformaItem, "before_insert")
+@event.listens_for(OrderItem, "before_insert")
+@event.listens_for(DeliveryItem, "before_insert")
+@event.listens_for(SaleReturnItem, "before_insert")
+@event.listens_for(PurchaseItem, "before_insert")
+@event.listens_for(StockTransferItem, "before_insert")
+@event.listens_for(StockMovement, "before_insert")
+def capture_units(mapper, connection, target):
+    if target.base_unit is None and target.product_id is not None:
+        product = connection.execute(select(Product.base_unit, Product.packaging_unit, Product.units_per_packaging).where(Product.id == target.product_id)).first()
+        if product:
+            target.base_unit = product.base_unit or "pièce"
+            target.packaging_unit = product.packaging_unit or ""
+            target.units_per_packaging = product.units_per_packaging or 1
+    if isinstance(target, SaleItem):
+        if target.base_quantity is None:
+            target.base_quantity = target.quantity
+        if target.piece_quantity is None:
+            target.piece_quantity = target.quantity
+        if target.base_unit_price is None:
+            target.base_unit_price = target.unit_price
