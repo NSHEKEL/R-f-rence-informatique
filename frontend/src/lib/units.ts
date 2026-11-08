@@ -3,6 +3,24 @@ export type { UnitSpec } from "../types";
 export type QuantitySpec = Pick<UnitSpec, "base_unit" | "packaging_unit" | "units_per_packaging">;
 
 export type UnitMode = "base" | "packaging" | "mixed";
+export type PriceTier = "detail" | "gros";
+
+export function catalogPrices(product: UnitSpec & { sale_price: number; wholesale_price?: number }, tier: PriceTier = "detail") {
+  const factor = product.units_per_packaging || 1;
+  let piece = product.sale_price;
+  let carton = product.packaging_sale_price ?? factor * piece;
+  if (tier === "gros") {
+    const wholesale = (product.wholesale_price || 0) > 0;
+    if (wholesale) piece = product.wholesale_price!;
+    carton = product.wholesale_packaging_price ?? (wholesale ? factor * piece : carton);
+  }
+  return { piece, carton };
+}
+
+export function catalogUnitPrice(product: UnitSpec & { sale_price: number; wholesale_price?: number }, quantity: number, tier: PriceTier, parts: { packaging_quantity: number; piece_quantity: number }) {
+  const { piece, carton } = catalogPrices(product, tier);
+  return quantity ? (parts.packaging_quantity * carton + parts.piece_quantity * piece) / quantity : piece;
+}
 
 export function splitQuantity(product: QuantitySpec, quantity: number, mode: UnitMode = "mixed") {
   const factor = product.units_per_packaging || 1;

@@ -222,6 +222,7 @@ def get_product(
 
 # Column aliases accepted in an import file (case-insensitive, accents ok).
 _CSV_ALIASES = {
+    "wholesale_packaging_price": {"prix_gros_carton", "wholesale_packaging_price"},
     "name": {"nom", "name", "designation", "désignation", "libelle", "libellé"},
     "sku": {"sku", "reference", "référence", "ref", "code", "code_article"},
     "description": {"description", "desc"},
@@ -358,6 +359,9 @@ def import_products(
             )
         if "quantity" in present:
             values["quantity"] = _to_int(fields.get("quantity", ""))
+        if "wholesale_packaging_price" in present:
+            value = fields.get("wholesale_packaging_price", "")
+            values["wholesale_packaging_price"] = _to_float(value) if value else None
         if "min_stock" in present:
             values["min_stock"] = _to_int(fields.get("min_stock", ""), 5)
         if barcode:
@@ -415,7 +419,7 @@ def create_product(
     return product
 
 
-_PRICE_FIELDS = ("sale_price", "purchase_price", "wholesale_price")
+_PRICE_FIELDS = ("sale_price", "purchase_price", "wholesale_price", "wholesale_packaging_price")
 
 
 @router.put("/{product_id}", response_model=ProductOut)
@@ -433,7 +437,7 @@ def update_product(
         raise HTTPException(status_code=400, detail="Cette référence (SKU) existe déjà")
     _check_barcode(db, payload, product_id)
     for key, value in payload.model_dump().items():
-        if key in {"base_unit", "packaging_unit", "units_per_packaging", "packaging_sale_price"} and key not in payload.model_fields_set:
+        if key in {"base_unit", "packaging_unit", "units_per_packaging", "packaging_sale_price", "wholesale_packaging_price"} and key not in payload.model_fields_set:
             continue
         if key in _PRICE_FIELDS and getattr(product, key) != value:
             db.add(

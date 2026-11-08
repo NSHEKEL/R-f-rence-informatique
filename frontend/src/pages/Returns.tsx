@@ -53,7 +53,12 @@ export default function Returns() {
 
   const total = sale
     ? sale.items.reduce(
-        (sum, it) => sum + (it.packaging_unit ? (() => { const q = returnUnits[it.id] ?? splitQuantity(it, quantities[it.id] ?? 0); return q.packaging_quantity * (it.packaging_sale_price ?? it.unit_price * (it.units_per_packaging || 1)) + q.piece_quantity * (it.base_unit_price ?? it.unit_price); })() : (quantities[it.id] ?? 0) * it.unit_price),
+        (sum, it) => {
+          const gross = it.packaging_unit ? (() => { const q = returnUnits[it.id] ?? splitQuantity(it, quantities[it.id] ?? 0); return q.packaging_quantity * (it.packaging_sale_price ?? it.unit_price * (it.units_per_packaging || 1)) + q.piece_quantity * (it.base_unit_price ?? it.unit_price); })() : (quantities[it.id] ?? 0) * it.unit_price;
+          const lineGross = it.unit_price * it.quantity;
+          const ticketSubtotal = sale.items.reduce((s, item) => s + item.subtotal, 0);
+          return sum + (lineGross && ticketSubtotal ? gross * it.subtotal / lineGross * sale.total / ticketSubtotal : 0);
+        },
         0
       )
     : 0;
@@ -64,6 +69,7 @@ export default function Returns() {
       .filter((it) => (quantities[it.id] ?? 0) > 0 && it.product_id !== null)
       .map((it) => ({
         product_id: it.product_id as number,
+        sale_item_id: it.id,
         quantity: quantities[it.id],
         ...(it.packaging_unit ? returnUnits[it.id] ?? splitQuantity(it, quantities[it.id]) : {}),
       }));
@@ -184,6 +190,7 @@ export default function Returns() {
                     <tr key={it.id}>
                       <td className="py-2.5 text-slate-800">
                         {it.product_name}
+                        <span className="ml-2 text-xs text-slate-500">{it.price_tier === "gros" ? "Gros" : "Détail"}</span>
                       </td>
                       <td className="py-2.5 text-center text-slate-600">
                         {formatQuantity(it, it.quantity)}

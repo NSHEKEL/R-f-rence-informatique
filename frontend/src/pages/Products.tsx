@@ -39,6 +39,7 @@ const empty = {
   packaging_unit: "",
   units_per_packaging: 1,
   packaging_sale_price: "" as number | "",
+  wholesale_packaging_price: "" as number | "",
   name: "",
   sku: "",
   description: "",
@@ -228,6 +229,7 @@ export default function Products() {
       packaging_unit: p.packaging_unit || "",
       units_per_packaging: p.units_per_packaging || 1,
       packaging_sale_price: p.packaging_sale_price ?? "",
+      wholesale_packaging_price: p.wholesale_packaging_price ?? "",
       sku: p.sku,
       description: p.description,
       category_id: p.category_id ?? "",
@@ -256,6 +258,7 @@ export default function Products() {
     const payload = {
       ...form,
       packaging_sale_price: form.packaging_sale_price === "" ? null : Number(form.packaging_sale_price),
+      wholesale_packaging_price: form.wholesale_packaging_price === "" ? null : Number(form.wholesale_packaging_price),
       base_unit: form.base_unit.trim(),
       packaging_unit: form.packaging_unit.trim(),
       units_per_packaging: form.packaging_unit.trim() ? form.units_per_packaging : 1,
@@ -777,7 +780,7 @@ export default function Products() {
             />
           </div>
           <div>
-            <label className="label">Prix de vente par unité de base (FCFA)</label>
+            <label className="label">Prix détail pièce (FCFA)</label>
             <input
               type="number"
               className="input"
@@ -786,7 +789,7 @@ export default function Products() {
             />
           </div>
           <div>
-            <label className="label">Prix de gros (FCFA, 0 = aucun)</label>
+            <label className="label">Prix gros pièce (FCFA, 0 = détail)</label>
             <input
               type="number"
               className="input"
@@ -795,6 +798,10 @@ export default function Products() {
                 setForm({ ...form, wholesale_price: Number(e.target.value) })
               }
             />
+          </div>
+          <div>
+            <label className="label">Prix gros carton (FCFA, vide = calcul automatique)</label>
+            <input type="number" min={0} className="input" value={form.wholesale_packaging_price} onChange={(e) => setForm({ ...form, wholesale_packaging_price: e.target.value === "" ? "" : Number(e.target.value) })} />
           </div>
           <div>
             <label className="label">Stock en unités de base (stock initial à la création)</label>
@@ -810,8 +817,8 @@ export default function Products() {
           <div><label className="label">Unité de base</label><input className="input" required value={form.base_unit} placeholder="pièce, kg, litre…" onChange={(e) => setForm({ ...form, base_unit: e.target.value })} /></div>
           <div><label className="label">Conditionnement (facultatif)</label><input className="input" value={form.packaging_unit} placeholder="carton, paquet, boîte, sac…" onChange={(e) => setForm({ ...form, packaging_unit: e.target.value })} /></div>
           {form.packaging_unit && <>
-            <div><label className="label">Unités de base par conditionnement</label><input className="input" type="number" min="1" step="1" value={form.units_per_packaging} onChange={(e) => setForm({ ...form, units_per_packaging: Number(e.target.value) })} /></div>
-            <div><label className="label">Prix du conditionnement (vide = prix unitaire × facteur)</label><input className="input" type="number" min="0" value={form.packaging_sale_price} onChange={(e) => setForm({ ...form, packaging_sale_price: e.target.value === "" ? "" : Number(e.target.value) })} /></div>
+            <div><label className="label">Pièces par carton</label><input className="input" type="number" min="1" step="1" value={form.units_per_packaging} onChange={(e) => setForm({ ...form, units_per_packaging: Number(e.target.value) })} /></div>
+            <div><label className="label">Prix détail carton (vide = pièces × prix détail pièce)</label><input className="input" type="number" min="0" value={form.packaging_sale_price} onChange={(e) => setForm({ ...form, packaging_sale_price: e.target.value === "" ? "" : Number(e.target.value) })} /></div>
           </>}
           <div>
             <label className="label">Seuil d'alerte</label>

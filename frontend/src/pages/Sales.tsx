@@ -452,6 +452,7 @@ export default function Sales() {
                   <th className="py-2 text-center">Qté</th>
                   <th className="py-2 text-right">P.U.</th>
                   <th className="py-2 text-right">Sous-total</th>
+                  {can("rapports_financiers") && <><th className="py-2 text-right">Coût</th><th className="py-2 text-right">Marge %</th><th className="py-2 text-right">Bénéfice</th></>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -459,6 +460,7 @@ export default function Sales() {
                   <tr key={it.id}>
                     <td className="py-2.5 text-slate-800">
                       {it.product_name}
+                      <span className="ml-2 text-xs text-slate-500">{it.price_tier === "gros" ? "Gros" : "Détail"} · {it.quantity_label}</span>
                       {it.returned_quantity > 0 && (
                         <span className="ml-2 text-xs text-amber-600">
                           {it.returned_quantity} retourné(s)
@@ -474,11 +476,13 @@ export default function Sales() {
                     <td className="py-2.5 text-right font-medium text-slate-800">
                       {formatXOF(it.subtotal)}
                     </td>
+                    {can("rapports_financiers") && <><td className="py-2.5 text-right">{it.cost == null ? "—" : formatXOF(it.cost)}</td><td className="py-2.5 text-right">{it.margin == null ? "—" : `${it.margin.toFixed(2)} %`}</td><td className="py-2.5 text-right">{it.profit == null ? "—" : formatXOF(it.profit)}</td></>}
                   </tr>
                 ))}
               </tbody>
             </table>
             <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-4">
+              {can("rapports_financiers") && detail.profit != null && <p className="text-sm">Coût net : {formatXOF(detail.cost ?? 0)} · Marge : {(detail.margin ?? 0).toFixed(2)} % · Bénéfice : {formatXOF(detail.profit)}</p>}
               <span className="text-sm font-medium text-slate-500">Total</span>
               <span className="text-xl font-extrabold text-slate-900">
                 {formatXOF(detail.total)}

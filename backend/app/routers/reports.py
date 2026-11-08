@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import Product, Sale, SaleReturn, User
-from ..permissions import require_permission
+from ..permissions import has_permission, require_permission
+from ..profits import line_revenue, unit_cost
 from ..schemas import ReportRow, SalesReport
 from ..units import quantity_label
 
@@ -60,7 +61,7 @@ def sales_report(
     start: str | None = None,
     end: str | None = None,
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("rapports")),
+    user: User = Depends(require_permission("rapports")),
 ):
     period_start, period_end = _parse_range(start, end)
 
@@ -105,14 +106,38 @@ def sales_report(
             product_qty[item.product_name] += item.quantity
             product_units[item.product_name].add((item.base_unit, item.packaging_unit, item.units_per_packaging))
 
-    returns_total = sum(
-        credit.total
-        for credit in db.query(SaleReturn)
+    credits = (db.query(SaleReturn)
         .filter(
             SaleReturn.date >= period_start, SaleReturn.date <= period_end
         )
         .all()
     )
+    returns_total = sum(credit.total for credit in credits)
+    profit_by_product = {}
+    profit_by_sale = {}
+    if has_permission(db, user, "rapports_financiers"):
+        purchase_prices = {p.id: p.purchase_price or 0 for p in db.query(Product).all()}
+
+        def add(group, key, label, revenue, cost):
+            row = group.setdefault(key, dict(label=label, revenue=0.0, cost=0.0))
+            row["revenue"] += revenue
+            row["cost"] += cost
+
+        for sale in sales:
+            for item in sale.items:
+                revenue = line_revenue(sale, item)
+                cost = unit_cost(item, purchase_prices) * item.quantity
+                add(profit_by_product, item.product_id or item.product_name, item.product_name, revenue, cost)
+                add(profit_by_sale, sale.id, sale.reference, revenue, cost)
+        for credit in credits:
+            for item in credit.items:
+                cost = unit_cost(item, purchase_prices) * item.quantity
+                add(profit_by_product, item.product_id or item.product_name, item.product_name, -item.subtotal, -cost)
+                add(profit_by_sale, credit.sale_id, credit.sale.reference, -item.subtotal, -cost)
+        for group in (profit_by_product, profit_by_sale):
+            for row in group.values():
+                row["profit"] = row["revenue"] - row["cost"]
+                row["margin"] = row["profit"] / row["revenue"] * 100 if row["revenue"] else 0.0
 
     days: list[ReportRow] = []
     cursor = period_start.date()
@@ -122,6 +147,8 @@ def sales_report(
         cursor += timedelta(days=1)
 
     return SalesReport(
+        profit_by_product=list(profit_by_product.values()),
+        profit_by_sale=list(profit_by_sale.values()),
         period_start=period_start,
         period_end=period_end,
         sales_count=len(sales),

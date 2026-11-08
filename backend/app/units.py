@@ -1,6 +1,23 @@
 from fastapi import HTTPException
 
 
+def prices(product, tier="detail"):
+    piece = product.sale_price or 0
+    carton = product.packaging_sale_price
+    factor = product.units_per_packaging or 1
+    if carton is None:
+        carton = factor * piece
+    if tier == "gros":
+        wholesale = (product.wholesale_price or 0) > 0
+        if wholesale:
+            piece = product.wholesale_price
+        if product.wholesale_packaging_price is not None:
+            carton = product.wholesale_packaging_price
+        elif wholesale:
+            carton = factor * piece
+    return piece, carton
+
+
 def snapshot(product):
     return {
         "base_unit": product.base_unit or "pièce",

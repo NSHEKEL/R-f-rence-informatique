@@ -16,6 +16,7 @@ export interface SalePayload {
   /** Cash handed over, used to print the change given back. */
   paid_amount: number;
   items: {
+    price_tier?: "detail" | "gros";
     product_id: number;
     quantity: number;
     packaging_quantity?: number;

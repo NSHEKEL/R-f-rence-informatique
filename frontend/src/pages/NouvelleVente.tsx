@@ -44,7 +44,7 @@ import PackagingQuantity from "../components/PackagingQuantity";
 import PosProductGrid from "../components/PosProductGrid";
 import SalePrintModal from "../components/SalePrintModal";
 import { DEFAULT_POS, mergePos, stockLimit, tileVisibility, type PosDisplay } from "../lib/posDisplay";
-import { formatQuantity, saleUnitPrice, splitQuantity, type UnitMode } from "../lib/units";
+import { catalogPrices, catalogUnitPrice, formatQuantity, splitQuantity, type UnitMode } from "../lib/units";
 import type {
   CashSessionDetail,
   Category,
@@ -107,12 +107,11 @@ type PriceMode = "detail" | "gros";
 
 /** Wholesale price when the till is in "gros" mode and the article has one. */
 function unitPrice(product: Product, mode: PriceMode): number {
-  return mode === "gros" && (product.wholesale_price || 0) > 0
-    ? product.wholesale_price
-    : product.sale_price;
+  return catalogPrices(product, mode).piece;
 }
 
 interface CartLine {
+  price_tier?: PriceMode;
   packagingQuantity?: number;
   pieceQuantity?: number;
   unitMode?: UnitMode;
@@ -125,8 +124,8 @@ interface CartLine {
 }
 
 /** Price actually charged for a cart line. */
-function linePrice(line: CartLine, mode: PriceMode): number {
-  return line.price ?? saleUnitPrice(line.product, line.quantity, unitPrice(line.product, mode), line.unitMode, cartParts(line));
+function linePrice(line: CartLine, _mode: PriceMode): number {
+  return line.price ?? catalogUnitPrice(line.product, line.quantity, line.price_tier || "detail", cartParts(line));
 }
 
 function cartParts(line: CartLine) {
@@ -180,8 +179,10 @@ function offlineSale(
       packaging_unit: l.product.packaging_unit,
       units_per_packaging: l.product.units_per_packaging,
       base_quantity: l.quantity,
-      base_unit_price: l.price ?? unitPrice(l.product, priceMode),
-      packaging_sale_price: l.price !== undefined ? l.price * (l.product.units_per_packaging || 1) : l.product.packaging_sale_price ?? unitPrice(l.product, priceMode) * (l.product.units_per_packaging || 1),
+      price_tier: l.price_tier || "detail",
+      catalog_unit_price: catalogUnitPrice(l.product, l.quantity, l.price_tier || "detail", cartParts(l)),
+      base_unit_price: l.price ?? catalogPrices(l.product, l.price_tier).piece,
+      packaging_sale_price: l.price !== undefined ? l.price * (l.product.units_per_packaging || 1) : catalogPrices(l.product, l.price_tier).carton,
       unit_price: linePrice(l, priceMode),
       discount: l.discount ?? 0,
       subtotal: lineNet(l, priceMode),
@@ -404,11 +405,11 @@ export default function NouvelleVente() {
   const addToCart = useCallback((product: Product) => {
     setError("");
     setCart((prev) => {
-      const existing = prev.find((l) => l.product.id === product.id);
-      if (!existing) return [...prev, { product, quantity: 1 }];
-      if (existing.quantity >= stockLimit(product)) return prev;
+      const existing = prev.find((l) => l.product.id === product.id && (l.price_tier || "detail") === priceMode && (!l.unitMode || l.unitMode === "base"));
+      if (prev.filter((l) => l.product.id === product.id).reduce((sum, l) => sum + l.quantity, 0) >= stockLimit(product)) return prev;
+      if (!existing) return [...prev, { product, quantity: 1, price_tier: priceMode }];
       return prev.map((l) =>
-        l.product.id === product.id ? (() => {
+        l === existing ? (() => {
           const packs = l.unitMode === "packaging" ? 1 : 0;
           const pieces = packs ? 0 : 1;
           const quantity = l.quantity + packs * (product.units_per_packaging || 1) + pieces;
@@ -417,7 +418,7 @@ export default function NouvelleVente() {
         })() : l
       );
     });
-  }, []);
+  }, [priceMode]);
 
   /**
    * Enter moves the cashier forward: each field hands the focus to the next
@@ -456,11 +457,11 @@ export default function NouvelleVente() {
     setQuery("");
   }
 
-  function setLinePrice(productId: number, value: string) {
+  function setLinePrice(lineIndex: number, value: string) {
     const price = Number(value.replace(",", "."));
     setCart((prev) =>
-      prev.map((l) =>
-        l.product.id === productId
+      prev.map((l, index) =>
+        index === lineIndex
           ? {
               ...l,
               price:
@@ -473,11 +474,11 @@ export default function NouvelleVente() {
     );
   }
 
-  function setLineDiscount(productId: number, value: string) {
+  function setLineDiscount(lineIndex: number, value: string) {
     const discount = Number(value.replace(",", "."));
     setCart((prev) =>
-      prev.map((l) =>
-        l.product.id === productId
+      prev.map((l, index) =>
+        index === lineIndex
           ? {
               ...l,
               discount:
@@ -490,23 +491,25 @@ export default function NouvelleVente() {
     );
   }
 
-  function setQuantity(productId: number, quantity: number) {
+  function setQuantity(lineIndex: number, quantity: number) {
     setCart((prev) =>
-      prev.flatMap((l) => {
-        if (l.product.id !== productId) return [l];
-        const capped = Math.min(Math.max(Math.floor(quantity), 0), stockLimit(l.product));
+      prev.flatMap((l, index) => {
+        if (index !== lineIndex) return [l];
+        const others = prev.filter((other) => other !== l && other.product.id === l.product.id).reduce((sum, other) => sum + other.quantity, 0);
+        const capped = Math.min(Math.max(Math.floor(quantity), 0), stockLimit(l.product) - others);
         return capped === 0 ? [] : [{ ...l, quantity: capped, packagingQuantity: undefined, pieceQuantity: undefined }];
       })
     );
   }
 
-  function setUnitMode(productId: number, unitMode: UnitMode) {
-    const line = cart.find((l) => l.product.id === productId);
+  function setUnitMode(lineIndex: number, unitMode: UnitMode) {
+    const line = cart[lineIndex];
     if (!line) return;
     const factor = line.product.units_per_packaging || 1;
     const quantity = unitMode === "packaging" ? Math.max(1, Math.floor(line.quantity / factor)) * factor : line.quantity;
-    if (quantity > stockLimit(line.product)) { setError("Stock insuffisant pour un conditionnement complet"); return; }
-    setCart((prev) => prev.map((l) => l.product.id === productId ? { ...l, unitMode, quantity, price: undefined, packagingQuantity: undefined, pieceQuantity: undefined } : l));
+    const others = cart.filter((l) => l !== line && l.product.id === line.product.id).reduce((sum, l) => sum + l.quantity, 0);
+    if (quantity + others > stockLimit(line.product)) { setError("Stock insuffisant pour un conditionnement complet"); return; }
+    setCart((prev) => prev.map((l, index) => index === lineIndex ? { ...l, unitMode, quantity, price: undefined, packagingQuantity: undefined, pieceQuantity: undefined } : l));
   }
 
   async function createCustomer() {
@@ -624,6 +627,7 @@ export default function NouvelleVente() {
       paid_amount: gift ? 0 : paidAmount,
       items: cart.map((l) => ({
         product_id: l.product.id,
+        price_tier: l.price_tier || "detail",
         quantity: l.quantity,
         ...(l.product.packaging_unit ? { ...cartParts(l), expected_units_per_packaging: l.product.units_per_packaging || 1 } : {}),
         unit_price: linePrice(l, priceMode),
@@ -1032,7 +1036,7 @@ export default function NouvelleVente() {
 
           <div className="flex items-center gap-2 bg-slate-100 px-3 py-1">
             <span className="text-xs font-bold uppercase tracking-wide text-slate-500">
-              Mode de prix
+              Tarif des nouveaux articles
             </span>
             <div className="ml-auto flex rounded-lg bg-white p-0.5 text-[11px] font-semibold">
               {(["detail", "gros"] as PriceMode[]).map((mode) => (
@@ -1106,9 +1110,7 @@ export default function NouvelleVente() {
                     <th className="w-[86px] px-1 py-1 text-right">
                       Prix unitaire
                     </th>
-                    {canChangePrice && (
-                      <th className="w-14 px-1 py-1 text-right">Rem.</th>
-                    )}
+                    <th className="w-14 px-1 py-1 text-right">Rem.</th>
                     <th className="w-[118px] px-1 py-1 text-center">
                       Quantité
                     </th>
@@ -1119,7 +1121,7 @@ export default function NouvelleVente() {
                 <tbody>
                   {cart.map((l, index) => (
                     <tr
-                      key={l.product.id}
+                      key={index}
                       className="border-b border-slate-100 last:border-0"
                     >
                       <td className="px-2 py-1 text-xs text-slate-400">
@@ -1143,13 +1145,16 @@ export default function NouvelleVente() {
                           </p>
                         </div>
                         {l.product.packaging_unit && <>
-                          <select aria-label={`Unité vendue de ${l.product.name}`} className="input mt-1" value={l.unitMode || "base"} onChange={(e) => setUnitMode(l.product.id, e.target.value as UnitMode)}>
+                          <select aria-label={`Unité vendue de ${l.product.name}`} className="input mt-1" value={l.unitMode || "base"} onChange={(e) => setUnitMode(index, e.target.value as UnitMode)}>
                             <option value="base">{l.product.base_unit || "pièce"}</option>
                             <option value="packaging">{l.product.packaging_unit}</option>
                             <option value="mixed">Mixte : {l.product.packaging_unit} + {l.product.base_unit || "pièce"}</option>
                           </select>
-                          <p className="text-xs text-slate-500">{formatQuantity(l.product, l.quantity)} · {formatXOF(l.product.packaging_sale_price ?? unitPrice(l.product, priceMode) * (l.product.units_per_packaging || 1))}/{l.product.packaging_unit}</p>
+                          <p className="text-xs text-slate-500">{formatQuantity(l.product, l.quantity)} · {formatXOF(catalogPrices(l.product, l.price_tier).carton)}/{l.product.packaging_unit}</p>
                         </>}
+                        <select className="input mt-1" aria-label={`Tarif de ${l.product.name}`} value={l.price_tier || "detail"} onChange={(e) => setCart((prev) => prev.map((line, i) => i === index ? { ...line, price_tier: e.target.value as PriceMode, price: undefined } : line))}>
+                          <option value="detail">Détail</option><option value="gros">Gros</option>
+                        </select>
                       </td>
                       <td className="px-1 py-1 text-right">
                         {canChangePrice ? (
@@ -1157,7 +1162,7 @@ export default function NouvelleVente() {
                             className="w-[76px] rounded-lg border border-slate-200 px-1.5 py-1 text-right text-sm text-slate-700"
                             value={linePrice(l, priceMode) * (l.unitMode === "packaging" ? l.product.units_per_packaging || 1 : 1)}
                             onChange={(e) =>
-                              setLinePrice(l.product.id, l.unitMode === "packaging" ? String(Number(e.target.value.replace(",", ".")) / (l.product.units_per_packaging || 1)) : e.target.value)
+                              setLinePrice(index, l.unitMode === "packaging" ? String(Number(e.target.value.replace(",", ".")) / (l.product.units_per_packaging || 1)) : e.target.value)
                             }
                             onKeyDown={nextOnEnter(paidRef)}
                             title="Prix de vente pour cette ligne"
@@ -1169,28 +1174,26 @@ export default function NouvelleVente() {
                           </span>
                         )}
                       </td>
-                      {canChangePrice && (
-                        <td className="px-1 py-1 text-right">
-                          <input
+                      <td className="px-1 py-1 text-right">
+                        {canChangePrice ? <input
                             className="w-14 rounded-lg border border-slate-200 px-1 py-1 text-right text-xs text-slate-700"
                             value={l.discount ?? ""}
                             placeholder="0"
                             onChange={(e) =>
-                              setLineDiscount(l.product.id, e.target.value)
+                              setLineDiscount(index, e.target.value)
                             }
                             onKeyDown={nextOnEnter(paidRef)}
                             title="Remise pour cette ligne"
                             aria-label={`Remise de ${l.product.name}`}
-                          />
-                        </td>
-                      )}
+                          /> : <span>{formatXOF(l.discount ?? 0)}</span>}
+                      </td>
                       <td className="px-1 py-1">
-                        {l.product.packaging_unit && l.unitMode && l.unitMode !== "base" ? <PackagingQuantity product={l.product} value={l.quantity} parts={cartParts(l)} max={stockLimit(l.product)} mode={l.unitMode} onChange={(quantity, packs, pieces) => setCart((prev) => prev.flatMap((line) => line.product.id !== l.product.id ? [line] : quantity ? [{ ...line, quantity, packagingQuantity: packs, pieceQuantity: pieces }] : []))} /> :
+                        {l.product.packaging_unit && l.unitMode && l.unitMode !== "base" ? <PackagingQuantity product={l.product} value={l.quantity} parts={cartParts(l)} max={stockLimit(l.product) - cart.filter((line) => line !== l && line.product.id === l.product.id).reduce((sum, line) => sum + line.quantity, 0)} mode={l.unitMode} onChange={(quantity, packs, pieces) => setCart((prev) => prev.flatMap((line, i) => i !== index ? [line] : quantity ? [{ ...line, quantity, packagingQuantity: packs, pieceQuantity: pieces }] : []))} /> :
                         <div className="flex items-center justify-center gap-0.5">
                           <button
                             className="rounded-lg bg-slate-100 p-1 text-slate-600 hover:bg-slate-200"
                             onClick={() =>
-                              setQuantity(l.product.id, l.quantity - 1)
+                              setQuantity(index, l.quantity - 1)
                             }
                             title="Diminuer la quantité"
                             aria-label={`Diminuer la quantité de ${l.product.name}`}
@@ -1202,7 +1205,7 @@ export default function NouvelleVente() {
                             value={l.quantity}
                             onChange={(e) =>
                               setQuantity(
-                                l.product.id,
+                                index,
                                 Number(e.target.value) || 0
                               )
                             }
@@ -1212,7 +1215,7 @@ export default function NouvelleVente() {
                           <button
                             className="rounded-lg bg-slate-100 p-1 text-slate-600 hover:bg-slate-200"
                             onClick={() =>
-                              setQuantity(l.product.id, l.quantity + 1)
+                              setQuantity(index, l.quantity + 1)
                             }
                             title="Augmenter la quantité"
                             aria-label={`Augmenter la quantité de ${l.product.name}`}
@@ -1228,7 +1231,7 @@ export default function NouvelleVente() {
                       <td className="px-1 py-1 text-center">
                         <button
                           className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                          onClick={() => setQuantity(l.product.id, 0)}
+                          onClick={() => setQuantity(index, 0)}
                           title="Retirer l'article"
                           aria-label={`Retirer ${l.product.name}`}
                         >
@@ -1364,6 +1367,7 @@ export default function NouvelleVente() {
                   <span className="flex items-center gap-1">
                     <input
                       ref={discountRef}
+                      disabled={!canChangePrice}
                       className="input w-20 px-2 py-1 text-right"
                       type="number"
                       min={0}
@@ -1391,6 +1395,7 @@ export default function NouvelleVente() {
                       type="button"
                       className="rounded-md bg-slate-100 px-1.5 py-1 text-[10px] font-bold text-slate-500 hover:bg-slate-200"
                       title="Basculer remise en % ou en FCFA"
+                      disabled={!canChangePrice}
                       onClick={() => setDiscountPercent((v) => !v)}
                     >
                       {discountPercent ? "%" : "F"}

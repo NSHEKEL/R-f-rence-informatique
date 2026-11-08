@@ -19,6 +19,7 @@ from ..schemas import ReturnCreate, ReturnOut
 from ..sequences import next_reference
 from .cash import lock_current_session
 from ..units import base_quantity, snapshot
+from ..profits import line_revenue, line_returns
 
 router = APIRouter(prefix="/api/returns", tags=["returns"])
 
@@ -69,15 +70,20 @@ def create_return(
         total=0,
     )
     total = 0.0
+    seen = set()
     for line in lines:
-        item = next(
-            (i for i in sale.items if i.product_id == line.product_id), None
-        )
+        candidates = [i for i in sale.items if i.product_id == line.product_id and (line.sale_item_id is None or i.id == line.sale_item_id)]
+        if len(candidates) > 1:
+            raise HTTPException(status_code=400, detail="Précisez la ligne du ticket à retourner")
+        item = candidates[0] if candidates else None
         if not item:
             raise HTTPException(
                 status_code=400,
                 detail=f"L'article {line.product_id} n'est pas sur ce ticket",
             )
+        if item.id in seen:
+            raise HTTPException(status_code=400, detail="Ligne de retour répétée")
+        seen.add(item.id)
         remaining = item.quantity - item.returned_quantity
         quantity = base_quantity(line, item)
         if quantity <= 0:
@@ -94,12 +100,16 @@ def create_return(
         subtotal = item.unit_price * line.quantity
         if line.packaging_quantity is not None or line.piece_quantity is not None:
             subtotal = (line.packaging_quantity or 0) * (item.packaging_sale_price if item.packaging_sale_price is not None else item.unit_price * (item.units_per_packaging or 1)) + (line.piece_quantity or 0) * (item.base_unit_price if item.base_unit_price is not None else item.unit_price)
-        if item.packaging_unit:
-            refunded = sum(returned.subtotal for previous in sale.returns for returned in previous.items if returned.product_id == item.product_id)
-            subtotal = min(subtotal, max(0, item.subtotal - refunded))
+        gross = item.unit_price * item.quantity
+        net = line_revenue(sale, item)
+        subtotal = subtotal * net / gross if gross else 0
+        refunded = sum(returned.subtotal for returned in line_returns(sale, item))
+        subtotal = min(subtotal, max(0, net - refunded))
         total += subtotal
         credit.items.append(
             SaleReturnItem(
+                sale_item_id=item.id,
+                unit_cost=item.unit_cost,
                 **snapshot(item),
                 product_id=item.product_id,
                 product_name=item.product_name,

@@ -19,7 +19,8 @@ import {
   Wallet,
 } from "lucide-react";
 import api, { formatXOF } from "../api/client";
-import type { ReportRow, SalesReport } from "../types";
+import type { ProfitRow, ReportRow, SalesReport } from "../types";
+import { useAuth } from "../context/AuthContext";
 import { documentHeader, printSheet } from "../lib/print";
 import { exportCsv, stampedName } from "../lib/exportCsv";
 import { useCompany } from "../context/CompanyContext";
@@ -77,6 +78,14 @@ function RowTable({
   );
 }
 
+function ProfitTable({ title, rows }: { title: string; rows: ProfitRow[] }) {
+  return <div className="card overflow-x-auto p-5"><h3 className="mb-4 font-bold">{title}</h3>
+    <table className="w-full text-sm"><thead><tr><th className="text-left">Libellé</th><th>Revenu net</th><th>Coût net</th><th>Bénéfice</th><th>Marge %</th></tr></thead><tbody>
+      {rows.map((row, index) => <tr key={index} className="border-t"><td className="py-2">{row.label}</td><td className="text-right">{formatXOF(row.revenue)}</td><td className="text-right">{formatXOF(row.cost)}</td><td className="text-right">{formatXOF(row.profit)}</td><td className="text-right">{row.margin.toFixed(2)} %</td></tr>)}
+      {!rows.length && <tr><td colSpan={5} className="py-4 text-slate-400">Aucune donnée sur la période.</td></tr>}
+    </tbody></table><p className="mt-2 text-xs text-slate-500">Après remises et retours de la période. Coût historique pour les nouvelles ventes, coût actuel pour les anciens tickets.</p></div>;
+}
+
 function rowsTable(title: string, rows: ReportRow[], unit: string): string {
   const body = rows
     .map(
@@ -96,6 +105,7 @@ function rowsTable(title: string, rows: ReportRow[], unit: string): string {
 }
 
 export default function Rapports() {
+  const { can } = useAuth();
   const version = useSyncVersion();
   const { company, printing } = useCompany();
   const { hasFeature } = useLicense();
@@ -327,6 +337,7 @@ export default function Rapports() {
         )}
 
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+          {can("rapports_financiers") && <><ProfitTable title="Bénéfice par article" rows={report?.profit_by_product ?? []} /><ProfitTable title="Bénéfice par vente" rows={report?.profit_by_sale ?? []} /></>}
           <RowTable
             title="Par mode de paiement"
             rows={report?.by_payment ?? []}

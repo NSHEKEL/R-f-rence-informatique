@@ -428,6 +428,7 @@ export interface Customer {
 }
 
 export interface UnitSpec {
+  wholesale_packaging_price?: number | null;
   base_unit?: string | null;
   packaging_unit?: string | null;
   units_per_packaging?: number | null;
@@ -459,6 +460,13 @@ export interface Product extends UnitSpec {
 }
 
 export interface SaleItem extends UnitSpec {
+  price_tier?: "detail" | "gros" | null;
+  catalog_unit_price?: number | null;
+  unit_cost?: number | null;
+  cost?: number | null;
+  revenue?: number | null;
+  profit?: number | null;
+  margin?: number | null;
   sold_unit?: string | null;
   packaging_quantity?: number | null;
   piece_quantity?: number | null;
@@ -482,6 +490,10 @@ export interface SalePayment {
 }
 
 export interface Sale {
+  discount_by_id?: number | null;
+  cost?: number | null;
+  profit?: number | null;
+  margin?: number | null;
   id: number;
   reference: string;
   customer_id: number | null;
@@ -569,7 +581,17 @@ export interface ReportRow {
   amount: number;
 }
 
+export interface ProfitRow {
+  label: string;
+  revenue: number;
+  cost: number;
+  profit: number;
+  margin: number;
+}
+
 export interface SalesReport {
+  profit_by_product?: ProfitRow[];
+  profit_by_sale?: ProfitRow[];
   period_start: string;
   period_end: string;
   sales_count: number;

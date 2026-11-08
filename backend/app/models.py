@@ -210,6 +210,7 @@ class Product(UnitSnapshot, Base):
     sale_price = Column(Float, default=0)
     packaging_sale_price = Column(Float, nullable=True)
     wholesale_price = Column(Float, default=0)  # 0 = no wholesale price
+    wholesale_packaging_price = Column(Float, nullable=True)
     quantity = Column(Integer, default=0)
     min_stock = Column(Integer, default=5)
     qr_code = Column(String, default="")  # scan code, defaults to the SKU
@@ -262,6 +263,7 @@ class Sale(Base):
     paid_amount = Column(Float, default=0, nullable=False)
     # Discount granted at the counter, already deducted from the total.
     discount = Column(Float, default=0, nullable=False)
+    discount_by_id = Column(Integer, nullable=True)
     # Gift sale: items leave the stock but are excluded from revenue.
     is_gift = Column(Boolean, default=False, nullable=False)
     # Idempotency key of tickets recorded offline, replayed once back online.
@@ -302,6 +304,9 @@ class SaleItem(UnitSnapshot, Base):
 
     id = Column(Integer, primary_key=True, index=True)
     sale_id = Column(Integer, ForeignKey("sales.id"), nullable=False)
+    price_tier = Column(String, default="detail")
+    catalog_unit_price = Column(Float, nullable=True)
+    unit_cost = Column(Float, nullable=True)
     sold_unit = Column(String, default="pièce", nullable=True)
     packaging_quantity = Column(Integer, default=0, nullable=True)
     piece_quantity = Column(Integer, nullable=True)
@@ -328,7 +333,7 @@ class SaleItem(UnitSnapshot, Base):
             line.quantity
             for credit in self.sale.returns
             for line in credit.items
-            if line.product_id == self.product_id
+            if line.sale_item_id == self.id or (line.sale_item_id is None and line.product_id == self.product_id)
         )
 
 
@@ -363,6 +368,8 @@ class SaleReturnItem(UnitSnapshot, Base):
 
     id = Column(Integer, primary_key=True, index=True)
     return_id = Column(Integer, ForeignKey("sale_returns.id"), nullable=False)
+    sale_item_id = Column(Integer, nullable=True)
+    unit_cost = Column(Float, nullable=True)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
     product_name = Column(String, default="")
     quantity = Column(Integer, default=1)

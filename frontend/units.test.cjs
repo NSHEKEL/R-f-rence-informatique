@@ -47,3 +47,18 @@ test("packaging inputs render the chosen quantities with accessible labels", () 
   assert.match(html, /aria-label="Quantité en pièce"/);
   assert.match(html, /value="15"/);
 });
+
+test("retail and wholesale resolve independent piece/carton prices and all fallbacks", () => {
+  const item = { ...product, units_per_packaging: 24, sale_price: 100, packaging_sale_price: 2000, wholesale_price: 80, wholesale_packaging_price: 1500 };
+  for (const [tier, piece, carton] of [["detail", 100, 2000], ["gros", 80, 1500]]) {
+    assert.deepEqual(JSON.parse(JSON.stringify(output.catalogPrices(item, tier))), { piece, carton });
+    assert.ok(Math.abs(output.catalogUnitPrice(item, 53, tier, { packaging_quantity: 2, piece_quantity: 5 }) * 53 - (2 * carton + 5 * piece)) < 1e-8);
+    assert.equal(output.catalogUnitPrice(item, 5, tier, { packaging_quantity: 0, piece_quantity: 5 }), piece);
+    assert.equal(output.catalogUnitPrice(item, 0, tier, { packaging_quantity: 0, piece_quantity: 0 }), piece);
+  }
+  assert.equal(output.catalogPrices({ ...item, wholesale_packaging_price: null }, "gros").carton, 1920);
+  assert.equal(output.catalogPrices({ ...item, wholesale_packaging_price: null, wholesale_price: 0 }, "gros").carton, 2000);
+  assert.equal(output.catalogPrices({ ...item, wholesale_packaging_price: null, wholesale_price: 0, packaging_sale_price: null }, "gros").carton, 2400);
+  assert.equal(output.catalogPrices({ ...item, wholesale_packaging_price: 0 }, "gros").carton, 0);
+  assert.equal(output.catalogPrices({ ...item, wholesale_price: 0 }, "gros").piece, 100);
+});

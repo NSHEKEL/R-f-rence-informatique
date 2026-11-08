@@ -172,6 +172,17 @@ for _table in ("products", "sale_items", "sale_return_items", "purchase_items", 
         "units_per_packaging": "INTEGER DEFAULT 1",
     })
 COLUMNS["products"]["packaging_sale_price"] = "FLOAT DEFAULT NULL"
+COLUMNS["products"]["wholesale_packaging_price"] = "FLOAT DEFAULT NULL"
+COLUMNS["sales"]["discount_by_id"] = "INTEGER DEFAULT NULL"
+COLUMNS["sale_items"].update({
+    "price_tier": "VARCHAR DEFAULT 'detail'",
+    "catalog_unit_price": "FLOAT DEFAULT NULL",
+    "unit_cost": "FLOAT DEFAULT NULL",
+})
+COLUMNS["sale_return_items"].update({
+    "sale_item_id": "INTEGER DEFAULT NULL",
+    "unit_cost": "FLOAT DEFAULT NULL",
+})
 COLUMNS["company_settings"]["pos_display"] = "TEXT DEFAULT '{}'"
 COLUMNS["sale_items"].update({
     "sold_unit": "VARCHAR DEFAULT 'pièce'",

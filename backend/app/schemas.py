@@ -418,6 +418,7 @@ class ProductBase(BaseModel):
     packaging_unit: str = Field(default="", max_length=40)
     units_per_packaging: int = Field(default=1, ge=1)
     packaging_sale_price: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    wholesale_packaging_price: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     name: str
     sku: str
     description: str = ""
@@ -468,6 +469,7 @@ class PriceHistoryOut(BaseModel):
 
 # ---------- Sales ----------
 class SaleItemCreate(PackagingQuantities):
+    price_tier: Optional[Literal["detail", "gros"]] = None
     expected_units_per_packaging: Optional[int] = Field(default=None, ge=1)
     product_id: int
     quantity: int = 0
@@ -519,6 +521,13 @@ class SalePaymentOut(BaseModel):
 
 
 class SaleItemOut(UnitSnapshotOut):
+    price_tier: Optional[str] = "detail"
+    catalog_unit_price: Optional[float] = None
+    unit_cost: Optional[float] = None
+    cost: Optional[float] = None
+    revenue: Optional[float] = None
+    profit: Optional[float] = None
+    margin: Optional[float] = None
     sold_unit: Optional[str] = None
     packaging_quantity: Optional[int] = None
     piece_quantity: Optional[int] = None
@@ -556,11 +565,16 @@ class SaleOut(BaseModel):
     paid_amount: float = 0
     payments: List[SalePaymentOut] = []
     discount: float = 0
+    discount_by_id: Optional[int] = None
+    cost: Optional[float] = None
+    profit: Optional[float] = None
+    margin: Optional[float] = None
     is_gift: bool = False
 
 
 # ---------- Returns (avoirs) ----------
 class ReturnLine(PackagingQuantities):
+    sale_item_id: Optional[int] = None
     product_id: int
     quantity: int = 0
 
@@ -742,7 +756,17 @@ class ReportRow(BaseModel):
     amount: float = 0
 
 
+class ProfitRow(BaseModel):
+    label: str
+    revenue: float
+    cost: float
+    profit: float
+    margin: float
+
+
 class SalesReport(BaseModel):
+    profit_by_product: List[ProfitRow] = []
+    profit_by_sale: List[ProfitRow] = []
     period_start: datetime
     period_end: datetime
     sales_count: int
