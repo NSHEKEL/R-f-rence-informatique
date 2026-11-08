@@ -39,6 +39,7 @@ def _spooler():
         "WritePrinter": ([ptr, ptr, dword, out_dword], ctypes.c_int),
         "EndPagePrinter": ([ptr], ctypes.c_int),
         "EndDocPrinter": ([ptr], ctypes.c_int),
+        "DeviceCapabilitiesW": ([ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint16, ptr, ptr], ctypes.c_int),
     }
     for name, (args, result) in signatures.items():
         function = getattr(dll, name)
@@ -281,6 +282,10 @@ def queue_status(name: str) -> PrinterDevice | None:
         ):
             return None
         info = ctypes.cast(buffer, ctypes.POINTER(_PrinterInfo2)).contents
+        try:
+            color = spooler.DeviceCapabilitiesW(info.pPrinterName or name, info.pPortName, 32, None, info.pDevMode) == 1
+        except OSError:
+            color = False
         problem = _status_label(int(info.Status))
         if not problem and int(info.Status) & 0x00000008:
             problem = "En pause"
@@ -292,6 +297,7 @@ def queue_status(name: str) -> PrinterDevice | None:
             jobs=int(info.cJobs),
             is_default=name == default_printer(),
             available=not problem,
+            supports_color=color,
             status=problem or "Prête",
         )
     finally:

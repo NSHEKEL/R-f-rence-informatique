@@ -295,6 +295,8 @@ class DesktopApi:
                     bold=bool(item.get("bold", False)),
                     big=bool(item.get("big", False)),
                     barcode=str(item.get("barcode", "")),
+                    qr=str(item.get("qr", "")),
+                    qr_size=int(item.get("qr_size", 6)),
                     image=str(item.get("image", "")),
                     image_width=int(item.get("image_width", 0)),
                     image_height=int(item.get("image_height", 0)),
@@ -308,7 +310,7 @@ class DesktopApi:
                 value & 0xFF for value in data.get("kick", []) if
                 isinstance(value, int)
             )
-            stream = escpos.build(lines, bool(data.get("cut", True))) * copies
+            stream = escpos.build(lines, bool(data.get("cut", True)), line_spacing=data.get('line_spacing')) * copies
             if kick:
                 stream += kick
             escpos.send(stream, str(data.get("printer", "")))

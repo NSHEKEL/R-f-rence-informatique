@@ -63,7 +63,7 @@ def update_company(
 ):
     settings = _get_or_create(db)
     data = payload.model_dump(exclude_unset=True)
-    if data.get("receipt_format") == "80mm" and not has_feature(
+    if data.get("receipt_format") in ("80mm", "58mm", "custom") and not has_feature(
         db, "impression_thermique"
     ):
         raise HTTPException(
@@ -98,7 +98,7 @@ def update_printing(
     _: User = Depends(require_admin),
 ):
     settings = _get_or_create(db)
-    if payload.receipt.width in ("80mm", "58mm") and not has_feature(
+    if payload.receipt.width in ("80mm", "58mm", "custom") and not has_feature(
         db, "impression_thermique"
     ):
         raise HTTPException(

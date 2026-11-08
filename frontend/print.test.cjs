@@ -3,6 +3,8 @@ const { readFileSync } = require("node:fs");
 const { test } = require("node:test");
 const vm = require("node:vm");
 const ts = require("typescript");
+const printStyle = {};
+vm.runInNewContext(ts.transpileModule(readFileSync(`${__dirname}/src/lib/printStyle.ts`, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports: printStyle, require: () => ({ DEFAULT_PRINTING: {} }) });
 
 const source = ts.transpileModule(
   readFileSync(`${__dirname}/src/lib/print.ts`, "utf8"),
@@ -44,6 +46,7 @@ function setup(api = {}) {
     exports,
     require: (name) => {
       if (name === "./ticketText") return { ticketLines: () => [] };
+      if (name === "./printStyle") return printStyle;
       return {};
     },
     document,

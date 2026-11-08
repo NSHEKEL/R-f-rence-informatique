@@ -8,7 +8,7 @@ export interface User {
   notification_kinds?: string;
 }
 
-export type ReceiptFormat = "A4" | "80mm" | "58mm";
+export type ReceiptFormat = "A4" | "80mm" | "58mm" | "custom";
 
 /** A printer installed on this computer, as Windows reports it. */
 export interface PrinterDevice {
@@ -20,6 +20,7 @@ export interface PrinterDevice {
   is_default: boolean;
   available: boolean;
   status: string;
+  supports_color?: boolean;
 }
 
 /** Receipt printer: hardware, layout and contents of the ticket. */
@@ -62,10 +63,19 @@ export interface ReceiptPrinterConfig {
   show_barcode: boolean;
   /** QR code at the foot of the ticket (opt-in per poste). */
   show_qr: boolean;
+  paper_width_mm: number;
+  bold: boolean;
+  show_company_info: boolean;
+  text_color: string;
+  footer_text: string;
+  item_layout: "table" | "stacked";
+  show_line_total: boolean;
 }
 
 /** Price labels: a separate printer with its own settings. */
 export interface LabelPrinterConfig {
+  font_family: string;
+  code_type: "barcode" | "qr";
   printer_name: string;
   width_mm: number;
   height_mm: number;
@@ -82,6 +92,21 @@ export interface LabelPrinterConfig {
 
 /** A4/A5 commercial documents: purchase orders and delivery notes. */
 export interface DocumentConfig {
+  font_family: string;
+  font_size: number;
+  text_color: string;
+  accent_color: string;
+  logo_size_mm: number;
+  header_text: string;
+  footer_text: string;
+  info_position: "left" | "center" | "right";
+  show_company: boolean;
+  show_customer: boolean;
+  show_reference: boolean;
+  show_date: boolean;
+  show_qty: boolean;
+  show_unit_price: boolean;
+  show_total: boolean;
   format: "A4" | "A5";
   /** Printer assigned to commercial documents on this workstation. */
   printer_name: string;
@@ -115,6 +140,7 @@ export interface PrintingConfig {
 
 export const DEFAULT_PRINTING: PrintingConfig = {
   receipt: {
+    paper_width_mm: 80, bold: false, show_company_info: true, text_color: "#000000", footer_text: "", item_layout: "table", show_line_total: true,
     printer_name: "",
     width: "80mm",
     copies: 1,
@@ -154,6 +180,7 @@ export const DEFAULT_PRINTING: PrintingConfig = {
     show_qr: false,
   },
   label: {
+    font_family: "Arial", code_type: "barcode",
     printer_name: "",
     width_mm: 60,
     height_mm: 40,
@@ -168,6 +195,9 @@ export const DEFAULT_PRINTING: PrintingConfig = {
     show_barcode: true,
   },
   documents: {
+    font_family: "Arial", font_size: 12, text_color: "#0f172a", accent_color: "#0f172a", logo_size_mm: 22,
+    header_text: "", footer_text: "", info_position: "left", show_company: true, show_customer: true,
+    show_reference: true, show_date: true, show_qty: true, show_unit_price: true, show_total: true,
     format: "A4",
     printer_name: "",
     delivery_printer_name: "",

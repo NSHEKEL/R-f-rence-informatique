@@ -16,6 +16,7 @@ import type {
 import { barcodeDataUrl } from "./barcode";
 import { quantityHtml } from "./units";
 import { printDocument } from "./print";
+import { commercialMarkup } from "./printStyle";
 
 const STYLE = `
   body { font-family: Arial, Helvetica, sans-serif; color: #0f172a;
@@ -133,13 +134,13 @@ export function orderDocumentHtml(
         `<tr><td class="num">${index + 1}</td>` +
         `<td>${item.reference || "—"}</td>` +
         `<td>${item.product_name}</td>` +
-        `<td class="num">${item.packaging_unit ? quantityHtml(item, item.quantity) : item.quantity}</td>` +
+        `<td class="num" data-field="qty">${item.packaging_unit ? quantityHtml(item, item.quantity) : item.quantity}</td>` +
         `<td>${item.unit || "u"}</td>` +
-        `<td class="num">${formatXOF(item.unit_price)}</td>` +
+        `<td class="num" data-field="price">${formatXOF(item.unit_price)}</td>` +
         (config.show_discount
           ? `<td class="num">${formatXOF(item.discount)}</td>`
           : "") +
-        `<td class="num">${formatXOF(item.subtotal)}</td></tr>`
+        `<td class="num" data-field="total">${formatXOF(item.subtotal)}</td></tr>`
     )
     .join("");
   const subtotal = order.items.reduce(
@@ -154,7 +155,7 @@ export function orderDocumentHtml(
   const totalHt = order.total;
   const vat = (totalHt * vatRate) / 100;
   const count = order.items.reduce((sum, item) => sum + item.quantity, 0);
-  return (
+  return commercialMarkup(
     `<div class="head">${letterhead(company, config)}` +
     `<div class="title"><h1>Bon de commande</h1>` +
     `<p class="number">N° ${order.reference}</p>` +
@@ -174,10 +175,10 @@ export function orderDocumentHtml(
     ]) +
     `</div>` +
     `<table><thead><tr><th class="num">N°</th><th>Référence</th>` +
-    `<th>Désignation</th><th class="num">Qté</th><th>Unité</th>` +
-    `<th class="num">P.U. HT</th>` +
+    `<th>Désignation</th><th class="num" data-field="qty">Qté</th><th>Unité</th>` +
+    `<th class="num" data-field="price">P.U. HT</th>` +
     (config.show_discount ? `<th class="num">Remise</th>` : "") +
-    `<th class="num">Total HT</th></tr></thead>` +
+    `<th class="num" data-field="total">Total HT</th></tr></thead>` +
     `<tbody>${rows}</tbody></table>` +
     `<table class="totals"><tbody>` +
     `<tr><td>Sous-total HT</td><td class="num">${formatXOF(subtotal)}</td></tr>` +
@@ -211,7 +212,7 @@ export function orderDocumentHtml(
       "Signature du client"
     ) +
     `<p class="mention">Bon de commande — document contractuel.</p>` +
-    barcode(order.reference)
+    barcode(order.reference), config
   );
 }
 
@@ -229,13 +230,13 @@ export function deliveryDocumentHtml(
         `<tr><td class="num">${index + 1}</td>` +
         `<td>${item.reference || "—"}</td>` +
         `<td>${item.product_name}</td>` +
-        `<td class="num">${item.ordered_quantity}</td>` +
-        `<td class="num">${item.previously_delivered}</td>` +
-        `<td class="num">${item.packaging_unit ? quantityHtml(item, item.quantity) : item.quantity}</td>` +
+        `<td class="num" data-field="qty">${item.ordered_quantity}</td>` +
+        `<td class="num" data-field="qty">${item.previously_delivered}</td>` +
+        `<td class="num" data-field="qty">${item.packaging_unit ? quantityHtml(item, item.quantity) : item.quantity}</td>` +
         `<td>${item.unit || "u"}</td>` +
         (showPrices
-          ? `<td class="num">${formatXOF(item.unit_price)}</td>` +
-            `<td class="num">${formatXOF(item.subtotal)}</td>`
+          ? `<td class="num" data-field="price">${formatXOF(item.unit_price)}</td>` +
+            `<td class="num" data-field="total">${formatXOF(item.subtotal)}</td>`
           : "") +
         `<td>${item.observation || ""}</td></tr>`
     )
@@ -243,7 +244,7 @@ export function deliveryDocumentHtml(
   const totalHt = delivery.items.reduce((sum, item) => sum + item.subtotal, 0);
   const vat = (totalHt * vatRate) / 100;
   const count = delivery.items.reduce((sum, item) => sum + item.quantity, 0);
-  return (
+  return commercialMarkup(
     `<div class="head">${letterhead(company, config)}` +
     `<div class="title"><h1>Bon de livraison</h1>` +
     `<p class="number">N° ${delivery.reference}</p>` +
@@ -261,10 +262,10 @@ export function deliveryDocumentHtml(
     ]) +
     `</div>` +
     `<table><thead><tr><th class="num">N°</th><th>Référence</th>` +
-    `<th>Désignation</th><th class="num">Commandé</th>` +
-    `<th class="num">Déjà livré</th><th class="num">Livré</th><th>Unité</th>` +
+    `<th>Désignation</th><th class="num" data-field="qty">Commandé</th>` +
+    `<th class="num" data-field="qty">Déjà livré</th><th class="num" data-field="qty">Livré</th><th>Unité</th>` +
     (showPrices
-      ? `<th class="num">P.U.</th><th class="num">Total</th>`
+      ? `<th class="num" data-field="price">P.U.</th><th class="num" data-field="total">Total</th>`
       : "") +
     `<th>Observation</th></tr></thead><tbody>${rows}</tbody></table>` +
     (showPrices
@@ -289,7 +290,7 @@ export function deliveryDocumentHtml(
     signatures(config, "Signature du livreur", "Signature du client") +
     `<p class="mention">Marchandise reçue conforme, sous réserve des ` +
     `observations ci-dessus.</p>` +
-    barcode(delivery.reference)
+    barcode(delivery.reference), config
   );
 }
 

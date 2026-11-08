@@ -218,6 +218,7 @@ class PrinterDevice(BaseModel):
     is_default: bool = False
     available: bool = True
     status: str = "Disponible"
+    supports_color: bool = False
 
 
 class PrinterList(BaseModel):
@@ -268,6 +269,13 @@ class ReceiptPrinterConfig(BaseModel):
     show_barcode: bool = True
     # QR code at the foot of the ticket: off by default, opt-in per poste.
     show_qr: bool = False
+    paper_width_mm: float = Field(default=80, ge=40, le=216)
+    bold: bool = False
+    show_company_info: bool = True
+    text_color: str = Field(default='#000000', pattern=r'^#[0-9a-fA-F]{6}$')
+    footer_text: str = ''
+    item_layout: Literal['table', 'stacked'] = 'table'
+    show_line_total: bool = True
 
 
 class LabelPrinterConfig(BaseModel):
@@ -285,6 +293,8 @@ class LabelPrinterConfig(BaseModel):
     show_wholesale: bool = False
     show_code: bool = True
     show_barcode: bool = True
+    font_family: str = 'Arial'
+    code_type: Literal['barcode', 'qr'] = 'barcode'
 
 
 class DocumentConfig(BaseModel):
@@ -314,6 +324,21 @@ class DocumentConfig(BaseModel):
     show_prices_on_delivery: bool = False
     show_customer_signature: bool = True
     show_company_signature: bool = True
+    font_family: str = 'Arial'
+    font_size: int = Field(default=12, ge=8, le=24)
+    text_color: str = Field(default='#0f172a', pattern=r'^#[0-9a-fA-F]{6}$')
+    accent_color: str = Field(default='#0f172a', pattern=r'^#[0-9a-fA-F]{6}$')
+    logo_size_mm: float = Field(default=22, ge=5, le=60)
+    header_text: str = ''
+    footer_text: str = ''
+    info_position: Literal['left', 'center', 'right'] = 'left'
+    show_company: bool = True
+    show_customer: bool = True
+    show_reference: bool = True
+    show_date: bool = True
+    show_qty: bool = True
+    show_unit_price: bool = True
+    show_total: bool = True
 
 
 class PrintingConfig(BaseModel):

@@ -6,7 +6,7 @@
  * plain text instead, so the ticket shown on screen is read back and turned
  * into lines of the paper width: what comes out is the receipt alone.
  */
-import type { ReceiptFormat } from "../types";
+import type { ReceiptFormat, ReceiptPrinterConfig } from "../types";
 
 export interface TicketLine {
   text?: string;
@@ -123,16 +123,25 @@ function metaLines(block: Element, width: number): TicketLine[] {
   return lines;
 }
 
-function itemLines(table: Element, width: number): TicketLine[] {
+function itemLines(table: Element, width: number, stacked = false): TicketLine[] {
   const lines: TicketLine[] = [];
   table.querySelectorAll("tbody tr").forEach((row) => {
-    const cells = Array.from(row.querySelectorAll("td")).map((c) =>
-      clean(c.textContent)
-    );
+    const elements = Array.from(row.querySelectorAll("td"));
+    const cells = elements.map((c) => clean(c.textContent));
     if (cells.length === 0) return;
     const name = cells[0];
-    const total = cells[cells.length - 1];
-    const middle = cells.slice(1, -1).join(" x ");
+    if (stacked) {
+      lines.push({ text: name.slice(0, width) });
+      elements.slice(1).forEach((cell) => {
+        const field = cell.getAttribute('data-field');
+        const label = field === 'qty' ? 'Qté' : field === 'price' ? 'P.U.' : 'Total';
+        pair(label, clean(cell.textContent), width).forEach((text) => lines.push({ text }));
+      });
+      return;
+    }
+    const totalIndex = elements.findIndex((cell) => cell.getAttribute('data-field') === 'total');
+    const total = totalIndex < 0 ? '' : cells[totalIndex];
+    const middle = cells.filter((_cell, index) => index > 0 && index !== totalIndex).join(" x ");
     lines.push({ text: name.slice(0, width) });
     pair(middle ? `  ${middle}` : "  ", total, width).forEach((text) =>
       lines.push({ text })
@@ -144,15 +153,17 @@ function itemLines(table: Element, width: number): TicketLine[] {
 /** Reads the printed copy of the ticket and rewrites it for the printer. */
 export function ticketLines(
   root: HTMLElement,
-  format: ReceiptFormat
+  format: ReceiptFormat,
+  config?: ReceiptPrinterConfig
 ): TicketLine[] {
-  const width = columns(format);
+  const large = Boolean(config && config.font_size >= 14);
+  const width = Math.floor(columns(format) / (large ? 2 : 1));
   const lines: TicketLine[] = [];
   const centred = (node: Element, extra: Partial<TicketLine> = {}) => {
     // Double-size characters are twice as wide, so they fit half a line.
     const room = extra.big ? Math.floor(width / 2) : width;
-    const text = clean(node.textContent).slice(0, room);
-    if (text) lines.push({ align: "center", ...extra, text });
+    const text = clean(node.textContent);
+    for (let start = 0; start < text.length; start += room) lines.push({ align: "center", ...extra, text: text.slice(start, start + room) });
   };
   // Kept in the order of the ticket on screen, so the printed copy reads the
   // same: letterhead, references, items, totals, barcode, thanks.
@@ -177,7 +188,7 @@ export function ticketLines(
     else if (kind.contains("receipt-meta")) lines.push(...metaLines(node, width));
     else if (kind.contains("receipt-items")) {
       lines.push(rule(width));
-      lines.push(...itemLines(node, width));
+      lines.push(...itemLines(node, width, config?.item_layout === 'stacked'));
       lines.push(rule(width));
     } else if (kind.contains("receipt-total")) {
       const cells = Array.from(node.querySelectorAll("span")).map((s) =>
@@ -199,5 +210,5 @@ export function ticketLines(
       }
     } else centred(node);
   });
-  return lines;
+  return lines.map((line) => ({ ...line, bold: config?.bold || line.bold, big: large || line.big, align: config?.align === 'center' ? 'center' : line.align }));
 }
