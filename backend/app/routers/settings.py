@@ -76,6 +76,8 @@ def update_company(
     # An empty password means "keep the stored one".
     if data.get("smtp_password") == "":
         data.pop("smtp_password")
+    if settings.printing_config:
+        data['printer_name'] = printing.read_config(settings).receipt.printer_name
     for key, value in data.items():
         setattr(settings, key, value)
     db.commit()

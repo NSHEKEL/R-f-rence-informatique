@@ -84,6 +84,7 @@ class NetworkTests(unittest.TestCase):
 
         app.dependency_overrides[get_db] = db_dependency
         app.dependency_overrides[require_admin] = lambda: self.user
+        app.dependency_overrides[get_current_user] = lambda: self.user
 
     def restrict(self, value=True):
         self.db.query(CompanySettings).first().network_restrict_workstations = value
@@ -99,6 +100,11 @@ class NetworkTests(unittest.TestCase):
         self.assertEqual(code, 200)
         self.assertNotIn("workstation_status", health)
         self.assertEqual(self.db.query(Workstation).one().status, "pending")
+
+    def test_network_requires_auth_but_health_remains_public(self):
+        app.dependency_overrides.pop(get_current_user)
+        self.assertEqual(asyncio.run(get('/api/network', '127.0.0.1'))[0], 401)
+        self.assertEqual(asyncio.run(get('/api/health', '127.0.0.1'))[0], 200)
 
     def test_pending_health_allowed_other_api_forbidden_then_approved_then_blocked(self):
         self.restrict()
@@ -121,6 +127,7 @@ class NetworkTests(unittest.TestCase):
         for ip in ("127.0.0.1", "::1", "::ffff:127.0.0.1"):
             self.assertEqual(asyncio.run(get("/api/network", ip))[0], 200)
         app.dependency_overrides.pop(require_admin)
+        app.dependency_overrides.pop(get_current_user)
         self.assertEqual(asyncio.run(get("/api/network/workstations", "127.0.0.1"))[0], 401)
 
     def test_cross_origin_rejection_has_cors_headers_and_preflight_works(self):

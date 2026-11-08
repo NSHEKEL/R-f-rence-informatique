@@ -11,7 +11,7 @@ import run
 
 class LauncherNetworkTests(unittest.TestCase):
     def test_reuses_same_version_without_starting_thread(self):
-        content = {"status": "ok", "app": run.APP_NAME, "version": run.APP_VERSION}
+        content = {"status": "ok", "app": run.APP_NAME, "version": run.APP_VERSION, "lifecycle": "managed"}
         with patch.object(run.urllib.request, "urlopen", return_value=io.BytesIO(json.dumps(content).encode())), \
                 patch.object(run.threading, "Thread") as thread:
             self.assertEqual(run._start_backend(8000), (8000, False))

@@ -69,7 +69,16 @@ simple lancement qui réutilise le serveur ne doit pas permuter sa base ouverte.
 Avec le démarrage automatique actif, fermer seulement la fenêtre bureau n'arrête
 pas le serveur. Pour appliquer une restauration ou redémarrer le backend après
 mise à jour : fermer les postes, puis dans le Planificateur de tâches Windows,
-terminer et relancer `EasyGest Server` (droits administrateur). La restauration
+terminer et relancer `EasyGest Server` (droits administrateur). Le processus
+Python empaqueté surveille le handle de son parent Windows : arrêter la tâche
+arrête aussi son enfant et libère son port. Vérifier que `/api/health` ne répond
+plus avant toute restauration. Un ancien exécutable sans cette surveillance
+peut laisser un enfant : le fermer une fois dans le Gestionnaire des tâches
+avant la mise à jour ; le lanceur refuse de démarrer tant que cet ancien
+serveur répond, plutôt que de réutiliser un orphelin ou de restaurer à côté.
+`/api/health` reste public ; `/api/network` exige une session authentifiée.
+Android et la configuration d'un poste secondaire testent uniquement la santé
+publique avant connexion. La restauration
 en attente sera appliquée au nouveau démarrage effectif du serveur.
 
 Le pare-feu conserve TCP 8000, profil **privé**, et limite désormais les adresses

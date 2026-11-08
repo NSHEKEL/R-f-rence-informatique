@@ -349,6 +349,7 @@ export default function PrintingSettings({
     setSaving(true);
     setError("");
     try {
+      await saveCompany();
       const res = await api.put<PrintingConfig>("/settings/printing", form);
       setPrinting(res.data);
       setForm(applyPostePrinters(res.data));
@@ -363,7 +364,6 @@ export default function PrintingSettings({
         reports: form.documents.reports_printer_name,
         settlement: form.documents.settlement_printer_name,
       });
-      await saveCompany();
       setSaved(true);
     } catch (err) {
       setError(

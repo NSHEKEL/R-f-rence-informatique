@@ -182,7 +182,9 @@ def _existing_server(port: int) -> bool:
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=2) as response:
             info = json.loads(response.read(4096))
-        return info.get("status") == "ok" and info.get("app") == APP_NAME and info.get("version") == APP_VERSION
+        if info.get('status') == 'ok' and info.get('app') == APP_NAME and info.get('lifecycle') not in ('managed', 'standalone'):
+            raise SystemExit("Ancien serveur EasyGest non supervisé encore actif. Arrêtez tous ses processus avant de relancer la tâche ou de restaurer la base.")
+        return info.get("status") == "ok" and info.get("app") == APP_NAME and info.get("version") == APP_VERSION and info.get("lifecycle") in ("managed", "standalone")
     except (OSError, ValueError, AttributeError):
         return False
 
@@ -636,6 +638,9 @@ def _auto_update() -> None:
 
 def main() -> None:
     _redirect_output()
+    if getattr(sys, 'frozen', False) and sys.platform == 'win32':
+        from app.lifetime import watch_parent
+        watch_parent()
     if not SELFTEST:
         _auto_update()
     port, started = _start_backend(DEFAULT_PORT, reuse=not SELFTEST)

@@ -15,7 +15,8 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from . import backup, clients, history, licensing, network as shop_network, remote_sales
-from .auth import ALGORITHM, SECRET_KEY, require_admin
+from .auth import ALGORITHM, SECRET_KEY, get_current_user, require_admin
+from . import lifetime
 from .database import Base, SessionLocal, engine, get_db
 from .migrate import migrate
 from .models import User
@@ -269,10 +270,13 @@ def on_startup():
 
 @app.get("/api/health")
 def health(request: Request):
+    if not lifetime.owner_alive():
+        raise HTTPException(status_code=503, detail='Serveur en cours d’arrêt')
     result = {
         "status": "ok",
         "app": APP_NAME,
         "version": APP_VERSION,
+        "lifecycle": lifetime.health_state(),
     }
     if getattr(request.state, "network_restricted", False):
         result["workstation_status"] = request.state.workstation_status
@@ -292,7 +296,7 @@ def _lan_ip() -> str:
 
 
 @app.get("/api/network")
-def network(request: Request, db: Session = Depends(get_db)):
+def network(request: Request, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     """Address to type on the phone or on the other workstations."""
     port = request.scope["server"][1]
     address = f"{_lan_ip()}:{port}"
