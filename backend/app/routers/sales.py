@@ -21,7 +21,7 @@ from ..models import (
 from ..permissions import has_permission, require_permission
 from ..schemas import SaleCreate, SaleOut, SaleUpdate
 from ..sequences import next_reference
-from .cash import current_session
+from .cash import lock_current_session
 
 router = APIRouter(prefix="/api/sales", tags=["sales"])
 
@@ -140,7 +140,8 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
             status_code=403,
             detail="Vous n'avez pas le droit d'enregistrer une vente cadeau",
         )
-    session = current_session(db, current_user)
+    reference = _generate_reference(db)
+    session = lock_current_session(db, current_user)
     if session is None:
         raise HTTPException(
             status_code=400,
@@ -148,7 +149,7 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
             "caisse avant d'effectuer une vente.",
         )
     sale = Sale(
-        reference=_generate_reference(db),
+        reference=reference,
         client_id=payload.client_id,
         customer_id=payload.customer_id,
         status=payload.status,

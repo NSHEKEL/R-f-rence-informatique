@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from ..permissions import require_permission
+from .cash import session_amounts
 from ..database import get_db
 from ..models import CashSession, Customer, Product, Sale, SaleItem, User
 from ..schemas import (
@@ -144,11 +145,11 @@ def get_stats(
 
     # Till closings in the window whose counted cash missed the expected one.
     gaps = [
-        s
+        session_amounts(db, s)
         for s in db.query(CashSession).filter(CashSession.closed_at.isnot(None))
         if s.closed_at and period_start <= s.closed_at <= period_end
-        and abs(s.difference or 0) > 0.009
     ]
+    gaps = [report for report in gaps if abs(report.difference or 0) > 0.009]
 
     return DashboardStats(
         total_products=total_products,

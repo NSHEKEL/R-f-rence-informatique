@@ -1,7 +1,9 @@
 import json
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
+from sqlalchemy import and_, or_, update
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user, require_admin
@@ -9,6 +11,7 @@ from ..database import get_db
 from ..models import (
     BankDeposit,
     CashSession,
+    CashMovement,
     CompanySettings,
     DebtPayment,
     Expense,
@@ -25,6 +28,8 @@ from ..schemas import (
     CashSessionOpen,
     CashSessionOut,
     CashSessionZ,
+    CashMovementCreate,
+    CashMovementOut,
 )
 
 router = APIRouter(prefix="/api/cash-sessions", tags=["cash"])
@@ -47,6 +52,19 @@ def current_session(db: Session, user: User) -> CashSession | None:
         .order_by(CashSession.opened_at.desc())
         .first()
     )
+
+
+def lock_current_session(db: Session, user: User) -> CashSession | None:
+    session = current_session(db, user)
+    if session is None:
+        return None
+    locked = db.execute(update(CashSession).where(
+        CashSession.id == session.id, CashSession.closed_at.is_(None),
+    ).values(note=CashSession.note))
+    if not locked.rowcount:
+        return None
+    db.refresh(session)
+    return session
 
 
 def day_session(db: Session, user: User) -> CashSession | None:
@@ -80,62 +98,6 @@ def require_open_till(
     )
 
 
-def _totals(db: Session, session: CashSession) -> dict:
-    sales = (
-        db.query(Sale)
-        .filter(
-            Sale.cash_session_id == session.id,
-            Sale.status != "Annulée",
-            Sale.is_gift.is_(False),
-        )
-        .all()
-    )
-    cash = 0.0
-    other = 0.0
-    for s in sales:
-        if s.payments:
-            # Mixed tender: each leg counts toward its own method.
-            for leg in s.payments:
-                if leg.method == CASH_PAYMENT:
-                    cash += leg.amount
-                else:
-                    other += leg.amount
-        elif s.payment_method == CASH_PAYMENT:
-            cash += s.total
-        else:
-            other += s.total
-    deposits = (
-        db.query(BankDeposit)
-        .filter(
-            BankDeposit.cash_session_id == session.id,
-            BankDeposit.status == "validé",
-        )
-        .all()
-    )
-    deposited = sum(d.amount or 0 for d in deposits)
-    return {
-        "cash_sales": cash,
-        "other_sales": other,
-        "sales_count": len(sales),
-        "deposits_total": deposited,
-        # A validated bank deposit is a cash outflow of the till: the
-        # theoretical cash left no longer includes it.
-        "expected_cash": session.opening_balance + cash - deposited,
-        "sales": [
-            {
-                "id": s.id,
-                "reference": s.reference,
-                "total": s.total or 0,
-                "paid_amount": s.paid_amount or 0,
-                "payment_method": s.payment_method or "",
-                "status": s.status or "",
-                "date": s.date,
-            }
-            for s in sorted(sales, key=lambda s: s.date or datetime.min, reverse=True)
-        ],
-    }
-
-
 def _detail(db: Session, session: CashSession, user: User) -> CashSessionDetail:
     can_closure = has_permission(db, user, "clotures_consulter") or has_permission(db, user, "caisse_z")
     if not has_permission(db, user, "soldes_consulter") or (session.closed_at is not None and not can_closure):
@@ -145,7 +107,10 @@ def _detail(db: Session, session: CashSession, user: User) -> CashSessionDetail:
         return out
     return CashSessionDetail(
         **CashSessionOut.model_validate(session).model_dump(),
-        **_totals(db, session),
+        **session_amounts(db, session).model_dump(include={
+            "cash_sales", "other_sales", "sales_count", "deposits_total", "expected_cash",
+            "sales", "entries_total", "exits_total", "cash_refunds", "cash_settlements",
+        }),
     )
 
 
@@ -177,6 +142,44 @@ def list_sessions(
     query = db.query(CashSession)
     return [CashSessionOut(**_detail(db, session, current_user).model_dump())
             for session in query.order_by(CashSession.opened_at.desc()).limit(limit).all()]
+
+
+@router.get("/{session_id}/movements", response_model=list[CashMovementOut])
+def list_movements(session_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    session = _session_or_404(db, session_id)
+    if session.opened_by_id != user.id and not has_permission(db, user, "clotures_consulter"):
+        raise HTTPException(status_code=403, detail="Session d'un autre caissier")
+    rows = db.query(CashMovement).filter(CashMovement.session_id == session_id).order_by(CashMovement.created_at.desc()).all()
+    result = [CashMovementOut.model_validate(row) for row in rows]
+    if not has_permission(db, user, "soldes_consulter"):
+        for row in result:
+            row.amount = None
+    return result
+
+
+@router.post("/movements", response_model=CashMovementOut)
+def create_movement(payload: CashMovementCreate, request: Request,
+                    db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    allowed = has_permission(db, user, "caisse_operations") or (
+        payload.type == "in" and has_permission(db, user, "recette_enregistrer")
+    )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Accès refusé : opérations de caisse")
+    if not payload.reason.strip():
+        raise HTTPException(status_code=400, detail="Le motif est obligatoire")
+    session = lock_current_session(db, user)
+    if session is None:
+        raise HTTPException(status_code=400, detail="Ouvrez votre caisse avant une opération")
+    row = CashMovement(session_id=session.id, type=payload.type, amount=payload.amount,
+                       reason=payload.reason.strip(), user_id=user.id,
+                       workstation=request.client.host if request.client else "")
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    out = CashMovementOut.model_validate(row)
+    if not has_permission(db, user, "soldes_consulter"):
+        out.amount = None
+    return out
 
 
 @router.post("/open", response_model=CashSessionDetail, status_code=201)
@@ -219,15 +222,15 @@ def close_session(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("caisse_fermer")),
 ):
-    session = current_session(db, current_user)
+    session = lock_current_session(db, current_user)
     if not session:
         raise HTTPException(
             status_code=400, detail="Aucune caisse ouverte à votre nom"
         )
-    totals = _totals(db, session)
+    totals = session_amounts(db, session)
     if not has_permission(db, current_user, "soldes_consulter") and not payload.note.strip():
         raise HTTPException(status_code=400, detail="Une note est obligatoire pour clôturer sans accès aux soldes")
-    gap = payload.closing_balance - totals["expected_cash"]
+    gap = payload.closing_balance - totals.expected_cash
     if abs(gap) >= 1 and not payload.note.strip():
         raise HTTPException(
             status_code=400,
@@ -236,12 +239,12 @@ def close_session(
     session.closed_at = datetime.now(timezone.utc)
     session.closed_by_id = current_user.id
     session.closing_balance = payload.closing_balance
-    session.expected_balance = totals["expected_cash"]
+    session.expected_balance = totals.expected_cash
     session.difference = gap
     if payload.note:
         session.note = payload.note
     # Freeze the Z snapshot at closing: it can never be edited afterwards.
-    session.z_report = _z_report(db, session).model_dump_json()
+    session.z_report = session_amounts(db, session).model_dump_json()
     db.add(
         Notification(
             kind="caisse",
@@ -264,8 +267,17 @@ def _session_or_404(db: Session, session_id: int) -> CashSession:
     return session
 
 
-def _z_report(db: Session, session: CashSession) -> CashSessionZ:
+def session_amounts(db: Session, session: CashSession) -> CashSessionZ:
     """Build the definitive recap of a till session (État Z)."""
+    if session.closed_at is not None and session.z_report:
+        try:
+            stored = json.loads(session.z_report)
+            payments = stored.get("payments", {})
+            stored.setdefault("cash_sales", payments.get(CASH_PAYMENT, 0))
+            stored.setdefault("other_sales", sum(v for k, v in payments.items() if k != CASH_PAYMENT))
+            return CashSessionZ(**stored)
+        except (ValueError, TypeError, AttributeError):
+            raise HTTPException(status_code=409, detail="Clôture historique illisible : restauration nécessaire")
     sales = (
         db.query(Sale).filter(Sale.cash_session_id == session.id).all()
     )
@@ -301,6 +313,7 @@ def _z_report(db: Session, session: CashSession) -> CashSessionZ:
         .filter(
             Expense.date >= opened_at,
             Expense.date <= closed_at,
+            Expense.created_by_id == session.opened_by_id,
         )
         .all()
     )
@@ -313,7 +326,7 @@ def _z_report(db: Session, session: CashSession) -> CashSessionZ:
         .all()
     )
     validated_deposits = sum(
-        d.amount or 0 for d in deposits if d.status == "validé"
+        d.amount or 0 for d in deposits if d.status == "validé" and d.method == CASH_PAYMENT
     )
     company = db.query(CompanySettings).first()
 
@@ -321,8 +334,7 @@ def _z_report(db: Session, session: CashSession) -> CashSessionZ:
     returns = (
         db.query(SaleReturn)
         .filter(
-            SaleReturn.date >= opened_at,
-            SaleReturn.date <= closed_at,
+            SaleReturn.cash_session_id == session.id,
         )
         .all()
     )
@@ -332,20 +344,24 @@ def _z_report(db: Session, session: CashSession) -> CashSessionZ:
         db.query(DebtPayment)
         .filter(
             DebtPayment.cancelled.is_(False),
-            DebtPayment.date >= opened_at,
-            DebtPayment.date <= closed_at,
+            or_(DebtPayment.cash_session_id == session.id, and_(
+                DebtPayment.cash_session_id.is_(None),
+                DebtPayment.created_by_id == session.opened_by_id,
+                DebtPayment.date >= opened_at, DebtPayment.date <= closed_at,
+            )),
         )
         .all()
     )
     settlement_payments: dict[str, float] = {}
     cash_settlements = 0.0
     for p in settlements:
+        signed_amount = (p.amount or 0) * (-1 if p.debt.kind == "dette" else 1)
         method = p.method or CASH_PAYMENT
         settlement_payments[method] = (
-            settlement_payments.get(method, 0.0) + (p.amount or 0)
+            settlement_payments.get(method, 0.0) + signed_amount
         )
         if method == CASH_PAYMENT:
-            cash_settlements += p.amount or 0
+            cash_settlements += signed_amount
     # Order deposits (acomptes) booked during the session.
     advances = (
         db.query(Order)
@@ -353,17 +369,34 @@ def _z_report(db: Session, session: CashSession) -> CashSessionZ:
             Order.date >= opened_at,
             Order.date <= closed_at,
             Order.deposit > 0,
+            Order.created_by_id == session.opened_by_id,
         )
         .all()
     )
 
+    movements = db.query(CashMovement).filter(CashMovement.session_id == session.id).all()
+    entries = sum(m.amount for m in movements if m.type == "in")
+    exits = sum(m.amount for m in movements if m.type == "out")
+    cash_refunds = sum(r.total or 0 for r in returns if r.refund_method == CASH_PAYMENT)
     expected = (
         session.opening_balance
         + payments.get(CASH_PAYMENT, 0.0)
         + cash_settlements
         - validated_deposits
+        + entries - exits - cash_refunds
     )
+    if session.closed_at is not None and session.expected_balance is not None:
+        expected = session.expected_balance
     return CashSessionZ(
+        cash_sales=payments.get(CASH_PAYMENT, 0.0),
+        other_sales=sum(value for method, value in payments.items() if method != CASH_PAYMENT),
+        entries_total=entries, exits_total=exits,
+        cash_refunds=cash_refunds, cash_settlements=cash_settlements,
+        sales=[{
+            "id": s.id, "reference": s.reference, "total": s.total or 0,
+            "paid_amount": s.paid_amount or 0, "payment_method": s.payment_method or "",
+            "status": s.status or "", "date": s.date,
+        } for s in sales if s.status != "Annulée" and not s.is_gift],
         session_id=session.id,
         company=company.name if company else "",
         company_address=company.address if company else "",
@@ -394,7 +427,7 @@ def _z_report(db: Session, session: CashSession) -> CashSessionZ:
             {"reference": o.reference, "customer": o.customer_name, "amount": o.deposit}
             for o in advances
         ],
-        settlements_total=sum(p.amount or 0 for p in settlements),
+        settlements_total=sum(settlement_payments.values()),
         settlements=settlement_payments,
         expenses_total=sum(e.amount or 0 for e in expenses),
         expenses=[
@@ -435,14 +468,10 @@ def z_report(
         raise HTTPException(status_code=403, detail="Accès refusé : clôtures de caisse")
     if session.z_report:
         try:
-            return CashSessionZ(**json.loads(session.z_report))
+            return JSONResponse(content=json.loads(session.z_report))
         except (ValueError, TypeError):
-            pass
-    report = _z_report(db, session)
-    if session.closed_at is not None:
-        session.z_report = report.model_dump_json()
-        db.commit()
-    return report
+            raise HTTPException(status_code=409, detail="Clôture historique illisible : restauration nécessaire")
+    return session_amounts(db, session)
 
 
 @router.post("/{session_id}/reopen", response_model=CashSessionDetail)
@@ -460,24 +489,20 @@ def reopen_session(
             status_code=400,
             detail="Le caissier a déjà une caisse ouverte",
         )
-    stamp = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M")
-    session.note = (
-        (session.note or "")
-        + f"\nRéouverture exceptionnelle par {current_user.name} le {stamp}"
-    ).strip()
-    session.closed_at = None
-    session.closed_by_id = None
-    session.closing_balance = None
-    session.expected_balance = None
-    session.difference = None
-    session.z_report = ""  # a new Z will be frozen at the next closing
+    previous = session
+    session = CashSession(
+        opened_by_id=previous.opened_by_id,
+        opening_balance=previous.closing_balance or 0,
+        business_day=business_day(),
+        note=f"Nouvelle ouverture après clôture #{previous.id}, par {current_user.name}",
+    )
+    db.add(session)
     db.add(
         Notification(
             kind="caisse",
             title="Réouverture de caisse",
             message=(
-                f"{current_user.name} a rouvert la session #{session.id} "
-                f"de {session.opened_by.name if session.opened_by else '?'}"
+                f"{current_user.name} a ouvert une nouvelle caisse après la clôture #{previous.id}"
             ),
             link="/caisse",
         )

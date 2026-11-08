@@ -14,9 +14,10 @@ from ..models import (
     StockMovement,
     User,
 )
-from ..permissions import require_permission
+from ..permissions import has_permission, require_permission
 from ..schemas import ReturnCreate, ReturnOut
 from ..sequences import next_reference
+from .cash import lock_current_session
 
 router = APIRouter(prefix="/api/returns", tags=["returns"])
 
@@ -52,7 +53,14 @@ def create_return(
     if not lines:
         raise HTTPException(status_code=400, detail="Aucun article à retourner")
 
+    if payload.refund_method == "Espèces" and not has_permission(db, current_user, "caisse_operations"):
+        raise HTTPException(status_code=403, detail="Accès refusé : sortie de caisse")
+    session = lock_current_session(db, current_user)
+    if payload.refund_method == "Espèces" and session is None:
+        raise HTTPException(status_code=400, detail="Ouvrez votre caisse avant un remboursement en espèces")
     credit = SaleReturn(
+        cash_session_id=session.id if session else None,
+        refund_method=payload.refund_method,
         reference=_generate_reference(db),
         sale_id=sale.id,
         reason=payload.reason,

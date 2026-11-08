@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Column,
     DateTime,
     Float,
@@ -321,6 +322,8 @@ class SaleReturn(Base):
     date = Column(DateTime, default=utcnow)
     total = Column(Float, default=0)
     reason = Column(Text, default="")
+    cash_session_id = Column(Integer, ForeignKey("cash_sessions.id"), nullable=True)
+    refund_method = Column(String, default="Avoir")
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     sale = relationship("Sale", back_populates="returns")
@@ -992,6 +995,23 @@ class Debt(Base):
         return "Partiellement payé" if self.paid > 0.009 else "Non payé"
 
 
+class CashMovement(Base):
+    __tablename__ = "cash_movements"
+    __table_args__ = (
+        CheckConstraint("type IN ('in', 'out')", name="ck_cash_movements_type"),
+        CheckConstraint("amount > 0", name="ck_cash_movements_amount"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    session_id = Column(Integer, ForeignKey("cash_sessions.id"), nullable=False, index=True)
+    type = Column(String, nullable=False)
+    amount = Column(Float, nullable=False)
+    reason = Column(Text, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=utcnow)
+    workstation = Column(String, default="")
+
+
 class DebtPayment(Base):
     """A settlement, total or partial, of a debt or of a receivable."""
 
@@ -999,6 +1019,7 @@ class DebtPayment(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     debt_id = Column(Integer, ForeignKey("debts.id"), nullable=False)
+    cash_session_id = Column(Integer, ForeignKey("cash_sessions.id"), nullable=True)
     amount = Column(Float, default=0)
     date = Column(DateTime, default=utcnow)
     method = Column(String, default="Espèces")

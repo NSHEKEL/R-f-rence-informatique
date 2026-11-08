@@ -3,7 +3,7 @@ import axios from "axios";
 import { Link } from "react-router-dom";
 import { CheckCircle2, Lock, Printer, ShoppingCart, Unlock, Wallet } from "lucide-react";
 import api, { formatXOF } from "../api/client";
-import type { CashSession, CashSessionDetail, ReceiptFormat } from "../types";
+import type { CashMovement, CashSession, CashSessionDetail, ReceiptFormat } from "../types";
 import CashTicket, { type CashTicketKind } from "../components/CashTicket";
 import ZReport, { type ZReportData } from "../components/ZReport";
 import Modal from "../components/Modal";
@@ -24,6 +24,8 @@ export default function Caisse() {
   const canBalances = can("soldes_consulter");
   const canClosures = can("clotures_consulter");
   const canZ = canBalances && (canClosures || can("caisse_z"));
+  const canEntry = can("caisse_operations") || can("recette_enregistrer");
+  const canExit = can("caisse_operations");
   const { refresh: refreshTill } = useTill();
   const { company, printing } = useCompany();
   const version = useSyncVersion();
@@ -34,6 +36,10 @@ export default function Caisse() {
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [movements, setMovements] = useState<CashMovement[]>([]);
+  const [movementType, setMovementType] = useState<"in" | "out">("in");
+  const [movementAmount, setMovementAmount] = useState("");
+  const [movementReason, setMovementReason] = useState("");
 
   const [closeOpen, setCloseOpen] = useState(false);
   const [countedBalance, setCountedBalance] = useState("0");
@@ -53,6 +59,7 @@ export default function Caisse() {
     ]);
     setToday(session.data);
     setHistory(sessions.data);
+    setMovements(session.data ? (await api.get<CashMovement[]>(`/cash-sessions/${session.data.id}/movements`)).data : []);
   }, [canClosures]);
 
   useEffect(() => {
@@ -70,6 +77,24 @@ export default function Caisse() {
     },
     [company?.auto_print_cash, format, printing.receipt, canBalances, canZ]
   );
+
+  async function addMovement() {
+    setSaving(true);
+    setError("");
+    try {
+      await api.post("/cash-sessions/movements", {
+        type: movementType, amount: Number(movementAmount), reason: movementReason,
+      });
+      setMovementAmount("");
+      setMovementReason("");
+      await load();
+      await refreshTill();
+    } catch (err) {
+      if (axios.isAxiosError(err)) setError(err.response?.data?.detail ?? "Opération impossible");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function openTill() {
     setSaving(true);
@@ -264,6 +289,10 @@ export default function Caisse() {
               ["Fonds d'ouverture", formatXOF(today.opening_balance)],
               ["Ventes espèces", formatXOF(today.cash_sales)],
               ["Autres paiements", formatXOF(today.other_sales)],
+              ["Recettes de caisse", formatXOF(today.entries_total)],
+              ["Sorties de caisse", formatXOF(today.exits_total)],
+              ["Règlements espèces nets", formatXOF(today.cash_settlements)],
+              ["Remboursements espèces", formatXOF(today.cash_refunds)],
               [
                 closed ? "Solde compté" : "Solde attendu",
                 formatXOF(
@@ -351,6 +380,25 @@ export default function Caisse() {
           )}
         </div>
       )}
+
+      {today && <div className="card space-y-4 p-5">
+        <h2 className="text-sm font-bold text-slate-900">Recettes et sorties de caisse</h2>
+        {!closed && canEntry && <form className="grid gap-3 sm:grid-cols-4" onSubmit={(e) => { e.preventDefault(); void addMovement(); }}>
+          <div><label className="label">Opération</label><select className="input" value={movementType} onChange={(e) => setMovementType(e.target.value as "in" | "out")}>
+            <option value="in">Recette</option>
+            {canExit && <option value="out">Sortie</option>}
+          </select></div>
+          <div><label className="label">Montant</label><input className="input" type="number" min="0.01" step="0.01" required value={movementAmount} onChange={(e) => setMovementAmount(e.target.value)} /></div>
+          <div><label className="label">Motif obligatoire</label><input className="input" maxLength={1000} required value={movementReason} onChange={(e) => setMovementReason(e.target.value)} /></div>
+          <button className="btn-primary self-end" disabled={saving || !movementReason.trim()}>Enregistrer</button>
+        </form>}
+        <div className="overflow-x-auto"><table className="w-full text-sm">
+          <thead><tr className="border-b text-left"><th className="py-2">Date</th><th>Opération</th><th>Motif</th><th>Poste</th><th className="text-right">Montant</th></tr></thead>
+          <tbody>{movements.map((m) => <tr key={m.id} className="border-b border-slate-100">
+            <td className="py-2">{new Date(m.created_at).toLocaleString("fr-FR")}</td><td>{m.type === "in" ? "Recette" : "Sortie"}</td><td>{m.reason}</td><td>{m.workstation || "—"}</td><td className="text-right">{formatXOF(m.amount)}</td>
+          </tr>)}</tbody>
+        </table>{movements.length === 0 && <p className="py-3 text-sm text-slate-500">Aucun mouvement de caisse.</p>}</div>
+      </div>}
 
       {canClosures && <div className="card p-5">
         <h2 className="mb-3 text-sm font-bold text-slate-900">

@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from .cash import current_session
+from .cash import lock_current_session
 from ..database import get_db
 from ..models import Customer, Debt, DebtPayment, Supplier, User, utcnow
 from ..permissions import require_permission
@@ -187,7 +187,8 @@ def add_payment(
     debt = _find(db, debt_id)
     # A settlement is money going through the till: sellers need an open
     # session, exactly like for a cash sale.
-    if current_user.role == "vendeur" and not current_session(db, current_user):
+    session = lock_current_session(db, current_user)
+    if current_user.role == "vendeur" and session is None:
         raise HTTPException(
             status_code=400,
             detail="Votre caisse est fermée : ouvrez une session avant d'encaisser",
@@ -200,6 +201,7 @@ def add_payment(
             detail=f"Il ne reste que {debt.remaining:.0f} à régler",
         )
     payment = DebtPayment(
+        cash_session_id=session.id if session else None,
         amount=payload.amount,
         method=payload.method,
         note=payload.note,

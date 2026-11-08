@@ -517,6 +517,7 @@ class ReturnLine(BaseModel):
 class ReturnCreate(BaseModel):
     sale_reference: str
     reason: str = ""
+    refund_method: Literal["Avoir", "Espèces"] = "Avoir"
     lines: List[ReturnLine]
 
 
@@ -808,7 +809,29 @@ class CashSessionDetail(CashSessionOut):
     sales_count: Optional[int] = None
     deposits_total: Optional[float] = None
     expected_cash: Optional[float] = None
+    entries_total: Optional[float] = None
+    exits_total: Optional[float] = None
+    cash_refunds: Optional[float] = None
+    cash_settlements: Optional[float] = None
     sales: list[CashSessionSaleLine] = []
+
+
+class CashMovementCreate(BaseModel):
+    type: Literal["in", "out"]
+    amount: float = Field(gt=0, allow_inf_nan=False)
+    reason: str = Field(min_length=1, max_length=1000)
+
+
+class CashMovementOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    session_id: int
+    type: str
+    amount: Optional[float] = None
+    reason: str
+    user_id: int
+    created_at: datetime
+    workstation: str = ""
 
 
 # ---------- Expenses ----------
@@ -1702,6 +1725,13 @@ class CashSessionZ(BaseModel):
     deposits_total: float = 0
     deposits: list[dict] = []
     expected_cash: float = 0
+    cash_sales: float = 0
+    other_sales: float = 0
+    cash_refunds: float = 0
+    cash_settlements: float = 0
+    entries_total: float = 0
+    exits_total: float = 0
+    sales: list[CashSessionSaleLine] = []
     counted_cash: Optional[float] = None
     difference: Optional[float] = None
     note: str = ""

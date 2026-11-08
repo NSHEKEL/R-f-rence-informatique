@@ -4,13 +4,16 @@ import { Search, Undo2 } from "lucide-react";
 import api, { formatDate, formatXOF } from "../api/client";
 import type { Sale, SaleReturn } from "../types";
 import { useSyncVersion } from "../context/SyncContext";
+import { useAuth } from "../context/AuthContext";
 
 export default function Returns() {
+  const { can } = useAuth();
   const version = useSyncVersion();
   const [reference, setReference] = useState("");
   const [sale, setSale] = useState<Sale | null>(null);
   const [quantities, setQuantities] = useState<Record<number, number>>({});
   const [reason, setReason] = useState("");
+  const [refundMethod, setRefundMethod] = useState("Avoir");
   const [credits, setCredits] = useState<SaleReturn[]>([]);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -69,14 +72,16 @@ export default function Returns() {
       const res = await api.post<SaleReturn>("/returns", {
         sale_reference: sale.reference,
         reason,
+        refund_method: refundMethod,
         lines,
       });
       setSuccess(
-        `Avoir ${res.data.reference} créé : ${formatXOF(res.data.total)}`
+        `${refundMethod === "Espèces" ? "Remboursement" : "Avoir"} ${res.data.reference} enregistré : ${formatXOF(res.data.total)}`
       );
       setSale(null);
       setQuantities({});
       setReason("");
+      setRefundMethod("Avoir");
       setReference("");
       await loadCredits();
     } catch (err) {
@@ -209,6 +214,11 @@ export default function Returns() {
             </table>
 
             <div>
+              <label className="label">Règlement du retour</label>
+              <select className="input mb-3" value={refundMethod} onChange={(e) => setRefundMethod(e.target.value)}>
+                <option value="Avoir">Avoir (sans sortie d'espèces)</option>
+                {can("caisse_operations") && <option value="Espèces">Remboursement en espèces depuis ma caisse ouverte</option>}
+              </select>
               <label className="label">Motif du retour</label>
               <input
                 className="input"

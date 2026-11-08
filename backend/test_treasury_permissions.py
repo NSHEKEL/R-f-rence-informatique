@@ -31,7 +31,7 @@ FINANCIAL_PATHS = [
 ]
 
 
-async def request(app, path, method="GET", payload=None):
+async def request(app, path, method="GET", payload=None, client=("127.0.0.1", 1234)):
     messages = []
     sent = False
 
@@ -48,7 +48,7 @@ async def request(app, path, method="GET", payload=None):
     scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
              "method": method, "scheme": "http", "path": path, "raw_path": path.encode(),
              "query_string": b"", "headers": [(b"content-type", b"application/json")],
-             "server": ("127.0.0.1", 8000), "client": ("127.0.0.1", 1234)}
+             "server": ("127.0.0.1", 8000), "client": client}
     await asyncio.wait_for(app(scope, receive, send), 10)
     status = next(m["status"] for m in messages if m["type"] == "http.response.start")
     body = b"".join(m.get("body", b"") for m in messages if m["type"] == "http.response.body")

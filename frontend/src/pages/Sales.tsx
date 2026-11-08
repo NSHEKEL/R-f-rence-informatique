@@ -5,7 +5,6 @@ import {
   Eye,
   FileCheck2,
   FileSpreadsheet,
-  Lock,
   Pencil,
   Plus,
   Printer,
@@ -15,13 +14,11 @@ import {
 } from "lucide-react";
 import api, { formatDateTime, formatXOF } from "../api/client";
 import type {
-  CashSessionDetail,
   Customer,
   FneInvoice,
   ReceiptFormat,
   Sale,
 } from "../types";
-import CashTicket from "../components/CashTicket";
 import Modal from "../components/Modal";
 import BulkDelete, { SelectBox } from "../components/BulkDelete";
 import { useSelection } from "../lib/selection";
@@ -52,8 +49,6 @@ export default function Sales() {
 
   const [sales, setSales] = useState<Sale[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [session, setSession] = useState<CashSessionDetail | null>(null);
-  const [daySession, setDaySession] = useState<CashSessionDetail | null>(null);
   const [query, setQuery] = useState("");
   const [detail, setDetail] = useState<Sale | null>(null);
   const [error, setError] = useState("");
@@ -70,31 +65,19 @@ export default function Sales() {
   const [rFooter, setRFooter] = useState("");
   const [rSaving, setRSaving] = useState(false);
   const [rFormat, setRFormat] = useState<ReceiptFormat>("A4");
-
-  // Till closing (once a day, from the sales side)
-  const [closeOpen, setCloseOpen] = useState(false);
-  const [countedBalance, setCountedBalance] = useState("0");
-  const [closeNote, setCloseNote] = useState("");
-  const [closedTicket, setClosedTicket] = useState<CashSessionDetail | null>(
-    null
-  );
-
   const format: ReceiptFormat = printing.receipt.width;
 
+
   const load = useCallback(async () => {
-    const [s, c, current, today, fne] = await Promise.all([
+    const [s, c, fne] = await Promise.all([
       api.get<Sale[]>("/sales"),
       api.get<Customer[]>("/customers"),
-      api.get<CashSessionDetail | null>("/cash-sessions/current"),
-      api.get<CashSessionDetail | null>("/cash-sessions/today"),
       user?.role === "admin"
         ? api.get<FneInvoice[]>("/fne/invoices").catch(() => ({ data: [] }))
         : Promise.resolve({ data: [] }),
     ]);
     setSales(s.data);
     setCustomers(c.data);
-    setSession(current.data);
-    setDaySession(today.data);
     setFneInvoices(fne.data as FneInvoice[]);
   }, [user?.role]);
 
@@ -214,29 +197,6 @@ export default function Sales() {
     }
   }
 
-  async function closeTill() {
-    setError("");
-    try {
-      const res = await api.post<CashSessionDetail>("/cash-sessions/close", {
-        closing_balance: Number(countedBalance) || 0,
-        note: closeNote,
-      });
-      setCloseOpen(false);
-      setCloseNote("");
-      await load();
-      if (can("soldes_consulter") && (can("caisse_z") || can("clotures_consulter"))) setClosedTicket(res.data);
-      if (can("soldes_consulter") && (can("caisse_z") || can("clotures_consulter")) && company?.auto_print_cash !== false) {
-        window.setTimeout(() => printReceipt(format, printing.receipt), 400);
-      }
-    } catch (err) {
-      if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Impossible de fermer la caisse");
-      }
-    }
-  }
-
-  const countedDifference =
-    (Number(countedBalance) || 0) - (session?.expected_cash ?? 0);
 
   return (
     <div className="space-y-5">
@@ -254,24 +214,6 @@ export default function Sales() {
           />
         </div>
         <div className="flex flex-wrap gap-3 sm:ml-auto">
-          {session && can("caisse_fermer") ? (
-            <button
-              className="btn-ghost"
-              onClick={() => {
-                setCountedBalance(session.expected_cash == null ? "" : String(session.expected_cash));
-                setCloseNote("");
-                setCloseOpen(true);
-              }}
-            >
-              <Lock size={18} /> Fermer ma caisse
-            </button>
-          ) : (
-            daySession?.closed_at && (
-              <span className="flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-500">
-                <Lock size={14} /> Caisse déjà fermée aujourd'hui
-              </span>
-            )
-          )}
           {hasFeature("export_excel") && (
             <button className="btn-ghost" onClick={exportExcel}>
               <FileSpreadsheet size={16} /> Exporter Excel
@@ -692,99 +634,6 @@ export default function Sales() {
         )}
       </Modal>
 
-      {/* Till closing */}
-      <Modal
-        open={closeOpen}
-        onClose={() => setCloseOpen(false)}
-        title="Fermeture de caisse"
-        footer={
-          <button className="btn-primary" onClick={closeTill}>
-            Fermer ma caisse
-          </button>
-        }
-      >
-        {session && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-4 text-sm">
-              <span className="text-slate-500">Fonds d'ouverture</span>
-              <span className="text-right font-semibold">
-                {formatXOF(session.opening_balance)}
-              </span>
-              <span className="text-slate-500">Ventes en espèces</span>
-              <span className="text-right font-semibold">
-                {formatXOF(session.cash_sales)}
-              </span>
-              <span className="text-slate-500">Solde attendu</span>
-              <span className="text-right font-extrabold text-brand-700">
-                {formatXOF(session.expected_cash)}
-              </span>
-            </div>
-            <div>
-              <label className="label">Montant compté en caisse (FCFA)</label>
-              <input
-                className="input"
-                type="number"
-                min="0"
-                value={countedBalance}
-                onChange={(e) => setCountedBalance(e.target.value)}
-              />
-            </div>
-            {can("soldes_consulter") && <p
-              className={`rounded-xl px-4 py-3 text-sm font-semibold ${
-                Math.abs(countedDifference) < 1
-                  ? "bg-emerald-50 text-emerald-700"
-                  : "bg-amber-50 text-amber-700"
-              }`}
-            >
-              {Math.abs(countedDifference) < 1
-                ? "Caisse conforme"
-                : `Écart : ${formatXOF(countedDifference)}`}
-            </p>}
-            <div>
-              <label className="label">Note de fermeture {can("soldes_consulter") ? "(facultatif hors écart)" : "(obligatoire)"}</label>
-              <input
-                className="input"
-                value={closeNote}
-                onChange={(e) => setCloseNote(e.target.value)}
-              />
-            </div>
-            <p className="text-xs text-slate-400">
-              La fermeture n'est possible qu'une fois par jour ; le ticket
-              s'imprime automatiquement.
-            </p>
-          </div>
-        )}
-      </Modal>
-
-      {/* Closing ticket */}
-      <Modal
-        open={closedTicket !== null}
-        onClose={() => setClosedTicket(null)}
-        title="Ticket de fermeture de caisse"
-        footer={
-          <div className="no-print flex w-full justify-end gap-3">
-            <button className="btn-ghost" onClick={() => setClosedTicket(null)}>
-              Fermer
-            </button>
-            <PrinterHint />
-            <button
-              className="btn-primary"
-              onClick={() => printReceipt(format, printing.receipt)}
-            >
-              <Printer size={16} /> Imprimer
-            </button>
-          </div>
-        }
-      >
-        {closedTicket && (
-          <CashTicket
-            session={closedTicket}
-            company={company}
-            format={format}
-            kind="close"
-          />
-        )}
-      </Modal>
     </div>
   );
 }

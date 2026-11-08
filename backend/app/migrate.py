@@ -9,7 +9,7 @@ shared PostgreSQL server.
 from sqlalchemy import inspect, select, text
 
 from .database import engine
-from .models import AppMigration, Delivery, RolePermission, User, Workstation
+from .models import AppMigration, CashMovement, Delivery, RolePermission, User, Workstation
 from .permissions import CONFIGURABLE_ROLES, DEFAULTS, PERMISSIONS
 
 TRUE_LITERAL = "1" if engine.dialect.name == "sqlite" else "TRUE"
@@ -17,6 +17,7 @@ FALSE_LITERAL = "0" if engine.dialect.name == "sqlite" else "FALSE"
 
 # table -> column -> SQL type/default appended to "ALTER TABLE ... ADD COLUMN".
 COLUMNS: dict[str, dict[str, str]] = {
+    "sale_returns": {"cash_session_id": "INTEGER", "refund_method": "VARCHAR DEFAULT 'Avoir'"},
     "users": {
         "is_active": f"BOOLEAN DEFAULT {TRUE_LITERAL}",
         "role": "VARCHAR DEFAULT 'admin'",
@@ -146,6 +147,7 @@ COLUMNS: dict[str, dict[str, str]] = {
         "discount": "FLOAT DEFAULT 0",
     },
     "debt_payments": {
+        "cash_session_id": "INTEGER",
         "reference": "VARCHAR DEFAULT ''",
         "receipt_reference": "VARCHAR DEFAULT ''",
         "cancelled": f"BOOLEAN DEFAULT {FALSE_LITERAL}",
@@ -253,6 +255,8 @@ def migrate() -> None:
 
     with engine.begin() as conn:
         Workstation.__table__.create(bind=conn, checkfirst=True)
+        if "cash_sessions" in tables:
+            CashMovement.__table__.create(bind=conn, checkfirst=True)
         for table, columns in COLUMNS.items():
             if table not in tables:
                 continue

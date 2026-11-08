@@ -626,11 +626,26 @@ export interface CashSessionSaleLine {
 }
 
 export interface CashSessionDetail extends CashSession {
+  entries_total: number | null;
+  exits_total: number | null;
+  cash_refunds: number | null;
+  cash_settlements: number | null;
   cash_sales: number | null;
   other_sales: number | null;
   sales_count: number | null;
   expected_cash: number | null;
   sales?: CashSessionSaleLine[];
+}
+
+export interface CashMovement {
+  id: number;
+  session_id: number;
+  type: "in" | "out";
+  amount: number | null;
+  reason: string;
+  user_id: number;
+  created_at: string;
+  workstation: string;
 }
 
 export interface Expense {
