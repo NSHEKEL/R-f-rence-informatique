@@ -779,7 +779,7 @@ class CashSessionOut(BaseModel):
     opened_at: datetime
     business_day: str = ""
     opened_by: Optional[UserOut] = None
-    opening_balance: float
+    opening_balance: Optional[float] = None
     closed_at: Optional[datetime] = None
     closed_by: Optional[UserOut] = None
     closing_balance: Optional[float] = None
@@ -803,11 +803,11 @@ class CashSessionSaleLine(BaseModel):
 class CashSessionDetail(CashSessionOut):
     """Open session enriched with live totals."""
 
-    cash_sales: float = 0
-    other_sales: float = 0
-    sales_count: int = 0
-    deposits_total: float = 0
-    expected_cash: float = 0
+    cash_sales: Optional[float] = None
+    other_sales: Optional[float] = None
+    sales_count: Optional[int] = None
+    deposits_total: Optional[float] = None
+    expected_cash: Optional[float] = None
     sales: list[CashSessionSaleLine] = []
 
 
@@ -1623,7 +1623,7 @@ class BankAccountOut(BaseModel):
     is_active: bool = True
     note: str = ""
     created_at: Optional[datetime] = None
-    balance: float = 0  # validated deposits minus cancelled, after assembly
+    balance: Optional[float] = None  # validated deposits minus cancelled, after assembly
 
 
 class BankDepositIn(BaseModel):

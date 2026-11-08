@@ -14,7 +14,9 @@ from ..schemas import (
     ExpenseOut,
 )
 
-router = APIRouter(prefix="/api/accounting", tags=["accounting"])
+router = APIRouter(prefix="/api/accounting", tags=["accounting"], dependencies=[
+    Depends(require_permission("tresorerie_consulter")),
+])
 
 
 def _parse_range(start: str | None, end: str | None) -> tuple[datetime, datetime]:
@@ -38,7 +40,9 @@ def _parse_range(start: str | None, end: str | None) -> tuple[datetime, datetime
     )
 
 
-@router.get("/summary", response_model=AccountingSummary)
+@router.get("/summary", response_model=AccountingSummary, dependencies=[
+    Depends(require_permission("rapports_financiers", "soldes_consulter")),
+])
 def summary(
     start: str | None = None,
     end: str | None = None,

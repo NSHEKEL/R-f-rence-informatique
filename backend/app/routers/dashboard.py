@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from ..auth import get_current_user
+from ..permissions import require_permission
 from ..database import get_db
 from ..models import CashSession, Customer, Product, Sale, SaleItem, User
 from ..schemas import (
@@ -48,7 +48,7 @@ def get_stats(
     start: Optional[datetime] = Query(None),
     end: Optional[datetime] = Query(None),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_permission("tableau_bord", "rapports_financiers", "soldes_consulter")),
 ):
     period_start, period_end = _period(start, end)
 

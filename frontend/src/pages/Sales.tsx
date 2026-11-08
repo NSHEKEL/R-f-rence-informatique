@@ -224,8 +224,8 @@ export default function Sales() {
       setCloseOpen(false);
       setCloseNote("");
       await load();
-      setClosedTicket(res.data);
-      if (company?.auto_print_cash !== false) {
+      if (can("soldes_consulter") && (can("caisse_z") || can("clotures_consulter"))) setClosedTicket(res.data);
+      if (can("soldes_consulter") && (can("caisse_z") || can("clotures_consulter")) && company?.auto_print_cash !== false) {
         window.setTimeout(() => printReceipt(format, printing.receipt), 400);
       }
     } catch (err) {
@@ -254,11 +254,11 @@ export default function Sales() {
           />
         </div>
         <div className="flex flex-wrap gap-3 sm:ml-auto">
-          {session ? (
+          {session && can("caisse_fermer") ? (
             <button
               className="btn-ghost"
               onClick={() => {
-                setCountedBalance(String(session.expected_cash));
+                setCountedBalance(session.expected_cash == null ? "" : String(session.expected_cash));
                 setCloseNote("");
                 setCloseOpen(true);
               }}
@@ -729,7 +729,7 @@ export default function Sales() {
                 onChange={(e) => setCountedBalance(e.target.value)}
               />
             </div>
-            <p
+            {can("soldes_consulter") && <p
               className={`rounded-xl px-4 py-3 text-sm font-semibold ${
                 Math.abs(countedDifference) < 1
                   ? "bg-emerald-50 text-emerald-700"
@@ -739,9 +739,9 @@ export default function Sales() {
               {Math.abs(countedDifference) < 1
                 ? "Caisse conforme"
                 : `Écart : ${formatXOF(countedDifference)}`}
-            </p>
+            </p>}
             <div>
-              <label className="label">Note de fermeture (facultatif)</label>
+              <label className="label">Note de fermeture {can("soldes_consulter") ? "(facultatif hors écart)" : "(obligatoire)"}</label>
               <input
                 className="input"
                 value={closeNote}

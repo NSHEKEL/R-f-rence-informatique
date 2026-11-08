@@ -27,7 +27,7 @@ function TicketBody({
   kind,
 }: Omit<CashTicketProps, "format">) {
   const currency = company?.currency || "FCFA";
-  const money = (v: number) => formatMoney(v, currency);
+  const money = (v: number | null) => formatMoney(v, currency);
   const closing = kind === "close";
 
   return (

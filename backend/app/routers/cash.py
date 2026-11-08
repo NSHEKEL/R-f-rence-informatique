@@ -136,7 +136,13 @@ def _totals(db: Session, session: CashSession) -> dict:
     }
 
 
-def _detail(db: Session, session: CashSession) -> CashSessionDetail:
+def _detail(db: Session, session: CashSession, user: User) -> CashSessionDetail:
+    can_closure = has_permission(db, user, "clotures_consulter") or has_permission(db, user, "caisse_z")
+    if not has_permission(db, user, "soldes_consulter") or (session.closed_at is not None and not can_closure):
+        out = CashSessionDetail(**CashSessionOut.model_validate(session).model_dump())
+        for field in ("opening_balance", "closing_balance", "expected_balance", "difference"):
+            setattr(out, field, None)
+        return out
     return CashSessionDetail(
         **CashSessionOut.model_validate(session).model_dump(),
         **_totals(db, session),
@@ -149,7 +155,7 @@ def get_current(
     current_user: User = Depends(get_current_user),
 ):
     session = current_session(db, current_user)
-    return _detail(db, session) if session else None
+    return _detail(db, session, current_user) if session else None
 
 
 @router.get("/today", response_model=CashSessionDetail | None)
@@ -159,19 +165,18 @@ def get_today(
 ):
     """Today's session for this cashier, so the UI knows it is already done."""
     session = day_session(db, current_user)
-    return _detail(db, session) if session else None
+    return _detail(db, session, current_user) if session else None
 
 
 @router.get("", response_model=list[CashSessionOut])
 def list_sessions(
     limit: int = 50,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("clotures_consulter")),
 ):
     query = db.query(CashSession)
-    if current_user.role != "admin":
-        query = query.filter(CashSession.opened_by_id == current_user.id)
-    return query.order_by(CashSession.opened_at.desc()).limit(limit).all()
+    return [CashSessionOut(**_detail(db, session, current_user).model_dump())
+            for session in query.order_by(CashSession.opened_at.desc()).limit(limit).all()]
 
 
 @router.post("/open", response_model=CashSessionDetail, status_code=201)
@@ -198,15 +203,14 @@ def open_session(
             kind="caisse",
             title="Ouverture de caisse",
             message=(
-                f"{current_user.name} a ouvert sa caisse avec un fonds de "
-                f"{payload.opening_balance:,.0f} FCFA".replace(",", " ")
+                f"{current_user.name} a ouvert sa caisse"
             ),
             link="/caisse",
         )
     )
     db.commit()
     db.refresh(session)
-    return _detail(db, session)
+    return _detail(db, session, current_user)
 
 
 @router.post("/close", response_model=CashSessionDetail)
@@ -221,6 +225,8 @@ def close_session(
             status_code=400, detail="Aucune caisse ouverte à votre nom"
         )
     totals = _totals(db, session)
+    if not has_permission(db, current_user, "soldes_consulter") and not payload.note.strip():
+        raise HTTPException(status_code=400, detail="Une note est obligatoire pour clôturer sans accès aux soldes")
     gap = payload.closing_balance - totals["expected_cash"]
     if abs(gap) >= 1 and not payload.note.strip():
         raise HTTPException(
@@ -236,23 +242,19 @@ def close_session(
         session.note = payload.note
     # Freeze the Z snapshot at closing: it can never be edited afterwards.
     session.z_report = _z_report(db, session).model_dump_json()
-    gap = session.difference
-    state = "conforme" if abs(gap) < 1 else f"écart de {gap:,.0f} FCFA"
     db.add(
         Notification(
             kind="caisse",
             title="Fermeture de caisse",
             message=(
-                f"{current_user.name} a fermé sa caisse : {state}".replace(
-                    ",", " "
-                )
+                f"{current_user.name} a fermé sa caisse"
             ),
             link="/caisse",
         )
     )
     db.commit()
     db.refresh(session)
-    return _detail(db, session)
+    return _detail(db, session, current_user)
 
 
 def _session_or_404(db: Session, session_id: int) -> CashSession:
@@ -422,17 +424,15 @@ def _z_report(db: Session, session: CashSession) -> CashSessionZ:
 def z_report(
     session_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("soldes_consulter")),
 ):
     """État Z: the definitive recap. Once the session is closed the snapshot
     stored on it is served, so a validated Z can never change."""
     session = _session_or_404(db, session_id)
-    if (
-        current_user.role != "admin"
-        and session.opened_by_id != current_user.id
-        and not has_permission(db, current_user, "caisse_z")
-    ):
-        raise HTTPException(status_code=403, detail="Session d'un autre caissier")
+    can_close_read = has_permission(db, current_user, "clotures_consulter")
+    can_own_ticket = session.opened_by_id == current_user.id and has_permission(db, current_user, "caisse_z")
+    if not (can_close_read or can_own_ticket):
+        raise HTTPException(status_code=403, detail="Accès refusé : clôtures de caisse")
     if session.z_report:
         try:
             return CashSessionZ(**json.loads(session.z_report))
@@ -484,4 +484,4 @@ def reopen_session(
     )
     db.commit()
     db.refresh(session)
-    return _detail(db, session)
+    return _detail(db, session, current_user)

@@ -50,7 +50,9 @@ def _rows(
     ]
 
 
-@router.get("/sales", response_model=SalesReport)
+@router.get("/sales", response_model=SalesReport, dependencies=[
+    Depends(require_permission("rapports_financiers", "soldes_consulter")),
+])
 def sales_report(
     start: str | None = None,
     end: str | None = None,

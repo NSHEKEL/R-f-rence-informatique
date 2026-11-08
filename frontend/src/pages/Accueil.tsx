@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { canOpenTreasury } from "../lib/treasury";
 import { Link } from "react-router-dom";
 import {
   ArrowRight,
@@ -214,7 +215,7 @@ export default function Accueil() {
   function tileAccess(tile: Tile): { ok: boolean; locked: "till" | "plan" | null } {
     const allowed =
       tile.access === "admin" ? isAdmin : !tile.access || can(tile.access);
-    if (!allowed) return { ok: false, locked: null };
+    if (!allowed || !canOpenTreasury(tile.to, can)) return { ok: false, locked: null };
     const feature = ADMIN_FEATURE[tile.to] ?? PLAN_FEATURE[tile.access];
     if (feature && !hasFeature(feature)) return { ok: true, locked: "plan" };
     if (TILL_GATED.has(tile.access) && !selling)

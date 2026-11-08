@@ -1140,6 +1140,13 @@ class PayslipLine(Base):
     payslip = relationship("Payslip", back_populates="lines")
 
 
+class AppMigration(Base):
+    __tablename__ = "app_migrations"
+
+    name = Column(String, primary_key=True)
+    applied_at = Column(DateTime, default=utcnow)
+
+
 class RolePermission(Base):
     """Right granted by the administrator to a role (seller, stock manager)."""
 

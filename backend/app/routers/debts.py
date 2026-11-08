@@ -28,7 +28,9 @@ from ..schemas import (
     SettlementOut,
 )
 
-router = APIRouter(prefix="/api/debts", tags=["debts"])
+router = APIRouter(prefix="/api/debts", tags=["debts"], dependencies=[
+    Depends(require_permission("tresorerie_consulter", "soldes_consulter")),
+])
 
 KINDS = ("creance", "dette")
 
@@ -93,7 +95,9 @@ def list_debts(
     return rows
 
 
-@router.get("/resume", response_model=DebtSummary)
+@router.get("/resume", response_model=DebtSummary, dependencies=[
+    Depends(require_permission("rapports_financiers")),
+])
 def summary(
     start: str = "",
     end: str = "",
@@ -277,7 +281,9 @@ def settlements(
     return rows
 
 
-@router.get("/soldes", response_model=list[PartyBalance])
+@router.get("/soldes", response_model=list[PartyBalance], dependencies=[
+    Depends(require_permission("rapports_financiers")),
+])
 def balances(
     kind: str = "creance",
     db: Session = Depends(get_db),
@@ -319,7 +325,9 @@ _AGING = [
 ]
 
 
-@router.get("/echeancier", response_model=list[AgingBucket])
+@router.get("/echeancier", response_model=list[AgingBucket], dependencies=[
+    Depends(require_permission("rapports_financiers")),
+])
 def aging(
     kind: str = "creance",
     db: Session = Depends(get_db),
@@ -343,7 +351,9 @@ def aging(
     return buckets
 
 
-@router.get("/alertes", response_model=list[DebtAlert])
+@router.get("/alertes", response_model=list[DebtAlert], dependencies=[
+    Depends(require_permission("rapports_financiers")),
+])
 def alerts(
     days: int = 7,
     db: Session = Depends(get_db),

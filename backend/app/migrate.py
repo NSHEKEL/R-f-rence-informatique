@@ -6,10 +6,11 @@ databases created by earlier versions keep working, on SQLite as well as on the
 shared PostgreSQL server.
 """
 
-from sqlalchemy import bindparam, inspect, text
+from sqlalchemy import inspect, select, text
 
 from .database import engine
-from .models import Delivery, Workstation
+from .models import AppMigration, Delivery, RolePermission, User, Workstation
+from .permissions import CONFIGURABLE_ROLES, DEFAULTS, PERMISSIONS
 
 TRUE_LITERAL = "1" if engine.dialect.name == "sqlite" else "TRUE"
 FALSE_LITERAL = "0" if engine.dialect.name == "sqlite" else "FALSE"
@@ -208,6 +209,44 @@ def _relax_delivery_order(conn, insp) -> None:
     conn.execute(text("DROP TABLE deliveries_old"))
 
 
+def _treasury_permissions(conn) -> None:
+    marker = "treasury_permissions_v1"
+    AppMigration.__table__.create(bind=conn, checkfirst=True)
+    if conn.execute(select(AppMigration.name).where(AppMigration.name == marker)).first():
+        return
+    new_keys = {
+        "tresorerie_consulter", "recette_enregistrer", "soldes_consulter",
+        "caisse_operations", "clotures_consulter",
+    }
+    cleanup_keys = {
+        "versements_gerer", "versements_valider", "depenses_gerer",
+        "comptabilite", "dettes", "dettes_gerer", "dettes_regler",
+    }
+    rows = conn.execute(select(RolePermission.__table__)).mappings().all()
+    stored = {(row["role"], row["permission"]): row for row in rows}
+    existing_install = bool(rows) or conn.execute(select(User.id).limit(1)).first() is not None
+    legacy = {
+        "vendeur": {"caisse", "caisse_fermer", "caisse_z", "vente_nouvelle", "assistance"},
+        "gestionnaire": {"produits", "inventaire", "fournisseurs", "categories", "approvisionnements", "assistance"},
+    }
+    for role in CONFIGURABLE_ROLES:
+        legacy_defaults = legacy[role] if existing_install else DEFAULTS[role]
+        for key in PERMISSIONS:
+            row = stored.get((role, key))
+            allowed = row["allowed"] if row else key in legacy_defaults
+            if key in new_keys or (role == "vendeur" and key in cleanup_keys):
+                allowed = False
+            if row and (key in new_keys or (role == "vendeur" and key in cleanup_keys)):
+                conn.execute(RolePermission.__table__.update().where(
+                    RolePermission.role == role, RolePermission.permission == key
+                ).values(allowed=allowed))
+            elif not row:
+                conn.execute(RolePermission.__table__.insert().values(
+                    role=role, permission=key, allowed=allowed
+                ))
+    conn.execute(AppMigration.__table__.insert().values(name=marker))
+
+
 def migrate() -> None:
     insp = inspect(engine)
     tables = set(insp.get_table_names())
@@ -230,26 +269,7 @@ def migrate() -> None:
         if "deliveries" in tables:
             _relax_delivery_order(conn, inspect(conn))
         if "role_permissions" in tables:
-            # Sellers lose the treasury rights granted before the separation
-            # of duties: the administrator may grant them back consciously.
-            conn.execute(
-                text(
-                    "DELETE FROM role_permissions WHERE role = :role "
-                    "AND permission IN :perms"
-                ).bindparams(bindparam("perms", expanding=True)),
-                {
-                    "role": "vendeur",
-                    "perms": [
-                        "versements_gerer",
-                        "versements_valider",
-                        "depenses_gerer",
-                        "comptabilite",
-                        "dettes",
-                        "dettes_gerer",
-                        "dettes_regler",
-                    ],
-                },
-            )
+            _treasury_permissions(conn)
         if "company_settings" in tables:
             conn.execute(
                 text(

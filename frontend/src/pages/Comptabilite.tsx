@@ -45,6 +45,8 @@ function firstOfMonth(): string {
 export default function Comptabilite() {
   const version = useSyncVersion();
   const { can } = useAuth();
+  const canReports = can("rapports_financiers") && can("soldes_consulter");
+  const canClosures = can("clotures_consulter");
   const [start, setStart] = useState(firstOfMonth());
   const [end, setEnd] = useState(today());
   const [summary, setSummary] = useState<AccountingSummary | null>(null);
@@ -62,11 +64,11 @@ export default function Comptabilite() {
   const load = useCallback(async () => {
     try {
       const [s, e, c] = await Promise.all([
-        api.get<AccountingSummary>("/accounting/summary", {
+        canReports ? api.get<AccountingSummary>("/accounting/summary", {
           params: { start, end },
-        }),
+        }) : Promise.resolve({ data: null }),
         api.get<Expense[]>("/accounting/expenses"),
-        api.get<CashSession[]>("/cash-sessions", { params: { limit: 10 } }),
+        canClosures ? api.get<CashSession[]>("/cash-sessions", { params: { limit: 10 } }) : Promise.resolve({ data: [] }),
       ]);
       setSummary(s.data);
       setExpenses(e.data);
@@ -76,7 +78,7 @@ export default function Comptabilite() {
         setError(err.response?.data?.detail ?? "Erreur de chargement");
       }
     }
-  }, [start, end]);
+  }, [start, end, canReports, canClosures]);
 
   useEffect(() => {
     load();
@@ -167,9 +169,9 @@ export default function Comptabilite() {
               <Wallet size={16} /> Paie & bulletins
             </Link>
           )}
-          <button className="btn-primary" onClick={() => setAddOpen(true)}>
+          {can("depenses_gerer") && <button className="btn-primary" onClick={() => setAddOpen(true)}>
             <Plus size={16} /> Ajouter une dépense
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -322,13 +324,13 @@ export default function Comptabilite() {
                   {formatXOF(e.amount)}
                 </td>
                 <td className="py-2 text-right">
-                  <button
+                  {can("depenses_gerer") && <button
                     className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
                     onClick={() => removeExpense(e)}
                     title="Supprimer la dépense" aria-label="Supprimer la dépense"
                   >
                     <Trash2 size={16} />
-                  </button>
+                  </button>}
                 </td>
               </tr>
             ))}
@@ -343,7 +345,7 @@ export default function Comptabilite() {
         </table>
       </div>
 
-      <div className="card p-5">
+      {canClosures && <div className="card p-5">
         <h3 className="mb-4 text-base font-bold text-slate-900">
           Historique des caisses
         </h3>
@@ -419,7 +421,7 @@ export default function Comptabilite() {
             )}
           </tbody>
         </table>
-      </div>
+      </div>}
 
       <Modal
         open={addOpen}

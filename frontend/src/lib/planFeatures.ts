@@ -10,6 +10,7 @@
 export const PLAN_FEATURE: Record<string, string> = {
   tableau_bord: "tableau_bord",
   caisse: "versements",
+  tresorerie_consulter: "versements",
   ventes: "ventes",
   vente_nouvelle: "ventes",
   retours: "retours",

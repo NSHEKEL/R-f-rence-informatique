@@ -933,7 +933,7 @@ export default function NouvelleVente() {
         <h1 className="text-base font-bold text-slate-900">Nouvelle vente</h1>
         {session && (
           <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-            Caisse ouverte · {formatXOF(session.expected_cash)}
+            Caisse ouverte{session.expected_cash != null ? ` · ${formatXOF(session.expected_cash)}` : ""}
           </span>
         )}
         {!online && (

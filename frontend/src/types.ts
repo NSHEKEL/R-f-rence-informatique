@@ -606,7 +606,7 @@ export interface CashSession {
   opened_at: string;
   business_day: string;
   opened_by?: User | null;
-  opening_balance: number;
+  opening_balance: number | null;
   closed_at: string | null;
   closed_by?: User | null;
   closing_balance: number | null;
@@ -626,10 +626,10 @@ export interface CashSessionSaleLine {
 }
 
 export interface CashSessionDetail extends CashSession {
-  cash_sales: number;
-  other_sales: number;
-  sales_count: number;
-  expected_cash: number;
+  cash_sales: number | null;
+  other_sales: number | null;
+  sales_count: number | null;
+  expected_cash: number | null;
   sales?: CashSessionSaleLine[];
 }
 
