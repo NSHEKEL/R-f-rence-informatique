@@ -38,6 +38,7 @@ import type { DocumentLayout } from "../lib/print";
 import { useAuth } from "../context/AuthContext";
 import PhotoPicker from "../components/PhotoPicker";
 import PrintingSettings from "../components/PrintingSettings";
+import PosDisplaySettings from "../components/PosDisplaySettings";
 import SecuritySettings from "../components/SecuritySettings";
 import FneSettings from "../components/FneSettings";
 import { useCompany } from "../context/CompanyContext";
@@ -50,6 +51,7 @@ const LOGO_MAX_BYTES = 400_000;
 const TABS = [
   { key: "entreprise", label: "Entreprise", icon: Building2 },
   { key: "impression", label: "Impression", icon: Printer },
+  { key: "pos", label: "Affichage POS", icon: Printer },
   { key: "reseau", label: "Réseau & postes", icon: Server },
   { key: "sauvegarde", label: "Sauvegarde", icon: Database },
   { key: "maj", label: "Mise à jour", icon: DownloadCloud },
@@ -913,6 +915,7 @@ export default function Settings() {
       )}
 
       {/* Receipt and label printers */}
+      {tab === "pos" && <PosDisplaySettings />}
       {tab === "impression" && (
         <PrintingSettings
           company={company}

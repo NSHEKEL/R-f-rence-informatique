@@ -18,7 +18,6 @@ import {
   Image as ImageIcon,
   Layers,
   LayoutGrid,
-  List,
   Minus,
   Monitor,
   Pause,
@@ -42,20 +41,19 @@ import {
 } from "lucide-react";
 import api, { formatXOF, localApi } from "../api/client";
 import PackagingQuantity from "../components/PackagingQuantity";
+import PosProductGrid from "../components/PosProductGrid";
+import SalePrintModal from "../components/SalePrintModal";
+import { DEFAULT_POS, mergePos, stockLimit, tileVisibility, type PosDisplay } from "../lib/posDisplay";
 import { formatQuantity, saleUnitPrice, splitQuantity, type UnitMode } from "../lib/units";
 import type {
   CashSessionDetail,
   Category,
   Customer,
   Product,
-  ReceiptFormat,
   Sale,
   Supplier,
 } from "../types";
 import Modal from "../components/Modal";
-import PrinterHint from "../components/PrinterHint";
-import Receipt from "../components/Receipt";
-import { printReceipt } from "../lib/print";
 import { scanCodes } from "../lib/scan";
 import { vatBreakdown } from "../lib/vat";
 import {
@@ -256,7 +254,7 @@ export default function NouvelleVente() {
   };
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [supplierFilter, setSupplierFilter] = useState<number | "all">("all");
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [posDisplay, setPosDisplay] = useState<PosDisplay>(DEFAULT_POS);
   const [cartCollapsed, setCartCollapsed] = useState(false);
   const [validMenu, setValidMenu] = useState(false);
   const discountRef = useRef<HTMLInputElement>(null);
@@ -272,11 +270,15 @@ export default function NouvelleVente() {
   });
 
   const [lastSale, setLastSale] = useState<Sale | null>(null);
-  const [format, setFormat] = useState<ReceiptFormat>("A4");
   const searchRef = useRef<HTMLInputElement>(null);
 
   const loadProducts = useCallback(async () => {
-    const { data } = await fetchCached<Product[]>("/products", "products");
+    const display = await fetchCached<PosDisplay>("/settings/pos-display", "pos-display");
+    const config = mergePos(display.data);
+    setPosDisplay(config);
+    const stockRight = can("produits") || can("inventaire");
+    const images = tileVisibility(config, stockRight).image;
+    const { data } = await fetchCached<Product[]>(`/products/pos?images=${images}`, `pos-products-${user?.id}-${stockRight}-${images}`);
     setProducts(data);
     const cats = await fetchCached<Category[]>("/categories", "categories");
     setCategories(cats.data);
@@ -292,7 +294,7 @@ export default function NouvelleVente() {
     } catch {
       /* offline: fall back to every article */
     }
-  }, []);
+  }, [can, user?.id]);
 
 
   const loadSession = useCallback(async () => {
@@ -331,19 +333,7 @@ export default function NouvelleVente() {
     return () => window.clearTimeout(timer);
   }, [customerQuery]);
 
-  useEffect(() => {
-    setFormat(printing.receipt.width);
-  }, [printing.receipt.width]);
 
-  const categoryById = useMemo(
-    () => new Map(categories.map((c) => [c.id, c.name])),
-    [categories]
-  );
-  const categoryName = useCallback(
-    (id: number | null | undefined) =>
-      id ? (categoryById.get(id) ?? "") : "Sans catégorie",
-    [categoryById]
-  );
 
   function categoryIcon(name: string): LucideIcon {
     const n = name.toLowerCase();
@@ -359,28 +349,27 @@ export default function NouvelleVente() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const available = products.filter((p) => p.quantity > 0);
+    const available = products.filter((p) => stockLimit(p) > 0);
     if (q) {
       return available
         .filter(
           (p) =>
             p.name.toLowerCase().includes(q) ||
             scanCodes(p).some((code) => code.includes(q))
-        )
-        .slice(0, 60);
+        );
     }
     const applySupplier = (list: Product[]) =>
       supplierFilter === "all"
         ? list
         : list.filter((p) => p.supplier_id === supplierFilter);
     if (activeCategory === "all") {
-      return applySupplier(available.slice(0, 80));
+      return applySupplier(available);
     }
     if (activeCategory === "top") {
       const ranked = bestSellerIds
         .map((id) => available.find((p) => p.id === id))
         .filter((p): p is Product => Boolean(p));
-      return applySupplier(ranked.length > 0 ? ranked : available.slice(0, 40));
+      return applySupplier(ranked.length > 0 ? ranked : available);
     }
     return applySupplier(
       available.filter((p) => p.category_id === activeCategory)
@@ -417,14 +406,14 @@ export default function NouvelleVente() {
     setCart((prev) => {
       const existing = prev.find((l) => l.product.id === product.id);
       if (!existing) return [...prev, { product, quantity: 1 }];
-      if (existing.quantity >= product.quantity) return prev;
+      if (existing.quantity >= stockLimit(product)) return prev;
       return prev.map((l) =>
         l.product.id === product.id ? (() => {
           const packs = l.unitMode === "packaging" ? 1 : 0;
           const pieces = packs ? 0 : 1;
           const quantity = l.quantity + packs * (product.units_per_packaging || 1) + pieces;
           const parts = cartParts(l);
-          return quantity > product.quantity ? l : { ...l, quantity, packagingQuantity: parts.packaging_quantity + packs, pieceQuantity: parts.piece_quantity + pieces };
+          return quantity > stockLimit(product) ? l : { ...l, quantity, packagingQuantity: parts.packaging_quantity + packs, pieceQuantity: parts.piece_quantity + pieces };
         })() : l
       );
     });
@@ -457,7 +446,7 @@ export default function NouvelleVente() {
       setError(`Aucun article pour « ${query.trim()} »`);
       return;
     }
-    if (target.quantity <= 0) {
+    if (stockLimit(target) <= 0) {
       setError(`${target.name} est en rupture de stock`);
       return;
     }
@@ -505,7 +494,7 @@ export default function NouvelleVente() {
     setCart((prev) =>
       prev.flatMap((l) => {
         if (l.product.id !== productId) return [l];
-        const capped = Math.min(Math.max(Math.floor(quantity), 0), l.product.quantity);
+        const capped = Math.min(Math.max(Math.floor(quantity), 0), stockLimit(l.product));
         return capped === 0 ? [] : [{ ...l, quantity: capped, packagingQuantity: undefined, pieceQuantity: undefined }];
       })
     );
@@ -516,7 +505,7 @@ export default function NouvelleVente() {
     if (!line) return;
     const factor = line.product.units_per_packaging || 1;
     const quantity = unitMode === "packaging" ? Math.max(1, Math.floor(line.quantity / factor)) * factor : line.quantity;
-    if (quantity > line.product.quantity) { setError("Stock insuffisant pour un conditionnement complet"); return; }
+    if (quantity > stockLimit(line.product)) { setError("Stock insuffisant pour un conditionnement complet"); return; }
     setCart((prev) => prev.map((l) => l.product.id === productId ? { ...l, unitMode, quantity, price: undefined, packagingQuantity: undefined, pieceQuantity: undefined } : l));
   }
 
@@ -600,23 +589,7 @@ export default function NouvelleVente() {
    */
   function finishSale(sale: Sale) {
     setLastSale(sale);
-    if (printing.receipt.auto_print) {
-      // Let the hidden print copy mount before calling the printer.
-      window.setTimeout(() => {
-        printReceipt(
-          printing.receipt.width,
-          printing.receipt,
-          receiptKick()
-        ).then((drawerOpened) => {
-          // The ticket carried the kick code: no second order to the till.
-          // A drawer on another target (port or printer) still gets its kick
-          // here, routed by the backend to drawer_port.
-          if (!drawerOpened) openDrawer();
-        });
-      }, 400);
-      return;
-    }
-    openDrawer();
+    if (!printing.receipt.auto_print) openDrawer();
   }
 
   async function checkout() {
@@ -667,7 +640,7 @@ export default function NouvelleVente() {
       const res = await api.post<Sale>("/sales", payload);
       finishSale(res.data);
       resetCart();
-      await Promise.all([loadProducts(), loadSession()]);
+      void Promise.allSettled([loadProducts(), loadSession()]);
     } catch (err) {
       const status = axios.isAxiosError(err) ? err.response?.status : undefined;
       if (status) {
@@ -752,7 +725,7 @@ export default function NouvelleVente() {
       if (!fresh) return false;
       if (cartParts(l).packaging_quantity && l.product.units_per_packaging !== fresh.units_per_packaging) return false;
       l.product = fresh;
-      return l.quantity <= fresh.quantity;
+      return l.quantity <= stockLimit(fresh);
     });
     if (restored.length < entry.cart.length) {
       setError("Certaines lignes du ticket en attente ne sont plus disponibles.");
@@ -898,10 +871,7 @@ export default function NouvelleVente() {
       label: "Imprimer",
       sub: "Dernier document",
       tint: "bg-cyan-600",
-      onClick: () =>
-        lastSale
-          ? void printReceipt(format, printing.receipt)
-          : navigate("/ventes"),
+      onClick: () => navigate("/ventes"),
     },
     ...(can("retours")
       ? [
@@ -1157,7 +1127,7 @@ export default function NouvelleVente() {
                       </td>
                       <td className="px-1 py-1">
                         <div className="flex items-center gap-2">
-                          {l.product.image ? (
+                          {tileVisibility(posDisplay, can("produits") || can("inventaire")).image && l.product.image ? (
                             <img
                               src={l.product.image}
                               alt=""
@@ -1215,7 +1185,7 @@ export default function NouvelleVente() {
                         </td>
                       )}
                       <td className="px-1 py-1">
-                        {l.product.packaging_unit && l.unitMode && l.unitMode !== "base" ? <PackagingQuantity product={l.product} value={l.quantity} parts={cartParts(l)} max={l.product.quantity} mode={l.unitMode} onChange={(quantity, packs, pieces) => setCart((prev) => prev.flatMap((line) => line.product.id !== l.product.id ? [line] : quantity ? [{ ...line, quantity, packagingQuantity: packs, pieceQuantity: pieces }] : []))} /> :
+                        {l.product.packaging_unit && l.unitMode && l.unitMode !== "base" ? <PackagingQuantity product={l.product} value={l.quantity} parts={cartParts(l)} max={stockLimit(l.product)} mode={l.unitMode} onChange={(quantity, packs, pieces) => setCart((prev) => prev.flatMap((line) => line.product.id !== l.product.id ? [line] : quantity ? [{ ...line, quantity, packagingQuantity: packs, pieceQuantity: pieces }] : []))} /> :
                         <div className="flex items-center justify-center gap-0.5">
                           <button
                             className="rounded-lg bg-slate-100 p-1 text-slate-600 hover:bg-slate-200"
@@ -1756,16 +1726,6 @@ export default function NouvelleVente() {
               </select>
             )}
             <button
-              className="shrink-0 rounded-xl border border-slate-200 bg-white p-2.5 text-slate-500 transition hover:border-blue-300"
-              onClick={() =>
-                setViewMode((v) => (v === "grid" ? "list" : "grid"))
-              }
-              title={viewMode === "grid" ? "Affichage liste" : "Affichage grille"}
-              aria-label={viewMode === "grid" ? "Affichage liste" : "Affichage grille"}
-            >
-              {viewMode === "grid" ? <List size={16} /> : <LayoutGrid size={16} />}
-            </button>
-            <button
               className="shrink-0 rounded-xl border border-brand-200 bg-white p-2.5 text-brand-600 transition hover:bg-brand-50"
               onClick={submitSearch}
               title="Scanner un code-barres ou ajouter l'article trouvé"
@@ -1774,98 +1734,7 @@ export default function NouvelleVente() {
               <Barcode size={16} />
             </button>
           </div>
-          {viewMode === "list" ? (
-            <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto rounded-xl border border-slate-200 bg-white">
-              {filtered.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => addToCart(p)}
-                  className="flex w-full items-center gap-3 px-3 py-2 text-left transition hover:bg-brand-50"
-                >
-                  {p.image ? (
-                    <img
-                      src={p.image}
-                      alt=""
-                      className="h-9 w-9 shrink-0 rounded-lg bg-slate-50 object-contain"
-                    />
-                  ) : (
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-300">
-                      <ImageIcon size={15} />
-                    </span>
-                  )}
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold text-slate-800">
-                      {p.name}
-                    </span>
-                    <span className="text-[11px] text-slate-400">
-                      {categoryName(p.category_id)} · Stock : {p.quantity}
-                    </span>
-                  </span>
-                  <span className="text-sm font-extrabold text-brand-700">
-                    {formatXOF(unitPrice(p, priceMode))}
-                  </span>
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-600 text-white">
-                    <Plus size={15} />
-                  </span>
-                </button>
-              ))}
-              {filtered.length === 0 && (
-                <p className="py-10 text-center text-sm text-slate-400">
-                  Aucun article disponible.
-                </p>
-              )}
-            </div>
-          ) : (
-          <div className="grid min-h-0 flex-1 grid-cols-2 content-start gap-2.5 overflow-y-auto sm:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-6">
-            {filtered.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => addToCart(p)}
-                className="flex flex-col rounded-2xl border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-brand-400 hover:shadow"
-              >
-                {p.image ? (
-                  <img
-                    src={p.image}
-                    alt=""
-                    className="mb-2 h-[88px] w-full rounded-xl object-contain"
-                  />
-                ) : (
-                  <span className="mb-2 flex h-[88px] w-full items-center justify-center rounded-xl bg-slate-100 text-slate-300">
-                    <ImageIcon size={22} />
-                  </span>
-                )}
-                <p className="line-clamp-2 min-h-[2.5rem] text-sm font-bold text-slate-800">
-                  {p.name}
-                </p>
-                <p className="truncate text-[11px] text-slate-400">
-                  Réf : {p.sku || categoryName(p.category_id)}
-                </p>
-                <p className="mt-0.5 text-sm font-extrabold text-brand-700">
-                  {formatXOF(unitPrice(p, priceMode))}
-                </p>
-                <div className="mt-1.5 flex items-center justify-between">
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
-                      p.quantity <= p.min_stock
-                        ? "bg-amber-100 text-amber-700"
-                        : "bg-emerald-100 text-emerald-700"
-                    }`}
-                  >
-                    Stock : {p.quantity}
-                  </span>
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-600 text-white">
-                    <Plus size={15} />
-                  </span>
-                </div>
-              </button>
-            ))}
-            {filtered.length === 0 && (
-              <p className="col-span-full py-10 text-center text-sm text-slate-400">
-                Aucun article disponible.
-              </p>
-            )}
-          </div>
-          )}
+          <PosProductGrid key={`${query}|${activeCategory}|${supplierFilter}`} products={filtered} config={posDisplay} stockRight={can("produits") || can("inventaire")} selected={new Set(cart.map((line) => line.product.id))} onAdd={addToCart} price={(product) => unitPrice(product, priceMode)} />
             {/* Modes de paiement — sous la liste des articles */}
             <div className="border-t border-slate-100 pt-2">
               <label className="label">Mode de paiement</label>
@@ -1992,49 +1861,7 @@ export default function NouvelleVente() {
         </div>
       </Modal>
 
-      {/* Receipt preview right after checkout */}
-      <Modal
-        open={lastSale !== null}
-        onClose={() => setLastSale(null)}
-        title={lastSale ? `${lastSale.pending_sync ? "Vente en attente de synchronisation" : "Vente enregistrée"} — ${lastSale.reference}` : ""}
-        footer={
-          lastSale && (
-            <div className="no-print flex w-full items-center justify-end gap-3">
-              <select
-                className="input w-auto"
-                value={format}
-                onChange={(e) => setFormat(e.target.value as ReceiptFormat)}
-              >
-                <option value="A4">Feuille A4</option>
-                <option value="80mm">Ticket 80 mm</option>
-                <option value="58mm">Ticket 58 mm</option>
-              </select>
-              <button className="btn-ghost" onClick={() => setLastSale(null)}>
-                Nouvelle vente
-              </button>
-              <PrinterHint />
-              <button
-                className="btn-primary"
-                onClick={() => printReceipt(format, printing.receipt)}
-              >
-                <Printer size={16} /> Imprimer le reçu
-              </button>
-            </div>
-          )
-        }
-      >
-        {lastSale && (
-          <>
-            {lastSale.pending_sync && (
-              <p className="no-print mb-3 rounded-xl bg-amber-50 px-4 py-2.5 text-sm font-medium text-amber-700">
-                Ticket en attente, conservé localement : il partira au serveur dès le
-                retour du réseau.
-              </p>
-            )}
-            <Receipt sale={lastSale} company={company} format={format} />
-          </>
-        )}
-      </Modal>
+      {lastSale && <SalePrintModal key={lastSale.reference} sale={lastSale} company={company} config={printing.receipt} kick={receiptKick()} onPrinted={(opened) => { if (!opened) openDrawer(); }} onClose={() => { setLastSale(null); searchRef.current?.focus(); }} />}
     </div>
   );
 }

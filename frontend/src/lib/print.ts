@@ -207,6 +207,7 @@ export function printDocument(
   // lightbox and the job itself still goes through the silent bridge.
   const appPreview = (printer?: string) => {
     const overlay = document.createElement("div");
+    overlay.setAttribute("data-easygest-print-preview", "true");
     overlay.style.cssText =
       "position:fixed;inset:0;z-index:2147483000;" +
       "background:rgba(15,23,42,.55);display:flex;flex-direction:column;" +
@@ -229,8 +230,13 @@ export function printDocument(
     frame.srcdoc =
       `<html><head><title></title><style>${style}</style></head>` +
       `<body>${bodyHtml}</body></html>`;
-    const finish = () => overlay.remove();
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") { event.preventDefault(); event.stopImmediatePropagation(); finish(); } };
+    const finish = () => { window.removeEventListener?.("keydown", escape, true); frame.contentWindow?.removeEventListener?.("keydown", escape, true); overlay.remove(); };
+    window.addEventListener?.("keydown", escape, true);
+    frame.onload = () => frame.contentWindow?.addEventListener?.("keydown", escape, true);
     send.onclick = () => {
+      if (send.disabled) return;
+      send.disabled = true;
       const root = document.createElement("div");
       root.id = PRINT_ROOT_ID;
       root.innerHTML = `<style>${style}</style>${bodyHtml}`;
@@ -240,7 +246,7 @@ export function printDocument(
         297,
         0,
         printer?.trim() ?? ""
-      ).finally(() => {
+      ).catch(() => false).finally(() => {
         root.remove();
         finish();
       });
@@ -424,7 +430,8 @@ export function printReceipt(
   format: ReceiptFormat,
   config: ReceiptPrinterConfig = DEFAULT_PRINTING.receipt,
   /** Cash drawer kick code, sent with the ticket on the same printer. */
-  kick: number[] = []
+  kick: number[] = [],
+  options: { controlled?: boolean } = {}
 ): Promise<boolean> {
   let style = document.getElementById(PAGE_STYLE_ID);
   if (!style) {
@@ -441,6 +448,10 @@ export function printReceipt(
   const extras: HTMLElement[] = [];
   const printer = config.printer_name.trim();
   const failed = (problem: unknown = "impression silencieuse indisponible ou refusée") => {
+    if (options.controlled) {
+      if (problem instanceof Error) throw problem;
+      throw new Error(`Ticket non envoyé${printer ? ` sur ${printer}` : ""} : ${problem}`);
+    }
     if (printer) {
       window.alert(`Ticket non envoyé sur ${printer} : ${problem}`);
     } else {
@@ -470,7 +481,7 @@ export function printReceipt(
     extras.length = 0;
     return direct(payload).then((problem) => {
       if (!problem) return kick.length > 0;
-      if (printer) return failed(problem);
+      if (printer || options.controlled) return failed(problem);
       // No thermal printer on this computer: fall back on the page printer,
       // still at the ticket geometry so the roll is not padded to a sheet.
       const fallback = desktopPrint();

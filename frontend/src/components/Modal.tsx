@@ -1,4 +1,4 @@
-import { type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { X } from "lucide-react";
 
 interface ModalProps {
@@ -21,6 +21,15 @@ export default function Modal({
   wide,
   fullscreen,
 }: ModalProps) {
+  useEffect(() => {
+    if (!open) return;
+    const escape = (event: KeyboardEvent) => {
+      if (document.querySelector("[data-easygest-print-preview]")) return;
+      if (event.key === "Escape") { event.preventDefault(); event.stopImmediatePropagation(); onClose(); }
+    };
+    window.addEventListener("keydown", escape, true);
+    return () => window.removeEventListener("keydown", escape, true);
+  }, [open, onClose]);
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -29,13 +38,16 @@ export default function Modal({
         onClick={onClose}
       />
       <div
-        className={`relative z-10 w-full overflow-y-auto bg-white shadow-soft ${
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className={`relative z-10 flex w-full flex-col overflow-hidden bg-white shadow-soft ${
           fullscreen
             ? "h-[96vh] max-h-[96vh] max-w-[98vw] rounded-2xl"
             : `${wide ? "max-w-3xl" : "max-w-lg"} max-h-[90vh] rounded-2xl`
         }`}
       >
-        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-6 py-4">
           <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
           <button
             onClick={onClose}
@@ -46,9 +58,9 @@ export default function Modal({
             <X size={20} />
           </button>
         </div>
-        <div className="px-6 py-5">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">{children}</div>
         {footer && (
-          <div className="flex justify-end gap-3 border-t border-slate-100 px-6 py-4">
+          <div className="flex shrink-0 justify-end gap-3 border-t border-slate-100 px-6 py-4">
             {footer}
           </div>
         )}

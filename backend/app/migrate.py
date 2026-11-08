@@ -172,6 +172,7 @@ for _table in ("products", "sale_items", "sale_return_items", "purchase_items", 
         "units_per_packaging": "INTEGER DEFAULT 1",
     })
 COLUMNS["products"]["packaging_sale_price"] = "FLOAT DEFAULT NULL"
+COLUMNS["company_settings"]["pos_display"] = "TEXT DEFAULT '{}'"
 COLUMNS["sale_items"].update({
     "sold_unit": "VARCHAR DEFAULT 'pièce'",
     "packaging_quantity": "INTEGER DEFAULT 0",

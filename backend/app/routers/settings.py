@@ -8,6 +8,7 @@ from ..database import get_db
 from ..licensing import has_feature
 from ..mailer import is_configured, send_mail
 from ..models import CompanySettings, User
+from ..pos_display import PosDisplay, read_display
 from ..schemas import (
     CompanySettingsOut,
     CompanySettingsUpdate,
@@ -17,6 +18,19 @@ from ..schemas import (
 )
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
+
+
+@router.get('/pos-display', response_model=PosDisplay)
+def get_pos_display(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    return read_display(_get_or_create(db))
+
+
+@router.put('/pos-display', response_model=PosDisplay)
+def put_pos_display(payload: PosDisplay, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    settings = _get_or_create(db)
+    settings.pos_display = payload.model_dump_json()
+    db.commit()
+    return read_display(settings)
 
 
 def _get_or_create(db: Session) -> CompanySettings:

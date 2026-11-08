@@ -60,6 +60,18 @@ function setup(api = {}) {
 
 const receipt = { printer_name: "Ticket Fichier Test", copies: 2, margin_mm: 3 };
 
+test("controlled POS printing reports failure without alerts or blocking dialogs", async () => {
+  for (const api of [{ print_to: async () => false }, { print_to: async () => { throw new Error('Printer disconnected'); } }, {}]) {
+    const ctx = setup(api);
+    await assert.rejects(Promise.resolve().then(() => ctx.printReceipt('A4', receipt, [], { controlled: true })));
+    assert.equal(ctx.calls.dialogs, 0);
+    assert.equal(ctx.calls.alerts.length, 0);
+  }
+  const browser = setup();
+  await assert.rejects(Promise.resolve().then(() => browser.printReceipt('A4', { ...receipt, printer_name: '' }, [], { controlled: true })));
+  assert.equal(browser.calls.dialogs, 0);
+});
+
 test("A4 receipt uses the receipt queue, never print_page, and cleans copies", async () => {
   let args;
   const ctx = setup({

@@ -66,6 +66,7 @@ class CompanySettings(Base):
     receipt_header = Column(Text, default="")
     receipt_footer = Column(Text, default="Merci de votre confiance !")
     receipt_format = Column(String, default="A4")  # A4, 80mm
+    pos_display = Column(Text, default="{}", nullable=True)
     printer_name = Column(String, default="")  # printer shown in the print help
     auto_print_cash = Column(Boolean, default=True, nullable=False)
     # Electronic cash drawer: it is wired to the receipt printer (or to a

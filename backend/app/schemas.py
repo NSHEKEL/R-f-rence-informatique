@@ -417,6 +417,8 @@ class ProductUpdate(ProductBase):
 
 
 class ProductOut(ProductBase):
+    quantity: Optional[int] = None
+    min_stock: Optional[int] = None
     quantity_label: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
     id: int

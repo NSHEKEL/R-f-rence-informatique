@@ -12,6 +12,9 @@ import { useCompany } from "../context/CompanyContext";
 import { salePriceParts } from "../lib/units";
 
 interface ReceiptProps {
+  previewOnly?: boolean;
+  printOnly?: boolean;
+  printSourceId?: string;
   sale: Sale;
   company: CompanySettings | null;
   format: ReceiptFormat;
@@ -236,6 +239,9 @@ export default function Receipt({
   company,
   format,
   duplicate,
+  previewOnly = false,
+  printOnly = false,
+  printSourceId,
   config,
 }: ReceiptProps) {
   const { printing } = useCompany();
@@ -259,17 +265,17 @@ export default function Receipt({
   } as const;
   return (
     <>
-      <div
+      {!printOnly && <div
         className={`receipt receipt-preview receipt-${format}`}
         style={style}
       >
         {body}
-      </div>
-      {createPortal(
+      </div>}
+      {!previewOnly && createPortal(
         <div
-          id="receipt-print-root"
+          id={printSourceId || "receipt-print-root"}
           className={`receipt receipt-${format}`}
-          style={style}
+          style={{ ...style, ...(printSourceId ? { display: "none" } : {}) }}
         >
           {body}
         </div>,

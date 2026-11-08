@@ -90,7 +90,7 @@ if getattr(sys, "frozen", False):
     _env_files = [Path(sys.executable).parent / ".env", data_dir() / ".env", *_env_files]
 for _env in _env_files:
     load_dotenv(_env, override=False)
-from app import escpos  # noqa: E402
+from app import escpos, printing  # noqa: E402
 from app.version import APP_NAME, APP_VERSION  # noqa: E402
 
 _boot("imports ok")
@@ -264,6 +264,14 @@ class DesktopApi:
         except OSError:
             return ""
 
+    def _printer_problem(self, printer_name: str) -> str:
+        try:
+            device = printing.queue_status(printer_name or printing.default_printer())
+            return device.status if device is not None and not device.available else ""
+        except Exception:
+            logging.getLogger(__name__).warning("Statut imprimante non lisible", exc_info=True)
+            return ""
+
     def print_ticket(self, payload: str) -> str:
         """Print a receipt straight on the counter printer.
 
@@ -275,6 +283,9 @@ class DesktopApi:
         """
         try:
             data = json.loads(payload)
+            problem = self._printer_problem(str(data.get("printer", "")))
+            if problem:
+                return f"Imprimante indisponible : {problem}"
             lines = [
                 escpos.Line(
                     text=str(item.get("text", "")),
@@ -341,6 +352,10 @@ class DesktopApi:
             traceback.print_exc()
             return False
 
+        problem = self._printer_problem(printer_name)
+        if problem:
+            logging.getLogger(__name__).warning("Impression HTML — %s", problem)
+            return False
         holder: dict = {}
         deadline = time.monotonic() + 30.0
         dispatched = threading.Event()
@@ -350,6 +365,10 @@ class DesktopApi:
         def send() -> None:
             try:
                 if time.monotonic() >= deadline:
+                    return
+                pending = getattr(self, "_pending_print_task", None)
+                if pending is not None and not pending.IsCompleted:
+                    log.warning("Impression HTML — tâche précédente encore en cours, nouvel envoi refusé")
                     return
                 core = form.browser.webview.CoreWebView2
                 settings = core.Environment.CreatePrintSettings()
@@ -364,6 +383,7 @@ class DesktopApi:
                 settings.MarginLeft = inches
                 settings.MarginRight = inches
                 holder["task"] = core.PrintAsync(settings)
+                self._pending_print_task = holder["task"]
                 log.warning("Impression HTML — PrintAsync lancé")
             except Exception:  # noqa: BLE001
                 log.exception("Impression HTML — lancement impossible")
