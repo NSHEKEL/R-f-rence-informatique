@@ -373,9 +373,11 @@ export default function Accueil() {
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-extrabold tracking-wide text-slate-800">
-                  {mod.label}
+                  {mod.to === "/caisse" && !can("tresorerie_consulter") ? "CAISSE" : mod.label}
                 </p>
-                <p className="truncate text-xs text-slate-400">{mod.desc}</p>
+                <p className="truncate text-xs text-slate-400">
+                  {mod.to === "/caisse" && !can("tresorerie_consulter") ? "Ouverture et clôture de votre caisse" : mod.desc}
+                </p>
               </div>
               <ArrowRight
                 size={18}

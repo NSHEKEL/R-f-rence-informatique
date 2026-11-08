@@ -56,3 +56,37 @@ test("redirect skips inaccessible financial pages and never redirects to itself"
   assert.equal(allowedLandingPath([], can()), "/");
   assert.equal(allowedLandingPath(pages, can("tableau_bord", "rapports_financiers", "soldes_consulter")), "/tableau-de-bord");
 });
+
+test("Accueil names the till card Caisse without treasury access and preserves Trésorerie with it", () => {
+  const React = require("react");
+  const { renderToStaticMarkup } = require("react-dom/server");
+  let rights = can("caisse");
+  const dependencies = {
+    "../lib/treasury": exportsObject,
+    "react-router-dom": { Link: ({ to, children, ...props }) => React.createElement("a", { ...props, href: to }, children) },
+    "../context/AuthContext": { useAuth: () => ({ user: { name: "Vendeur" }, isAdmin: false, can: rights }) },
+    "../context/LicenseContext": { useLicense: () => ({ hasFeature: () => true }) },
+    "../context/TillContext": { TILL_GATED: new Set(), useTill: () => ({ selling: true }) },
+    "../lib/planFeatures": { ADMIN_FEATURE: {}, PLAN_FEATURE: {} },
+    "../components/Layout": { RECENTS_KEY: "test-recents" },
+  };
+  const output = {};
+  vm.runInNewContext(ts.transpileModule(readFileSync(`${__dirname}/src/pages/Accueil.tsx`, "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
+  }).outputText, {
+    exports: output,
+    require: (name) => dependencies[name] || require(name),
+    localStorage: { getItem: () => null },
+  });
+  const render = () => renderToStaticMarkup(React.createElement(output.default));
+  const seller = render();
+  assert.match(seller, /href="\/caisse"/);
+  assert.match(seller, />CAISSE</);
+  assert.doesNotMatch(seller, /TRÉSORERIE|encaissements et versements/);
+  rights = can("caisse", "tresorerie_consulter");
+  const treasury = render();
+  assert.match(treasury, />TRÉSORERIE</);
+  assert.match(treasury, /Caisse, encaissements et versements/);
+  rights = can();
+  assert.doesNotMatch(render(), /href="\/caisse"|>CAISSE<|TRÉSORERIE/);
+});
