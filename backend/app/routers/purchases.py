@@ -30,6 +30,7 @@ from ..schemas import (
     PurchaseUpdate,
 )
 from ..sequences import next_reference
+from ..units import base_quantity, snapshot
 
 router = APIRouter(prefix="/api/purchases", tags=["purchases"])
 
@@ -60,20 +61,26 @@ def _fill_items(db: Session, purchase: Purchase, payload) -> None:
             raise HTTPException(
                 status_code=404, detail=f"Produit {item.product_id} introuvable"
             )
-        if item.quantity <= 0:
+        quantity = base_quantity(item, product)
+        if quantity <= 0:
             raise HTTPException(status_code=400, detail="Quantité invalide")
         cost = (
             item.unit_cost
             if item.unit_cost is not None and item.unit_cost > 0
             else (product.purchase_price or 0)
         )
-        subtotal = cost * item.quantity
+        if item.packaging_unit_cost is not None:
+            if not product.packaging_unit:
+                raise HTTPException(status_code=400, detail="Conditionnement absent")
+            cost = item.packaging_unit_cost / product.units_per_packaging
+        subtotal = cost * quantity
         total += subtotal
         purchase.items.append(
             PurchaseItem(
+                **snapshot(product),
                 product_id=product.id,
                 product_name=product.name,
-                quantity=item.quantity,
+                quantity=quantity,
                 unit_cost=cost,
                 subtotal=subtotal,
             )
@@ -231,11 +238,12 @@ def receive_purchase(
             detail=f"Approvisionnement « {purchase.status} » : réception impossible",
         )
 
-    wanted = {entry.item_id: entry.quantity for entry in payload.items}
+    wanted = {entry.item_id: entry for entry in payload.items}
     moved = 0
     for item in purchase.items:
         remaining = (item.quantity or 0) - (item.received_quantity or 0)
-        quantity = wanted.get(item.id, remaining) if wanted else remaining
+        entry = wanted.get(item.id)
+        quantity = base_quantity(entry, item) if entry else (0 if wanted else remaining)
         if quantity <= 0:
             continue
         if quantity > remaining:
@@ -260,6 +268,7 @@ def receive_purchase(
         moved += quantity
         db.add(
             StockMovement(
+                **snapshot(item),
                 product_id=product.id,
                 product_name=product.name,
                 kind="approvisionnement",

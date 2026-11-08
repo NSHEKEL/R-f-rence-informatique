@@ -1,11 +1,12 @@
 import csv
+import math
 import io
 import random
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from ..database import get_db
 from ..models import (
@@ -20,7 +21,8 @@ from ..models import (
     Supplier,
     User,
 )
-from ..permissions import require_permission
+from ..permissions import has_permission, require_permission
+from ..pos_display import read_display
 from ..schemas import (
     PriceHistoryOut,
     ProductCreate,
@@ -32,6 +34,34 @@ from ..schemas import (
 from .cash import require_open_till
 
 router = APIRouter(prefix="/api/products", tags=["products"])
+
+
+def _stock_allowed(db, user):
+    return has_permission(db, user, 'produits') or has_permission(db, user, 'inventaire')
+
+
+def _product_out(product, stock_visible, images=True):
+    values = {key: getattr(product, key, field.default) for key, field in ProductOut.model_fields.items() if key != 'image'}
+    values['image'] = product.image if images else ''
+    result = ProductOut.model_validate(values)
+    updates = {}
+    if not stock_visible:
+        updates.update(quantity=None, min_stock=None, quantity_label=None)
+    if not images:
+        updates['image'] = ''
+    return result.model_copy(update=updates)
+
+
+@router.get('/pos', response_model=list[ProductOut], response_model_exclude_none=True)
+def pos_products(images: bool = False, db: Session = Depends(get_db), user: User = Depends(require_open_till)):
+    settings = db.query(CompanySettings).first()
+    config = read_display(settings) if settings else None
+    include_images = bool(images and config and config.images and config.mode.startswith('image+'))
+    stock_visible = _stock_allowed(db, user)
+    query = db.query(Product).filter(Product.quantity > 0).order_by(Product.name)
+    if not include_images:
+        query = query.options(defer(Product.image))
+    return [_product_out(p, stock_visible, include_images) for p in query.all()]
 
 # EAN-13 prefix reserved for in-store codes, so generated codes never clash
 # with codes printed by manufacturers.
@@ -87,7 +117,7 @@ def next_barcode(
 def get_product_by_code(
     code: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_open_till),
+    user: User = Depends(require_open_till),
 ):
     """Scanner lookup: barcode, QR code or SKU."""
     value = code.strip()
@@ -102,7 +132,7 @@ def get_product_by_code(
     )
     if not product:
         raise HTTPException(status_code=404, detail="Article introuvable")
-    return product
+    return _product_out(product, _stock_allowed(db, user))
 
 
 def _sales_stats(db: Session) -> dict[int, tuple[int, object]]:
@@ -125,7 +155,7 @@ def _sales_stats(db: Session) -> dict[int, tuple[int, object]]:
 def list_products(
     sold: str = "",
     db: Session = Depends(get_db),
-    _: User = Depends(require_open_till),
+    user: User = Depends(require_open_till),
 ):
     """Catalogue, optionally filtered on sales history.
 
@@ -133,27 +163,28 @@ def list_products(
     the most (best first); anything else returns the whole catalogue.
     """
     stats = _sales_stats(db)
+    stock_visible = _stock_allowed(db, user)
     products = db.query(Product).order_by(Product.name).all()
     for product in products:
         quantity, last = stats.get(product.id, (0, None))
         product.sold_quantity = quantity
         product.last_sold_at = last
     if sold == "jamais":
-        return [p for p in products if p.sold_quantity == 0]
+        return [_product_out(p, stock_visible) for p in products if p.sold_quantity == 0]
     if sold == "top":
-        return sorted(
+        products = sorted(
             (p for p in products if p.sold_quantity > 0),
             key=lambda p: p.sold_quantity,
             reverse=True,
         )
-    return products
+    return [_product_out(p, stock_visible) for p in products]
 
 
 @router.get("/best-sellers", response_model=list[ProductOut])
 def best_sellers(
     limit: int = 12,
     db: Session = Depends(get_db),
-    _: User = Depends(require_open_till),
+    user: User = Depends(require_open_till),
 ):
     """Articles the shop sells the most, shown first on the till screen."""
     ranked = (
@@ -172,25 +203,27 @@ def best_sellers(
     if not order:
         return []
     products = (
-        db.query(Product).filter(Product.id.in_(list(order))).all()
+        db.query(Product).options(defer(Product.image)).filter(Product.id.in_(list(order))).all()
     )
-    return sorted(products, key=lambda p: order[p.id])
+    stock_visible = _stock_allowed(db, user)
+    return [_product_out(p, stock_visible, False) for p in sorted(products, key=lambda p: order[p.id])]
 
 
 @router.get("/{product_id}", response_model=ProductOut)
 def get_product(
     product_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_open_till),
+    user: User = Depends(require_open_till),
 ):
     product = db.query(Product).get(product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Produit introuvable")
-    return product
+    return _product_out(product, _stock_allowed(db, user))
 
 
 # Column aliases accepted in an import file (case-insensitive, accents ok).
 _CSV_ALIASES = {
+    "wholesale_packaging_price": {"prix_gros_carton", "wholesale_packaging_price"},
     "name": {"nom", "name", "designation", "désignation", "libelle", "libellé"},
     "sku": {"sku", "reference", "référence", "ref", "code", "code_article"},
     "description": {"description", "desc"},
@@ -302,6 +335,14 @@ def import_products(
                     {"line": number, "message": f"Code-barres déjà utilisé : {barcode}"}
                 )
                 continue
+        wholesale_packaging_price = None
+        if "wholesale_packaging_price" in present:
+            value = fields.get("wholesale_packaging_price", "")
+            if value:
+                wholesale_packaging_price = _to_float(value, float("nan"))
+                if not math.isfinite(wholesale_packaging_price) or wholesale_packaging_price < 0:
+                    errors.append({"line": number, "message": "Prix gros carton invalide"})
+                    continue
         category_id = None
         category_name = fields.get("category", "")
         if category_name:
@@ -327,6 +368,8 @@ def import_products(
             )
         if "quantity" in present:
             values["quantity"] = _to_int(fields.get("quantity", ""))
+        if "wholesale_packaging_price" in present:
+            values["wholesale_packaging_price"] = wholesale_packaging_price
         if "min_stock" in present:
             values["min_stock"] = _to_int(fields.get("min_stock", ""), 5)
         if barcode:
@@ -384,7 +427,7 @@ def create_product(
     return product
 
 
-_PRICE_FIELDS = ("sale_price", "purchase_price", "wholesale_price")
+_PRICE_FIELDS = ("sale_price", "purchase_price", "wholesale_price", "wholesale_packaging_price")
 
 
 @router.put("/{product_id}", response_model=ProductOut)
@@ -402,6 +445,8 @@ def update_product(
         raise HTTPException(status_code=400, detail="Cette référence (SKU) existe déjà")
     _check_barcode(db, payload, product_id)
     for key, value in payload.model_dump().items():
+        if key in {"base_unit", "packaging_unit", "units_per_packaging", "packaging_sale_price", "wholesale_packaging_price"} and key not in payload.model_fields_set:
+            continue
         if key in _PRICE_FIELDS and getattr(product, key) != value:
             db.add(
                 PriceHistory(

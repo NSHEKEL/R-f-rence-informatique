@@ -8,6 +8,7 @@ from ..database import get_db
 from ..licensing import has_feature
 from ..mailer import is_configured, send_mail
 from ..models import CompanySettings, User
+from ..pos_display import PosDisplay, read_display
 from ..schemas import (
     CompanySettingsOut,
     CompanySettingsUpdate,
@@ -17,6 +18,19 @@ from ..schemas import (
 )
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
+
+
+@router.get('/pos-display', response_model=PosDisplay)
+def get_pos_display(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    return read_display(_get_or_create(db))
+
+
+@router.put('/pos-display', response_model=PosDisplay)
+def put_pos_display(payload: PosDisplay, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    settings = _get_or_create(db)
+    settings.pos_display = payload.model_dump_json()
+    db.commit()
+    return read_display(settings)
 
 
 def _get_or_create(db: Session) -> CompanySettings:
@@ -49,7 +63,7 @@ def update_company(
 ):
     settings = _get_or_create(db)
     data = payload.model_dump(exclude_unset=True)
-    if data.get("receipt_format") == "80mm" and not has_feature(
+    if data.get("receipt_format") in ("80mm", "58mm", "custom") and not has_feature(
         db, "impression_thermique"
     ):
         raise HTTPException(
@@ -62,6 +76,8 @@ def update_company(
     # An empty password means "keep the stored one".
     if data.get("smtp_password") == "":
         data.pop("smtp_password")
+    if settings.printing_config:
+        data['printer_name'] = printing.read_config(settings).receipt.printer_name
     for key, value in data.items():
         setattr(settings, key, value)
     db.commit()
@@ -82,7 +98,7 @@ def update_printing(
     _: User = Depends(require_admin),
 ):
     settings = _get_or_create(db)
-    if payload.receipt.width in ("80mm", "58mm") and not has_feature(
+    if payload.receipt.width in ("80mm", "58mm", "custom") and not has_feature(
         db, "impression_thermique"
     ):
         raise HTTPException(

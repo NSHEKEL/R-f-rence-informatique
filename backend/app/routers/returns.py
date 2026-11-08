@@ -14,9 +14,12 @@ from ..models import (
     StockMovement,
     User,
 )
-from ..permissions import require_permission
+from ..permissions import has_permission, require_permission
 from ..schemas import ReturnCreate, ReturnOut
 from ..sequences import next_reference
+from .cash import lock_current_session
+from ..units import base_quantity, snapshot
+from ..profits import line_revenue, line_returns
 
 router = APIRouter(prefix="/api/returns", tags=["returns"])
 
@@ -48,11 +51,18 @@ def create_return(
         raise HTTPException(
             status_code=404, detail=f"Ticket {reference} introuvable"
         )
-    lines = [line for line in payload.lines if line.quantity > 0]
+    lines = [line for line in payload.lines if line.quantity > 0 or (line.packaging_quantity or 0) > 0 or (line.piece_quantity or 0) > 0]
     if not lines:
         raise HTTPException(status_code=400, detail="Aucun article à retourner")
 
+    if payload.refund_method == "Espèces" and not has_permission(db, current_user, "caisse_operations"):
+        raise HTTPException(status_code=403, detail="Accès refusé : sortie de caisse")
+    session = lock_current_session(db, current_user)
+    if payload.refund_method == "Espèces" and session is None:
+        raise HTTPException(status_code=400, detail="Ouvrez votre caisse avant un remboursement en espèces")
     credit = SaleReturn(
+        cash_session_id=session.id if session else None,
+        refund_method=payload.refund_method,
         reference=_generate_reference(db),
         sale_id=sale.id,
         reason=payload.reason,
@@ -60,16 +70,25 @@ def create_return(
         total=0,
     )
     total = 0.0
+    seen = set()
     for line in lines:
-        item = next(
-            (i for i in sale.items if i.product_id == line.product_id), None
-        )
+        candidates = [i for i in sale.items if i.product_id == line.product_id and (line.sale_item_id is None or i.id == line.sale_item_id)]
+        if len(candidates) > 1:
+            raise HTTPException(status_code=400, detail="Précisez la ligne du ticket à retourner")
+        item = candidates[0] if candidates else None
         if not item:
             raise HTTPException(
                 status_code=400,
                 detail=f"L'article {line.product_id} n'est pas sur ce ticket",
             )
+        if item.id in seen:
+            raise HTTPException(status_code=400, detail="Ligne de retour répétée")
+        seen.add(item.id)
         remaining = item.quantity - item.returned_quantity
+        quantity = base_quantity(line, item)
+        if quantity <= 0:
+            raise HTTPException(status_code=400, detail="Quantité invalide")
+        line = line.model_copy(update={"quantity": quantity})
         if line.quantity > remaining:
             raise HTTPException(
                 status_code=400,
@@ -79,13 +98,23 @@ def create_return(
                 ),
             )
         subtotal = item.unit_price * line.quantity
+        if line.packaging_quantity is not None or line.piece_quantity is not None:
+            subtotal = (line.packaging_quantity or 0) * (item.packaging_sale_price if item.packaging_sale_price is not None else item.unit_price * (item.units_per_packaging or 1)) + (line.piece_quantity or 0) * (item.base_unit_price if item.base_unit_price is not None else item.unit_price)
+        gross = item.unit_price * item.quantity
+        net = line_revenue(sale, item)
+        subtotal = subtotal * net / gross if gross else 0
+        refunded = sum(returned.subtotal for returned in line_returns(sale, item))
+        subtotal = min(subtotal, max(0, net - refunded))
         total += subtotal
         credit.items.append(
             SaleReturnItem(
+                sale_item_id=item.id,
+                unit_cost=item.unit_cost,
+                **snapshot(item),
                 product_id=item.product_id,
                 product_name=item.product_name,
                 quantity=line.quantity,
-                unit_price=item.unit_price,
+                unit_price=subtotal / quantity,
                 subtotal=subtotal,
             )
         )
@@ -97,6 +126,7 @@ def create_return(
             product.quantity = before + line.quantity
             db.add(
                 StockMovement(
+                    **snapshot(item),
                     product_id=product.id,
                     product_name=product.name,
                     kind="retour",

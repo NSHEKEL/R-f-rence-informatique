@@ -26,7 +26,7 @@ from ..models import (
     User,
 )
 from ..permissions import require_permission
-from .cash import current_session
+from .cash import lock_current_session
 from ..receivables import open_order_receivable, settle_order_receivable
 from ..schemas import (
     DeliveryNoteCreate,
@@ -223,7 +223,7 @@ def validate_note(
         raise HTTPException(status_code=400, detail="Bon annulé")
 
     # Same rule as the till: a delivery that books a sale needs an open till.
-    session = current_session(db, current_user)
+    session = lock_current_session(db, current_user)
     if session is None:
         raise HTTPException(
             status_code=400,

@@ -18,7 +18,6 @@ import {
   Image as ImageIcon,
   Layers,
   LayoutGrid,
-  List,
   Minus,
   Monitor,
   Pause,
@@ -41,19 +40,20 @@ import {
   X,
 } from "lucide-react";
 import api, { formatXOF, localApi } from "../api/client";
+import PackagingQuantity from "../components/PackagingQuantity";
+import PosProductGrid from "../components/PosProductGrid";
+import SalePrintModal from "../components/SalePrintModal";
+import { DEFAULT_POS, mergePos, stockLimit, tileVisibility, type PosDisplay } from "../lib/posDisplay";
+import { catalogPrices, catalogUnitPrice, formatQuantity, splitQuantity, type UnitMode } from "../lib/units";
 import type {
   CashSessionDetail,
   Category,
   Customer,
   Product,
-  ReceiptFormat,
   Sale,
   Supplier,
 } from "../types";
 import Modal from "../components/Modal";
-import PrinterHint from "../components/PrinterHint";
-import Receipt from "../components/Receipt";
-import { printReceipt } from "../lib/print";
 import { scanCodes } from "../lib/scan";
 import { vatBreakdown } from "../lib/vat";
 import {
@@ -107,12 +107,14 @@ type PriceMode = "detail" | "gros";
 
 /** Wholesale price when the till is in "gros" mode and the article has one. */
 function unitPrice(product: Product, mode: PriceMode): number {
-  return mode === "gros" && (product.wholesale_price || 0) > 0
-    ? product.wholesale_price
-    : product.sale_price;
+  return catalogPrices(product, mode).piece;
 }
 
 interface CartLine {
+  price_tier?: PriceMode;
+  packagingQuantity?: number;
+  pieceQuantity?: number;
+  unitMode?: UnitMode;
   product: Product;
   quantity: number;
   /** Price agreed at the counter, when it differs from the product sheet. */
@@ -122,8 +124,12 @@ interface CartLine {
 }
 
 /** Price actually charged for a cart line. */
-function linePrice(line: CartLine, mode: PriceMode): number {
-  return line.price ?? unitPrice(line.product, mode);
+function linePrice(line: CartLine, _mode: PriceMode): number {
+  return line.price ?? catalogUnitPrice(line.product, line.quantity, line.price_tier || "detail", cartParts(line));
+}
+
+function cartParts(line: CartLine) {
+  return line.packagingQuantity === undefined ? splitQuantity(line.product, line.quantity, line.unitMode || "base") : { packaging_quantity: line.packagingQuantity, piece_quantity: line.pieceQuantity || 0 };
 }
 
 /** Line total after its own discount. */
@@ -167,6 +173,16 @@ function offlineSale(
       product_id: l.product.id,
       product_name: l.product.name,
       quantity: l.quantity,
+      ...(l.product.packaging_unit ? cartParts(l) : {}),
+      quantity_label: formatQuantity(l.product, l.quantity),
+      base_unit: l.product.base_unit,
+      packaging_unit: l.product.packaging_unit,
+      units_per_packaging: l.product.units_per_packaging,
+      base_quantity: l.quantity,
+      price_tier: l.price_tier || "detail",
+      catalog_unit_price: catalogUnitPrice(l.product, l.quantity, l.price_tier || "detail", cartParts(l)),
+      base_unit_price: l.price ?? catalogPrices(l.product, l.price_tier).piece,
+      packaging_sale_price: l.price !== undefined ? l.price * (l.product.units_per_packaging || 1) : catalogPrices(l.product, l.price_tier).carton,
       unit_price: linePrice(l, priceMode),
       discount: l.discount ?? 0,
       subtotal: lineNet(l, priceMode),
@@ -239,7 +255,7 @@ export default function NouvelleVente() {
   };
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [supplierFilter, setSupplierFilter] = useState<number | "all">("all");
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [posDisplay, setPosDisplay] = useState<PosDisplay>(DEFAULT_POS);
   const [cartCollapsed, setCartCollapsed] = useState(false);
   const [validMenu, setValidMenu] = useState(false);
   const discountRef = useRef<HTMLInputElement>(null);
@@ -255,11 +271,15 @@ export default function NouvelleVente() {
   });
 
   const [lastSale, setLastSale] = useState<Sale | null>(null);
-  const [format, setFormat] = useState<ReceiptFormat>("A4");
   const searchRef = useRef<HTMLInputElement>(null);
 
   const loadProducts = useCallback(async () => {
-    const { data } = await fetchCached<Product[]>("/products", "products");
+    const display = await fetchCached<PosDisplay>("/settings/pos-display", "pos-display");
+    const config = mergePos(display.data);
+    setPosDisplay(config);
+    const stockRight = can("produits") || can("inventaire");
+    const images = tileVisibility(config, stockRight).image;
+    const { data } = await fetchCached<Product[]>(`/products/pos?images=${images}`, `pos-products-${user?.id}-${stockRight}-${images}`);
     setProducts(data);
     const cats = await fetchCached<Category[]>("/categories", "categories");
     setCategories(cats.data);
@@ -275,7 +295,7 @@ export default function NouvelleVente() {
     } catch {
       /* offline: fall back to every article */
     }
-  }, []);
+  }, [can, user?.id]);
 
 
   const loadSession = useCallback(async () => {
@@ -314,19 +334,7 @@ export default function NouvelleVente() {
     return () => window.clearTimeout(timer);
   }, [customerQuery]);
 
-  useEffect(() => {
-    setFormat(printing.receipt.width);
-  }, [printing.receipt.width]);
 
-  const categoryById = useMemo(
-    () => new Map(categories.map((c) => [c.id, c.name])),
-    [categories]
-  );
-  const categoryName = useCallback(
-    (id: number | null | undefined) =>
-      id ? (categoryById.get(id) ?? "") : "Sans catégorie",
-    [categoryById]
-  );
 
   function categoryIcon(name: string): LucideIcon {
     const n = name.toLowerCase();
@@ -342,28 +350,27 @@ export default function NouvelleVente() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const available = products.filter((p) => p.quantity > 0);
+    const available = products.filter((p) => stockLimit(p) > 0);
     if (q) {
       return available
         .filter(
           (p) =>
             p.name.toLowerCase().includes(q) ||
             scanCodes(p).some((code) => code.includes(q))
-        )
-        .slice(0, 60);
+        );
     }
     const applySupplier = (list: Product[]) =>
       supplierFilter === "all"
         ? list
         : list.filter((p) => p.supplier_id === supplierFilter);
     if (activeCategory === "all") {
-      return applySupplier(available.slice(0, 80));
+      return applySupplier(available);
     }
     if (activeCategory === "top") {
       const ranked = bestSellerIds
         .map((id) => available.find((p) => p.id === id))
         .filter((p): p is Product => Boolean(p));
-      return applySupplier(ranked.length > 0 ? ranked : available.slice(0, 40));
+      return applySupplier(ranked.length > 0 ? ranked : available);
     }
     return applySupplier(
       available.filter((p) => p.category_id === activeCategory)
@@ -398,14 +405,20 @@ export default function NouvelleVente() {
   const addToCart = useCallback((product: Product) => {
     setError("");
     setCart((prev) => {
-      const existing = prev.find((l) => l.product.id === product.id);
-      if (!existing) return [...prev, { product, quantity: 1 }];
-      if (existing.quantity >= product.quantity) return prev;
+      const existing = prev.find((l) => l.product.id === product.id && (l.price_tier || "detail") === priceMode && (!l.unitMode || l.unitMode === "base"));
+      if (prev.filter((l) => l.product.id === product.id).reduce((sum, l) => sum + l.quantity, 0) >= stockLimit(product)) return prev;
+      if (!existing) return [...prev, { product, quantity: 1, price_tier: priceMode }];
       return prev.map((l) =>
-        l.product.id === product.id ? { ...l, quantity: l.quantity + 1 } : l
+        l === existing ? (() => {
+          const packs = l.unitMode === "packaging" ? 1 : 0;
+          const pieces = packs ? 0 : 1;
+          const quantity = l.quantity + packs * (product.units_per_packaging || 1) + pieces;
+          const parts = cartParts(l);
+          return quantity > stockLimit(product) ? l : { ...l, quantity, packagingQuantity: parts.packaging_quantity + packs, pieceQuantity: parts.piece_quantity + pieces };
+        })() : l
       );
     });
-  }, []);
+  }, [priceMode]);
 
   /**
    * Enter moves the cashier forward: each field hands the focus to the next
@@ -434,7 +447,7 @@ export default function NouvelleVente() {
       setError(`Aucun article pour « ${query.trim()} »`);
       return;
     }
-    if (target.quantity <= 0) {
+    if (stockLimit(target) <= 0) {
       setError(`${target.name} est en rupture de stock`);
       return;
     }
@@ -444,11 +457,11 @@ export default function NouvelleVente() {
     setQuery("");
   }
 
-  function setLinePrice(productId: number, value: string) {
+  function setLinePrice(lineIndex: number, value: string) {
     const price = Number(value.replace(",", "."));
     setCart((prev) =>
-      prev.map((l) =>
-        l.product.id === productId
+      prev.map((l, index) =>
+        index === lineIndex
           ? {
               ...l,
               price:
@@ -461,11 +474,11 @@ export default function NouvelleVente() {
     );
   }
 
-  function setLineDiscount(productId: number, value: string) {
+  function setLineDiscount(lineIndex: number, value: string) {
     const discount = Number(value.replace(",", "."));
     setCart((prev) =>
-      prev.map((l) =>
-        l.product.id === productId
+      prev.map((l, index) =>
+        index === lineIndex
           ? {
               ...l,
               discount:
@@ -478,14 +491,25 @@ export default function NouvelleVente() {
     );
   }
 
-  function setQuantity(productId: number, quantity: number) {
+  function setQuantity(lineIndex: number, quantity: number) {
     setCart((prev) =>
-      prev.flatMap((l) => {
-        if (l.product.id !== productId) return [l];
-        const capped = Math.min(Math.max(quantity, 0), l.product.quantity);
-        return capped === 0 ? [] : [{ ...l, quantity: capped }];
+      prev.flatMap((l, index) => {
+        if (index !== lineIndex) return [l];
+        const others = prev.filter((other) => other !== l && other.product.id === l.product.id).reduce((sum, other) => sum + other.quantity, 0);
+        const capped = Math.min(Math.max(Math.floor(quantity), 0), stockLimit(l.product) - others);
+        return capped === 0 ? [] : [{ ...l, quantity: capped, packagingQuantity: undefined, pieceQuantity: undefined }];
       })
     );
+  }
+
+  function setUnitMode(lineIndex: number, unitMode: UnitMode) {
+    const line = cart[lineIndex];
+    if (!line) return;
+    const factor = line.product.units_per_packaging || 1;
+    const quantity = unitMode === "packaging" ? Math.max(1, Math.floor(line.quantity / factor)) * factor : line.quantity;
+    const others = cart.filter((l) => l !== line && l.product.id === line.product.id).reduce((sum, l) => sum + l.quantity, 0);
+    if (quantity + others > stockLimit(line.product)) { setError("Stock insuffisant pour un conditionnement complet"); return; }
+    setCart((prev) => prev.map((l, index) => index === lineIndex ? { ...l, unitMode, quantity, price: undefined, packagingQuantity: undefined, pieceQuantity: undefined } : l));
   }
 
   async function createCustomer() {
@@ -568,23 +592,7 @@ export default function NouvelleVente() {
    */
   function finishSale(sale: Sale) {
     setLastSale(sale);
-    if (printing.receipt.auto_print) {
-      // Let the hidden print copy mount before calling the printer.
-      window.setTimeout(() => {
-        printReceipt(
-          printing.receipt.width,
-          printing.receipt,
-          receiptKick()
-        ).then((drawerOpened) => {
-          // The ticket carried the kick code: no second order to the till.
-          // A drawer on another target (port or printer) still gets its kick
-          // here, routed by the backend to drawer_port.
-          if (!drawerOpened) openDrawer();
-        });
-      }, 400);
-      return;
-    }
-    openDrawer();
+    if (!printing.receipt.auto_print) openDrawer();
   }
 
   async function checkout() {
@@ -619,7 +627,9 @@ export default function NouvelleVente() {
       paid_amount: gift ? 0 : paidAmount,
       items: cart.map((l) => ({
         product_id: l.product.id,
+        price_tier: l.price_tier || "detail",
         quantity: l.quantity,
+        ...(l.product.packaging_unit ? { ...cartParts(l), expected_units_per_packaging: l.product.units_per_packaging || 1 } : {}),
         unit_price: linePrice(l, priceMode),
         discount: l.discount ?? 0,
       })),
@@ -634,7 +644,7 @@ export default function NouvelleVente() {
       const res = await api.post<Sale>("/sales", payload);
       finishSale(res.data);
       resetCart();
-      await Promise.all([loadProducts(), loadSession()]);
+      void Promise.allSettled([loadProducts(), loadSession()]);
     } catch (err) {
       const status = axios.isAxiosError(err) ? err.response?.status : undefined;
       if (status) {
@@ -717,8 +727,9 @@ export default function NouvelleVente() {
     const restored = entry.cart.filter((l) => {
       const fresh = products.find((p) => p.id === l.product.id);
       if (!fresh) return false;
+      if (cartParts(l).packaging_quantity && l.product.units_per_packaging !== fresh.units_per_packaging) return false;
       l.product = fresh;
-      return l.quantity <= fresh.quantity;
+      return l.quantity <= stockLimit(fresh);
     });
     if (restored.length < entry.cart.length) {
       setError("Certaines lignes du ticket en attente ne sont plus disponibles.");
@@ -864,10 +875,7 @@ export default function NouvelleVente() {
       label: "Imprimer",
       sub: "Dernier document",
       tint: "bg-cyan-600",
-      onClick: () =>
-        lastSale
-          ? void printReceipt(format, printing.receipt)
-          : navigate("/ventes"),
+      onClick: () => navigate("/ventes"),
     },
     ...(can("retours")
       ? [
@@ -933,7 +941,7 @@ export default function NouvelleVente() {
         <h1 className="text-base font-bold text-slate-900">Nouvelle vente</h1>
         {session && (
           <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-            Caisse ouverte · {formatXOF(session.expected_cash)}
+            Caisse ouverte{session.expected_cash != null ? ` · ${formatXOF(session.expected_cash)}` : ""}
           </span>
         )}
         {!online && (
@@ -1028,7 +1036,7 @@ export default function NouvelleVente() {
 
           <div className="flex items-center gap-2 bg-slate-100 px-3 py-1">
             <span className="text-xs font-bold uppercase tracking-wide text-slate-500">
-              Mode de prix
+              Tarif des nouveaux articles
             </span>
             <div className="ml-auto flex rounded-lg bg-white p-0.5 text-[11px] font-semibold">
               {(["detail", "gros"] as PriceMode[]).map((mode) => (
@@ -1102,9 +1110,7 @@ export default function NouvelleVente() {
                     <th className="w-[86px] px-1 py-1 text-right">
                       Prix unitaire
                     </th>
-                    {canChangePrice && (
-                      <th className="w-14 px-1 py-1 text-right">Rem.</th>
-                    )}
+                    <th className="w-14 px-1 py-1 text-right">Rem.</th>
                     <th className="w-[118px] px-1 py-1 text-center">
                       Quantité
                     </th>
@@ -1115,7 +1121,7 @@ export default function NouvelleVente() {
                 <tbody>
                   {cart.map((l, index) => (
                     <tr
-                      key={l.product.id}
+                      key={index}
                       className="border-b border-slate-100 last:border-0"
                     >
                       <td className="px-2 py-1 text-xs text-slate-400">
@@ -1123,7 +1129,7 @@ export default function NouvelleVente() {
                       </td>
                       <td className="px-1 py-1">
                         <div className="flex items-center gap-2">
-                          {l.product.image ? (
+                          {tileVisibility(posDisplay, can("produits") || can("inventaire")).image && l.product.image ? (
                             <img
                               src={l.product.image}
                               alt=""
@@ -1138,14 +1144,25 @@ export default function NouvelleVente() {
                             {l.product.name}
                           </p>
                         </div>
+                        {l.product.packaging_unit && <>
+                          <select aria-label={`Unité vendue de ${l.product.name}`} className="input mt-1" value={l.unitMode || "base"} onChange={(e) => setUnitMode(index, e.target.value as UnitMode)}>
+                            <option value="base">{l.product.base_unit || "pièce"}</option>
+                            <option value="packaging">{l.product.packaging_unit}</option>
+                            <option value="mixed">Mixte : {l.product.packaging_unit} + {l.product.base_unit || "pièce"}</option>
+                          </select>
+                          <p className="text-xs text-slate-500">{formatQuantity(l.product, l.quantity)} · {formatXOF(catalogPrices(l.product, l.price_tier).carton)}/{l.product.packaging_unit}</p>
+                        </>}
+                        <select className="input mt-1" aria-label={`Tarif de ${l.product.name}`} value={l.price_tier || "detail"} onChange={(e) => setCart((prev) => prev.map((line, i) => i === index ? { ...line, price_tier: e.target.value as PriceMode, price: undefined } : line))}>
+                          <option value="detail">Détail</option><option value="gros">Gros</option>
+                        </select>
                       </td>
                       <td className="px-1 py-1 text-right">
                         {canChangePrice ? (
                           <input
                             className="w-[76px] rounded-lg border border-slate-200 px-1.5 py-1 text-right text-sm text-slate-700"
-                            value={l.price ?? unitPrice(l.product, priceMode)}
+                            value={linePrice(l, priceMode) * (l.unitMode === "packaging" ? l.product.units_per_packaging || 1 : 1)}
                             onChange={(e) =>
-                              setLinePrice(l.product.id, e.target.value)
+                              setLinePrice(index, l.unitMode === "packaging" ? String(Number(e.target.value.replace(",", ".")) / (l.product.units_per_packaging || 1)) : e.target.value)
                             }
                             onKeyDown={nextOnEnter(paidRef)}
                             title="Prix de vente pour cette ligne"
@@ -1153,31 +1170,30 @@ export default function NouvelleVente() {
                           />
                         ) : (
                           <span className="text-slate-600">
-                            {formatXOF(linePrice(l, priceMode))}
+                            {formatXOF(linePrice(l, priceMode) * (l.unitMode === "packaging" ? l.product.units_per_packaging || 1 : 1))}
                           </span>
                         )}
                       </td>
-                      {canChangePrice && (
-                        <td className="px-1 py-1 text-right">
-                          <input
+                      <td className="px-1 py-1 text-right">
+                        {canChangePrice ? <input
                             className="w-14 rounded-lg border border-slate-200 px-1 py-1 text-right text-xs text-slate-700"
                             value={l.discount ?? ""}
                             placeholder="0"
                             onChange={(e) =>
-                              setLineDiscount(l.product.id, e.target.value)
+                              setLineDiscount(index, e.target.value)
                             }
                             onKeyDown={nextOnEnter(paidRef)}
                             title="Remise pour cette ligne"
                             aria-label={`Remise de ${l.product.name}`}
-                          />
-                        </td>
-                      )}
+                          /> : <span>{formatXOF(l.discount ?? 0)}</span>}
+                      </td>
                       <td className="px-1 py-1">
+                        {l.product.packaging_unit && l.unitMode && l.unitMode !== "base" ? <PackagingQuantity product={l.product} value={l.quantity} parts={cartParts(l)} max={stockLimit(l.product) - cart.filter((line) => line !== l && line.product.id === l.product.id).reduce((sum, line) => sum + line.quantity, 0)} mode={l.unitMode} onChange={(quantity, packs, pieces) => setCart((prev) => prev.flatMap((line, i) => i !== index ? [line] : quantity ? [{ ...line, quantity, packagingQuantity: packs, pieceQuantity: pieces }] : []))} /> :
                         <div className="flex items-center justify-center gap-0.5">
                           <button
                             className="rounded-lg bg-slate-100 p-1 text-slate-600 hover:bg-slate-200"
                             onClick={() =>
-                              setQuantity(l.product.id, l.quantity - 1)
+                              setQuantity(index, l.quantity - 1)
                             }
                             title="Diminuer la quantité"
                             aria-label={`Diminuer la quantité de ${l.product.name}`}
@@ -1189,7 +1205,7 @@ export default function NouvelleVente() {
                             value={l.quantity}
                             onChange={(e) =>
                               setQuantity(
-                                l.product.id,
+                                index,
                                 Number(e.target.value) || 0
                               )
                             }
@@ -1199,7 +1215,7 @@ export default function NouvelleVente() {
                           <button
                             className="rounded-lg bg-slate-100 p-1 text-slate-600 hover:bg-slate-200"
                             onClick={() =>
-                              setQuantity(l.product.id, l.quantity + 1)
+                              setQuantity(index, l.quantity + 1)
                             }
                             title="Augmenter la quantité"
                             aria-label={`Augmenter la quantité de ${l.product.name}`}
@@ -1207,6 +1223,7 @@ export default function NouvelleVente() {
                             <Plus size={14} />
                           </button>
                         </div>
+                        }
                       </td>
                       <td className="whitespace-nowrap px-1 py-1 text-right text-sm font-bold text-slate-900">
                         {formatXOF(lineNet(l, priceMode))}
@@ -1214,7 +1231,7 @@ export default function NouvelleVente() {
                       <td className="px-1 py-1 text-center">
                         <button
                           className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                          onClick={() => setQuantity(l.product.id, 0)}
+                          onClick={() => setQuantity(index, 0)}
                           title="Retirer l'article"
                           aria-label={`Retirer ${l.product.name}`}
                         >
@@ -1350,6 +1367,7 @@ export default function NouvelleVente() {
                   <span className="flex items-center gap-1">
                     <input
                       ref={discountRef}
+                      disabled={!canChangePrice}
                       className="input w-20 px-2 py-1 text-right"
                       type="number"
                       min={0}
@@ -1377,6 +1395,7 @@ export default function NouvelleVente() {
                       type="button"
                       className="rounded-md bg-slate-100 px-1.5 py-1 text-[10px] font-bold text-slate-500 hover:bg-slate-200"
                       title="Basculer remise en % ou en FCFA"
+                      disabled={!canChangePrice}
                       onClick={() => setDiscountPercent((v) => !v)}
                     >
                       {discountPercent ? "%" : "F"}
@@ -1712,16 +1731,6 @@ export default function NouvelleVente() {
               </select>
             )}
             <button
-              className="shrink-0 rounded-xl border border-slate-200 bg-white p-2.5 text-slate-500 transition hover:border-blue-300"
-              onClick={() =>
-                setViewMode((v) => (v === "grid" ? "list" : "grid"))
-              }
-              title={viewMode === "grid" ? "Affichage liste" : "Affichage grille"}
-              aria-label={viewMode === "grid" ? "Affichage liste" : "Affichage grille"}
-            >
-              {viewMode === "grid" ? <List size={16} /> : <LayoutGrid size={16} />}
-            </button>
-            <button
               className="shrink-0 rounded-xl border border-brand-200 bg-white p-2.5 text-brand-600 transition hover:bg-brand-50"
               onClick={submitSearch}
               title="Scanner un code-barres ou ajouter l'article trouvé"
@@ -1730,98 +1739,7 @@ export default function NouvelleVente() {
               <Barcode size={16} />
             </button>
           </div>
-          {viewMode === "list" ? (
-            <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto rounded-xl border border-slate-200 bg-white">
-              {filtered.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => addToCart(p)}
-                  className="flex w-full items-center gap-3 px-3 py-2 text-left transition hover:bg-brand-50"
-                >
-                  {p.image ? (
-                    <img
-                      src={p.image}
-                      alt=""
-                      className="h-9 w-9 shrink-0 rounded-lg bg-slate-50 object-contain"
-                    />
-                  ) : (
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-300">
-                      <ImageIcon size={15} />
-                    </span>
-                  )}
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold text-slate-800">
-                      {p.name}
-                    </span>
-                    <span className="text-[11px] text-slate-400">
-                      {categoryName(p.category_id)} · Stock : {p.quantity}
-                    </span>
-                  </span>
-                  <span className="text-sm font-extrabold text-brand-700">
-                    {formatXOF(unitPrice(p, priceMode))}
-                  </span>
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-600 text-white">
-                    <Plus size={15} />
-                  </span>
-                </button>
-              ))}
-              {filtered.length === 0 && (
-                <p className="py-10 text-center text-sm text-slate-400">
-                  Aucun article disponible.
-                </p>
-              )}
-            </div>
-          ) : (
-          <div className="grid min-h-0 flex-1 grid-cols-2 content-start gap-2.5 overflow-y-auto sm:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-6">
-            {filtered.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => addToCart(p)}
-                className="flex flex-col rounded-2xl border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-brand-400 hover:shadow"
-              >
-                {p.image ? (
-                  <img
-                    src={p.image}
-                    alt=""
-                    className="mb-2 h-[88px] w-full rounded-xl object-contain"
-                  />
-                ) : (
-                  <span className="mb-2 flex h-[88px] w-full items-center justify-center rounded-xl bg-slate-100 text-slate-300">
-                    <ImageIcon size={22} />
-                  </span>
-                )}
-                <p className="line-clamp-2 min-h-[2.5rem] text-sm font-bold text-slate-800">
-                  {p.name}
-                </p>
-                <p className="truncate text-[11px] text-slate-400">
-                  Réf : {p.sku || categoryName(p.category_id)}
-                </p>
-                <p className="mt-0.5 text-sm font-extrabold text-brand-700">
-                  {formatXOF(unitPrice(p, priceMode))}
-                </p>
-                <div className="mt-1.5 flex items-center justify-between">
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
-                      p.quantity <= p.min_stock
-                        ? "bg-amber-100 text-amber-700"
-                        : "bg-emerald-100 text-emerald-700"
-                    }`}
-                  >
-                    Stock : {p.quantity}
-                  </span>
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-600 text-white">
-                    <Plus size={15} />
-                  </span>
-                </div>
-              </button>
-            ))}
-            {filtered.length === 0 && (
-              <p className="col-span-full py-10 text-center text-sm text-slate-400">
-                Aucun article disponible.
-              </p>
-            )}
-          </div>
-          )}
+          <PosProductGrid key={`${query}|${activeCategory}|${supplierFilter}`} products={filtered} config={posDisplay} stockRight={can("produits") || can("inventaire")} selected={new Set(cart.map((line) => line.product.id))} onAdd={addToCart} price={(product) => unitPrice(product, priceMode)} />
             {/* Modes de paiement — sous la liste des articles */}
             <div className="border-t border-slate-100 pt-2">
               <label className="label">Mode de paiement</label>
@@ -1948,49 +1866,7 @@ export default function NouvelleVente() {
         </div>
       </Modal>
 
-      {/* Receipt preview right after checkout */}
-      <Modal
-        open={lastSale !== null}
-        onClose={() => setLastSale(null)}
-        title={lastSale ? `Vente enregistrée — ${lastSale.reference}` : ""}
-        footer={
-          lastSale && (
-            <div className="no-print flex w-full items-center justify-end gap-3">
-              <select
-                className="input w-auto"
-                value={format}
-                onChange={(e) => setFormat(e.target.value as ReceiptFormat)}
-              >
-                <option value="A4">Feuille A4</option>
-                <option value="80mm">Ticket 80 mm</option>
-                <option value="58mm">Ticket 58 mm</option>
-              </select>
-              <button className="btn-ghost" onClick={() => setLastSale(null)}>
-                Nouvelle vente
-              </button>
-              <PrinterHint />
-              <button
-                className="btn-primary"
-                onClick={() => printReceipt(format, printing.receipt)}
-              >
-                <Printer size={16} /> Imprimer le reçu
-              </button>
-            </div>
-          )
-        }
-      >
-        {lastSale && (
-          <>
-            {lastSale.pending_sync && (
-              <p className="no-print mb-3 rounded-xl bg-amber-50 px-4 py-2.5 text-sm font-medium text-amber-700">
-                Ticket enregistré localement : il partira au serveur dès le
-                retour du réseau.
-              </p>
-            )}
-            <Receipt sale={lastSale} company={company} format={format} />
-          </>
-        )}
-      </Modal>
+      {lastSale && <SalePrintModal key={lastSale.reference} sale={lastSale} company={company} config={printing.receipt} kick={receiptKick()} onPrinted={(opened) => { if (!opened) openDrawer(); }} onClose={() => { setLastSale(null); searchRef.current?.focus(); }} />}
     </div>
   );
 }

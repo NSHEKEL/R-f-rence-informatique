@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import Expense, Product, Sale, SaleReturn, User
 from ..permissions import require_permission
+from ..profits import unit_cost
 from ..schemas import (
     AccountingCategory,
     AccountingSummary,
@@ -14,7 +15,9 @@ from ..schemas import (
     ExpenseOut,
 )
 
-router = APIRouter(prefix="/api/accounting", tags=["accounting"])
+router = APIRouter(prefix="/api/accounting", tags=["accounting"], dependencies=[
+    Depends(require_permission("tresorerie_consulter")),
+])
 
 
 def _parse_range(start: str | None, end: str | None) -> tuple[datetime, datetime]:
@@ -38,7 +41,9 @@ def _parse_range(start: str | None, end: str | None) -> tuple[datetime, datetime
     )
 
 
-@router.get("/summary", response_model=AccountingSummary)
+@router.get("/summary", response_model=AccountingSummary, dependencies=[
+    Depends(require_permission("rapports_financiers", "soldes_consulter")),
+])
 def summary(
     start: str | None = None,
     end: str | None = None,
@@ -70,7 +75,7 @@ def summary(
         by_payment[sale.payment_method] += sale.total
         by_day[sale.date.strftime("%d/%m")] += sale.total
         for item in sale.items:
-            cost += purchase_prices.get(item.product_id, 0) * item.quantity
+            cost += unit_cost(item, purchase_prices) * item.quantity
 
     # Credit notes reduce both the revenue and the cost of goods sold.
     credits = (
@@ -84,7 +89,7 @@ def summary(
         by_payment["Retours"] -= credit.total
         by_day[credit.date.strftime("%d/%m")] -= credit.total
         for item in credit.items:
-            cost -= purchase_prices.get(item.product_id, 0) * item.quantity
+            cost -= unit_cost(item, purchase_prices) * item.quantity
 
     expenses = (
         db.query(Expense)

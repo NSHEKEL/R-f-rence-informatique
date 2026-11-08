@@ -17,6 +17,7 @@ import api, {
 } from "../api/client";
 import Modal from "../components/Modal";
 import { useAuth } from "../context/AuthContext";
+import { useNetwork } from "../context/NetworkContext";
 
 type ForgotStep = "email" | "code";
 
@@ -31,6 +32,7 @@ const LAST_EMAIL_KEY = "easygest.last-email";
 
 export default function Login() {
   const { login } = useAuth();
+  const { workstationStatus, serverReachable } = useNetwork();
   const navigate = useNavigate();
   const [email, setEmail] = useState(
     () => localStorage.getItem(LAST_EMAIL_KEY) ?? ""
@@ -206,6 +208,9 @@ export default function Login() {
         </div>
 
         <form onSubmit={handleSubmit} className="card p-7">
+          {serverReachable && workstationStatus && workstationStatus !== "approved" && <div className="mb-4 rounded-xl bg-amber-100 p-3 text-sm text-amber-900">
+            <strong>{workstationStatus === "blocked" ? "Poste bloqué." : "En attente d'autorisation."}</strong> Demandez à un administrateur d'ouvrir Configuration → Réseau sur l'ordinateur principal et d'autoriser l'adresse IP de ce poste, puis réessayez la connexion.
+          </div>}
           <h2 className="mb-1 text-lg font-bold text-slate-900">Connexion</h2>
           <p className="mb-6 text-sm text-slate-500">
             Connectez-vous à votre espace de travail.

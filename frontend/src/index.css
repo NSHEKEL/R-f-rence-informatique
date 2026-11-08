@@ -107,6 +107,14 @@ body {
 }
 
 /* ---------------- Receipt ---------------- */
+.receipt-58mm *,.receipt-80mm *,.receipt-custom * { color: inherit; }
+.receipt-stacked .receipt-items thead { display: none; }
+.receipt-stacked .receipt-items tr { display: flex; flex-wrap: wrap; }
+.receipt-stacked .receipt-items td:first-child { flex-basis: 100%; }
+.receipt-stacked .receipt-items td:not(:first-child) { flex: 1; }
+.receipt-stacked .receipt-items td[data-field="qty"]::before { content: "Qté : "; }
+.receipt-stacked .receipt-items td[data-field="price"]::before { content: "P.U. : "; }
+.receipt-stacked .receipt-items td[data-field="total"]::before { content: "Total : "; }
 .receipt {
   background: #fff;
   color: #0f172a;

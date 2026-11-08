@@ -8,7 +8,7 @@ export interface User {
   notification_kinds?: string;
 }
 
-export type ReceiptFormat = "A4" | "80mm" | "58mm";
+export type ReceiptFormat = "A4" | "80mm" | "58mm" | "custom";
 
 /** A printer installed on this computer, as Windows reports it. */
 export interface PrinterDevice {
@@ -20,6 +20,7 @@ export interface PrinterDevice {
   is_default: boolean;
   available: boolean;
   status: string;
+  supports_color?: boolean;
 }
 
 /** Receipt printer: hardware, layout and contents of the ticket. */
@@ -62,10 +63,19 @@ export interface ReceiptPrinterConfig {
   show_barcode: boolean;
   /** QR code at the foot of the ticket (opt-in per poste). */
   show_qr: boolean;
+  paper_width_mm: number;
+  bold: boolean;
+  show_company_info: boolean;
+  text_color: string;
+  footer_text: string;
+  item_layout: "table" | "stacked";
+  show_line_total: boolean;
 }
 
 /** Price labels: a separate printer with its own settings. */
 export interface LabelPrinterConfig {
+  font_family: string;
+  code_type: "barcode" | "qr";
   printer_name: string;
   width_mm: number;
   height_mm: number;
@@ -82,6 +92,21 @@ export interface LabelPrinterConfig {
 
 /** A4/A5 commercial documents: purchase orders and delivery notes. */
 export interface DocumentConfig {
+  font_family: string;
+  font_size: number;
+  text_color: string;
+  accent_color: string;
+  logo_size_mm: number;
+  header_text: string;
+  footer_text: string;
+  info_position: "left" | "center" | "right";
+  show_company: boolean;
+  show_customer: boolean;
+  show_reference: boolean;
+  show_date: boolean;
+  show_qty: boolean;
+  show_unit_price: boolean;
+  show_total: boolean;
   format: "A4" | "A5";
   /** Printer assigned to commercial documents on this workstation. */
   printer_name: string;
@@ -115,6 +140,7 @@ export interface PrintingConfig {
 
 export const DEFAULT_PRINTING: PrintingConfig = {
   receipt: {
+    paper_width_mm: 80, bold: false, show_company_info: true, text_color: "#000000", footer_text: "", item_layout: "table", show_line_total: true,
     printer_name: "",
     width: "80mm",
     copies: 1,
@@ -154,6 +180,7 @@ export const DEFAULT_PRINTING: PrintingConfig = {
     show_qr: false,
   },
   label: {
+    font_family: "Arial", code_type: "barcode",
     printer_name: "",
     width_mm: 60,
     height_mm: 40,
@@ -168,6 +195,9 @@ export const DEFAULT_PRINTING: PrintingConfig = {
     show_barcode: true,
   },
   documents: {
+    font_family: "Arial", font_size: 12, text_color: "#0f172a", accent_color: "#0f172a", logo_size_mm: 22,
+    header_text: "", footer_text: "", info_position: "left", show_company: true, show_customer: true,
+    show_reference: true, show_date: true, show_qty: true, show_unit_price: true, show_total: true,
     format: "A4",
     printer_name: "",
     delivery_printer_name: "",
@@ -238,6 +268,23 @@ export interface CompanySettings {
   backup_keep: number;
   backup_on_sale: boolean;
   last_backup_at: string | null;
+  backup_auto_enabled: boolean;
+  backup_frequency: "daily" | "weekly" | "monthly";
+  backup_time: string;
+  backup_weekday: number;
+  backup_monthday: number;
+  last_backup_status: string;
+  last_backup_error: string;
+  drive_enabled: boolean;
+  drive_folder_name: string;
+  drive_folder_id: string;
+  drive_keep: number;
+  drive_last_upload_at: string | null;
+  drive_last_status: string;
+  drive_last_error: string;
+  drive_last_file_id: string;
+  drive_account_email: string;
+  network_restrict_workstations: boolean;
   /** Magasin's city (multi-magasins supervision). */
   city: string;
   /** Contact shown on "Assistance et support". */
@@ -271,7 +318,7 @@ export interface HistoryState {
   redo: ActionLog | null;
 }
 
-export interface OrderItem {
+export interface OrderItem extends UnitSpec {
   id: number;
   product_id: number | null;
   product_name: string;
@@ -285,7 +332,7 @@ export interface OrderItem {
   subtotal: number;
 }
 
-export interface DeliveryItem {
+export interface DeliveryItem extends UnitSpec {
   id: number;
   product_id: number | null;
   product_name: string;
@@ -380,7 +427,16 @@ export interface Customer {
   credit_limit: number;
 }
 
-export interface Product {
+export interface UnitSpec {
+  wholesale_packaging_price?: number | null;
+  base_unit?: string | null;
+  packaging_unit?: string | null;
+  units_per_packaging?: number | null;
+  packaging_sale_price?: number | null;
+  quantity_label?: string | null;
+}
+
+export interface Product extends UnitSpec {
   id: number;
   name: string;
   sku: string;
@@ -403,7 +459,19 @@ export interface Product {
   last_sold_at: string | null;
 }
 
-export interface SaleItem {
+export interface SaleItem extends UnitSpec {
+  price_tier?: "detail" | "gros" | null;
+  catalog_unit_price?: number | null;
+  unit_cost?: number | null;
+  cost?: number | null;
+  revenue?: number | null;
+  profit?: number | null;
+  margin?: number | null;
+  sold_unit?: string | null;
+  packaging_quantity?: number | null;
+  piece_quantity?: number | null;
+  base_quantity?: number | null;
+  base_unit_price?: number | null;
   id: number;
   product_id: number | null;
   product_name: string;
@@ -422,6 +490,10 @@ export interface SalePayment {
 }
 
 export interface Sale {
+  discount_by_id?: number | null;
+  cost?: number | null;
+  profit?: number | null;
+  margin?: number | null;
   id: number;
   reference: string;
   customer_id: number | null;
@@ -449,7 +521,7 @@ export interface Sale {
   pending_sync?: boolean;
 }
 
-export interface ReturnItem {
+export interface ReturnItem extends UnitSpec {
   id: number;
   product_id: number | null;
   product_name: string;
@@ -470,7 +542,7 @@ export interface SaleReturn {
   items: ReturnItem[];
 }
 
-export interface ProformaItem {
+export interface ProformaItem extends UnitSpec {
   id: number;
   product_id: number | null;
   product_name: string;
@@ -503,12 +575,23 @@ export interface Proforma {
 }
 
 export interface ReportRow {
+  quantity_label?: string | null;
   label: string;
   quantity: number;
   amount: number;
 }
 
+export interface ProfitRow {
+  label: string;
+  revenue: number;
+  cost: number;
+  profit: number;
+  margin: number;
+}
+
 export interface SalesReport {
+  profit_by_product?: ProfitRow[];
+  profit_by_sale?: ProfitRow[];
   period_start: string;
   period_end: string;
   sales_count: number;
@@ -589,7 +672,7 @@ export interface CashSession {
   opened_at: string;
   business_day: string;
   opened_by?: User | null;
-  opening_balance: number;
+  opening_balance: number | null;
   closed_at: string | null;
   closed_by?: User | null;
   closing_balance: number | null;
@@ -609,11 +692,26 @@ export interface CashSessionSaleLine {
 }
 
 export interface CashSessionDetail extends CashSession {
-  cash_sales: number;
-  other_sales: number;
-  sales_count: number;
-  expected_cash: number;
+  entries_total: number | null;
+  exits_total: number | null;
+  cash_refunds: number | null;
+  cash_settlements: number | null;
+  cash_sales: number | null;
+  other_sales: number | null;
+  sales_count: number | null;
+  expected_cash: number | null;
   sales?: CashSessionSaleLine[];
+}
+
+export interface CashMovement {
+  id: number;
+  session_id: number;
+  type: "in" | "out";
+  amount: number | null;
+  reason: string;
+  user_id: number;
+  created_at: string;
+  workstation: string;
 }
 
 export interface Expense {
@@ -626,7 +724,7 @@ export interface Expense {
   created_by?: User | null;
 }
 
-export interface StockMovement {
+export interface StockMovement extends UnitSpec {
   id: number;
   product_id: number | null;
   product_name: string;
@@ -659,7 +757,7 @@ export interface AccountingSummary {
   daily_revenue: AccountingCategory[];
 }
 
-export interface PurchaseItem {
+export interface PurchaseItem extends UnitSpec {
   id: number;
   product_id: number | null;
   product_name: string;

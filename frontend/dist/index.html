@@ -5,8 +5,60 @@
     <link rel="icon" type="image/png" href="/icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>EasyGest — Ventes &amp; Stock</title>
-    <script type="module" crossorigin src="/assets/index-CwEt_0Dc.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-COUovQgW.css">
+    <script>
+      (function () {
+        var token = new URL(location.href).searchParams.get("eg_boot") || "";
+        var errors = [];
+        var mounted = false;
+        var sent = false;
+        function flush() {
+          var api = window.pywebview && window.pywebview.api;
+          if (!api) return;
+          while (errors.length && typeof api.frontend_error === "function") {
+            Promise.resolve(api.frontend_error(errors.shift(), token)).catch(function () {});
+          }
+          if (mounted && !sent && typeof api.frontend_ready === "function") {
+            sent = true;
+            Promise.resolve(api.frontend_ready(token)).catch(function () { sent = false; });
+          }
+        }
+        function report(message) {
+          if (errors.length < 20) errors.push(String(message).slice(0, 1500));
+          flush();
+        }
+        function path(value) {
+          try { return new URL(value, location.href).pathname; } catch (_) { return ""; }
+        }
+        window.__easygestStartup = { mounted: function () { mounted = true; flush(); } };
+        window.addEventListener("pywebviewready", flush);
+        window.onerror = function (message, source, line) {
+          report(String(message) + " [" + path(source) + ":" + line + "]");
+          return false;
+        };
+        window.addEventListener("error", function (event) {
+          var target = event.target;
+          if (target && (target.tagName === "SCRIPT" || target.tagName === "LINK")) {
+            report("Ressource frontend indisponible: " + path(target.src || target.href));
+          }
+        }, true);
+        window.addEventListener("unhandledrejection", function (event) {
+          report("Promise frontend: " + String(event.reason && event.reason.message || event.reason));
+        });
+        if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+          navigator.serviceWorker.getRegistrations().then(function (registrations) {
+            return Promise.all(registrations.map(function (registration) { return registration.unregister(); })).then(function () {
+              return window.caches ? caches.keys().then(function (keys) {
+                return Promise.all(keys.map(function (key) { return caches.delete(key); }));
+              }) : null;
+            }).then(function () {
+              if (registrations.length && navigator.serviceWorker.controller) location.reload();
+            });
+          }).catch(function (error) { report("Nettoyage service worker: " + error.message); });
+        }
+      })();
+    </script>
+    <script type="module" crossorigin src="/assets/index-D0DZJBJR.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-v53sKUrr.css">
   </head>
   <body>
     <!-- Splash shown until React mounts: on modest machines the bundle takes a

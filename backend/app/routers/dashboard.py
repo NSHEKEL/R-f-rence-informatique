@@ -5,7 +5,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from ..auth import get_current_user
+from ..permissions import require_permission
+from .cash import session_amounts
 from ..database import get_db
 from ..models import CashSession, Customer, Product, Sale, SaleItem, User
 from ..schemas import (
@@ -48,7 +49,7 @@ def get_stats(
     start: Optional[datetime] = Query(None),
     end: Optional[datetime] = Query(None),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_permission("tableau_bord", "rapports_financiers", "soldes_consulter")),
 ):
     period_start, period_end = _period(start, end)
 
@@ -144,11 +145,11 @@ def get_stats(
 
     # Till closings in the window whose counted cash missed the expected one.
     gaps = [
-        s
+        session_amounts(db, s)
         for s in db.query(CashSession).filter(CashSession.closed_at.isnot(None))
         if s.closed_at and period_start <= s.closed_at <= period_end
-        and abs(s.difference or 0) > 0.009
     ]
+    gaps = [report for report in gaps if abs(report.difference or 0) > 0.009]
 
     return DashboardStats(
         total_products=total_products,

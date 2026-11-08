@@ -3,7 +3,7 @@ import axios from "axios";
 import { Link } from "react-router-dom";
 import { CheckCircle2, Lock, Printer, ShoppingCart, Unlock, Wallet } from "lucide-react";
 import api, { formatXOF } from "../api/client";
-import type { CashSession, CashSessionDetail, ReceiptFormat } from "../types";
+import type { CashMovement, CashSession, CashSessionDetail, ReceiptFormat } from "../types";
 import CashTicket, { type CashTicketKind } from "../components/CashTicket";
 import ZReport, { type ZReportData } from "../components/ZReport";
 import Modal from "../components/Modal";
@@ -16,11 +16,16 @@ import { useCompany } from "../context/CompanyContext";
 import { useSyncVersion } from "../context/SyncContext";
 
 /**
- * Till screen: one opening and one closing per cashier and per day. Selling
- * happens on the dedicated POS screen.
+ * Till screen: manage the cashier's active session, including previous days.
+ * Selling happens on the dedicated POS screen.
  */
 export default function Caisse() {
   const { user, isAdmin, can } = useAuth();
+  const canBalances = can("soldes_consulter");
+  const canClosures = can("clotures_consulter");
+  const canZ = canBalances && (canClosures || can("caisse_z"));
+  const canEntry = can("caisse_operations") || can("recette_enregistrer");
+  const canExit = can("caisse_operations");
   const { refresh: refreshTill } = useTill();
   const { company, printing } = useCompany();
   const version = useSyncVersion();
@@ -31,6 +36,10 @@ export default function Caisse() {
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [movements, setMovements] = useState<CashMovement[]>([]);
+  const [movementType, setMovementType] = useState<"in" | "out">("in");
+  const [movementAmount, setMovementAmount] = useState("");
+  const [movementReason, setMovementReason] = useState("");
 
   const [closeOpen, setCloseOpen] = useState(false);
   const [countedBalance, setCountedBalance] = useState("0");
@@ -46,11 +55,12 @@ export default function Caisse() {
   const load = useCallback(async () => {
     const [session, sessions] = await Promise.all([
       api.get<CashSessionDetail | null>("/cash-sessions/today"),
-      api.get<CashSession[]>("/cash-sessions", { params: { limit: 15 } }),
+      canClosures ? api.get<CashSession[]>("/cash-sessions", { params: { limit: 15 } }) : Promise.resolve({ data: [] }),
     ]);
     setToday(session.data);
     setHistory(sessions.data);
-  }, []);
+    setMovements(session.data ? (await api.get<CashMovement[]>(`/cash-sessions/${session.data.id}/movements`)).data : []);
+  }, [canClosures]);
 
   useEffect(() => {
     load().catch(() => setError("Impossible de charger la caisse"));
@@ -58,14 +68,33 @@ export default function Caisse() {
 
   const showTicket = useCallback(
     (session: CashSessionDetail, kind: CashTicketKind, auto: boolean) => {
+      if (!canBalances || (kind === "close" && !canZ)) return;
       setTicket({ session, kind });
       if (auto && company?.auto_print_cash !== false) {
         // Let the print copy mount before asking the browser to print.
         window.setTimeout(() => printReceipt(format, printing.receipt), 400);
       }
     },
-    [company?.auto_print_cash, format, printing.receipt]
+    [company?.auto_print_cash, format, printing.receipt, canBalances, canZ]
   );
+
+  async function addMovement() {
+    setSaving(true);
+    setError("");
+    try {
+      await api.post("/cash-sessions/movements", {
+        type: movementType, amount: Number(movementAmount), reason: movementReason,
+      });
+      setMovementAmount("");
+      setMovementReason("");
+      await load();
+      await refreshTill();
+    } catch (err) {
+      if (axios.isAxiosError(err)) setError(err.response?.data?.detail ?? "Opération impossible");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function openTill() {
     setSaving(true);
@@ -136,8 +165,7 @@ export default function Caisse() {
       <div>
         <h1 className="text-xl font-bold text-slate-900">Ma caisse</h1>
         <p className="text-sm text-slate-500">
-          Une ouverture par caissier et par jour. Le ticket d'ouverture
-          s'imprime automatiquement.
+          Ouvrez votre caisse avant de vendre, puis clôturez-la en fin de journée.
         </p>
       </div>
 
@@ -209,7 +237,7 @@ export default function Caisse() {
             </span>
             <div>
               <p className="text-sm font-bold text-slate-900">
-                {closed ? "Caisse fermée pour aujourd'hui" : "Caisse ouverte"}
+                {closed ? "Caisse fermée pour aujourd'hui" : `Caisse ouverte depuis le ${today.business_day}`}
               </p>
               <p className="text-xs text-slate-500">
                 {today.opened_by?.name ?? user?.name} · journée{" "}
@@ -217,16 +245,16 @@ export default function Caisse() {
               </p>
             </div>
             <div className="ml-auto flex flex-wrap gap-2">
-              <button
+              {canBalances && <button
                 className="btn-ghost"
                 onClick={() => showTicket(today, "open", false)}
               >
                 <Printer size={16} /> Ticket d'ouverture
-              </button>
-              <button className="btn-ghost" onClick={() => showZ(today.id)}>
+              </button>}
+              {canZ && <button className="btn-ghost" onClick={() => showZ(today.id)}>
                 <Printer size={16} /> État Z
-              </button>
-              {closed && (
+              </button>}
+              {closed && canZ && (
                 <button
                   className="btn-ghost"
                   onClick={() => showTicket(today, "close", false)}
@@ -240,7 +268,7 @@ export default function Caisse() {
                     <button
                       className="btn-ghost"
                       onClick={() => {
-                        setCountedBalance(String(today.expected_cash));
+                        setCountedBalance(today.expected_cash == null ? "" : String(today.expected_cash));
                         setCloseNote("");
                         setCloseOpen(true);
                       }}
@@ -261,10 +289,14 @@ export default function Caisse() {
               ["Fonds d'ouverture", formatXOF(today.opening_balance)],
               ["Ventes espèces", formatXOF(today.cash_sales)],
               ["Autres paiements", formatXOF(today.other_sales)],
+              ["Recettes de caisse", formatXOF(today.entries_total)],
+              ["Sorties de caisse", formatXOF(today.exits_total)],
+              ["Règlements espèces nets", formatXOF(today.cash_settlements)],
+              ["Remboursements espèces", formatXOF(today.cash_refunds)],
               [
                 closed ? "Solde compté" : "Solde attendu",
                 formatXOF(
-                  closed ? today.closing_balance ?? 0 : today.expected_cash
+                  closed ? today.closing_balance : today.expected_cash
                 ),
               ],
             ].map(([label, value]) => (
@@ -277,7 +309,7 @@ export default function Caisse() {
             ))}
           </div>
 
-          <div className="mt-4">
+          {canBalances && <div className="mt-4">
             <h3 className="mb-2 text-sm font-bold text-slate-900">
               Ventes de la session
             </h3>
@@ -324,9 +356,10 @@ export default function Caisse() {
                 </table>
               </div>
             )}
-          </div>
+          </div>}
 
-          {closed && (
+          {!canBalances && <p className="mt-4 text-sm text-slate-500">Les soldes ne sont pas accessibles avec vos droits.</p>}
+          {closed && today.difference != null && (
             <p
               className={`rounded-xl px-4 py-3 text-sm font-semibold ${
                 Math.abs(today.difference ?? 0) < 1
@@ -348,9 +381,28 @@ export default function Caisse() {
         </div>
       )}
 
-      <div className="card p-5">
+      {today && <div className="card space-y-4 p-5">
+        <h2 className="text-sm font-bold text-slate-900">Recettes et sorties de caisse</h2>
+        {!closed && canEntry && <form className="grid gap-3 sm:grid-cols-4" onSubmit={(e) => { e.preventDefault(); void addMovement(); }}>
+          <div><label className="label">Opération</label><select className="input" value={movementType} onChange={(e) => setMovementType(e.target.value as "in" | "out")}>
+            <option value="in">Recette</option>
+            {canExit && <option value="out">Sortie</option>}
+          </select></div>
+          <div><label className="label">Montant</label><input className="input" type="number" min="0.01" step="0.01" required value={movementAmount} onChange={(e) => setMovementAmount(e.target.value)} /></div>
+          <div><label className="label">Motif obligatoire</label><input className="input" maxLength={1000} required value={movementReason} onChange={(e) => setMovementReason(e.target.value)} /></div>
+          <button className="btn-primary self-end" disabled={saving || !movementReason.trim()}>Enregistrer</button>
+        </form>}
+        <div className="overflow-x-auto"><table className="w-full text-sm">
+          <thead><tr className="border-b text-left"><th className="py-2">Date</th><th>Opération</th><th>Motif</th><th>Poste</th><th className="text-right">Montant</th></tr></thead>
+          <tbody>{movements.map((m) => <tr key={m.id} className="border-b border-slate-100">
+            <td className="py-2">{new Date(m.created_at).toLocaleString("fr-FR")}</td><td>{m.type === "in" ? "Recette" : "Sortie"}</td><td>{m.reason}</td><td>{m.workstation || "—"}</td><td className="text-right">{formatXOF(m.amount)}</td>
+          </tr>)}</tbody>
+        </table>{movements.length === 0 && <p className="py-3 text-sm text-slate-500">Aucun mouvement de caisse.</p>}</div>
+      </div>}
+
+      {canClosures && <div className="card p-5">
         <h2 className="mb-3 text-sm font-bold text-slate-900">
-          {isAdmin ? "Dernières caisses" : "Mes dernières caisses"}
+          Dernières caisses
         </h2>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -391,12 +443,12 @@ export default function Caisse() {
                     >
                       {s.closed_at ? "Fermée" : "Ouverte"}
                     </span>
-                    <button
+                    {canZ && <button
                       className="ml-2 text-xs font-semibold text-brand-600 underline"
                       onClick={() => showZ(s.id)}
                     >
                       État Z
-                    </button>
+                    </button>}
                     {isAdmin && s.closed_at && (
                       <button
                         className="ml-2 text-xs font-semibold text-amber-600 underline"
@@ -431,7 +483,7 @@ export default function Caisse() {
             </tbody>
           </table>
         </div>
-      </div>
+      </div>}
 
       <Modal
         open={closeOpen}
@@ -455,9 +507,9 @@ export default function Caisse() {
         <div className="space-y-4">
           <div className="grid grid-cols-3 gap-3">
             {[
-              ["Fonds d'ouverture", formatXOF(today?.opening_balance ?? 0)],
-              ["Ventes espèces", formatXOF(today?.cash_sales ?? 0)],
-              ["Solde attendu", formatXOF(today?.expected_cash ?? 0)],
+              ["Fonds d'ouverture", formatXOF(today?.opening_balance)],
+              ["Ventes espèces", formatXOF(today?.cash_sales)],
+              ["Solde attendu", formatXOF(today?.expected_cash)],
             ].map(([label, value]) => (
               <div key={label} className="rounded-xl bg-slate-50 p-3">
                 <p className="text-xs text-slate-400">{label}</p>
@@ -478,7 +530,7 @@ export default function Caisse() {
           </div>
           <div>
             <label className="label">
-              Note {Math.abs(countedDifference) >= 1 ? "(obligatoire : justification de l'écart)" : "(facultatif)"}
+              Note {!canBalances ? "(obligatoire)" : Math.abs(countedDifference) >= 1 ? "(obligatoire : justification de l'écart)" : "(facultatif)"}
             </label>
             <input
               className="input"
@@ -487,7 +539,7 @@ export default function Caisse() {
               placeholder="Ex. fonds remis par le gérant"
             />
           </div>
-          <p
+          {canBalances && <p
             className={`rounded-xl px-4 py-3 text-sm font-semibold ${
               Math.abs(countedDifference) < 1
                 ? "bg-emerald-50 text-emerald-700"
@@ -497,7 +549,7 @@ export default function Caisse() {
             {Math.abs(countedDifference) < 1
               ? "Caisse conforme"
               : `Écart : ${formatXOF(countedDifference)}`}
-          </p>
+          </p>}
         </div>
       </Modal>
 
