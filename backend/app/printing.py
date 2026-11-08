@@ -48,7 +48,9 @@ def _spooler():
     return dll
 
 # Windows printer status bits that mean the queue cannot print right now.
+PRINTER_STATUS_PAUSED = 0x00000001
 PRINTER_STATUS_ERROR = 0x00000002
+PRINTER_STATUS_PAPER_JAM = 0x00000008
 PRINTER_STATUS_OFFLINE = 0x00000080
 PRINTER_STATUS_PAPER_OUT = 0x00000010
 PRINTER_STATUS_NOT_AVAILABLE = 0x00001000
@@ -145,6 +147,10 @@ def _status_label(status: int) -> str:
         return "Indisponible"
     if status & PRINTER_STATUS_ERROR:
         return "En erreur"
+    if status & PRINTER_STATUS_PAUSED:
+        return "En pause"
+    if status & PRINTER_STATUS_PAPER_JAM:
+        return "Bourrage papier"
     return ""
 
 
@@ -287,8 +293,6 @@ def queue_status(name: str) -> PrinterDevice | None:
         except OSError:
             color = False
         problem = _status_label(int(info.Status))
-        if not problem and int(info.Status) & 0x00000008:
-            problem = "En pause"
         return PrinterDevice(
             name=info.pPrinterName or name,
             port=info.pPortName or "",

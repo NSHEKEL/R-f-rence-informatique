@@ -56,6 +56,29 @@ class CashRegisterTests(unittest.TestCase):
         self.assertEqual(self.db.get(CashSession, first_session["id"]).z_report, frozen)
         self.assertEqual(self.db.query(Sale).count(), 2)
 
+    def test_previous_day_open_session_is_current_visible_and_closable(self):
+        session = self.open()
+        row = self.db.get(CashSession, session["id"])
+        row.business_day = "2026-11-07"
+        row.opened_at = datetime(2026, 11, 7, 8, tzinfo=timezone.utc)
+        self.db.commit()
+        with patch.object(cash, "business_day", return_value="2026-11-09"):
+            current = self.call("/api/cash-sessions/current")
+            screen = self.call("/api/cash-sessions/today")
+            self.assertEqual(screen["id"], current["id"])
+            self.assertEqual(screen["business_day"], "2026-11-07")
+            self.assertIsNone(screen["closed_at"])
+            self.assertIsNone(screen["expected_cash"])
+            self.sale("previous-day-sale")
+            self.assertEqual(self.db.query(Sale).one().cash_session_id, session["id"])
+            self.call("/api/cash-sessions/open", "POST", {"opening_balance": 0}, status=400)
+            closed = self.call("/api/cash-sessions/close", "POST", {"closing_balance": 600, "note": "Clôture différée"})
+            self.assertEqual(closed["id"], session["id"])
+            self.assertIsNotNone(closed["closed_at"])
+            self.assertIsNone(self.call("/api/cash-sessions/current"))
+            self.assertIsNone(self.call("/api/cash-sessions/today"))
+            self.assertNotEqual(self.open()["id"], session["id"])
+
     def test_secondary_workstation_sales_join_same_central_user_session(self):
         session = self.open()
         self.grant("soldes_consulter", "caisse_z")

@@ -16,8 +16,8 @@ import { useCompany } from "../context/CompanyContext";
 import { useSyncVersion } from "../context/SyncContext";
 
 /**
- * Till screen: one opening and one closing per cashier and per day. Selling
- * happens on the dedicated POS screen.
+ * Till screen: manage the cashier's active session, including previous days.
+ * Selling happens on the dedicated POS screen.
  */
 export default function Caisse() {
   const { user, isAdmin, can } = useAuth();
@@ -237,7 +237,7 @@ export default function Caisse() {
             </span>
             <div>
               <p className="text-sm font-bold text-slate-900">
-                {closed ? "Caisse fermée pour aujourd'hui" : "Caisse ouverte"}
+                {closed ? "Caisse fermée pour aujourd'hui" : `Caisse ouverte depuis le ${today.business_day}`}
               </p>
               <p className="text-xs text-slate-500">
                 {today.opened_by?.name ?? user?.name} · journée{" "}

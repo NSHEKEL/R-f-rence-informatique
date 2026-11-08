@@ -274,6 +274,9 @@ class DesktopApi:
             logging.getLogger(__name__).warning("Statut imprimante non lisible", exc_info=True)
             return ""
 
+    def printer_problem(self, printer_name: str) -> str:
+        return self._printer_problem(printer_name)
+
     def print_ticket(self, payload: str) -> str:
         """Print a receipt straight on the counter printer.
 

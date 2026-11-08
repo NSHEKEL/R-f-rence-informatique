@@ -432,7 +432,7 @@ export function labelPrintStyle(config: LabelPrinterConfig): string {
  * single dialog produces the whole set. Resolves to true when the drawer kick
  * travelled with the ticket, so the caller knows the till is already open.
  */
-export function printReceipt(
+export async function printReceipt(
   format: ReceiptFormat,
   config: ReceiptPrinterConfig = DEFAULT_PRINTING.receipt,
   /** Cash drawer kick code, sent with the ticket on the same printer. */
@@ -465,6 +465,13 @@ export function printReceipt(
     }
     return false;
   };
+  const checkPrinter = (window as unknown as {
+    pywebview?: { api?: { printer_problem?: (name: string) => Promise<string> } };
+  }).pywebview?.api?.printer_problem;
+  if (checkPrinter) {
+    const problem = await checkPrinter(printer);
+    if (problem) return failed(`Imprimante indisponible : ${problem}`);
+  }
   if (root && copies > 1) {
     for (let i = 1; i < copies; i += 1) {
       const copy = root.cloneNode(true) as HTMLElement;

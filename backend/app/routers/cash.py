@@ -128,8 +128,8 @@ def get_today(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Today's session for this cashier, so the UI knows it is already done."""
-    session = day_session(db, current_user)
+    """The active session, or today's closure when none remains open."""
+    session = current_session(db, current_user) or day_session(db, current_user)
     return _detail(db, session, current_user) if session else None
 
 
