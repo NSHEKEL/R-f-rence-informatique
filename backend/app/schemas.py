@@ -475,9 +475,9 @@ class SaleItemCreate(PackagingQuantities):
     quantity: int = 0
     # Price agreed at the counter; ignored unless the seller holds the right
     # to change a price, and never written back to the product sheet.
-    unit_price: Optional[float] = None
+    unit_price: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     # Discount granted on this line only, in currency units (not %).
-    discount: float = 0
+    discount: float = Field(default=0, ge=0, allow_inf_nan=False)
 
 
 class SaleCreate(BaseModel):
@@ -489,7 +489,7 @@ class SaleCreate(BaseModel):
     # Cash handed over at the counter, so the ticket can print the change.
     paid_amount: float = 0
     # Discount granted on the whole ticket, deducted from the total.
-    discount: float = 0
+    discount: float = Field(default=0, ge=0, allow_inf_nan=False)
     # Gift sale: stock moves, revenue excluded, ticket marked OFFERT.
     is_gift: bool = False
     items: List[SaleItemCreate]

@@ -99,6 +99,10 @@ class WholesaleTests(unittest.TestCase):
         self.sell([{"quantity": 1, "price_tier": "invalid"}], status=422)
         self.sell([], status=400)
         self.sell([{"packaging_quantity": 0}], status=400)
+        for invalid in (-1, "NaN", "inf", "invalid"):
+            self.sell([{"quantity": 1}], discount=invalid, status=422)
+            self.sell([{"quantity": 1, "unit_price": invalid}], status=422)
+            self.sell([{"quantity": 1, "discount": invalid}], status=422)
         sale = self.sell([{"price_tier": "detail", "packaging_quantity": 1}, {"price_tier": "gros", "quantity": 5}])
         self.assertEqual([line["price_tier"] for line in sale["items"]], ["detail", "gros"])
         self.assertEqual(sale["total"], 2400)
@@ -156,6 +160,17 @@ class WholesaleTests(unittest.TestCase):
         response = self.client.post("/api/products/import", files={"file": ("prix.csv", data.encode(), "text/csv")})
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(self.call(f"/api/products/{self.product.id}")["wholesale_packaging_price"], 1450)
+        for invalid in ("-1", "NaN", "inf", "invalid"):
+            data = f"reference;nom;prix_gros_carton\n{self.product.sku};Grossiste;{invalid}\n"
+            response = self.client.post("/api/products/import", files={"file": ("prix.csv", data.encode(), "text/csv")})
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()["updated"], 0)
+            self.assertEqual(len(response.json()["errors"]), 1)
+            self.assertEqual(self.call(f"/api/products/{self.product.id}")["wholesale_packaging_price"], 1450)
+        data = f"reference;nom;prix_gros_carton\n{self.product.sku};Grossiste;\n"
+        response = self.client.post("/api/products/import", files={"file": ("prix.csv", data.encode(), "text/csv")})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIsNone(self.call(f"/api/products/{self.product.id}")["wholesale_packaging_price"])
         self.call(f"/api/products/{self.product.id}/price-history")
 
 

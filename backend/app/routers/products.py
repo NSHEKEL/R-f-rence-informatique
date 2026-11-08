@@ -1,4 +1,5 @@
 import csv
+import math
 import io
 import random
 from datetime import datetime, timedelta
@@ -334,6 +335,14 @@ def import_products(
                     {"line": number, "message": f"Code-barres déjà utilisé : {barcode}"}
                 )
                 continue
+        wholesale_packaging_price = None
+        if "wholesale_packaging_price" in present:
+            value = fields.get("wholesale_packaging_price", "")
+            if value:
+                wholesale_packaging_price = _to_float(value, float("nan"))
+                if not math.isfinite(wholesale_packaging_price) or wholesale_packaging_price < 0:
+                    errors.append({"line": number, "message": "Prix gros carton invalide"})
+                    continue
         category_id = None
         category_name = fields.get("category", "")
         if category_name:
@@ -360,8 +369,7 @@ def import_products(
         if "quantity" in present:
             values["quantity"] = _to_int(fields.get("quantity", ""))
         if "wholesale_packaging_price" in present:
-            value = fields.get("wholesale_packaging_price", "")
-            values["wholesale_packaging_price"] = _to_float(value) if value else None
+            values["wholesale_packaging_price"] = wholesale_packaging_price
         if "min_stock" in present:
             values["min_stock"] = _to_int(fields.get("min_stock", ""), 5)
         if barcode:
