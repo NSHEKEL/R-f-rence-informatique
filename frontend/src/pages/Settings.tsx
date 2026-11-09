@@ -42,16 +42,26 @@ import PosDisplaySettings from "../components/PosDisplaySettings";
 import SecuritySettings from "../components/SecuritySettings";
 import FneSettings from "../components/FneSettings";
 import { useCompany } from "../context/CompanyContext";
+import { canOpenSettingsTab, companyUpdatePayload, TAB_CATEGORIES } from "../lib/settingsAccess";
+import WorkstationSettings from "../components/WorkstationSettings";
+import CatalogPriceSettings from "../components/CatalogPriceSettings";
 
 type CompanyForm = Omit<CompanySettings, "id"> & { smtp_password?: string };
 
 const LOGO_MAX_BYTES = 400_000;
+const SETTING_LABELS: Record<string, string> = { expiry_critical_days: "Péremption critique (jours)", expiry_alert_days: "Alerte péremption (jours)", expiry_watch_days: "Surveillance péremption (jours)", tax_id: "N° RCCM / NCC", rccm: "RCCM", ncc: "NCC", capital_social: "Capital social", regime_fiscal: "Régime fiscal", vat_rate: "TVA (%)", drawer_enabled: "Activer le tiroir-caisse", drawer_port: "Port / imprimante du tiroir partagé", drawer_code: "Code d'ouverture partagé", auto_print_cash: "Impression automatique après encaissement", drawer_open_after_sale: "Ouverture automatique du tiroir après vente" };
 
 /** The page is long: each domain gets its own tab instead of one scroll. */
 const TABS = [
   { key: "entreprise", label: "Entreprise", icon: Building2 },
   { key: "impression", label: "Impression", icon: Printer },
   { key: "pos", label: "Affichage POS", icon: Printer },
+  { key: "articles", label: "Articles", icon: Building2 },
+  { key: "tarifs", label: "Tarifs", icon: Building2 },
+  { key: "fiscalite", label: "Fiscalité", icon: FileCheck2 },
+  { key: "poste", label: "Ce poste", icon: Printer },
+  { key: "peripheriques", label: "Périphériques", icon: Printer },
+  { key: "caisse", label: "Réglages caisse", icon: Printer },
   { key: "reseau", label: "Réseau & postes", icon: Server },
   { key: "sauvegarde", label: "Sauvegarde", icon: Database },
   { key: "maj", label: "Mise à jour", icon: DownloadCloud },
@@ -148,7 +158,7 @@ function nativeApi(): { choose_folder?: () => Promise<string> } | undefined {
 }
 
 export default function Settings() {
-  const { user, refreshUser } = useAuth();
+  const { user, refreshUser, can } = useAuth();
   const [photoMessage, setPhotoMessage] = useState("");
   const { setCompany: setBranding } = useCompany();
   const [company, setCompany] = useState<CompanyForm>(emptyCompany);
@@ -181,12 +191,15 @@ export default function Settings() {
   const [mobileCode, setMobileCode] = useState("");
   const [mobileUrl, setMobileUrl] = useState("");
   const [mobileStatus, setMobileStatus] = useState("");
-  const [tab, setTab] = useState<TabKey>(() => {
+  const [storedTab, setTab] = useState<TabKey>(() => {
     const saved_ = localStorage.getItem(TAB_KEY);
     return TABS.some((item) => item.key === saved_)
       ? (saved_ as TabKey)
       : "entreprise";
   });
+  const visibleTabs = TABS.filter((item) => canOpenSettingsTab(item.key, user?.role === "admin", can));
+  const tab = visibleTabs.some((item) => item.key === storedTab) ? storedTab : visibleTabs[0]?.key;
+  const tabEditable = tab === "tarifs" ? true : tab === "reseau" || tab === "securite" ? user?.role === "admin" : tab === "poste" ? can("poste_modifier") || can("peripheriques_modifier") : tab === "compte" || !!tab && can(`${TAB_CATEGORIES[tab]}_modifier`);
   const [workstations, setWorkstations] = useState<Workstation[]>([]);
   const [layoutDoc, setLayoutDoc] = useState(DOC_TYPES[0].key);
   const docLayout = readDocumentLayout(
@@ -250,19 +263,21 @@ export default function Settings() {
   }, []);
 
   const loadWorkstations = useCallback(async () => {
+    if (user?.role !== "admin") return;
     try {
       const { data } = await api.get<Workstation[]>("/network/clients");
       setWorkstations(data);
     } catch {
       /* only the administrator sees the list: keep the page usable */
     }
-  }, []);
+  }, [user?.role]);
 
   useEffect(() => {
     loadWorkstations();
   }, [loadWorkstations]);
 
   const loadBackups = useCallback(async () => {
+    if (!can("sauvegarde_consulter")) return;
     try {
       const { data } = await api.get<BackupFile[]>("/backups");
       setBackups(data);
@@ -271,7 +286,7 @@ export default function Settings() {
     } catch {
       /* the list is optional: keep the page usable */
     }
-  }, []);
+  }, [can]);
 
   useEffect(() => {
     loadBackups();
@@ -284,7 +299,7 @@ export default function Settings() {
   }, [tab, loadBackups]);
 
   useEffect(() => {
-    localStorage.setItem(TAB_KEY, tab);
+    if (tab) localStorage.setItem(TAB_KEY, tab);
   }, [tab]);
 
   async function createBackup() {
@@ -378,7 +393,7 @@ export default function Settings() {
   }
 
   async function restoreBackup() {
-    if ((!restoreFile && !restoreName) || !restoreReport?.compatible || restoreConfirm !== "RESTAURER") return;
+    if (!can("parametres_sauvegarde_restaurer") || (!restoreFile && !restoreName) || !restoreReport?.compatible || restoreConfirm !== "RESTAURER") return;
     setRestoreBusy(true);
     const body = new FormData();
     if (restoreFile) body.append("file", restoreFile);
@@ -526,7 +541,7 @@ export default function Settings() {
     setSaving(true);
     setError("");
     try {
-      const res = await api.put<CompanySettings>("/settings/company", company);
+      const res = await api.put<CompanySettings>("/settings/company", companyUpdatePayload(company, can, user?.role === "admin"));
       const { id: _id, ...rest } = res.data;
       void _id;
       setCompany({ ...rest, smtp_password: "" });
@@ -568,9 +583,7 @@ export default function Settings() {
       </div>
 
       <div className="flex flex-wrap gap-2">
-        {TABS.filter(
-          (item) => !("admin" in item) || user?.role === "admin"
-        ).map((item) => (
+        {visibleTabs.map((item) => (
           <button
             key={item.key}
             type="button"
@@ -587,6 +600,18 @@ export default function Settings() {
         ))}
       </div>
 
+      <fieldset disabled={!tabEditable} className="min-w-0 space-y-6">
+      {tab === "poste" && <WorkstationSettings />}
+      {tab === "tarifs" && <CatalogPriceSettings />}
+      {(["articles", "fiscalite", "peripheriques", "caisse"] as string[]).includes(tab || "") && <div className="card space-y-4 p-6">
+        <h3 className="font-bold">{visibleTabs.find((item) => item.key === tab)?.label}</h3>
+        {(tab === "articles" ? ["expiry_critical_days", "expiry_alert_days", "expiry_watch_days"] : tab === "fiscalite" ? ["tax_id", "rccm", "ncc", "capital_social", "regime_fiscal", "vat_rate"] : tab === "peripheriques" ? ["drawer_enabled", "drawer_port", "drawer_code"] : ["auto_print_cash", "drawer_open_after_sale"]).map((field) => {
+          const key = field as keyof CompanyForm;
+          return <label className="label" key={key}>{SETTING_LABELS[key] || key}{typeof company[key] === "boolean" ? <input type="checkbox" checked={Boolean(company[key])} onChange={(e) => update({ [key]: e.target.checked })} /> : <input className="input" type={typeof company[key] === "number" ? "number" : "text"} min={0} value={String(company[key] ?? "")} onChange={(e) => update({ [key]: typeof company[key] === "number" ? Number(e.target.value) : e.target.value })} />}</label>;
+        })}
+        <button className="btn-primary" onClick={save}>Enregistrer</button>
+        {tab === "peripheriques" && <WorkstationSettings />}
+      </div>}
       {/* Company configuration */}
       {tab === "entreprise" && (
       <div className="card p-6">
@@ -723,6 +748,7 @@ export default function Settings() {
                 placeholder="www.reference.ci"
               />
             </div>
+            <fieldset disabled={!can("fiscaux_modifier")} className="contents">
             <div>
               <label className="label">N° RCCM / NCC</label>
               <input
@@ -768,7 +794,8 @@ export default function Settings() {
                 placeholder="Régime simplifié"
               />
             </div>
-            <div className="sm:col-span-2 rounded-xl border border-slate-200 p-3">
+            </fieldset>
+            <fieldset disabled={!can("imprimantes_modifier")} className="sm:col-span-2 rounded-xl border border-slate-200 p-3">
               <p className="label">Disposition des en-têtes de documents</p>
               <p className="mb-2 text-xs text-slate-400">
                 Réglage indépendant pour chaque type de document.
@@ -848,7 +875,7 @@ export default function Settings() {
                   }}
                 />
               </div>
-            </div>
+            </fieldset>
             <div>
               <label className="label">WhatsApp d'assistance</label>
               <input
@@ -884,6 +911,7 @@ export default function Settings() {
                 min={0}
                 max={100}
                 step={0.1}
+                disabled={!can("fiscaux_modifier")}
                 value={company.vat_rate}
                 onChange={(e) =>
                   update({ vat_rate: Number(e.target.value) || 0 })
@@ -1288,7 +1316,7 @@ export default function Settings() {
           <p>Une sauvegarde de sécurité « avant-restauration » sera créée avant toute restauration. Les données seront remplacées au prochain démarrage.</p>
           <label className="label">Saisissez RESTAURER pour confirmer</label>
           <input className="input" value={restoreConfirm} onChange={(e) => setRestoreConfirm(e.target.value)} autoComplete="off" />
-          <button className="btn-primary" disabled={restoreBusy || !restoreReport.compatible || restoreConfirm !== "RESTAURER"} onClick={restoreBackup}>Confirmer la restauration</button>
+          <button className="btn-primary" disabled={!can("parametres_sauvegarde_restaurer") || restoreBusy || !restoreReport.compatible || restoreConfirm !== "RESTAURER"} onClick={restoreBackup}>Confirmer la restauration</button>
           <button className="btn-ghost" onClick={() => { setRestoreReport(null); setRestoreFile(null); setRestoreName(""); setRestoreConfirm(""); }}>Annuler</button>
         </div>}
 
@@ -1372,7 +1400,7 @@ export default function Settings() {
       </div>
       )}
 
-      {tab === "fne" && user?.role === "admin" && <FneSettings />}
+      {tab === "fne" && <FneSettings />}
       {tab === "securite" && user?.role === "admin" && <SecuritySettings />}
 
       {tab === "compte" && (
@@ -1475,6 +1503,7 @@ export default function Settings() {
         </div>
       </div>
       )}
+      </fieldset>
     </div>
   );
 }

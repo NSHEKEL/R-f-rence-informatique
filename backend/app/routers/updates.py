@@ -1,18 +1,10 @@
-"""Remote update endpoints: check for a new release and install it.
+"""Permission-controlled update checks and installation on this computer."""
 
-The update always concerns the computer running this process, never the
-central server: a workstation reads its data on the shared server but keeps
-its own EasyGest installation. The frontend therefore calls these endpoints on
-its own machine, and a request coming from that machine is accepted without a
-token — the shared server may use another signing key or another user list.
-"""
-
-from fastapi import APIRouter, Depends, HTTPException, Request
-from jose import JWTError, jwt
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from .. import backup
-from ..auth import ALGORITHM, SECRET_KEY
+from ..permissions import require_permission
 from ..database import get_db
 from ..models import User
 from ..schemas import UpdateInstallResult, UpdateStatus
@@ -45,30 +37,8 @@ def _recent_backup_exists() -> bool:
         pass
     return False
 
-LOOPBACK = {"127.0.0.1", "::1", "localhost"}
-
-
-def allow_update(request: Request, db: Session = Depends(get_db)) -> None:
-    """Accept the machine itself, or an administrator coming from the network."""
-    if (request.client.host if request.client else "") in LOOPBACK:
-        return
-
-    header = request.headers.get("Authorization", "")
-    token = header[7:] if header.lower().startswith("bearer ") else ""
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user = db.query(User).filter(User.id == int(payload.get("sub", 0))).first()
-    except (JWTError, ValueError):
-        user = None
-    if user is None or user.role != "admin":
-        raise HTTPException(
-            status_code=403,
-            detail="Mise à jour réservée à l'ordinateur lui-même ou à un administrateur",
-        )
-
-
 @router.get("", response_model=UpdateStatus)
-def check_update(_: None = Depends(allow_update)):
+def check_update(_: User = Depends(require_permission("generaux_consulter"))):
     status = UpdateStatus(current_version=APP_VERSION, packaged=is_packaged())
     try:
         release = latest_release()
@@ -84,7 +54,7 @@ def check_update(_: None = Depends(allow_update)):
 
 @router.post("/install", response_model=UpdateInstallResult)
 def install_update(
-    _: None = Depends(allow_update), db: Session = Depends(get_db)
+    _: User = Depends(require_permission("generaux_modifier")), db: Session = Depends(get_db)
 ):
     try:
         release = latest_release()

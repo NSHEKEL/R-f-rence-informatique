@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import { Link, useNavigate } from "react-router-dom";
+import { readPosteSettings, scanValue, writePosteSettings } from "../lib/poste";
 import {
   type LucideIcon,
   Apple,
@@ -252,9 +253,13 @@ export default function NouvelleVente() {
   const setScale = (v: number) => {
     const s = Math.min(1.3, Math.max(0.7, Math.round(v * 10) / 10));
     setUiScale(s);
-    localStorage.setItem("ri_ui_scale", String(s));
-    window.dispatchEvent(new Event("ri_ui_scale_change"));
+    writePosteSettings({ ...readPosteSettings(), display_scale: Math.round(s * 100) });
   };
+  useEffect(() => {
+    const refreshScale = () => setUiScale(Number(localStorage.getItem("ri_ui_scale")) || 1);
+    window.addEventListener("ri_ui_scale_change", refreshScale);
+    return () => window.removeEventListener("ri_ui_scale_change", refreshScale);
+  }, []);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [supplierFilter, setSupplierFilter] = useState<number | "all">("all");
   const [posDisplay, setPosDisplay] = useState<PosDisplay>(DEFAULT_POS);
@@ -441,7 +446,7 @@ export default function NouvelleVente() {
 
   /** Enter validates the search: exact code first (scanner), else best match. */
   function submitSearch() {
-    const q = query.trim().toLowerCase();
+    const q = scanValue(query).toLowerCase();
     if (!q) return;
     const exact = products.find(
       (p) => scanCodes(p).includes(q) || p.name.toLowerCase() === q
@@ -550,6 +555,7 @@ export default function NouvelleVente() {
   /** True when the till must open by itself once the sale is cashed in. */
   function drawerWanted(): boolean {
     return Boolean(
+      (can("caisse_operations") || can("peripheriques_modifier")) &&
       company?.drawer_enabled &&
         company.drawer_open_after_sale &&
         printing.receipt.open_drawer
@@ -596,7 +602,7 @@ export default function NouvelleVente() {
   function openDrawer() {
     if (!drawerWanted()) return;
     // localApi : le tiroir est branché à ce poste, pas au serveur du magasin.
-    localApi.post("/settings/company/open-drawer").catch(() => {
+    localApi.post("/settings/company/open-drawer", { drawer_port: company?.drawer_port, drawer_code: company?.drawer_code, printer_name: printing.receipt.printer_name }).catch(() => {
       setFlash("Caisse électronique : ouverture impossible.");
     });
   }
@@ -1715,9 +1721,10 @@ export default function NouvelleVente() {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") {
+                  if (e.key === readPosteSettings().scanner_suffix) {
                     e.preventDefault();
-                    submitSearch();
+                    if (readPosteSettings().scanner_auto_add) submitSearch();
+                    else setQuery(scanValue(query));
                   }
                 }}
               />

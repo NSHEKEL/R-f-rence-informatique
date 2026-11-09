@@ -43,6 +43,7 @@ import ConsoleJournal from "./pages/console/ConsoleJournal";
 import ConsoleSettings from "./pages/console/ConsoleSettings";
 import ConsoleSuggestions from "./pages/console/ConsoleSuggestions";
 import Mobile from "./pages/Mobile";
+import { canOpenSettings } from "./lib/settingsAccess";
 
 /** Home screens, in the order a user falls back to them. */
 const HOME_PAGES: [string, string][] = [
@@ -70,6 +71,16 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 function useFallbackPath(): string {
   const { can } = useAuth();
   return allowedLandingPath(HOME_PAGES, can);
+}
+
+function SettingsRoute({ children, category, feature }: { children: React.ReactNode; category?: string; feature?: string }) {
+  const { can } = useAuth();
+  const { hasFeature } = useLicense();
+  const fallback = useFallbackPath();
+  if (!(category ? can(`${category}_consulter`) : canOpenSettings(can))) return <Navigate to={fallback} replace />;
+  if (category === "utilisateurs" && !hasFeature("droits_acces")) return <p>La gestion des droits n'est pas incluse dans votre formule.</p>;
+  if (feature && !hasFeature(feature)) return <p>Cette page n'est pas incluse dans votre formule.</p>;
+  return <>{children}</>;
 }
 
 function AdminRoute({
@@ -307,25 +318,25 @@ export default function App() {
         <Route
           path="/utilisateurs"
           element={
-            <AdminRoute feature={ADMIN_FEATURE["/utilisateurs"]}>
+            <SettingsRoute category="utilisateurs" feature={ADMIN_FEATURE["/utilisateurs"]}>
               <Users />
-            </AdminRoute>
+            </SettingsRoute>
           }
         />
         <Route
           path="/parametres"
           element={
-            <AdminRoute feature={ADMIN_FEATURE["/parametres"]}>
+            <SettingsRoute feature={ADMIN_FEATURE["/parametres"]}>
               <Settings />
-            </AdminRoute>
+            </SettingsRoute>
           }
         />
         <Route
           path="/droits"
           element={
-            <AdminRoute feature={ADMIN_FEATURE["/droits"]}>
+            <SettingsRoute category="utilisateurs" feature={ADMIN_FEATURE["/droits"]}>
               <Droits />
-            </AdminRoute>
+            </SettingsRoute>
           }
         />
         <Route

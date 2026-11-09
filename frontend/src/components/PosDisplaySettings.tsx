@@ -11,8 +11,8 @@ const NOOP = () => {};
 const PRICE = (product: Product) => product.sale_price;
 
 export default function PosDisplaySettings() {
-  const { user, can } = useAuth();
-  const admin = user?.role === "admin";
+  const { can } = useAuth();
+  const admin = can("articles_modifier");
   const [config, setConfig] = useState<PosDisplay>(DEFAULT_POS);
   const [ready, setReady] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -39,6 +39,6 @@ export default function PosDisplaySettings() {
     </fieldset>
     <h3 className="font-semibold">Aperçu en direct</h3><div className="flex h-80 flex-col"><PosProductGrid products={PREVIEW} config={mergePos(config)} stockRight={can("produits") || can("inventaire")} selected={EMPTY_SELECTION} onAdd={NOOP} price={PRICE} /></div>
     <div className="flex flex-wrap gap-3"><button className="btn-primary" disabled={!admin || !ready || saving} onClick={save}>{saving ? "Enregistrement…" : "Enregistrer"}</button><button className="btn-ghost" disabled={!admin || !ready || saving} onClick={() => { setConfig({ ...DEFAULT_POS }); setMessage("Valeurs par défaut restaurées dans l'aperçu. Enregistrez pour les conserver."); }}>Restaurer les paramètres par défaut</button></div>
-    {message && <p role="status">{message}</p>}{!admin && <p>Seul un administrateur peut modifier cet affichage.</p>}
+    {message && <p role="status">{message}</p>}{!admin && <p>Affichage en lecture seule.</p>}
   </section>;
 }

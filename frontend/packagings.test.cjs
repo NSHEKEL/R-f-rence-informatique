@@ -49,7 +49,10 @@ test("POS scanning adds one packaging and keeps packaging and tier identities se
   }
   visit(file);
   assert.equal(functions.length, 5);
+  const poste = {};
+  vm.runInNewContext(ts.transpileModule(readFileSync(`${__dirname}/src/lib/poste.ts`, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports: poste });
   const state = { ...units, ...scan, cart: [], priceMode: "auto", product, products: [product], filtered: [], query: "PACK24", stockLimit: (p) => p.quantity, window: { setTimeout() {} }, setFlash() {}, error: "" };
+  state.scanValue = (raw) => poste.scanValue(raw, poste.DEFAULT_POSTE);
   state.setCart = (change) => { state.cart = change(state.cart); };
   state.setError = (error) => { state.error = error; };
   state.setQuery = (query) => { state.query = query; };

@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from .. import backup, gdrive
-from ..auth import require_admin
+from ..permissions import require_permission
 from ..database import get_db
 from ..models import User
 
@@ -23,12 +23,12 @@ def _call(db, function, *args):
 
 
 @router.get("/status")
-def status(db: Session = Depends(get_db), _: User = Depends(require_admin)):
+def status(db: Session = Depends(get_db), _: User = Depends(require_permission("sauvegarde_consulter"))):
     return gdrive.status(db)
 
 
 @router.post("/client")
-async def save_client(request: Request, _: User = Depends(require_admin)):
+async def save_client(request: Request, _: User = Depends(require_permission("sauvegarde_modifier"))):
     try:
         body = bytearray()
         async for chunk in request.stream():
@@ -47,7 +47,7 @@ async def save_client(request: Request, _: User = Depends(require_admin)):
 
 
 @router.post("/connect")
-def connect(request: Request, _: User = Depends(require_admin)):
+def connect(request: Request, _: User = Depends(require_permission("sauvegarde_modifier"))):
     try:
         server = request.scope.get("server")
         if not server:
@@ -72,18 +72,18 @@ def callback(request: Request, state: str = "", code: str = "", error: str = "",
 
 
 @router.post("/disconnect")
-def disconnect(db: Session = Depends(get_db), _: User = Depends(require_admin)):
+def disconnect(db: Session = Depends(get_db), _: User = Depends(require_permission("sauvegarde_modifier"))):
     _call(db, gdrive.disconnect)
     return {"detail": "Google Drive déconnecté."}
 
 
 @router.post("/test")
-def test(db: Session = Depends(get_db), _: User = Depends(require_admin)):
+def test(db: Session = Depends(get_db), _: User = Depends(require_permission("sauvegarde_modifier"))):
     return _call(db, gdrive.test_connection)
 
 
 @router.post("/upload/{name}")
-def upload(name: str, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+def upload(name: str, db: Session = Depends(get_db), _: User = Depends(require_permission("sauvegarde_modifier"))):
     try:
         path = backup.path_of(name)
     except backup.BackupError as exc:
@@ -92,10 +92,10 @@ def upload(name: str, db: Session = Depends(get_db), _: User = Depends(require_a
 
 
 @router.get("/files")
-def files(db: Session = Depends(get_db), _: User = Depends(require_admin)):
+def files(db: Session = Depends(get_db), _: User = Depends(require_permission("sauvegarde_consulter"))):
     return _call(db, gdrive.list_files)
 
 
 @router.post("/download/{file_id}")
-def download(file_id: str, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+def download(file_id: str, db: Session = Depends(get_db), _: User = Depends(require_permission("sauvegarde_modifier"))):
     return _call(db, gdrive.download, file_id)

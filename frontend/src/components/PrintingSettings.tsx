@@ -8,7 +8,7 @@ import {
   RefreshCw,
   Tags,
 } from "lucide-react";
-import { applyPostePrinters, writePostePrinters } from "../context/CompanyContext";
+import { useAuth } from "../context/AuthContext";
 import api, { localApi } from "../api/client";
 import Modal from "../components/Modal";
 import Receipt from "../components/Receipt";
@@ -279,7 +279,8 @@ export default function PrintingSettings({
   update,
   saveCompany,
 }: Props) {
-  const { printing, setPrinting, company: branding } = useCompany();
+  const { sharedPrinting: printing, setPrinting, company: branding } = useCompany();
+  const { can } = useAuth();
   const { hasFeature } = useLicense();
   const thermal = hasFeature("impression_thermique");
   const [form, setForm] = useState<PrintingConfig>(printing);
@@ -317,7 +318,7 @@ export default function PrintingSettings({
   const [actionMessage, setActionMessage] = useState("");
 
   useEffect(() => {
-    setForm(applyPostePrinters(printing));
+    setForm(printing);
   }, [printing]);
 
   const loadPrinters = useCallback(() => {
@@ -371,18 +372,7 @@ export default function PrintingSettings({
       await saveCompany();
       const res = await api.put<PrintingConfig>("/settings/printing", form);
       setPrinting(res.data);
-      setForm(applyPostePrinters(res.data));
-      // The three printer names are also remembered for this workstation
-      // only, so several tills sharing the database keep their own choices.
-      writePostePrinters({
-        receipt: form.receipt.printer_name,
-        label: form.label.printer_name,
-        documents: form.documents.printer_name,
-        delivery: form.documents.delivery_printer_name,
-        quote: form.documents.quote_printer_name,
-        reports: form.documents.reports_printer_name,
-        settlement: form.documents.settlement_printer_name,
-      });
+      setForm(res.data);
       setSaved(true);
     } catch (err) {
       setError(
@@ -742,6 +732,7 @@ export default function PrintingSettings({
             <label className="label">Impression après une vente</label>
             <select
               className="input"
+              disabled={!can("caisse_modifier")}
               value={form.receipt.auto_print ? "auto" : "manuel"}
               onChange={(e) =>
                 patchReceipt({ auto_print: e.target.value === "auto" })
@@ -924,7 +915,7 @@ export default function PrintingSettings({
         </div>
 
         {/* Cash drawer */}
-        <div className="mt-6 rounded-xl border border-slate-200 p-4">
+        <fieldset disabled={!can("peripheriques_modifier")} className="mt-6 rounded-xl border border-slate-200 p-4">
           <p className="mb-3 text-sm font-bold text-slate-700">
             Tiroir-caisse
           </p>
@@ -992,6 +983,7 @@ export default function PrintingSettings({
                 <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
                   <input
                     type="checkbox"
+                    disabled={!can("caisse_modifier")}
                     checked={form.receipt.open_drawer}
                     onChange={(e) => {
                       patchReceipt({ open_drawer: e.target.checked });
@@ -1024,7 +1016,7 @@ export default function PrintingSettings({
               </div>
             </div>
           )}
-        </div>
+        </fieldset>
 
         <div className="mt-6 flex flex-wrap items-center gap-3">
           <button className="btn-primary" onClick={save} disabled={saving}>

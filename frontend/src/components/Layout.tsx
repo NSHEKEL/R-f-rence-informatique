@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { canOpenTreasury } from "../lib/treasury";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { canOpenSettings } from "../lib/settingsAccess";
 import {
   LayoutDashboard,
   Home,
@@ -396,6 +397,8 @@ export default function Layout() {
   const navigate = useNavigate();
   const title = pageTitles[location.pathname] ?? brandName;
   const allowed = (item: NavItem) => {
+    if (item.to === "/parametres") return canOpenSettings(can);
+    if (item.to === "/utilisateurs" || item.to === "/droits") return can("utilisateurs_consulter");
     if (!canOpenTreasury(item.to, can)) return false;
     if (!item.access) return true;
     return item.access === "admin" ? isAdmin : can(item.access);

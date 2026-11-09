@@ -11,6 +11,7 @@ import defaultLogo from "../assets/logo-easygest.png";
 import { cacheRead, cacheWrite } from "../lib/offline";
 import type { CompanySettings, PrintingConfig } from "../types";
 import { mergePrinting } from "../lib/printStyle";
+import { applyPosteDrawer, restorePosteSettings } from "../lib/poste";
 
 export const COMPANY_CACHE_KEY = "company";
 export const PRINTING_CACHE_KEY = "printing";
@@ -25,6 +26,7 @@ interface CompanyContextValue {
   setCompany: (company: CompanySettings) => void;
   /** Receipt and label printer settings, configured once and reused. */
   printing: PrintingConfig;
+  sharedPrinting: PrintingConfig;
   setPrinting: (printing: PrintingConfig) => void;
   reload: () => Promise<void>;
 }
@@ -53,6 +55,7 @@ export function readPostePrinters(): Record<string, string> {
 
 export function writePostePrinters(names: Record<string, string>): void {
   localStorage.setItem(POSTE_PRINTERS_KEY, JSON.stringify(names));
+  window.dispatchEvent(new Event("easygest-poste-changed"));
   // Backup copy on the workstation's disk: if the app data is wiped the
   // file next to EasyGest still holds this poste's printer choices.
   const bridge = (
@@ -149,6 +152,13 @@ export function applyPostePrinters(config: PrintingConfig): PrintingConfig {
 }
 
 export function CompanyProvider({ children }: { children: ReactNode }) {
+  const [, updatePoste] = useState(0);
+  useEffect(() => {
+    const refresh = () => updatePoste((value) => value + 1);
+    window.addEventListener("easygest-poste-changed", refresh);
+    void restorePosteSettings();
+    return () => window.removeEventListener("easygest-poste-changed", refresh);
+  }, []);
   const [company, setCompanyState] = useState<CompanySettings | null>(() =>
     cacheRead<CompanySettings>(COMPANY_CACHE_KEY)
   );
@@ -210,12 +220,13 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
   return (
     <CompanyContext.Provider
       value={{
-        company,
+        company: company ? applyPosteDrawer(company) : null,
         brandName: company?.name || DEFAULT_BRAND,
         logoSrc: company?.logo || defaultLogo,
         hasCustomLogo: Boolean(company?.logo),
         setCompany,
         printing: applyPostePrinters(printing),
+        sharedPrinting: printing,
         setPrinting,
         reload,
       }}

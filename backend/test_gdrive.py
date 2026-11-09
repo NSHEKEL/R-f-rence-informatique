@@ -23,7 +23,6 @@ with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {
     from app import backup, gdrive
     from app.models import CompanySettings
     from app.routers import backup_drive, backups
-    from app.auth import require_admin
 
 
 class Response(io.BytesIO):
@@ -260,14 +259,16 @@ class DriveTests(unittest.TestCase):
         with self.assertRaises(gdrive.DriveError):
             gdrive.callback(state, "code", "127.0.0.1", self.db)
 
-    def test_callback_actual_server_port_and_admin_dependencies(self):
+    def test_callback_actual_server_port_and_category_dependencies(self):
         request = Request({"type": "http", "server": ("0.0.0.0", 8007), "client": ("127.0.0.1", 123), "headers": [(b"host", b"evil.test:9999")]})
         result = backup_drive.connect(request, _=None)
         self.assertIn("127.0.0.1%3A8007", result["authorization_url"])
         for route in backup_drive.router.routes:
             if route.path.endswith("/callback"):
                 continue
-            self.assertIn(require_admin, [dependency.call for dependency in route.dependant.dependencies])
+            expected = "sauvegarde_consulter" if "GET" in route.methods else "sauvegarde_modifier"
+            self.assertTrue(any(expected in [cell.cell_contents for cell in (dependency.call.__closure__ or ())]
+                                for dependency in route.dependant.dependencies))
 
     def test_callback_in_actual_app_does_not_inherit_jwt_guard(self):
         from app.main import app

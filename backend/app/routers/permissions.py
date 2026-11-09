@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from ..auth import get_current_user, require_admin
+from ..auth import get_current_user
 from ..database import get_db
 from ..licensing import require_feature
 from ..models import User
@@ -11,6 +11,7 @@ from ..permissions import (
     allowed_keys,
     role_matrix,
     save_matrix,
+    require_permission,
 )
 from ..schemas import PermissionMatrix, PermissionUpdate, UserPermissions
 
@@ -33,7 +34,7 @@ def my_permissions(
     response_model=PermissionMatrix,
     dependencies=[Depends(require_feature("droits_acces"))],
 )
-def get_matrix(db: Session = Depends(get_db), _: User = Depends(require_admin)):
+def get_matrix(db: Session = Depends(get_db), _: User = Depends(require_permission("utilisateurs_consulter"))):
     return PermissionMatrix(
         definitions=[
             {"key": key, "label": label, "section": section}
@@ -52,7 +53,7 @@ def get_matrix(db: Session = Depends(get_db), _: User = Depends(require_admin)):
 def update_matrix(
     payload: PermissionUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_permission("utilisateurs_modifier")),
 ):
-    save_matrix(db, payload.matrix)
+    save_matrix(db, payload.matrix, actor=_)
     return get_matrix(db=db, _=_)

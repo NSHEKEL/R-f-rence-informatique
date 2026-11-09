@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from .auth import get_current_user
 from .database import get_db
-from .models import RolePermission, User
+from .models import RolePermission, SecurityLog, User
 
 # key -> (label shown to the administrator, section)
 PERMISSIONS: dict[str, tuple[str, str]] = {
@@ -95,6 +95,17 @@ PERMISSIONS: dict[str, tuple[str, str]] = {
     "depenses_gerer": ("Enregistrer une dépense", "Trésorerie"),
 }
 
+SETTINGS_CATEGORIES = {
+    "generaux": "Généraux", "articles": "Articles et catalogue", "tarifs": "Tarifs",
+    "fiscaux": "Fiscalité et FNE", "imprimantes": "Impression partagée", "poste": "Ce poste",
+    "peripheriques": "Périphériques", "caisse": "Réglages de caisse",
+    "utilisateurs": "Utilisateurs et droits", "sauvegarde": "Sauvegardes",
+}
+for category, label in SETTINGS_CATEGORIES.items():
+    for action, verb in (("consulter", "Consulter"), ("modifier", "Modifier")):
+        PERMISSIONS[f"{category}_{action}"] = (f"{verb} : {label}", "Paramètres")
+PERMISSIONS["parametres_sauvegarde_restaurer"] = ("Restaurer une sauvegarde", "Paramètres")
+
 CONFIGURABLE_ROLES = ("vendeur", "gestionnaire")
 
 # Rights each role had before they became configurable.
@@ -144,7 +155,7 @@ def allowed_keys(db: Session, user: User) -> list[str]:
     return [key for key, ok in rights.items() if ok]
 
 
-def save_matrix(db: Session, matrix: dict[str, dict[str, bool]]) -> None:
+def save_matrix(db: Session, matrix: dict[str, dict[str, bool]], actor: User | None = None) -> None:
     rows = {(row.role, row.permission): row for row in db.query(RolePermission).all()}
     for role, rights in matrix.items():
         if role not in CONFIGURABLE_ROLES:
@@ -153,6 +164,10 @@ def save_matrix(db: Session, matrix: dict[str, dict[str, bool]]) -> None:
             if key not in PERMISSIONS:
                 continue
             row = rows.get((role, key))
+            old = row.allowed if row is not None else default_allows(role, key)
+            if actor is not None and old != bool(allowed):
+                db.add(SecurityLog(event="permission_modifiee", user_id=actor.id, identifier=actor.email,
+                    detail=f"role={role}; key={key}; {str(bool(old)).lower()} → {str(bool(allowed)).lower()}", success=True))
             if row is None:
                 db.add(
                     RolePermission(role=role, permission=key, allowed=bool(allowed))
@@ -192,4 +207,12 @@ def require_permission(key: str, *additional: str):
                 )
         return current_user
 
+    return guard
+
+
+def require_any_permission(*keys):
+    def guard(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> User:
+        if not any(has_permission(db, current_user, key) for key in keys):
+            raise HTTPException(status_code=403, detail="Accès refusé")
+        return current_user
     return guard
