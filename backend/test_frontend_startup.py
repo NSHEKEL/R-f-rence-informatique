@@ -4,7 +4,7 @@ import unittest
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import run
 
@@ -40,12 +40,18 @@ class FrontendStartupTests(unittest.TestCase):
         api._window.load_html.assert_not_called()
 
     def test_missing_signal_retries_once_then_shows_error_even_if_html_loaded(self):
-        api, startup = self.startup()
-        with patch.object(run, "_boot") as log:
+        with patch.object(run.time, "monotonic_ns", side_effect=[100, 200, 300]) as clock, patch.object(run, "_boot") as log:
+            api, startup = self.startup()
+            api._window.load_url(startup.page_url())
             startup.failed("module 404\nmissing", startup.token)
             startup.watch()
         api._clear_webview_cache.assert_called_once_with(startup.url)
-        api._window.load_url.assert_called_once_with(startup.page_url())
+        self.assertEqual(api._window.load_url.call_args_list, [
+            call("http://127.0.0.1:8000/?eg_boot=100"),
+            call("http://127.0.0.1:8000/?eg_boot=200"),
+        ])
+        self.assertEqual(startup.token, "300")
+        self.assertEqual(clock.call_count, 3)
         api._window.load_html.assert_called_once_with(run._LOAD_ERROR_HTML)
         self.assertTrue(any("module 404 missing" in call.args[0] for call in log.call_args_list))
 
