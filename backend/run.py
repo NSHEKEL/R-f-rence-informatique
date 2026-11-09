@@ -304,6 +304,22 @@ class DesktopApi:
         path.write_text(content, encoding="utf-8-sig")
         return str(path)
 
+    def save_binary_file(self, filename: str, content_base64: str) -> str:
+        import base64
+        import webview
+
+        if self._window is None:
+            return ""
+        if len(content_base64) > 70_000_000:
+            raise ValueError("Export trop volumineux")
+        content = base64.b64decode(content_base64, validate=True)
+        target = self._window.create_file_dialog(webview.SAVE_DIALOG, directory=str(Path.home() / "Documents"), save_filename=Path(filename).name)
+        if not target:
+            return ""
+        path = Path(target[0] if isinstance(target, (list, tuple)) else str(target))
+        path.write_bytes(content)
+        return str(path)
+
     @staticmethod
     def _pref_path(filename: str) -> Path:
         """Where the workstation's own files live. Program Files is

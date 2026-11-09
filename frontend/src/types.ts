@@ -455,6 +455,8 @@ export interface ProductPackaging {
 }
 
 export interface Product extends UnitSpec {
+  rayon?: string | null;
+  emplacement?: string | null;
   packagings?: ProductPackaging[];
   supplier_purchase_price?: number | null;
   packaging_id?: number | null;

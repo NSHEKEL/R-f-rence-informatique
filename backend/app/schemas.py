@@ -428,6 +428,8 @@ class ProductPackagingInput(BaseModel):
 
 
 class ProductBase(BaseModel):
+    rayon: Optional[str] = Field(default=None, max_length=200)
+    emplacement: Optional[str] = Field(default=None, max_length=200)
     semi_wholesale_price: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     supplier_purchase_price: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     semi_wholesale_min_qty: Optional[int] = Field(default=None, ge=1)

@@ -46,6 +46,8 @@ COLUMNS: dict[str, dict[str, str]] = {
         "is_gift": f"BOOLEAN DEFAULT {FALSE_LITERAL}",
     },
     "products": {
+        "rayon": "VARCHAR",
+        "emplacement": "VARCHAR",
         "qr_code": "VARCHAR DEFAULT ''",
         "barcode": "VARCHAR DEFAULT ''",
         "image": "TEXT DEFAULT ''",
@@ -285,6 +287,23 @@ def _treasury_permissions(conn) -> None:
     conn.execute(AppMigration.__table__.insert().values(name=marker))
 
 
+def _inventory_permissions(conn) -> None:
+    marker = "inventory_session_permissions_v1"
+    AppMigration.__table__.create(bind=conn, checkfirst=True)
+    if conn.execute(select(AppMigration.name).where(AppMigration.name == marker)).first():
+        return
+    for role in CONFIGURABLE_ROLES:
+        allowed = conn.execute(select(RolePermission.allowed).where(RolePermission.role == role, RolePermission.permission == "inventaire_appliquer")).scalar_one_or_none()
+        if allowed is None:
+            allowed = "inventaire_appliquer" in DEFAULTS[role]
+        existing = conn.execute(select(RolePermission.id).where(RolePermission.role == role, RolePermission.permission == "inventaire_valider")).scalar_one_or_none()
+        if existing is None:
+            conn.execute(RolePermission.__table__.insert().values(role=role, permission="inventaire_valider", allowed=allowed))
+        else:
+            conn.execute(RolePermission.__table__.update().where(RolePermission.id == existing).values(allowed=allowed))
+    conn.execute(AppMigration.__table__.insert().values(name=marker))
+
+
 def migrate() -> None:
     insp = inspect(engine)
     tables = set(insp.get_table_names())
@@ -310,6 +329,7 @@ def migrate() -> None:
             _relax_delivery_order(conn, inspect(conn))
         if "role_permissions" in tables:
             _treasury_permissions(conn)
+            _inventory_permissions(conn)
         if "company_settings" in tables:
             conn.execute(
                 text(

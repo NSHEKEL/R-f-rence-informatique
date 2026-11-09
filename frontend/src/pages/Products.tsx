@@ -49,6 +49,8 @@ const empty = {
   name: "",
   sku: "",
   description: "",
+  rayon: "",
+  emplacement: "",
   category_id: "" as number | "" | null,
   supplier_id: "" as number | "" | null,
   purchase_price: 0,
@@ -243,6 +245,8 @@ export default function Products() {
       wholesale_packaging_price: p.wholesale_packaging_price ?? "",
       sku: p.sku,
       description: p.description,
+      rayon: p.rayon || "",
+      emplacement: p.emplacement || "",
       category_id: p.category_id ?? "",
       supplier_id: p.supplier_id ?? "",
       purchase_price: p.purchase_price,
@@ -761,6 +765,8 @@ export default function Products() {
               onChange={(e) => setForm({ ...form, sku: e.target.value })}
             />
           </div>
+          <label className="label">Rayon<input className="input" maxLength={200} value={form.rayon} onChange={(e) => setForm({ ...form, rayon: e.target.value })} /></label>
+          <label className="label">Emplacement<input className="input" maxLength={200} value={form.emplacement} onChange={(e) => setForm({ ...form, emplacement: e.target.value })} /></label>
           <div>
             <label className="label">Catégorie</label>
             <select

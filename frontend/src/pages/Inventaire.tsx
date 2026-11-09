@@ -20,6 +20,7 @@ import { useCompany } from "../context/CompanyContext";
 import { useLicense } from "../context/LicenseContext";
 import { useSyncVersion } from "../context/SyncContext";
 import PackagingQuantity from "../components/PackagingQuantity";
+import InventorySessions from "../components/InventorySessions";
 import { formatQuantity, quantityHtml } from "../lib/units";
 
 type Counted = Record<number, { rayon: string; stock: string }>;
@@ -364,6 +365,7 @@ export default function Inventaire() {
 
   return (
     <div className="space-y-5">
+      <InventorySessions />
       {/* Suivi des péremptions */}
       <div className="card p-5">
         <div className="mb-4 flex flex-wrap items-center gap-3">

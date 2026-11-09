@@ -49,6 +49,8 @@ PERMISSIONS: dict[str, tuple[str, str]] = {
     ),
     "prix_modifier": ("Modifier le prix pendant une vente", "Actions"),
     "inventaire_appliquer": ("Appliquer un inventaire (ajuster le stock)", "Actions"),
+    "inventaire_valider": ("Valider une session d'inventaire", "Actions"),
+    "inventaire_voir_theorique": ("Voir le théorique des inventaires aveugles", "Actions"),
     "dettes_gerer": ("Créer et modifier une dette ou une créance", "Actions"),
     "dettes_regler": ("Enregistrer un règlement de dette ou de créance", "Actions"),
     "dettes_annuler": ("Annuler un règlement (avec motif)", "Actions"),

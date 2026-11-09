@@ -1,6 +1,8 @@
 import json
 import sys
 import unittest
+import tempfile
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -8,6 +10,21 @@ import run
 
 
 class FrontendStartupTests(unittest.TestCase):
+    def test_native_pdf_save_preserves_bytes_and_cancel(self):
+        import base64
+
+        api = run.DesktopApi()
+        webview = MagicMock()
+        with tempfile.TemporaryDirectory() as folder, patch.dict(sys.modules, {"webview": webview}):
+            target = Path(folder) / "report.pdf"
+            api._window = MagicMock()
+            api._window.create_file_dialog.return_value = [str(target)]
+            body = b"%PDF-1.4\n\x00\xff\n%%EOF"
+            self.assertEqual(api.save_binary_file("report.pdf", base64.b64encode(body).decode()), str(target))
+            self.assertEqual(target.read_bytes(), body)
+            api._window.create_file_dialog.return_value = None
+            self.assertEqual(api.save_binary_file("report.pdf", ""), "")
+
     def startup(self):
         api = MagicMock()
         startup = run.FrontendStartup(api, "http://127.0.0.1:8000", timeout=0)

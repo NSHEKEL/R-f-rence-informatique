@@ -12,6 +12,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 
@@ -204,6 +205,8 @@ class Product(UnitSnapshot, Base):
     name = Column(String, nullable=False)
     sku = Column(String, unique=True, index=True, nullable=False)
     description = Column(Text, default="")
+    rayon = Column(String, nullable=True)
+    emplacement = Column(String, nullable=True)
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
     supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=True)
     purchase_price = Column(Float, default=0)
@@ -494,6 +497,42 @@ class Expense(Base):
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     created_by = relationship("User")
+
+
+class InventorySession(Base):
+    __tablename__ = "inventory_sessions"
+
+    id = Column(Integer, primary_key=True)
+    reference = Column(String, nullable=False, unique=True)
+    name = Column(String, nullable=False)
+    scope_type = Column(String, nullable=False)
+    scope_json = Column(Text, nullable=False, default="{}")
+    blind = Column(Boolean, nullable=False, default=False)
+    status = Column(String, nullable=False, default="draft")
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_by_name = Column(String, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    validated_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    validated_by_name = Column(String, nullable=True)
+    validated_at = Column(DateTime, nullable=True)
+    note = Column(Text, nullable=False, default="")
+
+
+class InventoryCount(Base):
+    __tablename__ = "inventory_counts"
+    __table_args__ = (UniqueConstraint("session_id", "product_id"),)
+
+    id = Column(Integer, primary_key=True)
+    session_id = Column(Integer, ForeignKey("inventory_sessions.id"), nullable=False, index=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    product_snapshot = Column(Text, nullable=False)
+    theoretical_qty = Column(Integer, nullable=False)
+    physical_qty = Column(Integer, nullable=True)
+    stock_after = Column(Integer, nullable=True)
+    unit_cost = Column(Float, nullable=False)
+    counted_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    counted_at = Column(DateTime, nullable=True)
+    note = Column(Text, nullable=False, default="")
 
 
 class StockMovement(UnitSnapshot, Base):

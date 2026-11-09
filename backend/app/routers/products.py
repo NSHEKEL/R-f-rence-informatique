@@ -12,6 +12,7 @@ from ..database import get_db
 from ..models import (
     Category,
     CompanySettings,
+    InventoryCount,
     PriceHistory,
     Product,
     ProductPackaging,
@@ -275,6 +276,8 @@ def get_product(
 
 # Column aliases accepted in an import file (case-insensitive, accents ok).
 _CSV_ALIASES = {
+    "rayon": {"rayon", "shelf"},
+    "emplacement": {"emplacement", "location", "localisation"},
     "wholesale_packaging_price": {"prix_gros_carton", "wholesale_packaging_price"},
     "name": {"nom", "name", "designation", "désignation", "libelle", "libellé"},
     "sku": {"sku", "reference", "référence", "ref", "code", "code_article"},
@@ -406,6 +409,9 @@ def import_products(
                 categories[category_name.lower()] = cat
             category_id = cat.id
         values = {"name": name}
+        for field in ("rayon", "emplacement"):
+            if field in present:
+                values[field] = fields.get(field, "").strip() or None
         if "description" in present:
             values["description"] = fields.get("description", "")
         if "category" in present:
@@ -502,7 +508,7 @@ def update_product(
         raise HTTPException(status_code=400, detail="Cette référence (SKU) existe déjà")
     _check_barcode(db, payload, product_id)
     for key, value in payload.model_dump(exclude={"packagings"}).items():
-        if key in {"semi_wholesale_price", "supplier_purchase_price", "semi_wholesale_min_qty", "wholesale_min_qty"} and key not in payload.model_fields_set:
+        if key in {"rayon", "emplacement", "semi_wholesale_price", "supplier_purchase_price", "semi_wholesale_min_qty", "wholesale_min_qty"} and key not in payload.model_fields_set:
             continue
         if key in {"base_unit", "packaging_unit", "units_per_packaging", "packaging_sale_price", "wholesale_packaging_price"} and key not in payload.model_fields_set:
             continue
@@ -550,8 +556,8 @@ def delete_product(
     product = db.query(Product).get(product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Produit introuvable")
-    if product.packagings:
-        raise HTTPException(status_code=400, detail="Conservez cet article et désactivez ses conditionnements pour préserver l'historique")
+    if product.packagings or db.query(InventoryCount.id).filter_by(product_id=product_id).first():
+        raise HTTPException(status_code=400, detail="Conservez cet article pour préserver l'historique des conditionnements et des inventaires")
     db.delete(product)
     db.commit()
 

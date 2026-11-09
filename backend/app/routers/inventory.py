@@ -6,8 +6,10 @@ from ..models import Notification, Product, StockMovement, User
 from ..permissions import require_permission
 from ..schemas import InventoryApply, StockMovementOut
 from ..units import base_quantity
+from .inventory_sessions import router as sessions_router
 
 router = APIRouter(prefix="/api/inventory", tags=["inventory"])
+router.include_router(sessions_router)
 
 
 @router.get("/movements", response_model=list[StockMovementOut])
