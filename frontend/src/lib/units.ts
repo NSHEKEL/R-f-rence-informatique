@@ -1,24 +1,42 @@
-import type { SaleItem, UnitSpec } from "../types";
+import type { Product, SaleItem, UnitSpec } from "../types";
 export type { UnitSpec } from "../types";
 export type QuantitySpec = Pick<UnitSpec, "base_unit" | "packaging_unit" | "units_per_packaging">;
 
 export type UnitMode = "base" | "packaging" | "mixed";
-export type PriceTier = "detail" | "gros";
+export type PriceTier = "detail" | "semi_gros" | "gros" | "auto";
 
-export function catalogPrices(product: UnitSpec & { sale_price: number; wholesale_price?: number }, tier: PriceTier = "detail") {
+export function resolveTier(product: UnitSpec, tier: PriceTier, quantity: number): Exclude<PriceTier, "auto"> {
+  if (tier !== "auto") return tier;
+  if (product.wholesale_min_qty != null && quantity >= product.wholesale_min_qty) return "gros";
+  if (product.semi_wholesale_min_qty != null && quantity >= product.semi_wholesale_min_qty) return "semi_gros";
+  return "detail";
+}
+
+export function withPackaging(product: Product, packagingId?: number | null): Product {
+  const packaging = product.packagings?.find((p) => p.id === packagingId && p.active);
+  return packaging ? { ...product, packaging_unit: packaging.name, units_per_packaging: packaging.factor,
+    packaging_sale_price: packaging.price_detail, semi_packaging_price: packaging.price_semi_gros,
+    wholesale_packaging_price: packaging.price_gros, additional_packaging: true } : product;
+}
+
+export function catalogPrices(product: UnitSpec & { sale_price: number; wholesale_price?: number }, tier: PriceTier = "detail", quantity = 0) {
+  tier = resolveTier(product, tier, quantity);
   const factor = product.units_per_packaging || 1;
   let piece = product.sale_price;
   let carton = product.packaging_sale_price ?? factor * piece;
-  if (tier === "gros") {
+  if (tier === "semi_gros") {
+    piece = product.semi_wholesale_price ?? piece;
+    carton = product.semi_packaging_price ?? factor * piece;
+  } else if (tier === "gros") {
     const wholesale = (product.wholesale_price || 0) > 0;
     if (wholesale) piece = product.wholesale_price!;
-    carton = product.wholesale_packaging_price ?? (wholesale ? factor * piece : carton);
+    carton = product.wholesale_packaging_price ?? (wholesale || product.additional_packaging ? factor * piece : carton);
   }
   return { piece, carton };
 }
 
 export function catalogUnitPrice(product: UnitSpec & { sale_price: number; wholesale_price?: number }, quantity: number, tier: PriceTier, parts: { packaging_quantity: number; piece_quantity: number }) {
-  const { piece, carton } = catalogPrices(product, tier);
+  const { piece, carton } = catalogPrices(product, tier, quantity);
   return quantity ? (parts.packaging_quantity * carton + parts.piece_quantity * piece) / quantity : piece;
 }
 

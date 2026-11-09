@@ -413,7 +413,26 @@ class PackagingQuantities(BaseModel):
     piece_quantity: Optional[int] = Field(default=None, ge=0)
 
 
+class ProductPackagingInput(BaseModel):
+    id: Optional[int] = None
+    name: str = Field(min_length=1, max_length=80)
+    factor: int = Field(ge=1, le=2147483647)
+    barcode: Optional[str] = None
+    price_detail: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    price_semi_gros: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    price_gros: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    purchase_price: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    active: bool = True
+    sort_order: int = 0
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ProductBase(BaseModel):
+    semi_wholesale_price: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    supplier_purchase_price: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    semi_wholesale_min_qty: Optional[int] = Field(default=None, ge=1)
+    wholesale_min_qty: Optional[int] = Field(default=None, ge=1)
+    packagings: Optional[List[ProductPackagingInput]] = None
     base_unit: str = Field(default="pièce", min_length=1, max_length=40)
     packaging_unit: str = Field(default="", max_length=40)
     units_per_packaging: int = Field(default=1, ge=1)
@@ -443,6 +462,7 @@ class ProductUpdate(ProductBase):
 
 
 class ProductOut(ProductBase):
+    packaging_id: Optional[int] = None
     quantity: Optional[int] = None
     min_stock: Optional[int] = None
     quantity_label: Optional[str] = None
@@ -461,15 +481,16 @@ class PriceHistoryOut(BaseModel):
     id: int
     product_id: int
     field: str
-    old_value: float
-    new_value: float
+    old_value: Optional[float]
+    new_value: Optional[float]
     changed_at: datetime
     changed_by: Optional["UserOut"] = None
 
 
 # ---------- Sales ----------
 class SaleItemCreate(PackagingQuantities):
-    price_tier: Optional[Literal["detail", "gros"]] = None
+    packaging_id: Optional[int] = Field(default=None, ge=1)
+    price_tier: Optional[Literal["detail", "semi_gros", "gros", "auto"]] = None
     expected_units_per_packaging: Optional[int] = Field(default=None, ge=1)
     product_id: int
     quantity: int = 0
@@ -521,6 +542,7 @@ class SalePaymentOut(BaseModel):
 
 
 class SaleItemOut(UnitSnapshotOut):
+    packaging_id: Optional[int] = None
     price_tier: Optional[str] = "detail"
     catalog_unit_price: Optional[float] = None
     unit_cost: Optional[float] = None
@@ -1261,6 +1283,7 @@ class UserPermissions(BaseModel):
 
 # ---------- Supply orders (approvisionnement) ----------
 class PurchaseItemCreate(PackagingQuantities):
+    packaging_id: Optional[int] = Field(default=None, ge=1)
     packaging_unit_cost: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     product_id: int
     quantity: int = 0
@@ -1302,6 +1325,7 @@ class PurchaseReceive(BaseModel):
 
 
 class PurchaseItemOut(UnitSnapshotOut):
+    packaging_id: Optional[int] = None
     model_config = ConfigDict(from_attributes=True)
     id: int
     product_id: Optional[int] = None

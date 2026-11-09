@@ -20,9 +20,10 @@ import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSyncVersion } from "../context/SyncContext";
 import PackagingQuantity from "../components/PackagingQuantity";
-import { formatQuantity, quantityHtml } from "../lib/units";
+import { formatQuantity, quantityHtml, withPackaging } from "../lib/units";
 
 interface DraftLine {
+  packaging_id?: number | null;
   product_id: number | null;
   quantity: number;
   unit_cost: number;
@@ -106,6 +107,7 @@ export default function Approvisionnements() {
     updateLine(index, {
       product_id: product?.id ?? null,
       unit_cost: product?.purchase_price ?? 0,
+      packaging_id: undefined,
     });
   }
 
@@ -134,6 +136,7 @@ export default function Approvisionnements() {
     setLines(
       purchase.items.map((item) => ({
         product_id: item.product_id,
+        packaging_id: item.packaging_id,
         quantity: item.quantity,
         unit_cost: item.unit_cost,
       }))
@@ -162,6 +165,7 @@ export default function Approvisionnements() {
         note,
         items: lines.map((l) => ({
           product_id: l.product_id,
+          packaging_id: l.packaging_id,
           quantity: l.quantity,
           unit_cost: l.unit_cost,
         })),
@@ -570,7 +574,12 @@ export default function Approvisionnements() {
                 </div>
                 <div className="w-24">
                   <label className="label">Qté</label>
-                  {products.find((p) => p.id === l.product_id)?.packaging_unit ? <PackagingQuantity product={products.find((p) => p.id === l.product_id)!} value={l.quantity} onChange={(quantity) => updateLine(index, { quantity })} /> :
+                  {products.find((p) => p.id === l.product_id)?.packagings?.some((p) => p.active) && <select className="input mb-1" aria-label="Conditionnement acheté" value={l.packaging_id ?? ""} onChange={(e) => {
+                    const product = products.find((p) => p.id === l.product_id)!;
+                    const packaging = product.packagings?.find((p) => p.id === Number(e.target.value));
+                    updateLine(index, { packaging_id: packaging?.id, quantity: packaging?.factor || 1, unit_cost: packaging?.purchase_price != null ? packaging.purchase_price / packaging.factor : product.purchase_price });
+                  }}><option value="">Principal</option>{products.find((p) => p.id === l.product_id)?.packagings?.filter((p) => p.active).map((p) => <option key={p.id} value={p.id}>{p.name} (×{p.factor})</option>)}</select>}
+                  {products.find((p) => p.id === l.product_id) && withPackaging(products.find((p) => p.id === l.product_id)!, l.packaging_id).packaging_unit ? <PackagingQuantity product={withPackaging(products.find((p) => p.id === l.product_id)!, l.packaging_id)} value={l.quantity} onChange={(quantity) => updateLine(index, { quantity })} /> :
                   <input
                     type="number"
                     min={1}

@@ -44,7 +44,7 @@ import PackagingQuantity from "../components/PackagingQuantity";
 import PosProductGrid from "../components/PosProductGrid";
 import SalePrintModal from "../components/SalePrintModal";
 import { DEFAULT_POS, mergePos, stockLimit, tileVisibility, type PosDisplay } from "../lib/posDisplay";
-import { catalogPrices, catalogUnitPrice, formatQuantity, splitQuantity, type UnitMode } from "../lib/units";
+import { catalogPrices, catalogUnitPrice, formatQuantity, splitQuantity, withPackaging, resolveTier, type PriceTier, type UnitMode } from "../lib/units";
 import type {
   CashSessionDetail,
   Category,
@@ -103,7 +103,7 @@ function readParked(): ParkedCart[] {
   }
 }
 
-type PriceMode = "detail" | "gros";
+type PriceMode = PriceTier;
 
 /** Wholesale price when the till is in "gros" mode and the article has one. */
 function unitPrice(product: Product, mode: PriceMode): number {
@@ -111,6 +111,7 @@ function unitPrice(product: Product, mode: PriceMode): number {
 }
 
 interface CartLine {
+  packaging_id?: number;
   price_tier?: PriceMode;
   packagingQuantity?: number;
   pieceQuantity?: number;
@@ -179,10 +180,11 @@ function offlineSale(
       packaging_unit: l.product.packaging_unit,
       units_per_packaging: l.product.units_per_packaging,
       base_quantity: l.quantity,
-      price_tier: l.price_tier || "detail",
+      packaging_id: l.packaging_id,
+      price_tier: resolveTier(l.product, l.price_tier || "detail", l.quantity),
       catalog_unit_price: catalogUnitPrice(l.product, l.quantity, l.price_tier || "detail", cartParts(l)),
-      base_unit_price: l.price ?? catalogPrices(l.product, l.price_tier).piece,
-      packaging_sale_price: l.price !== undefined ? l.price * (l.product.units_per_packaging || 1) : catalogPrices(l.product, l.price_tier).carton,
+      base_unit_price: l.price ?? catalogPrices(l.product, l.price_tier, l.quantity).piece,
+      packaging_sale_price: l.price !== undefined ? l.price * (l.product.units_per_packaging || 1) : catalogPrices(l.product, l.price_tier, l.quantity).carton,
       unit_price: linePrice(l, priceMode),
       discount: l.discount ?? 0,
       subtotal: lineNet(l, priceMode),
@@ -402,12 +404,14 @@ export default function NouvelleVente() {
     [cart]
   );
 
-  const addToCart = useCallback((product: Product) => {
+  const addToCart = useCallback((original: Product, packaging_id?: number) => {
+    const product = withPackaging(original, packaging_id);
+    const increment = packaging_id ? product.units_per_packaging || 1 : 1;
     setError("");
     setCart((prev) => {
-      const existing = prev.find((l) => l.product.id === product.id && (l.price_tier || "detail") === priceMode && (!l.unitMode || l.unitMode === "base"));
-      if (prev.filter((l) => l.product.id === product.id).reduce((sum, l) => sum + l.quantity, 0) >= stockLimit(product)) return prev;
-      if (!existing) return [...prev, { product, quantity: 1, price_tier: priceMode }];
+      const existing = prev.find((l) => l.product.id === product.id && l.packaging_id === packaging_id && (l.price_tier || "detail") === priceMode && (packaging_id ? l.unitMode === "packaging" : (!l.unitMode || l.unitMode === "base")));
+      if (prev.filter((l) => l.product.id === product.id).reduce((sum, l) => sum + l.quantity, 0) + increment > stockLimit(product)) return prev;
+      if (!existing) return [...prev, { product, packaging_id, quantity: increment, price_tier: priceMode, unitMode: packaging_id ? "packaging" : "base" }];
       return prev.map((l) =>
         l === existing ? (() => {
           const packs = l.unitMode === "packaging" ? 1 : 0;
@@ -451,7 +455,8 @@ export default function NouvelleVente() {
       setError(`${target.name} est en rupture de stock`);
       return;
     }
-    addToCart(target);
+    const packaging = target.packagings?.find((p) => p.active && p.barcode?.trim().toLowerCase() === q);
+    addToCart(target, packaging?.id);
     setFlash(`${target.name} ajouté`);
     window.setTimeout(() => setFlash(""), 1500);
     setQuery("");
@@ -510,6 +515,17 @@ export default function NouvelleVente() {
     const others = cart.filter((l) => l !== line && l.product.id === line.product.id).reduce((sum, l) => sum + l.quantity, 0);
     if (quantity + others > stockLimit(line.product)) { setError("Stock insuffisant pour un conditionnement complet"); return; }
     setCart((prev) => prev.map((l, index) => index === lineIndex ? { ...l, unitMode, quantity, price: undefined, packagingQuantity: undefined, pieceQuantity: undefined } : l));
+  }
+
+  function setPackaging(lineIndex: number, packaging_id?: number) {
+    const line = cart[lineIndex];
+    const original = products.find((p) => p.id === line.product.id);
+    if (!original) return;
+    const product = withPackaging(original, packaging_id);
+    const quantity = product.packaging_unit ? product.units_per_packaging || 1 : 1;
+    const others = cart.filter((l, i) => i !== lineIndex && l.product.id === product.id).reduce((sum, l) => sum + l.quantity, 0);
+    if (quantity + others > stockLimit(product)) { setError("Stock insuffisant pour ce conditionnement"); return; }
+    setCart((prev) => prev.map((l, i) => i === lineIndex ? { ...l, product, packaging_id, quantity, unitMode: product.packaging_unit ? "packaging" : "base", packagingQuantity: undefined, pieceQuantity: undefined, price: undefined } : l));
   }
 
   async function createCustomer() {
@@ -627,6 +643,7 @@ export default function NouvelleVente() {
       paid_amount: gift ? 0 : paidAmount,
       items: cart.map((l) => ({
         product_id: l.product.id,
+        packaging_id: l.packaging_id,
         price_tier: l.price_tier || "detail",
         quantity: l.quantity,
         ...(l.product.packaging_unit ? { ...cartParts(l), expected_units_per_packaging: l.product.units_per_packaging || 1 } : {}),
@@ -1039,7 +1056,7 @@ export default function NouvelleVente() {
               Tarif des nouveaux articles
             </span>
             <div className="ml-auto flex rounded-lg bg-white p-0.5 text-[11px] font-semibold">
-              {(["detail", "gros"] as PriceMode[]).map((mode) => (
+              {(["detail", "semi_gros", "gros", "auto"] as PriceMode[]).map((mode) => (
                 <button
                   key={mode}
                   onClick={() => setPriceMode(mode)}
@@ -1049,7 +1066,7 @@ export default function NouvelleVente() {
                       : "text-slate-500"
                   }`}
                 >
-                  {mode === "detail" ? "Détail" : "Gros"}
+                  {mode === "detail" ? "Détail" : mode === "semi_gros" ? "Semi-gros" : mode === "auto" ? "Auto" : "Gros"}
                 </button>
               ))}
             </div>
@@ -1144,16 +1161,20 @@ export default function NouvelleVente() {
                             {l.product.name}
                           </p>
                         </div>
+                        {(l.product.packagings || []).some((p) => p.active) && <select className="input mt-1" aria-label={`Conditionnement de ${l.product.name}`} value={l.packaging_id ?? ""} onChange={(e) => setPackaging(index, e.target.value ? Number(e.target.value) : undefined)}>
+                          <option value="">Principal : {products.find((p) => p.id === l.product.id)?.packaging_unit || "pièce"}</option>
+                          {l.product.packagings?.filter((p) => p.active).map((p) => <option key={p.id} value={p.id}>{p.name} (×{p.factor})</option>)}
+                        </select>}
                         {l.product.packaging_unit && <>
                           <select aria-label={`Unité vendue de ${l.product.name}`} className="input mt-1" value={l.unitMode || "base"} onChange={(e) => setUnitMode(index, e.target.value as UnitMode)}>
                             <option value="base">{l.product.base_unit || "pièce"}</option>
                             <option value="packaging">{l.product.packaging_unit}</option>
                             <option value="mixed">Mixte : {l.product.packaging_unit} + {l.product.base_unit || "pièce"}</option>
                           </select>
-                          <p className="text-xs text-slate-500">{formatQuantity(l.product, l.quantity)} · {formatXOF(catalogPrices(l.product, l.price_tier).carton)}/{l.product.packaging_unit}</p>
+                          <p className="text-xs text-slate-500">{formatQuantity(l.product, l.quantity)} · {formatXOF(catalogPrices(l.product, l.price_tier, l.quantity).carton)}/{l.product.packaging_unit}</p>
                         </>}
                         <select className="input mt-1" aria-label={`Tarif de ${l.product.name}`} value={l.price_tier || "detail"} onChange={(e) => setCart((prev) => prev.map((line, i) => i === index ? { ...line, price_tier: e.target.value as PriceMode, price: undefined } : line))}>
-                          <option value="detail">Détail</option><option value="gros">Gros</option>
+                          <option value="detail">Détail</option><option value="semi_gros">Semi-gros</option><option value="gros">Gros</option><option value="auto">Auto</option>
                         </select>
                       </td>
                       <td className="px-1 py-1 text-right">

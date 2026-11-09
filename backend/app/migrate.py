@@ -173,6 +173,14 @@ for _table in ("products", "sale_items", "sale_return_items", "purchase_items", 
     })
 COLUMNS["products"]["packaging_sale_price"] = "FLOAT DEFAULT NULL"
 COLUMNS["products"]["wholesale_packaging_price"] = "FLOAT DEFAULT NULL"
+COLUMNS["products"].update({
+    "semi_wholesale_price": "FLOAT DEFAULT NULL",
+    "supplier_purchase_price": "FLOAT DEFAULT NULL",
+    "semi_wholesale_min_qty": "INTEGER DEFAULT NULL",
+    "wholesale_min_qty": "INTEGER DEFAULT NULL",
+})
+COLUMNS["sale_items"]["packaging_id"] = "INTEGER DEFAULT NULL"
+COLUMNS["purchase_items"]["packaging_id"] = "INTEGER DEFAULT NULL"
 COLUMNS["sales"]["discount_by_id"] = "INTEGER DEFAULT NULL"
 COLUMNS["sale_items"].update({
     "price_tier": "VARCHAR DEFAULT 'detail'",

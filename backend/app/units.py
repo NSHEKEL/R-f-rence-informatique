@@ -1,4 +1,37 @@
 from fastapi import HTTPException
+from types import SimpleNamespace
+
+from .models import ProductPackaging
+
+
+def selected_packaging(db, product, packaging_id):
+    if packaging_id is None:
+        return product
+    packaging = db.get(ProductPackaging, packaging_id)
+    if not packaging or packaging.product_id != product.id or not packaging.active:
+        raise HTTPException(status_code=400, detail="Conditionnement introuvable ou inactif")
+    return SimpleNamespace(
+        base_unit=product.base_unit, packaging_unit=packaging.name,
+        units_per_packaging=packaging.factor, sale_price=product.sale_price,
+        wholesale_price=product.wholesale_price,
+        semi_wholesale_price=product.semi_wholesale_price,
+        semi_wholesale_min_qty=product.semi_wholesale_min_qty,
+        wholesale_min_qty=product.wholesale_min_qty,
+        packaging_sale_price=packaging.price_detail,
+        wholesale_packaging_price=packaging.price_gros,
+        semi_packaging_price=packaging.price_semi_gros,
+        packaging_purchase_price=packaging.purchase_price,
+    )
+
+
+def resolve_tier(product, tier, quantity):
+    if tier != "auto":
+        return tier
+    for key, resolved in (("wholesale_min_qty", "gros"), ("semi_wholesale_min_qty", "semi_gros")):
+        threshold = getattr(product, key, None)
+        if threshold is not None and quantity >= threshold:
+            return resolved
+    return "detail"
 
 
 def prices(product, tier="detail"):
@@ -7,13 +40,19 @@ def prices(product, tier="detail"):
     factor = product.units_per_packaging or 1
     if carton is None:
         carton = factor * piece
-    if tier == "gros":
+    if tier == "semi_gros":
+        semi = getattr(product, "semi_wholesale_price", None)
+        piece = piece if semi is None else semi
+        carton = getattr(product, "semi_packaging_price", None)
+        if carton is None:
+            carton = factor * piece
+    elif tier == "gros":
         wholesale = (product.wholesale_price or 0) > 0
         if wholesale:
             piece = product.wholesale_price
         if product.wholesale_packaging_price is not None:
             carton = product.wholesale_packaging_price
-        elif wholesale:
+        elif wholesale or hasattr(product, "semi_packaging_price"):
             carton = factor * piece
     return piece, carton
 

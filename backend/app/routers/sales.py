@@ -22,7 +22,7 @@ from ..permissions import has_permission, require_permission
 from ..schemas import SaleCreate, SaleOut, SaleUpdate
 from ..sequences import next_reference
 from .cash import lock_current_session
-from ..units import base_quantity, prices, snapshot
+from ..units import base_quantity, prices, snapshot, selected_packaging, resolve_tier
 from ..profits import financials
 
 router = APIRouter(prefix="/api/sales", tags=["sales"])
@@ -176,7 +176,7 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
         status=payload.status,
         payment_method=payload.payment_method,
         note=payload.note,
-        price_mode="gros" if payload.price_mode == "gros" else "detail",
+        price_mode=payload.price_mode if payload.price_mode in {"detail", "semi_gros", "gros", "auto"} else "detail",
         paid_amount=max(payload.paid_amount, 0.0),
         discount=max(payload.discount, 0.0),
         discount_by_id=current_user.id if payload.discount > 0 else None,
@@ -193,9 +193,10 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
             raise HTTPException(
                 status_code=404, detail=f"Produit {item.product_id} introuvable"
             )
-        if item.expected_units_per_packaging is not None and item.expected_units_per_packaging != (product.units_per_packaging or 1):
+        spec = selected_packaging(db, product, item.packaging_id)
+        if item.expected_units_per_packaging is not None and item.expected_units_per_packaging != (spec.units_per_packaging or 1):
             raise HTTPException(status_code=409, detail="Conditionnement modifié : vérifiez le ticket avant synchronisation")
-        quantity = base_quantity(item, product)
+        quantity = base_quantity(item, spec)
         if quantity <= 0:
             raise HTTPException(status_code=400, detail="Quantité invalide")
         item = item.model_copy(update={"quantity": quantity})
@@ -205,8 +206,8 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
                 detail=f"Stock insuffisant pour {product.name} "
                 f"(disponible : {product.quantity})",
             )
-        tier = item.price_tier or sale.price_mode
-        base_price, pack_price = prices(product, tier)
+        tier = resolve_tier(product, item.price_tier or sale.price_mode, quantity)
+        base_price, pack_price = prices(spec, tier)
         packs = item.packaging_quantity or 0
         pieces = item.piece_quantity if item.piece_quantity is not None else (0 if item.packaging_quantity is not None else item.quantity)
         unit_price = (packs * pack_price + pieces * base_price) / quantity
@@ -221,7 +222,7 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
                 raise HTTPException(status_code=400, detail="Prix invalide")
             unit_price = float(item.unit_price)
             base_price = unit_price
-            pack_price = unit_price * (product.units_per_packaging or 1)
+            pack_price = unit_price * (spec.units_per_packaging or 1)
         line_discount = 0.0
         if (item.discount or 0) > 0:
             # A line discount is a price change: same right required.
@@ -235,11 +236,12 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
         total += subtotal
         sale.items.append(
             SaleItem(
+                packaging_id=item.packaging_id,
                 price_tier=tier,
                 catalog_unit_price=catalog_unit_price,
                 unit_cost=product.purchase_price or 0,
-                **snapshot(product),
-                sold_unit="mixte" if packs and pieces else (product.packaging_unit if packs else product.base_unit),
+                **snapshot(spec),
+                sold_unit="mixte" if packs and pieces else (spec.packaging_unit if packs else spec.base_unit),
                 packaging_quantity=packs, piece_quantity=pieces, base_quantity=quantity,
                 base_unit_price=base_price, packaging_sale_price=pack_price,
                 product_id=product.id,

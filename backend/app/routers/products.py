@@ -14,6 +14,7 @@ from ..models import (
     CompanySettings,
     PriceHistory,
     Product,
+    ProductPackaging,
     Sale,
     SaleItem,
     StockLot,
@@ -82,7 +83,7 @@ def _generate_barcode(db: Session) -> str:
             str(random.randint(0, 9)) for _ in range(9)
         )
         code = body + _ean13_checksum(body)
-        if not db.query(Product).filter(Product.barcode == code).first():
+        if not db.query(Product).filter((Product.barcode == code) | (Product.sku == code)).first() and not db.query(ProductPackaging).filter(ProductPackaging.barcode == code).first():
             return code
     raise HTTPException(
         status_code=500, detail="Impossible de générer un code-barres"
@@ -90,9 +91,11 @@ def _generate_barcode(db: Session) -> str:
 
 
 def _check_barcode(db: Session, payload, product_id: int | None) -> None:
+    _check_code(db, payload.sku, product_id=product_id)
     code = (payload.barcode or "").strip()
     if not code:
         return
+    _check_code(db, code, product_id=product_id)
     if not code.isdigit():
         raise HTTPException(
             status_code=400, detail="Le code-barres doit contenir des chiffres"
@@ -103,6 +106,49 @@ def _check_barcode(db: Session, payload, product_id: int | None) -> None:
             status_code=400,
             detail=f"Ce code-barres est déjà utilisé par {existing.name}",
         )
+
+
+def _check_code(db, code, product_id=None, packaging_id=None):
+    value = (code or "").strip().lower()
+    if not value:
+        return
+    products = db.query(Product).filter(
+        (func.lower(Product.barcode) == value) | (func.lower(Product.sku) == value)
+    ).all()
+    packs = db.query(ProductPackaging).filter(func.lower(ProductPackaging.barcode) == value).all()
+    if any(p.id != product_id for p in products) or any(p.id != packaging_id for p in packs):
+        raise HTTPException(status_code=400, detail="Code déjà utilisé par un article ou un conditionnement")
+
+
+def _save_packagings(db, product, rows, user):
+    if rows is None:
+        return
+    seen_ids, seen_codes = set(), set()
+    for row in rows:
+        if not row.name.strip():
+            raise HTTPException(status_code=400, detail="Nom du conditionnement requis")
+        packaging = db.get(ProductPackaging, row.id) if row.id is not None else None
+        if row.id is not None and (not packaging or packaging.product_id != product.id or row.id in seen_ids):
+            raise HTTPException(status_code=400, detail="Conditionnement invalide")
+        code = (row.barcode or "").strip() or None
+        _check_code(db, code, packaging_id=row.id)
+        if code and code.lower() in seen_codes:
+            raise HTTPException(status_code=400, detail="Code de conditionnement dupliqué")
+        if code:
+            seen_codes.add(code.lower())
+        if packaging is None:
+            packaging = ProductPackaging(product_id=product.id)
+            db.add(packaging)
+        for key, value in row.model_dump(exclude={"id"}).items():
+            if key in {"price_detail", "price_semi_gros", "price_gros", "purchase_price"} and packaging.id and getattr(packaging, key) != value:
+                db.add(PriceHistory(product_id=product.id, field=f"packaging:{packaging.id}:{key}",
+                                    old_value=getattr(packaging, key), new_value=value, changed_by_id=user.id))
+            setattr(packaging, key, code if key == "barcode" else value.strip() if key == "name" else value)
+        db.flush()
+        seen_ids.add(packaging.id)
+    for packaging in db.query(ProductPackaging).filter_by(product_id=product.id).all():
+        if packaging.id not in seen_ids:
+            packaging.active = False
 
 
 @router.get("/barcode/next")
@@ -121,6 +167,12 @@ def get_product_by_code(
 ):
     """Scanner lookup: barcode, QR code or SKU."""
     value = code.strip()
+    packaging = db.query(ProductPackaging).filter(
+        func.lower(ProductPackaging.barcode) == value.lower(), ProductPackaging.active.is_(True)
+    ).first()
+    if packaging:
+        product = db.get(Product, packaging.product_id)
+        return _product_out(product, _stock_allowed(db, user)).model_copy(update={"packaging_id": packaging.id})
     product = (
         db.query(Product)
         .filter(
@@ -278,7 +330,7 @@ def _to_int(value: str, default: int = 0) -> int:
 def import_products(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("produits_gerer")),
+    current_user: User = Depends(require_permission("produits_gerer")),
 ):
     """Bulk catalogue load: upserts rows by SKU, never deletes anything.
 
@@ -377,6 +429,8 @@ def import_products(
             seen_barcodes.add(barcode)
         existing = db.query(Product).filter(Product.sku == sku).first()
         try:
+            _check_code(db, sku, product_id=existing.id if existing else None)
+            _check_code(db, barcode, product_id=existing.id if existing else None)
             if existing:
                 for key, value in values.items():
                     if key in _PRICE_FIELDS and getattr(existing, key) != value:
@@ -386,6 +440,7 @@ def import_products(
                                 field=key,
                                 old_value=getattr(existing, key),
                                 new_value=value,
+                                changed_by_id=current_user.id,
                             )
                         )
                     setattr(existing, key, value)
@@ -414,20 +469,22 @@ def import_products(
 def create_product(
     payload: ProductCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("produits_gerer")),
+    current_user: User = Depends(require_permission("produits_gerer")),
 ):
     """The catalogue is the administrator's: the stock manager only reads it."""
     if db.query(Product).filter(Product.sku == payload.sku).first():
         raise HTTPException(status_code=400, detail="Cette référence (SKU) existe déjà")
     _check_barcode(db, payload, None)
-    product = Product(**payload.model_dump())
+    product = Product(**payload.model_dump(exclude={"packagings"}))
     db.add(product)
+    db.flush()
+    _save_packagings(db, product, payload.packagings, current_user)
     db.commit()
     db.refresh(product)
     return product
 
 
-_PRICE_FIELDS = ("sale_price", "purchase_price", "wholesale_price", "wholesale_packaging_price")
+_PRICE_FIELDS = ("sale_price", "purchase_price", "wholesale_price", "wholesale_packaging_price", "packaging_sale_price", "semi_wholesale_price", "supplier_purchase_price")
 
 
 @router.put("/{product_id}", response_model=ProductOut)
@@ -444,7 +501,9 @@ def update_product(
     if existing and existing.id != product_id:
         raise HTTPException(status_code=400, detail="Cette référence (SKU) existe déjà")
     _check_barcode(db, payload, product_id)
-    for key, value in payload.model_dump().items():
+    for key, value in payload.model_dump(exclude={"packagings"}).items():
+        if key in {"semi_wholesale_price", "supplier_purchase_price", "semi_wholesale_min_qty", "wholesale_min_qty"} and key not in payload.model_fields_set:
+            continue
         if key in {"base_unit", "packaging_unit", "units_per_packaging", "packaging_sale_price", "wholesale_packaging_price"} and key not in payload.model_fields_set:
             continue
         if key in _PRICE_FIELDS and getattr(product, key) != value:
@@ -458,6 +517,8 @@ def update_product(
                 )
             )
         setattr(product, key, value)
+    db.flush()
+    _save_packagings(db, product, payload.packagings, current_user)
     db.commit()
     db.refresh(product)
     return product
@@ -489,6 +550,8 @@ def delete_product(
     product = db.query(Product).get(product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Produit introuvable")
+    if product.packagings:
+        raise HTTPException(status_code=400, detail="Conservez cet article et désactivez ses conditionnements pour préserver l'historique")
     db.delete(product)
     db.commit()
 

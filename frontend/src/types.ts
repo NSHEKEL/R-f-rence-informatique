@@ -428,6 +428,11 @@ export interface Customer {
 }
 
 export interface UnitSpec {
+  semi_wholesale_price?: number | null;
+  semi_wholesale_min_qty?: number | null;
+  wholesale_min_qty?: number | null;
+  semi_packaging_price?: number | null;
+  additional_packaging?: boolean;
   wholesale_packaging_price?: number | null;
   base_unit?: string | null;
   packaging_unit?: string | null;
@@ -436,7 +441,23 @@ export interface UnitSpec {
   quantity_label?: string | null;
 }
 
+export interface ProductPackaging {
+  id?: number;
+  name: string;
+  factor: number;
+  barcode?: string | null;
+  price_detail?: number | null;
+  price_semi_gros?: number | null;
+  price_gros?: number | null;
+  purchase_price?: number | null;
+  active: boolean;
+  sort_order: number;
+}
+
 export interface Product extends UnitSpec {
+  packagings?: ProductPackaging[];
+  supplier_purchase_price?: number | null;
+  packaging_id?: number | null;
   id: number;
   name: string;
   sku: string;
@@ -460,7 +481,8 @@ export interface Product extends UnitSpec {
 }
 
 export interface SaleItem extends UnitSpec {
-  price_tier?: "detail" | "gros" | null;
+  packaging_id?: number | null;
+  price_tier?: "detail" | "semi_gros" | "gros" | null;
   catalog_unit_price?: number | null;
   unit_cost?: number | null;
   cost?: number | null;
@@ -758,6 +780,7 @@ export interface AccountingSummary {
 }
 
 export interface PurchaseItem extends UnitSpec {
+  packaging_id?: number | null;
   id: number;
   product_id: number | null;
   product_name: string;

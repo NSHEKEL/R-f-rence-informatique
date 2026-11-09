@@ -211,6 +211,10 @@ class Product(UnitSnapshot, Base):
     packaging_sale_price = Column(Float, nullable=True)
     wholesale_price = Column(Float, default=0)  # 0 = no wholesale price
     wholesale_packaging_price = Column(Float, nullable=True)
+    semi_wholesale_price = Column(Float, nullable=True)
+    supplier_purchase_price = Column(Float, nullable=True)
+    semi_wholesale_min_qty = Column(Integer, nullable=True)
+    wholesale_min_qty = Column(Integer, nullable=True)
     quantity = Column(Integer, default=0)
     min_stock = Column(Integer, default=5)
     qr_code = Column(String, default="")  # scan code, defaults to the SKU
@@ -220,6 +224,23 @@ class Product(UnitSnapshot, Base):
 
     category = relationship("Category", back_populates="products")
     supplier = relationship("Supplier", back_populates="products")
+    packagings = relationship("ProductPackaging", order_by="ProductPackaging.sort_order, ProductPackaging.id")
+
+
+class ProductPackaging(Base):
+    __tablename__ = "product_packagings"
+
+    id = Column(Integer, primary_key=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False, index=True)
+    name = Column(String, nullable=False)
+    factor = Column(Integer, nullable=False)
+    barcode = Column(String, nullable=True, index=True)
+    price_detail = Column(Float, nullable=True)
+    price_semi_gros = Column(Float, nullable=True)
+    price_gros = Column(Float, nullable=True)
+    purchase_price = Column(Float, nullable=True)
+    active = Column(Boolean, default=True, nullable=False)
+    sort_order = Column(Integer, default=0, nullable=False)
 
 
 class PriceHistory(Base):
@@ -304,6 +325,7 @@ class SaleItem(UnitSnapshot, Base):
 
     id = Column(Integer, primary_key=True, index=True)
     sale_id = Column(Integer, ForeignKey("sales.id"), nullable=False)
+    packaging_id = Column(Integer, ForeignKey("product_packagings.id"), nullable=True)
     price_tier = Column(String, default="detail")
     catalog_unit_price = Column(Float, nullable=True)
     unit_cost = Column(Float, nullable=True)
@@ -899,6 +921,7 @@ class PurchaseItem(UnitSnapshot, Base):
 
     id = Column(Integer, primary_key=True, index=True)
     purchase_id = Column(Integer, ForeignKey("purchases.id"), nullable=False)
+    packaging_id = Column(Integer, ForeignKey("product_packagings.id"), nullable=True)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
     product_name = Column(String, default="")
     quantity = Column(Integer, default=1)  # ordered

@@ -30,7 +30,7 @@ from ..schemas import (
     PurchaseUpdate,
 )
 from ..sequences import next_reference
-from ..units import base_quantity, snapshot
+from ..units import base_quantity, snapshot, selected_packaging
 
 router = APIRouter(prefix="/api/purchases", tags=["purchases"])
 
@@ -61,7 +61,8 @@ def _fill_items(db: Session, purchase: Purchase, payload) -> None:
             raise HTTPException(
                 status_code=404, detail=f"Produit {item.product_id} introuvable"
             )
-        quantity = base_quantity(item, product)
+        spec = selected_packaging(db, product, item.packaging_id)
+        quantity = base_quantity(item, spec)
         if quantity <= 0:
             raise HTTPException(status_code=400, detail="Quantité invalide")
         cost = (
@@ -70,14 +71,17 @@ def _fill_items(db: Session, purchase: Purchase, payload) -> None:
             else (product.purchase_price or 0)
         )
         if item.packaging_unit_cost is not None:
-            if not product.packaging_unit:
+            if not spec.packaging_unit:
                 raise HTTPException(status_code=400, detail="Conditionnement absent")
-            cost = item.packaging_unit_cost / product.units_per_packaging
+            cost = item.packaging_unit_cost / spec.units_per_packaging
+        elif item.unit_cost is None and getattr(spec, "packaging_purchase_price", None) is not None:
+            cost = spec.packaging_purchase_price / spec.units_per_packaging
         subtotal = cost * quantity
         total += subtotal
         purchase.items.append(
             PurchaseItem(
-                **snapshot(product),
+                packaging_id=item.packaging_id,
+                **snapshot(spec),
                 product_id=product.id,
                 product_name=product.name,
                 quantity=quantity,

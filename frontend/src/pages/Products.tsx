@@ -15,7 +15,7 @@ import {
   Trash2,
 } from "lucide-react";
 import api, { formatDateTime, formatXOF } from "../api/client";
-import type { Category, Product, StockLot, Supplier } from "../types";
+import type { Category, Product, ProductPackaging, StockLot, Supplier } from "../types";
 import Modal from "../components/Modal";
 import ProductQrCode from "../components/ProductQrCode";
 import StockDashboard from "../components/StockDashboard";
@@ -33,8 +33,14 @@ import { useCompany } from "../context/CompanyContext";
 import { useSyncVersion } from "../context/SyncContext";
 import { formatQuantity } from "../lib/units";
 import PackagingQuantity from "../components/PackagingQuantity";
+import ProductPackagings from "../components/ProductPackagings";
 
 const empty = {
+  packagings: [] as ProductPackaging[],
+  semi_wholesale_price: "" as number | "",
+  supplier_purchase_price: "" as number | "",
+  semi_wholesale_min_qty: "" as number | "",
+  wholesale_min_qty: "" as number | "",
   base_unit: "pièce",
   packaging_unit: "",
   units_per_packaging: 1,
@@ -62,8 +68,8 @@ const MAX_IMAGE_BYTES = 700_000;
 interface PriceChange {
   id: number;
   field: string;
-  old_value: number;
-  new_value: number;
+  old_value: number | null;
+  new_value: number | null;
   changed_at: string;
   changed_by?: { name: string } | null;
 }
@@ -224,6 +230,11 @@ export default function Products() {
   function openEdit(p: Product) {
     setEditing(p);
     setForm({
+      packagings: p.packagings || [],
+      semi_wholesale_price: p.semi_wholesale_price ?? "",
+      supplier_purchase_price: p.supplier_purchase_price ?? "",
+      semi_wholesale_min_qty: p.semi_wholesale_min_qty ?? "",
+      wholesale_min_qty: p.wholesale_min_qty ?? "",
       name: p.name,
       base_unit: p.base_unit || "pièce",
       packaging_unit: p.packaging_unit || "",
@@ -254,9 +265,19 @@ export default function Products() {
       setError("Unité de base requise ; stock et facteur doivent être des nombres entiers valides.");
       return;
     }
+    if (form.packagings.some((p) => !p.name.trim() || !Number.isInteger(p.factor) || p.factor < 1 || p.factor > 2147483647 || !Number.isInteger(p.sort_order) || [p.price_detail, p.price_semi_gros, p.price_gros, p.purchase_price].some((price) => price != null && (!Number.isFinite(price) || price < 0))) ||
+        [form.semi_wholesale_min_qty, form.wholesale_min_qty].some((q) => q !== "" && (!Number.isInteger(q) || q < 1)) ||
+        [form.semi_wholesale_price, form.supplier_purchase_price].some((price) => price !== "" && (!Number.isFinite(price) || price < 0))) {
+      setError("Vérifiez les conditionnements et tarifs : nom requis, facteur et seuils entiers positifs, prix positifs ou vides.");
+      return;
+    }
     setSaving(true);
     const payload = {
       ...form,
+      semi_wholesale_price: form.semi_wholesale_price === "" ? null : Number(form.semi_wholesale_price),
+      supplier_purchase_price: form.supplier_purchase_price === "" ? null : Number(form.supplier_purchase_price),
+      semi_wholesale_min_qty: form.semi_wholesale_min_qty === "" ? null : Number(form.semi_wholesale_min_qty),
+      wholesale_min_qty: form.wholesale_min_qty === "" ? null : Number(form.wholesale_min_qty),
       packaging_sale_price: form.packaging_sale_price === "" ? null : Number(form.packaging_sale_price),
       wholesale_packaging_price: form.wholesale_packaging_price === "" ? null : Number(form.wholesale_packaging_price),
       base_unit: form.base_unit.trim(),
@@ -771,7 +792,7 @@ export default function Products() {
             </select>
           </div>
           <div>
-            <label className="label">Prix d'achat (FCFA)</label>
+            <label className="label">Prix d'achat usine (coût pour le bénéfice, FCFA)</label>
             <input
               type="number"
               className="input"
@@ -820,6 +841,13 @@ export default function Products() {
             <div><label className="label">Pièces par carton</label><input className="input" type="number" min="1" step="1" value={form.units_per_packaging} onChange={(e) => setForm({ ...form, units_per_packaging: Number(e.target.value) })} /></div>
             <div><label className="label">Prix détail carton (vide = pièces × prix détail pièce)</label><input className="input" type="number" min="0" value={form.packaging_sale_price} onChange={(e) => setForm({ ...form, packaging_sale_price: e.target.value === "" ? "" : Number(e.target.value) })} /></div>
           </>}
+          {([
+            ["supplier_purchase_price", "Prix fournisseur pièce"],
+            ["semi_wholesale_price", "Prix semi-gros pièce"],
+            ["semi_wholesale_min_qty", "Seuil semi-gros (unités de base)"],
+            ["wholesale_min_qty", "Seuil gros (unités de base)"],
+          ] as const).map(([key, label]) => <label key={key} className="label">{label}<input className="input" type="number" min={key.endsWith("qty") ? "1" : "0"} step={key.endsWith("qty") ? "1" : "any"} value={form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.value === "" ? "" : Number(e.target.value) })} /></label>)}
+          <ProductPackagings value={form.packagings} onChange={(packagings) => setForm({ ...form, packagings })} />
           <div>
             <label className="label">Seuil d'alerte</label>
             <input
@@ -988,10 +1016,10 @@ export default function Products() {
                     {FIELD_LABEL[h.field] ?? h.field}
                   </td>
                   <td className="py-2 text-right text-slate-500">
-                    {formatXOF(h.old_value)}
+                    {h.old_value === null ? "Automatique" : formatXOF(h.old_value)}
                   </td>
                   <td className="py-2 text-right font-semibold text-slate-800">
-                    {formatXOF(h.new_value)}
+                    {h.new_value === null ? "Automatique" : formatXOF(h.new_value)}
                   </td>
                   <td className="py-2 text-right text-slate-500">
                     {h.changed_by?.name ?? "—"}
