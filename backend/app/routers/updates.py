@@ -1,12 +1,13 @@
 """Permission-controlled update checks and installation on this computer."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from .. import backup
-from ..permissions import require_permission
+from ..permissions import has_permission
+from ..auth import get_current_user
 from ..database import get_db
-from ..models import User
 from ..schemas import UpdateInstallResult, UpdateStatus
 from ..updater import (
     UpdateError,
@@ -19,6 +20,21 @@ from ..updater import (
 from ..version import APP_VERSION
 
 router = APIRouter(prefix="/api/updates", tags=["updates"])
+optional_token = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
+
+
+def allow_update(key):
+    def guard(request: Request, token: str | None = Depends(optional_token), db: Session = Depends(get_db)):
+        local = request.client and request.client.host in {"127.0.0.1", "::1"}
+        browser = any(request.headers.get(header) for header in ("origin", "referer", "sec-fetch-site", "sec-fetch-mode"))
+        if local and not browser:
+            return
+        if not token:
+            raise HTTPException(status_code=401, detail="Authentification requise")
+        user = get_current_user(token=token, db=db)
+        if not has_permission(db, user, key):
+            raise HTTPException(status_code=403, detail="Accès refusé")
+    return guard
 
 
 def _recent_backup_exists() -> bool:
@@ -38,7 +54,7 @@ def _recent_backup_exists() -> bool:
     return False
 
 @router.get("", response_model=UpdateStatus)
-def check_update(_: User = Depends(require_permission("generaux_consulter"))):
+def check_update(_: None = Depends(allow_update("generaux_consulter"))):
     status = UpdateStatus(current_version=APP_VERSION, packaged=is_packaged())
     try:
         release = latest_release()
@@ -54,7 +70,7 @@ def check_update(_: User = Depends(require_permission("generaux_consulter"))):
 
 @router.post("/install", response_model=UpdateInstallResult)
 def install_update(
-    _: User = Depends(require_permission("generaux_modifier")), db: Session = Depends(get_db)
+    _: None = Depends(allow_update("generaux_modifier")), db: Session = Depends(get_db)
 ):
     try:
         release = latest_release()

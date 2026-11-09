@@ -8,7 +8,7 @@ from sqlalchemy import create_engine, text
 
 import test_treasury_permissions as treasury
 from app import migrate as migration
-from app.auth import get_current_user
+from app.auth import get_current_user, create_access_token
 from app.database import get_db
 from app.models import CompanySettings, Product, SecurityLog, User
 from app.permissions import PERMISSIONS, role_matrix, save_matrix
@@ -30,6 +30,7 @@ class SettingsPermissionTests(unittest.TestCase):
         for router in (settings.router, backups.router, fne.router, permissions.router, users.router, updates.router, security.router, network.router):
             self.app.include_router(router)
         self.client = TestClient(self.app)
+        self.client.headers["Authorization"] = "Bearer " + create_access_token(self.user)
         self.addCleanup(self.client.close)
         self.features = patch("app.licensing.effective", return_value=SimpleNamespace(blocked=False, allows=lambda code: True, message="", plan_name="Test")).start()
         self.addCleanup(patch.stopall)
@@ -158,6 +159,20 @@ class SettingsPermissionTests(unittest.TestCase):
             saved = self.check("GET", "/settings/printing").json()
             self.assertEqual(saved["receipt"]["auto_print"], enabled)
             self.assertEqual(saved["receipt"]["open_drawer"], enabled)
+
+    def test_native_loopback_updates_and_browser_remote_guards(self):
+        with TestClient(self.app, client=("127.0.0.1", 1234)) as local, patch.object(updates, "latest_release", side_effect=updates.UpdateError("offline")):
+            self.assertEqual(local.get("/api/updates").status_code, 200)
+            for headers in ({"Origin": "http://localhost:8000"}, {"Sec-Fetch-Site": "same-origin"}):
+                self.assertEqual(local.get("/api/updates", headers=headers).status_code, 401)
+            self.assertEqual(self.client.get("/api/updates").status_code, 403)
+            self.grant("generaux_consulter")
+            self.assertEqual(self.client.get("/api/updates").status_code, 200)
+        with TestClient(self.app, client=("::1", 1234)) as local, patch.object(updates, "latest_release", return_value=SimpleNamespace(version="v9")), patch.object(updates, "update_available", return_value=True), patch.object(updates.backup, "create"), patch.object(updates, "install") as install, patch.object(updates, "shutdown_soon"):
+            self.assertEqual(local.post("/api/updates/install").status_code, 200)
+            install.assert_called_once()
+            self.assertEqual(local.post("/api/updates/install", headers={"Origin": "http://localhost:8000"}).status_code, 401)
+            self.assertEqual(self.client.post("/api/updates/install").status_code, 403)
 
     def test_consult_only_users_and_admin_only_network_security(self):
         self.grant("utilisateurs_consulter")

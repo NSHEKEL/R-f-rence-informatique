@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import axios from "axios";
+import { updateLocal } from "../lib/updateLocal";
 import {
   Building2,
   Check,
@@ -20,7 +21,6 @@ import {
 import api, {
   API_BASE,
   formatDateTime,
-  localApi,
   normalizeServerUrl,
   probeServer,
   setServerUrl,
@@ -453,7 +453,7 @@ export default function Settings() {
   async function checkUpdate() {
     setUpdateMessage("Recherche d'une mise à jour...");
     try {
-      const { data } = await localApi.get<UpdateStatus>("/updates");
+      const data = await updateLocal();
       setUpdateStatus(data);
       setUpdateMessage(
         data.error ||
@@ -476,7 +476,7 @@ export default function Settings() {
       return;
     setUpdateMessage("Téléchargement et installation en cours...");
     try {
-      await localApi.post("/updates/install");
+      await updateLocal(true);
       setUpdateMessage(
         "Mise à jour lancée : l'application redémarre dans quelques " +
           "secondes. Rechargez cette page ensuite."

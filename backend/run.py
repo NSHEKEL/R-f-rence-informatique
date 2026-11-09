@@ -214,6 +214,20 @@ class DesktopApi:
         if self._startup is not None:
             self._startup.mounted(token)
 
+    def update_local(self, install: bool = False):
+        import json
+        from urllib.request import Request, urlopen
+        from urllib.parse import urlsplit
+
+        if self._startup is None:
+            raise RuntimeError("Fenêtre indisponible")
+        address = urlsplit(self._startup.url)
+        if address.hostname not in {"127.0.0.1", "::1", "localhost"}:
+            raise RuntimeError("Mise à jour locale uniquement")
+        url = self._startup.url.rstrip("/") + "/api/updates" + ("/install" if install else "")
+        with urlopen(Request(url, method="POST" if install else "GET"), timeout=180) as response:
+            return json.load(response)
+
     def frontend_error(self, message: str, token: str = "") -> None:
         if self._startup is not None:
             self._startup.failed(message, token)
