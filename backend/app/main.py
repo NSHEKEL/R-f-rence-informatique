@@ -32,6 +32,7 @@ from .routers import (
     customers,
     dashboard,
     debts,
+    depots,
     deliveries,
     fne,
     history as history_router,
@@ -115,6 +116,7 @@ app.include_router(reports.router, dependencies=feature("rapports"))
 app.include_router(support.router)
 app.include_router(search.router)
 app.include_router(sync.router)
+app.include_router(depots.router)
 app.include_router(updates.router)
 app.include_router(orders.router, dependencies=feature("commandes"))
 app.include_router(deliveries.router, dependencies=feature("livraisons"))

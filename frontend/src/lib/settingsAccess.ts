@@ -3,9 +3,10 @@ export type SettingsCategory = typeof SETTINGS_CATEGORIES[number];
 export const TAB_CATEGORIES: Record<string, SettingsCategory> = { entreprise: "generaux", emails: "generaux", maj: "generaux", impression: "imprimantes", pos: "articles", articles: "articles", tarifs: "tarifs", fiscalite: "fiscaux", fne: "fiscaux", poste: "poste", peripheriques: "peripheriques", caisse: "caisse", sauvegarde: "sauvegarde" };
 type Can = (key: string) => boolean;
 export function canOpenSettings(can: Can) {
-  return SETTINGS_CATEGORIES.some((category) => can(`${category}_consulter`));
+  return can("depots_gerer") || can("depots_transferer") || SETTINGS_CATEGORIES.some((category) => can(`${category}_consulter`));
 }
 export function canOpenSettingsTab(tab: string, admin: boolean, can: Can) {
+  if (tab === "depots") return can("depots_gerer") || can("depots_transferer");
   if (tab === "reseau" || tab === "securite") return admin;
   if (tab === "compte") return canOpenSettings(can);
   return !!TAB_CATEGORIES[tab] && can(`${TAB_CATEGORIES[tab]}_consulter`);

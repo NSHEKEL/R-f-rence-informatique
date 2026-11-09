@@ -20,6 +20,7 @@ export interface InventoryRow {
 }
 
 export interface InventoryHeader {
+  scope?: { depot_id?: number; depot_name?: string };
   id: number;
   reference: string;
   name: string;

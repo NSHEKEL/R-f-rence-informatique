@@ -8,9 +8,10 @@ from sqlalchemy import or_, update
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Category, InventoryCount, InventorySession, Product, StockMovement, User
+from ..models import Category, Depot, InventoryCount, InventorySession, Product, StockMovement, User
 from ..permissions import has_permission, require_permission
 from ..sequences import next_reference
+from .. import stock
 
 router = APIRouter(prefix="/sessions", tags=["inventory"])
 OPEN = ("draft", "in_progress")
@@ -18,7 +19,7 @@ OPEN = ("draft", "in_progress")
 
 class SessionCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
-    scope_type: Literal["general", "category", "rayon", "emplacement", "selection"] = "general"
+    scope_type: Literal["general", "category", "rayon", "emplacement", "selection", "depot"] = "general"
     scope: dict = Field(default_factory=dict)
     blind: bool = False
     note: str = Field(default="", max_length=4000)
@@ -62,6 +63,14 @@ def _snapshot(product):
         "packagings": [{"id": p.id, "name": p.name, "factor": p.factor, "barcode": p.barcode} for p in product.packagings if p.active]})
 
 
+def _depot(session):
+    return json.loads(session.scope_json).get("depot_id") if session.scope_type == "depot" else None
+
+
+def _quantity(db, session, product):
+    return stock.quantity(db, product.id, _depot(session)) if session.scope_type == "depot" else product.quantity
+
+
 def _start(db, session):
     if session.status != "draft":
         return
@@ -71,7 +80,7 @@ def _start(db, session):
         product = products.get(row.product_id)
         if product is None:
             raise HTTPException(409, "Un article de cette session n'existe plus")
-        row.theoretical_qty = product.quantity
+        row.theoretical_qty = _quantity(db, session, product)
         row.unit_cost = product.purchase_price or 0
         row.product_snapshot = _snapshot(product)
     session.status = "in_progress"
@@ -104,7 +113,7 @@ def _report(db, session, user):
                 stats["physical_value"] += row["physical_value"]
             stats["theoretical_value"] += row["theoretical_value"]
             product = db.get(Product, count.product_id)
-            projected = (product.quantity if product else count.theoretical_qty) + (delta or 0)
+            projected = (_quantity(db, session, product) if product else count.theoretical_qty) + (delta or 0)
             row["stock_after_qty"] = count.stock_after if count.stock_after is not None else projected
             stats["stock_after_value"] += row["stock_after_qty"] * count.unit_cost
         rows.append(row)
@@ -139,6 +148,24 @@ def create(payload: SessionCreate, db: Session = Depends(get_db), user: User = D
         raise HTTPException(400, "Nom requis")
     query = db.query(Product)
     scope = payload.scope
+    if payload.scope_type == "depot":
+        value = scope.get("depot_id")
+        if type(value) is not int or value < 1:
+            raise HTTPException(400, "Dépôt requis")
+        depot_id = stock.resolve(db, value)
+        scope = {"depot_id": depot_id, "depot_name": db.get(Depot, depot_id).name}
+        if payload.scope.get("category_id") is not None:
+            category_id = payload.scope["category_id"]
+            if type(category_id) is not int or category_id < 1:
+                raise HTTPException(400, "Catégorie invalide")
+            scope["category_id"] = category_id
+            query = query.filter(Product.category_id == category_id)
+        if payload.scope.get("rayon"):
+            rayon = payload.scope["rayon"]
+            if not isinstance(rayon, str):
+                raise HTTPException(400, "Rayon invalide")
+            scope["rayon"] = rayon.strip()
+            query = query.filter(Product.rayon == rayon.strip())
     if payload.scope_type == "category":
         value = scope.get("category_id")
         if type(value) is not int or value < 1:
@@ -162,7 +189,7 @@ def create(payload: SessionCreate, db: Session = Depends(get_db), user: User = D
     db.add(session)
     db.flush()
     for product in products:
-        db.add(InventoryCount(session_id=session.id, product_id=product.id, theoretical_qty=product.quantity, unit_cost=product.purchase_price or 0, product_snapshot=_snapshot(product)))
+        db.add(InventoryCount(session_id=session.id, product_id=product.id, theoretical_qty=_quantity(db, session, product), unit_cost=product.purchase_price or 0, product_snapshot=_snapshot(product)))
     db.commit()
     return _report(db, session, user)
 
@@ -250,17 +277,21 @@ def validate(session_id: int, db: Session = Depends(get_db), user: User = Depend
             raise HTTPException(400, "Aucun article compté")
         for row in counts:
             delta = row.physical_qty - row.theoretical_qty
-            after = db.execute(update(Product).where(Product.id == row.product_id, Product.quantity + delta >= 0).values(quantity=Product.quantity + delta).returning(Product.quantity)).scalar_one_or_none()
-            if after is None:
+            product = db.get(Product, row.product_id)
+            if product is None:
                 raise HTTPException(409, "Stock insuffisant ou article introuvable : validation annulée")
-            row.stock_after = after
+            try:
+                before, after = stock.adjust(db, product, delta, _depot(session), allow_negative=session.scope_type != "depot", check_total=True)
+            except HTTPException as exc:
+                raise HTTPException(409, exc.detail) from exc
+            row.stock_after = _quantity(db, session, product)
             snapshot = json.loads(row.product_snapshot)
-            db.add(StockMovement(product_id=row.product_id, product_name=snapshot["name"], kind="inventaire", quantity=delta, stock_before=after - delta, stock_after=after,
+            db.add(StockMovement(depot_id=stock.resolve(db, _depot(session)), product_id=row.product_id, product_name=snapshot["name"], kind="inventaire", quantity=delta, stock_before=before, stock_after=after,
                 reason=f"Inventaire {session.reference}", created_by_id=user.id))
         for row in _counts(db, session_id):
             if row.physical_qty is None:
                 product = db.get(Product, row.product_id)
-                row.stock_after = product.quantity if product else row.theoretical_qty
+                row.stock_after = _quantity(db, session, product) if product else row.theoretical_qty
         session.status = "validated"
         session.validated_by_id = user.id
         session.validated_by_name = user.name

@@ -45,6 +45,7 @@ import { useCompany } from "../context/CompanyContext";
 import { canOpenSettingsTab, companyUpdatePayload, TAB_CATEGORIES } from "../lib/settingsAccess";
 import WorkstationSettings from "../components/WorkstationSettings";
 import CatalogPriceSettings from "../components/CatalogPriceSettings";
+import DepotSettings from "../components/DepotSettings";
 
 type CompanyForm = Omit<CompanySettings, "id"> & { smtp_password?: string };
 
@@ -57,6 +58,7 @@ const TABS = [
   { key: "impression", label: "Impression", icon: Printer },
   { key: "pos", label: "Affichage POS", icon: Printer },
   { key: "articles", label: "Articles", icon: Building2 },
+  { key: "depots", label: "Dépôts", icon: Building2 },
   { key: "tarifs", label: "Tarifs", icon: Building2 },
   { key: "fiscalite", label: "Fiscalité", icon: FileCheck2 },
   { key: "poste", label: "Ce poste", icon: Printer },
@@ -199,7 +201,7 @@ export default function Settings() {
   });
   const visibleTabs = TABS.filter((item) => canOpenSettingsTab(item.key, user?.role === "admin", can));
   const tab = visibleTabs.some((item) => item.key === storedTab) ? storedTab : visibleTabs[0]?.key;
-  const tabEditable = tab === "tarifs" ? true : tab === "reseau" || tab === "securite" ? user?.role === "admin" : tab === "poste" ? can("poste_modifier") || can("peripheriques_modifier") : tab === "compte" || !!tab && can(`${TAB_CATEGORIES[tab]}_modifier`);
+  const tabEditable = tab === "depots" || tab === "tarifs" ? true : tab === "reseau" || tab === "securite" ? user?.role === "admin" : tab === "poste" ? can("poste_modifier") || can("peripheriques_modifier") : tab === "compte" || !!tab && can(`${TAB_CATEGORIES[tab]}_modifier`);
   const [workstations, setWorkstations] = useState<Workstation[]>([]);
   const [layoutDoc, setLayoutDoc] = useState(DOC_TYPES[0].key);
   const docLayout = readDocumentLayout(
@@ -601,6 +603,7 @@ export default function Settings() {
       </div>
 
       <fieldset disabled={!tabEditable} className="min-w-0 space-y-6">
+      {tab === "depots" && <DepotSettings />}
       {tab === "poste" && <WorkstationSettings />}
       {tab === "tarifs" && <CatalogPriceSettings />}
       {(["articles", "fiscalite", "peripheriques", "caisse"] as string[]).includes(tab || "") && <div className="card space-y-4 p-6">

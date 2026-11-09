@@ -9,6 +9,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, defer
 
 from ..database import get_db
+from .. import stock
 from ..models import (
     Category,
     CompanySettings,
@@ -449,7 +450,10 @@ def import_products(
                                 changed_by_id=current_user.id,
                             )
                         )
-                    setattr(existing, key, value)
+                    if key == "quantity":
+                        stock.set_total(db, existing, value)
+                    else:
+                        setattr(existing, key, value)
                 updated += 1
             else:
                 # A new article needs every numeric field to exist.
@@ -460,7 +464,7 @@ def import_products(
                 values.setdefault("wholesale_price", 0)
                 values.setdefault("quantity", 0)
                 values.setdefault("min_stock", 5)
-                db.add(Product(sku=sku, **values))
+                stock.create_product(db, sku=sku, **values)
                 created += 1
             # Each row lands on its own: a bad row later never undoes it.
             db.commit()
@@ -481,8 +485,7 @@ def create_product(
     if db.query(Product).filter(Product.sku == payload.sku).first():
         raise HTTPException(status_code=400, detail="Cette référence (SKU) existe déjà")
     _check_barcode(db, payload, None)
-    product = Product(**payload.model_dump(exclude={"packagings"}))
-    db.add(product)
+    product = stock.create_product(db, **payload.model_dump(exclude={"packagings"}))
     db.flush()
     _save_packagings(db, product, payload.packagings, current_user)
     db.commit()
@@ -522,7 +525,10 @@ def update_product(
                     changed_by_id=current_user.id,
                 )
             )
-        setattr(product, key, value)
+        if key == "quantity":
+            stock.set_total(db, product, value)
+        else:
+            setattr(product, key, value)
     db.flush()
     _save_packagings(db, product, payload.packagings, current_user)
     db.commit()
@@ -558,7 +564,7 @@ def delete_product(
         raise HTTPException(status_code=404, detail="Produit introuvable")
     if product.packagings or db.query(InventoryCount.id).filter_by(product_id=product_id).first():
         raise HTTPException(status_code=400, detail="Conservez cet article pour préserver l'historique des conditionnements et des inventaires")
-    db.delete(product)
+    stock.delete_product(db, product)
     db.commit()
 
 
@@ -623,18 +629,21 @@ def create_lot(
         raise HTTPException(status_code=404, detail="Produit introuvable")
     if payload.quantity <= 0:
         raise HTTPException(status_code=400, detail="Quantité invalide")
+    depot_id = stock.resolve(db, payload.depot_id)
     tagged = (
         db.query(func.coalesce(func.sum(StockLot.quantity), 0))
         .filter(StockLot.product_id == product_id)
+        .filter((StockLot.depot_id == depot_id) | (StockLot.depot_id.is_(None) & (depot_id == stock.resolve(db))))
         .scalar()
     )
-    untagged = product.quantity - int(tagged)
+    untagged = stock.quantity(db, product_id, depot_id) - int(tagged)
     if payload.quantity > untagged:
         raise HTTPException(
             status_code=400,
             detail=f"Stock sans lot insuffisant : {untagged} disponible(s)",
         )
     lot = StockLot(
+        depot_id=depot_id,
         product_id=product_id,
         lot_number=payload.lot_number.strip(),
         expiry_date=payload.expiry_date,
@@ -833,17 +842,20 @@ def write_off_lot(
     if quantity <= 0 or quantity > lot.quantity:
         raise HTTPException(status_code=400, detail="Quantité invalide")
 
-    stock_before = product.quantity or 0
-    product.quantity = max(stock_before - quantity, 0)
+    depot_id = stock.resolve(db, lot.depot_id, active=False)
+    if depot_id != stock.resolve(db):
+        raise HTTPException(400, "Utilisez un inventaire du dépôt pour retirer le stock d'une réserve")
+    stock_before, stock_after = stock.adjust(db, product, -quantity, check_total=True)
     lot.quantity -= quantity
     db.add(
         StockMovement(
+            depot_id=depot_id,
             product_id=product.id,
             product_name=product.name,
             kind="peremption",
             quantity=-quantity,
             stock_before=stock_before,
-            stock_after=product.quantity,
+            stock_after=stock_after,
             reason=f"Péremption ({reason})"
             + (f" — lot {lot.lot_number}" if lot.lot_number else ""),
             created_by_id=current_user.id,

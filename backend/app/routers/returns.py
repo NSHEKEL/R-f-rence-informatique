@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from .. import remote_sales
 from ..database import get_db
+from .. import stock
 from ..models import (
     Notification,
     Product,
@@ -122,17 +123,17 @@ def create_return(
             db.query(Product).get(item.product_id) if item.product_id else None
         )
         if product:
-            before = product.quantity
-            product.quantity = before + line.quantity
+            before, after = stock.adjust(db, product, line.quantity)
             db.add(
                 StockMovement(
+                    depot_id=stock.resolve(db),
                     **snapshot(item),
                     product_id=product.id,
                     product_name=product.name,
                     kind="retour",
                     quantity=line.quantity,
                     stock_before=before,
-                    stock_after=product.quantity,
+                    stock_after=after,
                     reason=f"Retour {sale.reference}",
                     created_by_id=current_user.id,
                 )

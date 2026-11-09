@@ -10,6 +10,8 @@ from sqlalchemy.orm import joinedload, selectinload
 from .models import (AccountingAccount, AccountingSetting, AppMigration, BankAccount, BankDeposit,
     CashMovement, Category, Debt, DebtPayment, Expense, Payslip, PayslipLine, Product, Purchase, Sale, SaleReturn, User)
 from .profits import line_revenue, unit_cost
+from . import stock
+from .models import Depot
 
 
 SEED_ACCOUNTS = {
@@ -227,7 +229,7 @@ def derive(db):
     return entries, missing, footer
 
 
-def report(db, kind, start, end, account_filter=None, user_id=None, operation_type=None):
+def report(db, kind, start, end, account_filter=None, user_id=None, operation_type=None, depot_id=None):
     entries, missing, footer = derive(db)
     def matches(row, period=True):
         day = row["date"][:10]
@@ -289,7 +291,13 @@ def report(db, kind, start, end, account_filter=None, user_id=None, operation_ty
     if kind == "stock":
         headers = ["Référence", "Article", "Catégorie", "Quantité actuelle", "Prix d'achat actuel", "Valeur actuelle"]
         categories = {c.id: c.name for c in db.query(Category)}
-        rows = [[p.sku, p.name, categories.get(p.category_id, "Sans catégorie"), p.quantity or 0, p.purchase_price or 0, float(money((p.quantity or 0) * (p.purchase_price or 0)))] for p in db.query(Product).order_by(Product.category_id, Product.name)]
+        if depot_id is not None:
+            depot_id = stock.resolve(db, depot_id, active=False)
+            footer += f" Dépôt : {db.get(Depot, depot_id).name}."
+        rows = []
+        for p in db.query(Product).order_by(Product.category_id, Product.name):
+            qty = stock.quantity(db, p.id, depot_id) if depot_id is not None else p.quantity or 0
+            rows.append([p.sku, p.name, categories.get(p.category_id, "Sans catégorie"), qty, p.purchase_price or 0, float(money(qty * (p.purchase_price or 0)))])
         footer += " Valorisation au stock et coût actuels, non reconstituée à la date de fin ; filtres compte/utilisateur/opération non applicables."
     if kind == "margins":
         headers = ["Date", "Pièce", "Source", "Article", "Utilisateur", "Quantité signée", "CA net", "Coût historique", "Bénéfice"]

@@ -14,6 +14,8 @@ from .models import RolePermission, SecurityLog, User
 
 # key -> (label shown to the administrator, section)
 PERMISSIONS: dict[str, tuple[str, str]] = {
+    "depots_gerer": ("Gérer les dépôts", "Actions"),
+    "depots_transferer": ("Transférer entre dépôts", "Actions"),
     "comptabilite_journaux_consulter": ("Consulter les documents comptables", "Trésorerie"),
     "comptabilite_journaux_imprimer": ("Imprimer et exporter les documents comptables", "Trésorerie"),
     "plan_comptable_modifier": ("Modifier le plan et les comptes de liaison", "Trésorerie"),

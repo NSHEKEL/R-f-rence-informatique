@@ -28,6 +28,7 @@ import { priceLabelHtml } from "../lib/labels";
 import { exportCsv, stampedName } from "../lib/exportCsv";
 import { useLicense } from "../context/LicenseContext";
 import { stockBadge } from "../components/badges";
+import DepotStock from "../components/DepotStock";
 import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSyncVersion } from "../context/SyncContext";
@@ -613,6 +614,7 @@ export default function Products() {
                   </td>
                   <td className="px-5 py-3.5 text-center font-semibold text-slate-700">
                     {formatQuantity(p, p.quantity)}
+                    {p.quantity != null && (can("produits") || can("inventaire")) && <DepotStock productId={p.id} total={p.quantity} />}
                   </td>
                   <td className="px-5 py-3.5 text-center">{stockBadge(p)}</td>
                   <td className="px-5 py-3.5 text-xs text-slate-500">

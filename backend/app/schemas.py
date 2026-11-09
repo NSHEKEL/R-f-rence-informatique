@@ -970,12 +970,14 @@ class InventoryApply(BaseModel):
 
 
 class StockLotCreate(BaseModel):
+    depot_id: Optional[int] = Field(default=None, ge=1)
     lot_number: str = ""
     expiry_date: Optional[datetime] = None
     quantity: int
 
 
 class StockLotOut(BaseModel):
+    depot_id: Optional[int] = None
     model_config = ConfigDict(from_attributes=True)
     id: int
     product_id: int
@@ -1020,6 +1022,7 @@ class StockTransferOut(BaseModel):
 
 
 class StockMovementOut(UnitSnapshotOut):
+    depot_id: Optional[int] = None
     model_config = ConfigDict(from_attributes=True)
     id: int
     product_id: Optional[int]

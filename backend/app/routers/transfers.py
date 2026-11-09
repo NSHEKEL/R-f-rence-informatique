@@ -6,6 +6,7 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from .. import stock
 from ..models import (
     Product,
     StockMovement,
@@ -88,32 +89,17 @@ def create_transfer(
         line = line.model_copy(update={"quantity": base_quantity(line, product)})
         if line.quantity <= 0:
             raise HTTPException(status_code=400, detail="Quantité invalide")
-        if leaving:
-            result = db.execute(
-                update(Product)
-                .where(
-                    Product.id == product.id,
-                    Product.quantity >= line.quantity,
-                )
-                .values(quantity=Product.quantity - line.quantity)
-            )
-            if result.rowcount == 0:
-                db.rollback()
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Stock insuffisant pour {product.name}",
-                )
-            db.refresh(product)
-        else:
-            product.quantity += line.quantity
+        depot_id = stock.resolve(db)
+        before, after = stock.adjust(db, product, -line.quantity if leaving else line.quantity, check_total=leaving)
         db.add(
             StockMovement(
+                depot_id=depot_id,
                 product_id=product.id,
                 product_name=product.name,
                 kind="transfert",
                 quantity=-line.quantity if leaving else line.quantity,
                 stock_before=before,
-                stock_after=product.quantity,
+                stock_after=after,
                 reason=f"Transfert {arrow} {store} ({transfer.reference})",
                 created_by_id=current_user.id,
             )

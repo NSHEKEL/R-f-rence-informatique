@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import (
     Boolean,
     event,
+    inspect,
     select,
     CheckConstraint,
     Column,
@@ -132,6 +133,51 @@ class CompanySettings(Base):
     support_whatsapp = Column(String, default="0710069059")
     support_email = Column(String, default="ankouame022@gmail.com")
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class Depot(Base):
+    __tablename__ = "depots"
+
+    id = Column(Integer, primary_key=True)
+    code = Column(String, nullable=False, unique=True)
+    name = Column(String, nullable=False)
+    is_default = Column(Boolean, nullable=False, default=False)
+    active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+
+
+class DepotStock(Base):
+    __tablename__ = "depot_stocks"
+    __table_args__ = (UniqueConstraint("depot_id", "product_id", name="uq_depot_product"),)
+
+    id = Column(Integer, primary_key=True)
+    depot_id = Column(Integer, ForeignKey("depots.id"), nullable=False, index=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False, index=True)
+    quantity = Column(Integer, nullable=False, default=0)
+
+
+class DepotTransfer(Base):
+    __tablename__ = "depot_transfers"
+
+    id = Column(Integer, primary_key=True)
+    reference = Column(String, unique=True, nullable=False)
+    source_depot_id = Column(Integer, ForeignKey("depots.id"), nullable=False)
+    destination_depot_id = Column(Integer, ForeignKey("depots.id"), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    note = Column(Text, nullable=False, default="")
+    items = relationship("DepotTransferItem", back_populates="transfer")
+
+
+class DepotTransferItem(Base):
+    __tablename__ = "depot_transfer_items"
+
+    id = Column(Integer, primary_key=True)
+    transfer_id = Column(Integer, ForeignKey("depot_transfers.id"), nullable=False)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    product_name = Column(String, nullable=False)
+    quantity = Column(Integer, nullable=False)
+    transfer = relationship("DepotTransfer", back_populates="items")
 
 
 class Workstation(Base):
@@ -546,6 +592,7 @@ class StockMovement(UnitSnapshot, Base):
     __tablename__ = "stock_movements"
 
     id = Column(Integer, primary_key=True, index=True)
+    depot_id = Column(Integer, ForeignKey("depots.id"), nullable=True)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
     product_name = Column(String, default="")
     kind = Column(String, default="ajustement")  # vente, inventaire, ajustement
@@ -571,6 +618,7 @@ class StockLot(Base):
     __tablename__ = "stock_lots"
 
     id = Column(Integer, primary_key=True, index=True)
+    depot_id = Column(Integer, ForeignKey("depots.id"), nullable=True)
     product_id = Column(Integer, ForeignKey("products.id"), index=True)
     lot_number = Column(String, default="")
     expiry_date = Column(DateTime, nullable=True)
@@ -1411,3 +1459,16 @@ def capture_units(mapper, connection, target):
             target.piece_quantity = target.quantity
         if target.base_unit_price is None:
             target.base_unit_price = target.unit_price
+
+
+@event.listens_for(Product, "after_insert")
+def reconcile_product_stock(mapper, connection, target):
+    from .stock import reconcile
+
+    reconcile(connection, target.id, target.quantity or 0)
+
+
+@event.listens_for(Product, "after_update")
+def reconcile_legacy_stock_edit(mapper, connection, target):
+    if inspect(target).attrs.quantity.history.has_changes():
+        reconcile_product_stock(mapper, connection, target)

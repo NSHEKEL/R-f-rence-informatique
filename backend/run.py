@@ -723,6 +723,16 @@ def _selftest(url: str) -> None:
     problems = []
     if not _wait_until_ready(url, timeout=60):
         problems.append("le serveur ne répond pas sur /api/health")
+    else:
+        from app.database import SessionLocal
+        from app.stock import inconsistencies
+
+        with SessionLocal() as db:
+            errors = inconsistencies(db)
+        if errors:
+            problems.append(f"stock incohérent dans {len(errors)} article(s)")
+        else:
+            print("DEPOT_STOCK_CONSISTENCY=OK", flush=True)
     if sys.platform == "win32":
         # The 32-bit package is built without the native window (no pythonnet
         # wheel exists for x86): there the browser fallback is the expected

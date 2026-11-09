@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from .. import stock
 from ..models import (
     Notification,
     Product,
@@ -266,21 +267,22 @@ def receive_purchase(
                 status_code=400,
                 detail=f"L'article « {item.product_name} » n'existe plus",
             )
-        before = product.quantity or 0
-        product.quantity = before + quantity
+        depot_id = stock.resolve(db)
+        before, after = stock.adjust(db, product, quantity, depot_id)
         if payload.update_cost and (item.unit_cost or 0) > 0:
             product.purchase_price = item.unit_cost
         item.received_quantity = (item.received_quantity or 0) + quantity
         moved += quantity
         db.add(
             StockMovement(
+                depot_id=depot_id,
                 **snapshot(item),
                 product_id=product.id,
                 product_name=product.name,
                 kind="approvisionnement",
                 quantity=quantity,
                 stock_before=before,
-                stock_after=product.quantity,
+                stock_after=after,
                 reason=f"Approvisionnement {purchase.reference}",
                 created_by_id=current_user.id,
             )

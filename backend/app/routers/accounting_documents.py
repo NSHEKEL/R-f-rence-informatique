@@ -129,7 +129,7 @@ def link_purchase(debt_id: int, payload: LinkInput, db: Session = Depends(get_db
 
 @router.get("/report")
 def read_report(kind: Literal["account", "sales", "purchases", "cash", "expenses", "settlements", "ledger", "balance", "customers", "suppliers", "debts", "stock", "margins"] = "ledger",
-    start: date | None = None, end: date | None = None, account: str | None = None, user_id: int | None = None, operation_type: str | None = None,
+    start: date | None = None, end: date | None = None, account: str | None = None, user_id: int | None = None, operation_type: str | None = None, depot_id: int | None = None,
     export: bool = False, db: Session = Depends(get_db), user: User = Depends(require_permission("comptabilite_journaux_consulter"))):
     if export and not has_permission(db, user, "comptabilite_journaux_imprimer"):
         raise HTTPException(status_code=403, detail="Export comptable refusé")
@@ -138,4 +138,4 @@ def read_report(kind: Literal["account", "sales", "purchases", "cash", "expenses
         raise HTTPException(status_code=400, detail="Période invalide")
     if kind == "account" and not account:
         raise HTTPException(status_code=400, detail="Choisissez un compte")
-    return report(db, kind, start.isoformat(), end.isoformat(), account, user_id, operation_type)
+    return report(db, kind, start.isoformat(), end.isoformat(), account, user_id, operation_type, depot_id)

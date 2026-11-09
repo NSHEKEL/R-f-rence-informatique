@@ -24,6 +24,7 @@ from ..sequences import next_reference
 from .cash import lock_current_session
 from ..units import base_quantity, prices, snapshot, selected_packaging, resolve_tier
 from ..profits import financials
+from .. import stock
 
 router = APIRouter(prefix="/api/sales", tags=["sales"])
 
@@ -125,7 +126,7 @@ def create_sale(
     raise HTTPException(status_code=409, detail="Caisse occupée, veuillez réessayer")
 
 
-def _consume_lots_fefo(db: Session, product: Product, quantity: int) -> None:
+def _consume_lots_fefo(db: Session, product: Product, quantity: int, depot_id=None) -> None:
     """Draw `quantity` from the product's tagged lots, earliest expiry first.
 
     Never fails the sale: if the tagged lots run out, the remainder comes
@@ -137,6 +138,7 @@ def _consume_lots_fefo(db: Session, product: Product, quantity: int) -> None:
         .filter(
             StockLot.product_id == product.id,
             StockLot.quantity > 0,
+            (StockLot.depot_id == stock.resolve(db, depot_id)) | (StockLot.depot_id.is_(None) & (stock.resolve(db, depot_id) == stock.resolve(db))),
             # Expired lots never reach the customer.
             (StockLot.expiry_date.is_(None)) | (StockLot.expiry_date >= datetime.now()),
         )
@@ -152,6 +154,7 @@ def _consume_lots_fefo(db: Session, product: Product, quantity: int) -> None:
 
 
 def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
+    depot_id = stock.resolve(db)
     if payload.discount > 0 and not has_permission(db, current_user, "prix_modifier"):
         raise HTTPException(status_code=403, detail="Vous n'avez pas le droit de modifier le prix de vente")
     if payload.is_gift and not has_permission(
@@ -253,37 +256,21 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
             )
         )
         if payload.status != "Annulée":
-            # Conditional update: keeps stock correct when two tills sell the
-            # same product simultaneously.
-            result = db.execute(
-                update(Product)
-                .where(
-                    Product.id == product.id,
-                    Product.quantity >= item.quantity,
-                )
-                .values(quantity=Product.quantity - item.quantity)
-            )
-            if result.rowcount == 0:
-                db.rollback()
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Stock insuffisant pour {product.name}",
-                )
-            db.refresh(product)
-            before = product.quantity + item.quantity
+            before, after = stock.adjust(db, product, -item.quantity, check_total=True)
             db.add(
                 StockMovement(
+                    depot_id=depot_id,
                     product_id=product.id,
                     product_name=product.name,
                     kind="vente",
                     quantity=-item.quantity,
                     stock_before=before,
-                    stock_after=product.quantity,
+                    stock_after=after,
                     reason=sale.reference,
                     created_by_id=current_user.id,
                 )
             )
-            _consume_lots_fefo(db, product, item.quantity)
+            _consume_lots_fefo(db, product, item.quantity, depot_id)
             if product.quantity <= product.min_stock:
                 low_stock.append(product)
 
@@ -488,17 +475,17 @@ def delete_sale(
             if item.product_id:
                 product = db.query(Product).get(item.product_id)
                 if product:
-                    before = product.quantity
                     remaining = item.quantity - item.returned_quantity
-                    product.quantity += remaining
+                    before, after = stock.adjust(db, product, remaining)
                     db.add(
                         StockMovement(
+                            depot_id=stock.resolve(db),
                             product_id=product.id,
                             product_name=product.name,
                             kind="ajustement",
                             quantity=remaining,
                             stock_before=before,
-                            stock_after=product.quantity,
+                            stock_after=after,
                             reason=f"Annulation {sale.reference}",
                             created_by_id=current_user.id,
                         )

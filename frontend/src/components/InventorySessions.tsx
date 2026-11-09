@@ -5,9 +5,10 @@ import { exportCsv } from "../lib/exportCsv";
 import { printDocument } from "../lib/print";
 import { INVENTORY_STATS, inventoryTable, reportHtml, type InventoryHeader, type InventoryReport, type InventoryRow } from "../lib/inventoryReport";
 import PackagingQuantity from "./PackagingQuantity";
+import { depotScope, useDepots } from "../lib/depots";
 
 const STATUS: Record<string, string> = { draft: "Brouillon", in_progress: "En cours", validated: "Validé", cancelled: "Annulé" };
-const SCOPES: Record<string, string> = { general: "Général", category: "Catégorie", rayon: "Rayon", emplacement: "Emplacement", selection: "Sélection d'articles" };
+const SCOPES: Record<string, string> = { general: "Général", category: "Catégorie", rayon: "Rayon", emplacement: "Emplacement", selection: "Sélection d'articles", depot: "Dépôt" };
 type SaveCount = (productId: number, payload: object) => Promise<void>;
 
 function CountEditor({ row, save }: { row: InventoryRow; save: SaveCount }) {
@@ -49,6 +50,7 @@ function CountEditor({ row, save }: { row: InventoryRow; save: SaveCount }) {
 }
 
 export default function InventorySessions() {
+  const { depots, error: depotError } = useDepots();
   const { can } = useAuth();
   const [history, setHistory] = useState<InventoryHeader[]>([]);
   const [options, setOptions] = useState<{ products: { id: number; name: string; sku: string; rayon?: string | null; emplacement?: string | null }[]; categories: { id: number; name: string }[] }>({ products: [], categories: [] });
@@ -82,7 +84,7 @@ export default function InventorySessions() {
   }
   async function create() {
     setBusy(true); setMessage("");
-    const scope = form.scope_type === "category" ? { category_id: Number(form.value) } : form.scope_type === "selection" ? { product_ids: form.value.split(/[,;\s]+/).filter(Boolean).map(Number) } : form.scope_type === "general" ? {} : { [form.scope_type]: form.value };
+    const scope = form.scope_type === "depot" ? depotScope(form.value) : form.scope_type === "category" ? { category_id: Number(form.value) } : form.scope_type === "selection" ? { product_ids: form.value.split(/[,;\s]+/).filter(Boolean).map(Number) } : form.scope_type === "general" ? {} : { [form.scope_type]: form.value };
     try { const { data } = await api.post<InventoryReport>("/inventory/sessions", { ...form, scope }); setCurrent(data); await loadHistory(); }
     catch { setMessage("Création impossible : vérifiez le nom et le périmètre (non vide)."); }
     finally { setBusy(false); }
@@ -105,7 +107,7 @@ export default function InventorySessions() {
       await queue.current;
       const { data } = await api.get<InventoryReport>(`/inventory/sessions/${current.id}/report`);
       const { headers, rows } = inventoryTable(data);
-      const title = `${data.reference} — ${data.name} — ${STATUS[data.status]}`;
+      const title = `${data.reference} — ${data.name} — ${STATUS[data.status]} — ${data.scope?.depot_name || "Tous dépôts (écart au principal)"}`;
       const summary: (string | number)[][] = [["Session", data.reference], ["Créé par", data.created_by_name], ["Créé le", formatDateTime(data.created_at)], ...(data.validated_at ? [["Validé par", data.validated_by_name || ""], ["Validé le", formatDateTime(data.validated_at)]] : []), ...Object.entries(data.stats).map(([key, value]) => [INVENTORY_STATS[key] || key, value])];
       let destination: string | boolean;
       if (kind === "excel") destination = await exportCsv(data.reference, headers, [...rows, [], ...summary]);
@@ -119,10 +121,13 @@ export default function InventorySessions() {
   return <section className="card space-y-4 p-5">
     <h2 className="text-xl font-bold">Sessions d'inventaire</h2>
     <p>Comptage partagé et sauvegardé automatiquement. Le stock n'est ajusté qu'à la validation. Les brouillons prennent leur stock de référence au démarrage.</p>
+    <p className="text-sm">Hors périmètre Dépôt, le théorique inclut tous les dépôts et l'écart est appliqué au principal uniquement.</p>
+    {depotError && <p role="status">{depotError}</p>}
     <div className="grid gap-3 sm:grid-cols-3">
       <input aria-label="Nom de session" className="input" placeholder="Nom de l'inventaire" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
       <select aria-label="Périmètre" className="input" value={form.scope_type} onChange={(e) => setForm({ ...form, scope_type: e.target.value, value: "" })}>{Object.entries(SCOPES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
       {form.scope_type === "category" && <select aria-label="Catégorie du périmètre" className="input" value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })}><option value="">Choisir une catégorie</option>{options.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select>}
+      {form.scope_type === "depot" && <select aria-label="Dépôt du périmètre" className="input" value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })}><option value="">Choisir un dépôt</option>{depots.filter((depot) => depot.active).map((depot) => <option key={depot.id} value={depot.id}>{depot.name}</option>)}</select>}
       {form.scope_type === "selection" && <label className="label">Articles (sélection multiple)<select aria-label="Articles du périmètre" className="input" multiple value={form.value ? form.value.split(",") : []} onChange={(e) => setForm({ ...form, value: Array.from(e.target.selectedOptions).map((option) => option.value).join(",") })}>{options.products.map((product) => <option key={product.id} value={product.id}>{product.sku} — {product.name}</option>)}</select></label>}
       {(form.scope_type === "rayon" || form.scope_type === "emplacement") && <><input aria-label="Valeur du périmètre" className="input" placeholder="Nom exact" list="inventory-locations" value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })} /><datalist id="inventory-locations">{[...new Set(options.products.map((product) => form.scope_type === "rayon" ? product.rayon : product.emplacement).filter(Boolean))].map((value) => <option key={value} value={value || ""} />)}</datalist></>}
       <label><input type="checkbox" checked={form.blind} onChange={(e) => setForm({ ...form, blind: e.target.checked })} /> Comptage aveugle</label>
@@ -139,6 +144,7 @@ export default function InventorySessions() {
     <div className="max-h-48 overflow-auto">{history.length === 0 && <p>Aucune session.</p>}{history.map((session) => <button className="block w-full border-b p-2 text-left" key={session.id} onClick={async () => { try { await queue.current; const { data } = await api.get<InventoryReport>(`/inventory/sessions/${session.id}`); setCurrent(data); } catch { setMessage("Session indisponible ou saisie non enregistrée."); } }}>{session.reference} — {session.name} — {STATUS[session.status]} — {session.created_by_name} {formatDateTime(session.created_at)}{session.validated_at && ` — Validé par ${session.validated_by_name} le ${formatDateTime(session.validated_at)}`}</button>)}</div>
     {current && table && <div className="space-y-3">
       <h3 className="font-bold">{current.reference} — {current.name} — {STATUS[current.status]}</h3>
+      <p>{current.scope?.depot_name ? `Dépôt : ${current.scope.depot_name}` : "Tous dépôts — écart appliqué au principal"}</p>
       <p>{current.note}</p>
       {current.blind && !current.theoretical_visible && <p>Mode aveugle : le serveur masque le théorique, les écarts et les valeurs.</p>}
       {current.validated_at && <p>Validé par {current.validated_by_name} le {formatDateTime(current.validated_at)}</p>}

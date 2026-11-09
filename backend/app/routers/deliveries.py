@@ -12,6 +12,7 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from .. import stock
 from ..documents import delivery_reference, refresh_order_status
 from ..models import (
     Customer,
@@ -252,29 +253,17 @@ def validate_note(
                 status_code=400,
                 detail=f"L'article « {line.product_name} » n'existe plus",
             )
-        result = db.execute(
-            update(Product)
-            .where(Product.id == product.id, Product.quantity >= line.quantity)
-            .values(quantity=Product.quantity - line.quantity)
-        )
-        if result.rowcount == 0:
-            db.rollback()
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Stock insuffisant pour {product.name} "
-                    f"(disponible : {product.quantity})"
-                ),
-            )
-        db.refresh(product)
+        depot_id = stock.resolve(db)
+        before, after = stock.adjust(db, product, -line.quantity, check_total=True)
         db.add(
             StockMovement(
+                depot_id=depot_id,
                 product_id=product.id,
                 product_name=product.name,
                 kind="vente",
                 quantity=-line.quantity,
-                stock_before=product.quantity + line.quantity,
-                stock_after=product.quantity,
+                stock_before=before,
+                stock_after=after,
                 reason=f"Bon de livraison {delivery.reference}",
                 created_by_id=current_user.id,
             )

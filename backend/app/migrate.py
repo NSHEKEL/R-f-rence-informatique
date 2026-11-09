@@ -11,7 +11,8 @@ from sqlalchemy import inspect, select, text
 from .accounting_ledger import seed_accounts
 
 from .database import engine
-from .models import AppMigration, CashMovement, Delivery, RolePermission, User, Workstation
+from .models import AppMigration, CashMovement, Delivery, Depot, DepotStock, DepotTransfer, DepotTransferItem, Product, RolePermission, User, Workstation
+from .stock import default_id, reconcile
 from .permissions import CONFIGURABLE_ROLES, DEFAULTS, PERMISSIONS
 
 TRUE_LITERAL = "1" if engine.dialect.name == "sqlite" else "TRUE"
@@ -19,6 +20,8 @@ FALSE_LITERAL = "0" if engine.dialect.name == "sqlite" else "FALSE"
 
 # table -> column -> SQL type/default appended to "ALTER TABLE ... ADD COLUMN".
 COLUMNS: dict[str, dict[str, str]] = {
+    "stock_lots": {"depot_id": "INTEGER"},
+    "stock_movements": {"depot_id": "INTEGER"},
     "expenses": {"payment_method": "VARCHAR", "bank_account_id": "INTEGER"},
     "debts": {"purchase_id": "INTEGER"},
     "sale_returns": {"cash_session_id": "INTEGER", "refund_method": "VARCHAR DEFAULT 'Avoir'", "vat_rate_snapshot": "FLOAT"},
@@ -317,6 +320,7 @@ def migrate() -> None:
 
     with engine.begin() as conn:
         insp = inspect(conn)
+        Depot.__table__.create(bind=conn, checkfirst=True)
         Workstation.__table__.create(bind=conn, checkfirst=True)
         if "cash_sessions" in tables:
             CashMovement.__table__.create(bind=conn, checkfirst=True)
@@ -349,3 +353,10 @@ def migrate() -> None:
         if "debts" in tables:
             conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ux_debts_purchase_id ON debts (purchase_id)"))
         seed_accounts(conn)
+        Depot.metadata.create_all(bind=conn, tables=[Depot.__table__, DepotStock.__table__, DepotTransfer.__table__, DepotTransferItem.__table__])
+        default_id(conn)
+        marker = "depot_stock_initialization_v1"
+        if "products" in tables and not conn.execute(select(AppMigration.name).where(AppMigration.name == marker)).first():
+            for row in conn.execute(select(Product.id, Product.quantity)):
+                reconcile(conn, row.id, row.quantity or 0)
+            conn.execute(AppMigration.__table__.insert().values(name=marker))

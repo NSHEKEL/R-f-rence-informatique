@@ -20,6 +20,7 @@ from sqlalchemy import event, inspect
 from sqlalchemy.orm import Session
 
 from .database import SessionLocal, engine
+from . import stock
 from .models import (
     ActionLog,
     Category,
@@ -218,6 +219,9 @@ def _apply(entries: list[dict[str, Any]], *, undo: bool) -> None:
             table = model.__table__
             target = entry["before"] if undo else entry["after"]
             other = entry["after"] if undo else entry["before"]
+            if model is Product:
+                stock.replay_product(conn, _decode(table, target) if target is not None else None, other)
+                continue
             pk = table.primary_key.columns.values()[0]
             if target is None:
                 key = other.get(pk.key)
