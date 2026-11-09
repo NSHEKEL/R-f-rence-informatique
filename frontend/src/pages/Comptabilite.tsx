@@ -22,6 +22,7 @@ import api, { formatXOF } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import type { AccountingSummary, CashSession, Expense } from "../types";
 import Modal from "../components/Modal";
+import AccountingPayment from "../components/AccountingPayment";
 import { useSyncVersion } from "../context/SyncContext";
 
 const EXPENSE_CATEGORIES = [
@@ -59,6 +60,8 @@ export default function Comptabilite() {
   const [category, setCategory] = useState(EXPENSE_CATEGORIES[0]);
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(today());
+  const [paymentMethod, setPaymentMethod] = useState("");
+  const [bankAccount, setBankAccount] = useState("");
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -89,6 +92,8 @@ export default function Comptabilite() {
     setError("");
     try {
       await api.post("/accounting/expenses", {
+        payment_method: paymentMethod || null,
+        bank_account_id: bankAccount ? Number(bankAccount) : null,
         label,
         category,
         amount: Number(amount) || 0,
@@ -97,6 +102,8 @@ export default function Comptabilite() {
       setAddOpen(false);
       setLabel("");
       setAmount("");
+      setPaymentMethod("");
+      setBankAccount("");
       await load();
     } catch (err) {
       if (axios.isAxiosError(err)) {
@@ -144,6 +151,7 @@ export default function Comptabilite() {
 
   return (
     <div className="space-y-5">
+      {can("comptabilite_journaux_consulter") && <Link className="btn-secondary" to="/comptabilite/documents">Documents comptables · Plan comptable &amp; comptes de liaison</Link>}
       <div className="card flex flex-wrap items-end gap-4 p-5">
         <div>
           <label className="label">Du</label>
@@ -468,6 +476,7 @@ export default function Comptabilite() {
             </div>
           </div>
           <div>
+            <AccountingPayment method={paymentMethod} bank={bankAccount} onChange={(method, bank) => { setPaymentMethod(method); setBankAccount(bank); }} />
             <label className="label">Date</label>
             <input
               type="date"

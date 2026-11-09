@@ -13,6 +13,7 @@ import {
 import api, { formatDate, formatDateTime, formatXOF } from "../api/client";
 import type { Product, Purchase, PurchaseSummary, Supplier } from "../types";
 import Modal from "../components/Modal";
+import AccountingPayment from "../components/AccountingPayment";
 import BulkDelete, { SelectBox } from "../components/BulkDelete";
 import { useSelection } from "../lib/selection";
 import { documentBarcode, documentHeader, printSheet } from "../lib/print";
@@ -57,6 +58,8 @@ export default function Approvisionnements() {
   const [expected, setExpected] = useState("");
   const [invoice, setInvoice] = useState("");
   const [paidAmount, setPaidAmount] = useState(0);
+  const [paymentMethod, setPaymentMethod] = useState("");
+  const [bankAccount, setBankAccount] = useState("");
   const [note, setNote] = useState("");
   const [lines, setLines] = useState<DraftLine[]>([]);
   const [saving, setSaving] = useState(false);
@@ -119,6 +122,8 @@ export default function Approvisionnements() {
     setExpected("");
     setInvoice("");
     setPaidAmount(0);
+    setPaymentMethod("");
+    setBankAccount("");
     setNote("");
   }
 
@@ -157,6 +162,7 @@ export default function Approvisionnements() {
     setError("");
     try {
       const body = {
+        ...(!editing ? { payment_method: paymentMethod || null, bank_account_id: bankAccount ? Number(bankAccount) : null } : {}),
         supplier_id: supplierId ? Number(supplierId) : null,
         supplier_name: supplierName,
         expected_date: expected ? new Date(expected).toISOString() : null,
@@ -628,6 +634,7 @@ export default function Approvisionnements() {
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div>
+              {!editing && <AccountingPayment method={paymentMethod} bank={bankAccount} onChange={(method, bank) => { setPaymentMethod(method); setBankAccount(bank); }} />}
               <label className="label">Facture fournisseur</label>
               <input
                 className="input"

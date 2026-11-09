@@ -147,6 +147,8 @@ def create_expense(
     if payload.amount <= 0:
         raise HTTPException(status_code=400, detail="Montant invalide")
     expense = Expense(
+        payment_method=payload.payment_method,
+        bank_account_id=payload.bank_account_id,
         label=payload.label,
         category=payload.category or "Divers",
         amount=payload.amount,

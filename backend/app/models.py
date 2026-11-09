@@ -10,6 +10,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    Index,
     String,
     Text,
     UniqueConstraint,
@@ -273,6 +274,7 @@ class Sale(Base):
     customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True)
     date = Column(DateTime, default=utcnow)
     total = Column(Float, default=0)
+    vat_rate_snapshot = Column(Float, nullable=True)
     status = Column(String, default="Payée")  # Payée, En attente, Annulée
     payment_method = Column(String, default="Espèces")
     note = Column(Text, default="")
@@ -366,6 +368,7 @@ class SaleReturn(Base):
     """Credit note: goods given back, referencing the original ticket."""
 
     __tablename__ = "sale_returns"
+    vat_rate_snapshot = Column(Float, nullable=True)
 
     id = Column(Integer, primary_key=True, index=True)
     reference = Column(String, unique=True, index=True, nullable=False)
@@ -487,6 +490,8 @@ class Expense(Base):
     """Business expense used by the accounting module."""
 
     __tablename__ = "expenses"
+    payment_method = Column(String, nullable=True)
+    bank_account_id = Column(Integer, ForeignKey("bank_accounts.id"), nullable=True)
 
     id = Column(Integer, primary_key=True, index=True)
     label = Column(String, nullable=False)
@@ -928,6 +933,9 @@ class Purchase(Base):
     """Supply order sent to a supplier: goods bought to refill the stock."""
 
     __tablename__ = "purchases"
+    vat_rate_snapshot = Column(Float, nullable=True)
+    payment_method = Column(String, nullable=True)
+    bank_account_id = Column(Integer, ForeignKey("bank_accounts.id"), nullable=True)
 
     id = Column(Integer, primary_key=True, index=True)
     reference = Column(String, unique=True, index=True, nullable=False)
@@ -1019,6 +1027,8 @@ class Debt(Base):
     """
 
     __tablename__ = "debts"
+    __table_args__ = (Index("ux_debts_purchase_id", "purchase_id", unique=True),)
+    purchase_id = Column(Integer, ForeignKey("purchases.id"), nullable=True)
 
     id = Column(Integer, primary_key=True, index=True)
     kind = Column(String, default="creance", index=True)  # creance, dette
@@ -1106,6 +1116,7 @@ class DebtPayment(Base):
     """A settlement, total or partial, of a debt or of a receivable."""
 
     __tablename__ = "debt_payments"
+    bank_account_id = Column(Integer, ForeignKey("bank_accounts.id"), nullable=True)
 
     id = Column(Integer, primary_key=True, index=True)
     debt_id = Column(Integer, ForeignKey("debts.id"), nullable=False)
@@ -1342,6 +1353,40 @@ class MobileOpApplied(Base):
 
     remote_id = Column(String, primary_key=True)
     applied_at = Column(DateTime, default=utcnow)
+
+
+class AccountingAccount(Base):
+    __tablename__ = "accounting_accounts"
+
+    number = Column(String, primary_key=True)
+    label = Column(String, nullable=False)
+    class_number = Column(Integer, nullable=False)
+    type = Column(String, nullable=False)
+    active = Column(Boolean, nullable=False, default=True)
+    is_system = Column(Boolean, nullable=False, default=False)
+
+
+class AccountingSetting(Base):
+    __tablename__ = "accounting_settings"
+
+    key = Column(String, primary_key=True)
+    value = Column(Text, nullable=False)
+    changed_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    changed_by_name = Column(String, nullable=False)
+    changed_at = Column(DateTime, default=utcnow, nullable=False)
+
+
+@event.listens_for(Sale, "before_insert")
+@event.listens_for(Purchase, "before_insert")
+def capture_accounting_tax(mapper, connection, target):
+    if target.vat_rate_snapshot is None:
+        target.vat_rate_snapshot = connection.execute(select(CompanySettings.vat_rate).order_by(CompanySettings.id)).scalars().first()
+
+
+@event.listens_for(SaleReturn, "before_insert")
+def capture_return_tax(mapper, connection, target):
+    if target.vat_rate_snapshot is None:
+        target.vat_rate_snapshot = connection.execute(select(Sale.vat_rate_snapshot).where(Sale.id == target.sale_id)).scalar()
 
 
 @event.listens_for(SaleItem, "before_insert")

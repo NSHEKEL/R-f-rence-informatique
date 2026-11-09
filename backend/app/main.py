@@ -22,6 +22,7 @@ from .migrate import migrate
 from .models import User
 from .routers import (
     accounting,
+    accounting_documents,
     auth,
     backup_drive,
     backups,
@@ -105,6 +106,7 @@ app.include_router(bank.router, dependencies=feature("versements"))
 app.include_router(inventory.router, dependencies=feature("inventaire"))
 app.include_router(transfers.router, dependencies=feature("inventaire"))
 app.include_router(accounting.router, dependencies=feature("comptabilite"))
+app.include_router(accounting_documents.router, dependencies=feature("comptabilite"))
 app.include_router(payroll.router, dependencies=feature("paie"))
 app.include_router(debts.router, dependencies=feature("dettes"))
 app.include_router(returns.router, dependencies=feature("retours"))

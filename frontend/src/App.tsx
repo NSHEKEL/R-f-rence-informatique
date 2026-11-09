@@ -17,6 +17,7 @@ import Caisse from "./pages/Caisse";
 import Banque from "./pages/Banque";
 import Inventaire from "./pages/Inventaire";
 import Comptabilite from "./pages/Comptabilite";
+import AccountingDocuments from "./pages/AccountingDocuments";
 import Paie from "./pages/Paie";
 import Dettes from "./pages/Dettes";
 import Rapports from "./pages/Rapports";
@@ -274,6 +275,10 @@ export default function App() {
               <Proformas />
             </PermRoute>
           }
+        />
+        <Route
+          path="/comptabilite/documents"
+          element={<PermRoute right="comptabilite_journaux_consulter"><AccountingDocuments /></PermRoute>}
         />
         <Route
           path="/comptabilite"

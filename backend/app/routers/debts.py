@@ -201,6 +201,7 @@ def add_payment(
             detail=f"Il ne reste que {debt.remaining:.0f} à régler",
         )
     payment = DebtPayment(
+        bank_account_id=payload.bank_account_id,
         cash_session_id=session.id if session else None,
         amount=payload.amount,
         method=payload.method,

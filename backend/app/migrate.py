@@ -8,6 +8,8 @@ shared PostgreSQL server.
 
 from sqlalchemy import inspect, select, text
 
+from .accounting_ledger import seed_accounts
+
 from .database import engine
 from .models import AppMigration, CashMovement, Delivery, RolePermission, User, Workstation
 from .permissions import CONFIGURABLE_ROLES, DEFAULTS, PERMISSIONS
@@ -17,7 +19,11 @@ FALSE_LITERAL = "0" if engine.dialect.name == "sqlite" else "FALSE"
 
 # table -> column -> SQL type/default appended to "ALTER TABLE ... ADD COLUMN".
 COLUMNS: dict[str, dict[str, str]] = {
-    "sale_returns": {"cash_session_id": "INTEGER", "refund_method": "VARCHAR DEFAULT 'Avoir'"},
+    "expenses": {"payment_method": "VARCHAR", "bank_account_id": "INTEGER"},
+    "debt_payments": {"bank_account_id": "INTEGER"},
+    "debts": {"purchase_id": "INTEGER"},
+    "sale_returns": {"cash_session_id": "INTEGER", "refund_method": "VARCHAR DEFAULT 'Avoir'", "vat_rate_snapshot": "FLOAT"},
+    "purchases": {"vat_rate_snapshot": "FLOAT", "payment_method": "VARCHAR", "bank_account_id": "INTEGER"},
     "users": {
         "is_active": f"BOOLEAN DEFAULT {TRUE_LITERAL}",
         "role": "VARCHAR DEFAULT 'admin'",
@@ -34,6 +40,7 @@ COLUMNS: dict[str, dict[str, str]] = {
         "credit_limit": "FLOAT DEFAULT 0",
     },
     "sales": {
+        "vat_rate_snapshot": "FLOAT",
         "created_by_id": "INTEGER",
         "note": "TEXT DEFAULT ''",
         "receipt_footer": "TEXT DEFAULT ''",
@@ -309,6 +316,7 @@ def migrate() -> None:
     tables = set(insp.get_table_names())
 
     with engine.begin() as conn:
+        insp = inspect(conn)
         Workstation.__table__.create(bind=conn, checkfirst=True)
         if "cash_sessions" in tables:
             CashMovement.__table__.create(bind=conn, checkfirst=True)
@@ -338,3 +346,6 @@ def migrate() -> None:
                 ),
                 {"new": NEW_COMPANY_NAME, "old": OLD_COMPANY_NAME},
             )
+        if "debts" in tables:
+            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ux_debts_purchase_id ON debts (purchase_id)"))
+        seed_accounts(conn)

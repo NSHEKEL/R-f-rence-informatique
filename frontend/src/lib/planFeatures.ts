@@ -22,6 +22,7 @@ export const PLAN_FEATURE: Record<string, string> = {
   rapports: "rapports",
   proformas: "proformas",
   comptabilite: "comptabilite",
+  comptabilite_journaux_consulter: "comptabilite",
   paie: "paie",
   dettes: "dettes",
   fournisseurs: "fournisseurs",

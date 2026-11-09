@@ -148,6 +148,8 @@ def create_purchase(
         raise HTTPException(status_code=400, detail="Indiquez le fournisseur")
 
     purchase = Purchase(
+        payment_method=payload.payment_method,
+        bank_account_id=payload.bank_account_id,
         reference=_reference(db),
         supplier_id=payload.supplier_id,
         supplier_name=supplier_name,

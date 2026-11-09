@@ -936,6 +936,8 @@ class CashMovementOut(BaseModel):
 
 # ---------- Expenses ----------
 class ExpenseCreate(BaseModel):
+    payment_method: Optional[str] = Field(default=None, max_length=100)
+    bank_account_id: Optional[int] = Field(default=None, ge=1)
     label: str
     category: str = "Divers"
     amount: float = 0
@@ -944,6 +946,8 @@ class ExpenseCreate(BaseModel):
 
 
 class ExpenseOut(BaseModel):
+    payment_method: Optional[str] = None
+    bank_account_id: Optional[int] = None
     model_config = ConfigDict(from_attributes=True)
     id: int
     label: str
@@ -1293,6 +1297,8 @@ class PurchaseItemCreate(PackagingQuantities):
 
 
 class PurchaseCreate(BaseModel):
+    payment_method: Optional[str] = Field(default=None, max_length=100)
+    bank_account_id: Optional[int] = Field(default=None, ge=1)
     supplier_id: Optional[int] = None
     supplier_name: str = ""
     expected_date: Optional[datetime] = None
@@ -1339,6 +1345,8 @@ class PurchaseItemOut(UnitSnapshotOut):
 
 
 class PurchaseOut(BaseModel):
+    payment_method: Optional[str] = None
+    bank_account_id: Optional[int] = None
     model_config = ConfigDict(from_attributes=True)
     id: int
     reference: str
@@ -1427,6 +1435,7 @@ class OfferedPlan(BaseModel):
 
 # ---------- Debts and receivables ----------
 class DebtPaymentCreate(BaseModel):
+    bank_account_id: Optional[int] = Field(default=None, ge=1)
     amount: float
     method: str = "Espèces"
     note: str = ""

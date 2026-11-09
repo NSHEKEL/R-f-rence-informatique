@@ -154,6 +154,7 @@ const navItems: NavItem[] = [
     icon: Calculator,
     access: "comptabilite",
   },
+  { to: "/comptabilite/documents", label: "Documents comptables", icon: Calculator, access: "comptabilite_journaux_consulter" },
   {
     to: "/paie",
     label: "Paie & salaires",
@@ -280,7 +281,7 @@ const navGroups: NavGroup[] = [
   {
     label: "Trésorerie",
     icon: HandCoins,
-    items: pick("/dettes", "/banque", "/comptabilite"),
+    items: pick("/dettes", "/banque", "/comptabilite", "/comptabilite/documents"),
   },
   {
     label: "Pilotage",
