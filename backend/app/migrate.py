@@ -20,7 +20,6 @@ FALSE_LITERAL = "0" if engine.dialect.name == "sqlite" else "FALSE"
 # table -> column -> SQL type/default appended to "ALTER TABLE ... ADD COLUMN".
 COLUMNS: dict[str, dict[str, str]] = {
     "expenses": {"payment_method": "VARCHAR", "bank_account_id": "INTEGER"},
-    "debt_payments": {"bank_account_id": "INTEGER"},
     "debts": {"purchase_id": "INTEGER"},
     "sale_returns": {"cash_session_id": "INTEGER", "refund_method": "VARCHAR DEFAULT 'Avoir'", "vat_rate_snapshot": "FLOAT"},
     "purchases": {"vat_rate_snapshot": "FLOAT", "payment_method": "VARCHAR", "bank_account_id": "INTEGER"},
@@ -156,6 +155,7 @@ COLUMNS: dict[str, dict[str, str]] = {
         "discount": "FLOAT DEFAULT 0",
     },
     "debt_payments": {
+        "bank_account_id": "INTEGER",
         "cash_session_id": "INTEGER",
         "reference": "VARCHAR DEFAULT ''",
         "receipt_reference": "VARCHAR DEFAULT ''",
