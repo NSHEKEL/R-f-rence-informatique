@@ -16,8 +16,14 @@ export interface SalePayload {
   /** Cash handed over, used to print the change given back. */
   paid_amount: number;
   items: {
+    scanned_code?: string | null;
+    packaging_id?: number;
+    price_tier?: "detail" | "semi_gros" | "gros" | "auto";
     product_id: number;
     quantity: number;
+    packaging_quantity?: number;
+    piece_quantity?: number;
+    expected_units_per_packaging?: number;
     unit_price?: number;
     discount?: number;
   }[];
@@ -115,6 +121,7 @@ function writeQueue(queue: PendingSale[]): void {
 }
 
 export function queueSale(entry: PendingSale): void {
+  if (!entry.payload.client_id) entry.payload.client_id = newClientId();
   writeQueue([...pendingSales(), entry]);
 }
 
@@ -142,10 +149,18 @@ export async function flushPendingSales(): Promise<SyncResult> {
   let synced = 0;
 
   for (const entry of queue) {
+    if (!entry.payload.client_id) {
+      entry.payload.client_id = newClientId();
+      writeQueue(queue);
+    }
     try {
       await api.post<Sale>("/sales", entry.payload);
       synced += 1;
     } catch (err) {
+      if ((err as { response?: { data?: { code?: string } } }).response?.data?.code === "workstation_not_authorized") {
+        remaining.push(entry);
+        continue;
+      }
       const status = (err as { response?: { status?: number } }).response
         ?.status;
       if (status && status >= 400 && status < 500) {

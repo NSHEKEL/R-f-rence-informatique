@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { canOpenTreasury } from "../lib/treasury";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { canOpenSettings } from "../lib/settingsAccess";
 import {
   LayoutDashboard,
   Home,
@@ -144,7 +146,7 @@ const navItems: NavItem[] = [
     to: "/banque",
     label: "Versements bancaires",
     icon: Landmark,
-    access: "versements_gerer",
+    access: "tresorerie_consulter",
   },
   {
     to: "/comptabilite",
@@ -152,6 +154,7 @@ const navItems: NavItem[] = [
     icon: Calculator,
     access: "comptabilite",
   },
+  { to: "/comptabilite/documents", label: "Documents comptables", icon: Calculator, access: "comptabilite_journaux_consulter" },
   {
     to: "/paie",
     label: "Paie & salaires",
@@ -271,9 +274,14 @@ const navGroups: NavGroup[] = [
     items: pick("/commandes", "/approvisionnements", "/fournisseurs"),
   },
   {
-    label: "Clients & finances",
+    label: "Clients & paie",
     icon: HandCoins,
-    items: pick("/clients", "/dettes", "/banque", "/comptabilite", "/paie"),
+    items: pick("/clients", "/paie"),
+  },
+  {
+    label: "Trésorerie",
+    icon: HandCoins,
+    items: pick("/dettes", "/banque", "/comptabilite", "/comptabilite/documents"),
   },
   {
     label: "Pilotage",
@@ -390,6 +398,9 @@ export default function Layout() {
   const navigate = useNavigate();
   const title = pageTitles[location.pathname] ?? brandName;
   const allowed = (item: NavItem) => {
+    if (item.to === "/parametres") return canOpenSettings(can);
+    if (item.to === "/utilisateurs" || item.to === "/droits") return can("utilisateurs_consulter");
+    if (!canOpenTreasury(item.to, can)) return false;
     if (!item.access) return true;
     return item.access === "admin" ? isAdmin : can(item.access);
   };

@@ -15,7 +15,7 @@ import {
   Trash2,
 } from "lucide-react";
 import api, { formatDateTime, formatXOF } from "../api/client";
-import type { Category, Product, StockLot, Supplier } from "../types";
+import type { Category, Product, ProductPackaging, StockLot, Supplier } from "../types";
 import Modal from "../components/Modal";
 import ProductQrCode from "../components/ProductQrCode";
 import StockDashboard from "../components/StockDashboard";
@@ -28,14 +28,34 @@ import { priceLabelHtml } from "../lib/labels";
 import { exportCsv, stampedName } from "../lib/exportCsv";
 import { useLicense } from "../context/LicenseContext";
 import { stockBadge } from "../components/badges";
+import DepotStock from "../components/DepotStock";
 import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSyncVersion } from "../context/SyncContext";
+import { formatQuantity } from "../lib/units";
+import PackagingQuantity from "../components/PackagingQuantity";
+import ProductPackagings from "../components/ProductPackagings";
+import { useScanner } from "../lib/useScanner";
+import { scanCandidates } from "../lib/scanCapture";
+import type { ProductBarcode } from "../types";
 
 const empty = {
+  barcodes: [] as ProductBarcode[],
+  packagings: [] as ProductPackaging[],
+  semi_wholesale_price: "" as number | "",
+  supplier_purchase_price: "" as number | "",
+  semi_wholesale_min_qty: "" as number | "",
+  wholesale_min_qty: "" as number | "",
+  base_unit: "pièce",
+  packaging_unit: "",
+  units_per_packaging: 1,
+  packaging_sale_price: "" as number | "",
+  wholesale_packaging_price: "" as number | "",
   name: "",
   sku: "",
   description: "",
+  rayon: "",
+  emplacement: "",
   category_id: "" as number | "" | null,
   supplier_id: "" as number | "" | null,
   purchase_price: 0,
@@ -55,8 +75,8 @@ const MAX_IMAGE_BYTES = 700_000;
 interface PriceChange {
   id: number;
   field: string;
-  old_value: number;
-  new_value: number;
+  old_value: number | null;
+  new_value: number | null;
   changed_at: string;
   changed_by?: { name: string } | null;
 }
@@ -144,6 +164,7 @@ export default function Products() {
         "Stock",
         "Stock minimum",
         "Code-barres",
+        "Quantité et équivalence",
       ],
       filtered.map((p) => [
         p.name,
@@ -156,6 +177,7 @@ export default function Products() {
         p.quantity,
         p.min_stock,
         p.barcode ?? "",
+        formatQuantity(p, p.quantity),
       ])
     )
       .then((saved) =>
@@ -215,9 +237,22 @@ export default function Products() {
   function openEdit(p: Product) {
     setEditing(p);
     setForm({
+      packagings: p.packagings || [],
+      barcodes: p.barcodes || [],
+      semi_wholesale_price: p.semi_wholesale_price ?? "",
+      supplier_purchase_price: p.supplier_purchase_price ?? "",
+      semi_wholesale_min_qty: p.semi_wholesale_min_qty ?? "",
+      wholesale_min_qty: p.wholesale_min_qty ?? "",
       name: p.name,
+      base_unit: p.base_unit || "pièce",
+      packaging_unit: p.packaging_unit || "",
+      units_per_packaging: p.units_per_packaging || 1,
+      packaging_sale_price: p.packaging_sale_price ?? "",
+      wholesale_packaging_price: p.wholesale_packaging_price ?? "",
       sku: p.sku,
       description: p.description,
+      rayon: p.rayon || "",
+      emplacement: p.emplacement || "",
       category_id: p.category_id ?? "",
       supplier_id: p.supplier_id ?? "",
       purchase_price: p.purchase_price,
@@ -236,9 +271,28 @@ export default function Products() {
 
   async function save() {
     setError("");
+    if (!form.base_unit.trim() || !Number.isInteger(form.quantity) || form.quantity < 0 || (form.packaging_unit.trim() && (!Number.isInteger(form.units_per_packaging) || form.units_per_packaging < 1))) {
+      setError("Unité de base requise ; stock et facteur doivent être des nombres entiers valides.");
+      return;
+    }
+    if (form.packagings.some((p) => !p.name.trim() || !Number.isInteger(p.factor) || p.factor < 1 || p.factor > 2147483647 || !Number.isInteger(p.sort_order) || [p.price_detail, p.price_semi_gros, p.price_gros, p.purchase_price].some((price) => price != null && (!Number.isFinite(price) || price < 0))) ||
+        [form.semi_wholesale_min_qty, form.wholesale_min_qty].some((q) => q !== "" && (!Number.isInteger(q) || q < 1)) ||
+        [form.semi_wholesale_price, form.supplier_purchase_price].some((price) => price !== "" && (!Number.isFinite(price) || price < 0))) {
+      setError("Vérifiez les conditionnements et tarifs : nom requis, facteur et seuils entiers positifs, prix positifs ou vides.");
+      return;
+    }
     setSaving(true);
     const payload = {
       ...form,
+      semi_wholesale_price: form.semi_wholesale_price === "" ? null : Number(form.semi_wholesale_price),
+      supplier_purchase_price: form.supplier_purchase_price === "" ? null : Number(form.supplier_purchase_price),
+      semi_wholesale_min_qty: form.semi_wholesale_min_qty === "" ? null : Number(form.semi_wholesale_min_qty),
+      wholesale_min_qty: form.wholesale_min_qty === "" ? null : Number(form.wholesale_min_qty),
+      packaging_sale_price: form.packaging_sale_price === "" ? null : Number(form.packaging_sale_price),
+      wholesale_packaging_price: form.wholesale_packaging_price === "" ? null : Number(form.wholesale_packaging_price),
+      base_unit: form.base_unit.trim(),
+      packaging_unit: form.packaging_unit.trim(),
+      units_per_packaging: form.packaging_unit.trim() ? form.units_per_packaging : 1,
       category_id: form.category_id === "" ? null : Number(form.category_id),
       supplier_id: form.supplier_id === "" ? null : Number(form.supplier_id),
       purchase_price: Number(form.purchase_price),
@@ -343,8 +397,8 @@ export default function Products() {
   }
 
   /** Scanner/handler lookup: fill the form with a known article. */
-  async function lookupBarcode() {
-    const code = form.barcode.trim();
+  async function lookupBarcode(raw = form.barcode) {
+    const code = raw.trim();
     if (!code) return;
     try {
       const { data } = await api.get<Product>(
@@ -359,6 +413,20 @@ export default function Products() {
       }
     }
   }
+
+  useScanner(async (codes) => {
+    for (const code of codes) {
+      try {
+        const { data } = await api.get<Product>(`/products/by-code/${encodeURIComponent(code)}`);
+        setNotice(`Article reconnu : ${data.name} — fiche chargée`);
+        openEdit(data);
+        return;
+      } catch (error) { if (!axios.isAxiosError(error) || error.response?.status !== 404) throw error; }
+    }
+    const code = codes.find((value) => /^\d+$/.test(value)) || codes[0];
+    setForm((prev) => ({ ...prev, barcode: code }));
+    setNotice("Article inconnu — poursuivez l'enregistrement");
+  }, () => setError("Lecture impossible, vérifiez la connexion"), modalOpen);
 
   async function generateBarcode() {
     try {
@@ -564,7 +632,8 @@ export default function Products() {
                     {formatXOF(p.sale_price)}
                   </td>
                   <td className="px-5 py-3.5 text-center font-semibold text-slate-700">
-                    {p.quantity}
+                    {formatQuantity(p, p.quantity)}
+                    {p.quantity != null && (can("produits") || can("inventaire")) && <DepotStock productId={p.id} total={p.quantity} />}
                   </td>
                   <td className="px-5 py-3.5 text-center">{stockBadge(p)}</td>
                   <td className="px-5 py-3.5 text-xs text-slate-500">
@@ -717,6 +786,8 @@ export default function Products() {
               onChange={(e) => setForm({ ...form, sku: e.target.value })}
             />
           </div>
+          <label className="label">Rayon<input className="input" maxLength={200} value={form.rayon} onChange={(e) => setForm({ ...form, rayon: e.target.value })} /></label>
+          <label className="label">Emplacement<input className="input" maxLength={200} value={form.emplacement} onChange={(e) => setForm({ ...form, emplacement: e.target.value })} /></label>
           <div>
             <label className="label">Catégorie</label>
             <select
@@ -748,7 +819,7 @@ export default function Products() {
             </select>
           </div>
           <div>
-            <label className="label">Prix d'achat (FCFA)</label>
+            <label className="label">Prix d'achat usine (coût pour le bénéfice, FCFA)</label>
             <input
               type="number"
               className="input"
@@ -757,7 +828,7 @@ export default function Products() {
             />
           </div>
           <div>
-            <label className="label">Prix de vente (FCFA)</label>
+            <label className="label">Prix détail pièce (FCFA)</label>
             <input
               type="number"
               className="input"
@@ -766,7 +837,7 @@ export default function Products() {
             />
           </div>
           <div>
-            <label className="label">Prix de gros (FCFA, 0 = aucun)</label>
+            <label className="label">Prix gros pièce (FCFA, 0 = détail)</label>
             <input
               type="number"
               className="input"
@@ -777,13 +848,41 @@ export default function Products() {
             />
           </div>
           <div>
-            <label className="label">Quantité en stock</label>
+            <label className="label">Prix gros carton (FCFA, vide = calcul automatique)</label>
+            <input type="number" min={0} className="input" value={form.wholesale_packaging_price} onChange={(e) => setForm({ ...form, wholesale_packaging_price: e.target.value === "" ? "" : Number(e.target.value) })} />
+          </div>
+          <div>
+            <label className="label">Stock en unités de base (stock initial à la création)</label>
             <input
               type="number"
               className="input"
               value={form.quantity}
               onChange={(e) => setForm({ ...form, quantity: Number(e.target.value) })}
             />
+            <p className="text-xs text-slate-500">{formatQuantity(form, form.quantity)}</p>
+            {form.packaging_unit && <PackagingQuantity product={form} value={form.quantity} onChange={(quantity) => setForm({ ...form, quantity })} />}
+          </div>
+          <div><label className="label">Unité de base</label><input className="input" required value={form.base_unit} placeholder="pièce, kg, litre…" onChange={(e) => setForm({ ...form, base_unit: e.target.value })} /></div>
+          <div><label className="label">Conditionnement (facultatif)</label><input className="input" value={form.packaging_unit} placeholder="carton, paquet, boîte, sac…" onChange={(e) => setForm({ ...form, packaging_unit: e.target.value })} /></div>
+          {form.packaging_unit && <>
+            <div><label className="label">Pièces par carton</label><input className="input" type="number" min="1" step="1" value={form.units_per_packaging} onChange={(e) => setForm({ ...form, units_per_packaging: Number(e.target.value) })} /></div>
+            <div><label className="label">Prix détail carton (vide = pièces × prix détail pièce)</label><input className="input" type="number" min="0" value={form.packaging_sale_price} onChange={(e) => setForm({ ...form, packaging_sale_price: e.target.value === "" ? "" : Number(e.target.value) })} /></div>
+          </>}
+          {([
+            ["supplier_purchase_price", "Prix fournisseur pièce"],
+            ["semi_wholesale_price", "Prix semi-gros pièce"],
+            ["semi_wholesale_min_qty", "Seuil semi-gros (unités de base)"],
+            ["wholesale_min_qty", "Seuil gros (unités de base)"],
+          ] as const).map(([key, label]) => <label key={key} className="label">{label}<input className="input" type="number" min={key.endsWith("qty") ? "1" : "0"} step={key.endsWith("qty") ? "1" : "any"} value={form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.value === "" ? "" : Number(e.target.value) })} /></label>)}
+          <ProductPackagings value={form.packagings} onChange={(packagings) => setForm({ ...form, packagings })} />
+          <div className="space-y-2 sm:col-span-2">
+            <h3 className="font-semibold">Codes supplémentaires / variantes</h3>
+            {form.barcodes.map((barcode, index) => <div className="flex flex-wrap gap-2" key={barcode.id || `new-${index}`}>
+              <input aria-label="Code variante" className="input flex-1" disabled={!!barcode.id} value={barcode.code} onChange={(e) => setForm({ ...form, barcodes: form.barcodes.map((b, i) => i === index ? { ...b, code: e.target.value } : b) })} />
+              <input aria-label="Libellé variante" className="input flex-1" value={barcode.label} onChange={(e) => setForm({ ...form, barcodes: form.barcodes.map((b, i) => i === index ? { ...b, label: e.target.value } : b) })} />
+              <button type="button" className="btn-ghost" onClick={() => setForm({ ...form, barcodes: barcode.id ? form.barcodes.map((b, i) => i === index ? { ...b, active: !b.active } : b) : form.barcodes.filter((_, i) => i !== index) })}>{barcode.active ? "Retirer" : "Réactiver"}</button>
+            </div>)}
+            <button type="button" className="btn-ghost" onClick={() => setForm({ ...form, barcodes: [...form.barcodes, { code: "", label: "", active: true }] })}>Ajouter un code</button>
           </div>
           <div>
             <label className="label">Seuil d'alerte</label>
@@ -820,21 +919,22 @@ export default function Products() {
             <div className="flex gap-2">
               <input
                 className="input"
+                data-scan="barcode"
                 inputMode="numeric"
                 value={form.barcode}
                 onChange={(e) =>
                   setForm({
                     ...form,
-                    barcode: e.target.value.replace(/\D/g, ""),
+                    barcode: e.target.value,
                   })
                 }
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") {
+                  if (e.key === "Enter" && !e.nativeEvent.isComposing) {
                     e.preventDefault();
-                    lookupBarcode();
+                    void lookupBarcode(e.currentTarget.value);
                   }
                 }}
-                onBlur={lookupBarcode}
+                onBlur={(e) => { const code = scanCandidates(e.target.value).find((value) => /^\d+$/.test(value)) || e.target.value; setForm((prev) => ({ ...prev, barcode: code })); void lookupBarcode(code); }}
                 placeholder="Scannez le code ou tapez les chiffres"
               />
               <button className="btn-ghost shrink-0" onClick={generateBarcode}>
@@ -953,10 +1053,10 @@ export default function Products() {
                     {FIELD_LABEL[h.field] ?? h.field}
                   </td>
                   <td className="py-2 text-right text-slate-500">
-                    {formatXOF(h.old_value)}
+                    {h.old_value === null ? "Automatique" : formatXOF(h.old_value)}
                   </td>
                   <td className="py-2 text-right font-semibold text-slate-800">
-                    {formatXOF(h.new_value)}
+                    {h.new_value === null ? "Automatique" : formatXOF(h.new_value)}
                   </td>
                   <td className="py-2 text-right text-slate-500">
                     {h.changed_by?.name ?? "—"}

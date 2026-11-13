@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { DownloadCloud, X } from "lucide-react";
 import axios from "axios";
-import { localApi } from "../api/client";
+import { updateLocal } from "../lib/updateLocal";
 import { useAuth } from "../context/AuthContext";
 import type { UpdateStatus } from "../types";
 
@@ -29,7 +29,7 @@ export default function UpdateBanner() {
       return;
     }
     try {
-      const { data } = await localApi.get<UpdateStatus>("/updates");
+      const data = await updateLocal();
       setStatus(data);
       if (localStorage.getItem(DISMISSED_KEY) !== data.latest_version) {
         setHidden(false);
@@ -49,7 +49,7 @@ export default function UpdateBanner() {
     setBusy(true);
     setMessage("Téléchargement et installation en cours...");
     try {
-      await localApi.post("/updates/install");
+      await updateLocal(true);
       setMessage(
         "Mise à jour lancée : l'application se ferme et redémarre toute " +
           "seule dans quelques secondes."

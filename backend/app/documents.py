@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from .models import CompanySettings, Delivery, Order, OrderItem, Product
 from .printing import read_config
 from .sequences import next_reference
+from .units import prices
 
 DOCUMENT_DIGITS = 6
 
@@ -44,9 +45,7 @@ def delivery_reference(db: Session) -> str:
 
 
 def unit_price(product: Product, price_mode: str) -> float:
-    if price_mode == "gros" and (product.wholesale_price or 0) > 0:
-        return product.wholesale_price
-    return product.sale_price
+    return prices(product, price_mode)[0]
 
 
 def fill_order_items(db: Session, order: Order, items) -> None:

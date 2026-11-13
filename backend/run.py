@@ -28,6 +28,7 @@ import traceback
 import urllib.error
 import urllib.request
 from pathlib import Path
+from dotenv import load_dotenv
 
 # app.paths is light: import it before the heavy modules so the boot markers
 # can be written even when one of them fails (a crash there used to leave no
@@ -36,8 +37,14 @@ from app.paths import data_dir
 
 
 def _log_path() -> Path:
-    directory = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "EasyGest" / "Logs"
-    directory.mkdir(parents=True, exist_ok=True)
+    system = os.getenv("USERNAME", "").upper() == "SYSTEM" or "systemprofile" in str(Path.home()).lower()
+    local = os.getenv("LOCALAPPDATA")
+    directory = Path(local) / "EasyGest" / "Logs" if local and not system else data_dir() / "Logs"
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        directory = data_dir() / "Logs"
+        directory.mkdir(parents=True, exist_ok=True)
     return directory / "easygest.log"
 
 
@@ -76,12 +83,14 @@ def _boot(message: str) -> None:
 _boot("demarrage")
 import uvicorn  # noqa: E402
 
-# Importing the database module reads the .env of the data directory, so the
-# settings below already see EASYGEST_HOST/EASYGEST_PORT when they are set
-# there rather than in the system environment.
+# Read deployment settings without opening the database before server reuse.
 _boot("uvicorn")
-import app.database  # noqa: E402,F401
-from app import escpos  # noqa: E402
+_env_files = [Path(__file__).resolve().parent / ".env"]
+if getattr(sys, "frozen", False):
+    _env_files = [Path(sys.executable).parent / ".env", data_dir() / ".env", *_env_files]
+for _env in _env_files:
+    load_dotenv(_env, override=False)
+from app import escpos, printing  # noqa: E402
 from app.version import APP_NAME, APP_VERSION  # noqa: E402
 
 _boot("imports ok")
@@ -169,6 +178,27 @@ def _serve(port: int) -> None:
         traceback.print_exc()
 
 
+def _existing_server(port: int) -> bool:
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=2) as response:
+            info = json.loads(response.read(4096))
+        if info.get('status') == 'ok' and info.get('app') == APP_NAME and info.get('lifecycle') not in ('managed', 'standalone'):
+            message = "Ancien serveur EasyGest non supervisé encore actif. Arrêtez tous ses processus avant de relancer la tâche ou de restaurer la base."
+            _report(message)
+            raise SystemExit(message)
+        return info.get("status") == "ok" and info.get("app") == APP_NAME and info.get("version") == APP_VERSION and info.get("lifecycle") in ("managed", "standalone")
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
+def _start_backend(preferred: int, reuse: bool = True) -> tuple[int, bool]:
+    if reuse and _existing_server(preferred):
+        return preferred, False
+    port = _free_port(preferred)
+    threading.Thread(target=_serve, args=(port,), daemon=True).start()
+    return port, True
+
+
 class DesktopApi:
     """Bridge exposed to the page as ``window.pywebview.api``.
 
@@ -178,6 +208,72 @@ class DesktopApi:
 
     def __init__(self) -> None:
         self._window = None
+        self._startup = None
+
+    def frontend_ready(self, token: str = "") -> None:
+        if self._startup is not None:
+            self._startup.mounted(token)
+
+    def update_local(self, install: bool = False):
+        import json
+        from urllib.request import Request, urlopen
+        from urllib.parse import urlsplit
+
+        if self._startup is None:
+            raise RuntimeError("Fenêtre indisponible")
+        address = urlsplit(self._startup.url)
+        if address.hostname not in {"127.0.0.1", "::1", "localhost"}:
+            raise RuntimeError("Mise à jour locale uniquement")
+        url = self._startup.url.rstrip("/") + "/api/updates" + ("/install" if install else "")
+        with urlopen(Request(url, method="POST" if install else "GET"), timeout=180) as response:
+            return json.load(response)
+
+    def frontend_error(self, message: str, token: str = "") -> None:
+        if self._startup is not None:
+            self._startup.failed(message, token)
+
+    def retry_frontend(self) -> bool:
+        if self._window is None or self._startup is None:
+            return False
+        startup = FrontendStartup(self, self._startup.url)
+        self._startup = startup
+        self._window.load_url(startup.page_url())
+        threading.Thread(target=startup.watch, daemon=True).start()
+        return True
+
+    def _clear_webview_cache(self, url: str) -> None:
+        from System import Action
+        from webview.platforms.winforms import BrowserView
+
+        form = BrowserView.instances[self._window.uid]
+        dispatched = threading.Event()
+        tasks = []
+        errors = []
+
+        def clear() -> None:
+            try:
+                core = form.browser.webview.CoreWebView2
+                tasks.append(core.CallDevToolsProtocolMethodAsync("Network.clearBrowserCache", "{}"))
+                tasks.append(core.CallDevToolsProtocolMethodAsync("Storage.clearDataForOrigin", json.dumps({
+                    "origin": url, "storageTypes": "service_workers,cache_storage",
+                })))
+            except Exception as error:
+                errors.append(error)
+            finally:
+                dispatched.set()
+
+        form.BeginInvoke(Action(clear))
+        deadline = time.monotonic() + 5
+        if not dispatched.wait(5):
+            raise TimeoutError("Nettoyage WebView : thread UI indisponible")
+        if errors:
+            raise errors[0]
+        for task in tasks:
+            while not task.IsCompleted:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("Nettoyage WebView : délai dépassé")
+                threading.Event().wait(0.05)
+            _ = task.Result
 
     def choose_folder(self) -> str:
         """Real Windows folder picker used to select the backup folder."""
@@ -206,6 +302,22 @@ class DesktopApi:
             return ""
         path = Path(target[0] if isinstance(target, (list, tuple)) else str(target))
         path.write_text(content, encoding="utf-8-sig")
+        return str(path)
+
+    def save_binary_file(self, filename: str, content_base64: str) -> str:
+        import base64
+        import webview
+
+        if self._window is None:
+            return ""
+        if len(content_base64) > 70_000_000:
+            raise ValueError("Export trop volumineux")
+        content = base64.b64decode(content_base64, validate=True)
+        target = self._window.create_file_dialog(webview.SAVE_DIALOG, directory=str(Path.home() / "Documents"), save_filename=Path(filename).name)
+        if not target:
+            return ""
+        path = Path(target[0] if isinstance(target, (list, tuple)) else str(target))
+        path.write_bytes(content)
         return str(path)
 
     @staticmethod
@@ -238,6 +350,17 @@ class DesktopApi:
         except OSError:
             return ""
 
+    def _printer_problem(self, printer_name: str) -> str:
+        try:
+            device = printing.queue_status(printer_name or printing.default_printer())
+            return device.status if device is not None and not device.available else ""
+        except Exception:
+            logging.getLogger(__name__).warning("Statut imprimante non lisible", exc_info=True)
+            return ""
+
+    def printer_problem(self, printer_name: str) -> str:
+        return self._printer_problem(printer_name)
+
     def print_ticket(self, payload: str) -> str:
         """Print a receipt straight on the counter printer.
 
@@ -249,6 +372,9 @@ class DesktopApi:
         """
         try:
             data = json.loads(payload)
+            problem = self._printer_problem(str(data.get("printer", "")))
+            if problem:
+                return f"Imprimante indisponible : {problem}"
             lines = [
                 escpos.Line(
                     text=str(item.get("text", "")),
@@ -256,6 +382,8 @@ class DesktopApi:
                     bold=bool(item.get("bold", False)),
                     big=bool(item.get("big", False)),
                     barcode=str(item.get("barcode", "")),
+                    qr=str(item.get("qr", "")),
+                    qr_size=int(item.get("qr_size", 6)),
                     image=str(item.get("image", "")),
                     image_width=int(item.get("image_width", 0)),
                     image_height=int(item.get("image_height", 0)),
@@ -269,7 +397,7 @@ class DesktopApi:
                 value & 0xFF for value in data.get("kick", []) if
                 isinstance(value, int)
             )
-            stream = escpos.build(lines, bool(data.get("cut", True))) * copies
+            stream = escpos.build(lines, bool(data.get("cut", True)), line_spacing=data.get('line_spacing')) * copies
             if kick:
                 stream += kick
             escpos.send(stream, str(data.get("printer", "")))
@@ -315,6 +443,10 @@ class DesktopApi:
             traceback.print_exc()
             return False
 
+        problem = self._printer_problem(printer_name)
+        if problem:
+            logging.getLogger(__name__).warning("Impression HTML — %s", problem)
+            return False
         holder: dict = {}
         deadline = time.monotonic() + 30.0
         dispatched = threading.Event()
@@ -324,6 +456,10 @@ class DesktopApi:
         def send() -> None:
             try:
                 if time.monotonic() >= deadline:
+                    return
+                pending = getattr(self, "_pending_print_task", None)
+                if pending is not None and not pending.IsCompleted:
+                    log.warning("Impression HTML — tâche précédente encore en cours, nouvel envoi refusé")
                     return
                 core = form.browser.webview.CoreWebView2
                 settings = core.Environment.CreatePrintSettings()
@@ -338,6 +474,7 @@ class DesktopApi:
                 settings.MarginLeft = inches
                 settings.MarginRight = inches
                 holder["task"] = core.PrintAsync(settings)
+                self._pending_print_task = holder["task"]
                 log.warning("Impression HTML — PrintAsync lancé")
             except Exception:  # noqa: BLE001
                 log.exception("Impression HTML — lancement impossible")
@@ -458,15 +595,67 @@ _LOAD_ERROR_HTML = (
     "flex-direction:column;align-items:center;justify-content:center;"
     "background:#0f2a5c;color:#fff;text-align:center;padding:24px'>"
     "<h1 style='font-size:22px'>EasyGest</h1>"
-    "<p style='max-width:460px'>L'interface n'a pas pu se charger. "
+    "<p style='max-width:460px'>L'interface n'a pas pu se charger apr&egrave;s une nouvelle tentative. "
     "Le service interne est pourtant d&eacute;marr&eacute;.</p>"
     "<p style='font-size:13px;opacity:.8'>Fermez puis relancez EasyGest. "
     "Si le probl&egrave;me persiste, red&eacute;marrez l'ordinateur ou "
     "r&eacute;installez l'application.</p>"
-    "<button onclick='location.reload()' style='margin-top:12px;padding:"
+    "<button onclick='window.pywebview.api.retry_frontend()' style='margin-top:12px;padding:"
     "10px 26px;border:0;border-radius:8px;font-size:15px;cursor:pointer'>"
     "R&eacute;essayer</button></div>"
 )
+
+
+class FrontendStartup:
+    def __init__(self, api, url: str, timeout: float = 20):
+        self.api = api
+        self.url = url
+        self.timeout = timeout
+        self.token = str(time.monotonic_ns())
+        self.ready = threading.Event()
+        self.lock = threading.Lock()
+        self.reason = "aucun signal de montage React"
+
+    def page_url(self) -> str:
+        return self.url + "/?eg_boot=" + self.token
+
+    def mounted(self, token: str) -> None:
+        with self.lock:
+            if token == self.token:
+                _boot("frontend: React monte")
+                self.ready.set()
+
+    def failed(self, message: str, token: str) -> None:
+        with self.lock:
+            if token == self.token:
+                self.reason = str(message).replace("\r", " ").replace("\n", " ")[:1500] or "erreur frontend sans detail"
+                _boot("frontend erreur: " + self.reason)
+
+    def watch(self) -> None:
+        for attempt in range(2):
+            if self.ready.wait(self.timeout):
+                return
+            with self.lock:
+                if self.ready.is_set():
+                    return
+                _boot(f"watchdog: React non monte apres {self.timeout:g} s, tentative {attempt + 1}: {self.reason}")
+                self.token = str(time.monotonic_ns())
+            if attempt == 1:
+                try:
+                    self.api._window.load_html(_LOAD_ERROR_HTML)
+                except Exception:
+                    logging.getLogger(__name__).exception("Affichage de l'erreur de demarrage impossible")
+                return
+            try:
+                self.api._clear_webview_cache(self.url)
+                _boot("watchdog: cache HTTP, service workers et CacheStorage effaces; donnees hors ligne conservees")
+            except Exception:
+                logging.getLogger(__name__).exception("Nettoyage du cache WebView impossible")
+            try:
+                self.api._window.load_url(self.page_url())
+                _boot("watchdog: rechargement unique")
+            except Exception:
+                logging.getLogger(__name__).exception("Rechargement du frontend impossible")
 
 
 def _open_window(url: str) -> bool:
@@ -494,11 +683,14 @@ def _open_window(url: str) -> bool:
                 "--mute-audio",
             )
         api = DesktopApi()
+        startup = FrontendStartup(api, url)
+        api._startup = startup
         window = webview.create_window(
             APP_NAME,
-            url,
+            startup.page_url(),
             width=1400,
             height=900,
+            maximized=True,
             min_size=(1024, 700),
             confirm_close=True,
             localization=FRENCH,
@@ -510,22 +702,7 @@ def _open_window(url: str) -> bool:
         api._window = window
         window.events.closed += lambda: os._exit(0)
 
-        # Anti-blank-page watchdog: if the interface has not mounted after
-        # 30 s, replace the white page with an explanation and a retry.
-        loaded = {"ok": False}
-        window.events.loaded += lambda: loaded.__setitem__("ok", True)
-
-        def _watchdog() -> None:
-            time.sleep(30)
-            if loaded["ok"]:
-                return
-            _boot("watchdog: interface non chargee apres 30 s")
-            try:
-                window.load_html(_LOAD_ERROR_HTML)
-            except Exception:  # noqa: BLE001 - window already gone
-                pass
-
-        threading.Thread(target=_watchdog, daemon=True).start()
+        threading.Thread(target=startup.watch, daemon=True).start()
 
         # Without an explicit storage path the window runs in private mode and
         # forgets everything the page saved (session, last user name, screen
@@ -547,6 +724,16 @@ def _selftest(url: str) -> None:
     problems = []
     if not _wait_until_ready(url, timeout=60):
         problems.append("le serveur ne répond pas sur /api/health")
+    else:
+        from app.database import SessionLocal
+        from app.stock import inconsistencies
+
+        with SessionLocal() as db:
+            errors = inconsistencies(db)
+        if errors:
+            problems.append(f"stock incohérent dans {len(errors)} article(s)")
+        else:
+            print("DEPOT_STOCK_CONSISTENCY=OK", flush=True)
     if sys.platform == "win32":
         # The 32-bit package is built without the native window (no pythonnet
         # wheel exists for x86): there the browser fallback is the expected
@@ -590,11 +777,13 @@ def _auto_update() -> None:
 
 def main() -> None:
     _redirect_output()
+    if getattr(sys, 'frozen', False) and sys.platform == 'win32':
+        from app.lifetime import watch_parent
+        watch_parent()
     if not SELFTEST:
         _auto_update()
-    port = _free_port(DEFAULT_PORT)
+    port, started = _start_backend(DEFAULT_PORT, reuse=not SELFTEST)
     url = f"http://127.0.0.1:{port}"
-    threading.Thread(target=_serve, args=(port,), daemon=True).start()
 
     if SELFTEST:
         _selftest(url)
@@ -603,6 +792,9 @@ def main() -> None:
     ready = _wait_until_ready(url)
 
     if HEADLESS:
+        if not started:
+            print(f"Serveur {APP_NAME} déjà actif : {url}")
+            return
         print(f"{APP_NAME} {APP_VERSION} — serveur partagé")
         print(f" Ce poste          : {url}")
         if HOST != "127.0.0.1":

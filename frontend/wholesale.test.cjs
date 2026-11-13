@@ -1,0 +1,54 @@
+const assert = require("node:assert/strict");
+const { readFileSync } = require("node:fs");
+const { test } = require("node:test");
+const vm = require("node:vm");
+const ts = require("typescript");
+
+test("POS cart keeps units and tiers separate and edits only the selected line", () => {
+  const units = {};
+  vm.runInNewContext(ts.transpileModule(readFileSync(`${__dirname}/src/lib/units.ts`, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports: units });
+  const source = readFileSync(`${__dirname}/src/pages/NouvelleVente.tsx`, "utf8");
+  const file = ts.createSourceFile("NouvelleVente.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const names = new Set(["setQuantity", "setUnitMode", "setLinePrice", "setLineDiscount", "linePrice", "cartParts"]);
+  const functions = [];
+  function visit(node) {
+    if (ts.isFunctionDeclaration(node) && names.has(node.name?.text)) functions.push(node.getText(file));
+    if (ts.isVariableDeclaration(node) && node.name.getText(file) === "addToCart") functions.push(`const addToCart = ${node.initializer.arguments[0].getText(file)};`);
+    ts.forEachChild(node, visit);
+  }
+  visit(file);
+  assert.equal(functions.length, names.size + 1);
+  const product = { id: 1, name: "Article", quantity: 200, base_unit: "pièce", packaging_unit: "carton", units_per_packaging: 24, sale_price: 100, packaging_sale_price: 2000, wholesale_price: 80, wholesale_packaging_price: 1500 };
+  const state = { ...units, cart: [], priceMode: "detail", product, error: "", stockLimit: (p) => p.quantity };
+  state.setCart = (change) => { state.cart = change(state.cart); };
+  state.setError = (error) => { state.error = error; };
+  state.lastAdded = { current: null };
+  state.setSelectedLine = (index) => { state.selectedLine = index; };
+  const context = vm.createContext(state);
+  vm.runInContext(ts.transpileModule(functions.join("\n"), {}).outputText, context);
+  const run = (code) => vm.runInContext(code, context);
+  run('addToCart(product); setUnitMode(0, "packaging"); addToCart(product);');
+  state.priceMode = "gros";
+  run("addToCart(product); addToCart(product);");
+  assert.equal(state.lastAdded.current.id, product.id);
+  assert.equal(state.lastAdded.current.tier, "gros");
+  assert.equal(state.selectedLine, null);
+  assert.deepEqual(Array.from(state.cart, (line) => line.quantity), [24, 1, 2]);
+  assert.deepEqual(Array.from(state.cart, (line) => line.price_tier), ["detail", "detail", "gros"]);
+  run('setQuantity(1, 5); setLinePrice(1, "120"); setLineDiscount(1, "10");');
+  assert.equal(run('linePrice(cart[0], "gros") * cart[0].quantity'), 2000);
+  assert.equal(state.cart[1].price, 120);
+  assert.equal(state.cart[1].discount, 10);
+  assert.equal(run('linePrice(cart[2], "detail")'), 80);
+  assert.equal(state.cart[0].price, undefined);
+  assert.equal(state.cart[2].discount, undefined);
+  run("setQuantity(1, 0);");
+  assert.deepEqual(Array.from(state.cart, (line) => line.quantity), [24, 2]);
+  product.quantity = 26;
+  run('setUnitMode(1, "packaging");');
+  assert.match(state.error, /Stock insuffisant/);
+  run('addToCart(product);');
+  assert.equal(state.cart.length, 2);
+  assert.equal(state.cart[1].quantity, 2);
+  assert.match(source, /ref=\{discountRef\}\s+disabled=\{!canChangePrice\}/);
+});

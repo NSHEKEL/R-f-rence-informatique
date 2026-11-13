@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 from .auth import hash_password
 from .database import Base, SessionLocal, engine
+from .stock import create_product
 from .models import (
     Category,
     Customer,
@@ -123,7 +124,7 @@ def seed_demo():
         ]
         products = []
         for name, sku, cat, sup, pp, sp, qty, minst in products_data:
-            p = Product(
+            p = create_product(db,
                 name=name,
                 sku=sku,
                 category_id=categories[cat].id,

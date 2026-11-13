@@ -34,7 +34,7 @@ const empty = {
 };
 
 export default function Users() {
-  const { user: current, refreshUser } = useAuth();
+  const { user: current, refreshUser, can } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -182,7 +182,7 @@ export default function Users() {
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
-        <button className="btn-primary" onClick={openCreate}>
+        <button className="btn-primary" disabled={!can("utilisateurs_modifier")} onClick={openCreate}>
           <Plus size={18} /> Nouvel utilisateur
         </button>
       </div>
@@ -255,7 +255,7 @@ export default function Users() {
                     </span>
                   </td>
                   <td className="px-5 py-3.5">
-                    <div className="flex justify-end gap-1">
+                    <fieldset disabled={!can("utilisateurs_modifier")} className="flex justify-end gap-1">
                       <button
                         onClick={() => resetPassword(u)}
                         title="Réinitialiser le mot de passe" aria-label="Réinitialiser le mot de passe"
@@ -283,7 +283,7 @@ export default function Users() {
                           )}
                         </button>
                       )}
-                    </div>
+                    </fieldset>
                   </td>
                 </tr>
               ))}
@@ -308,7 +308,7 @@ export default function Users() {
             <button className="btn-ghost" onClick={() => setOpen(false)}>
               Annuler
             </button>
-            <button className="btn-primary" onClick={save} disabled={saving}>
+            <button className="btn-primary" onClick={save} disabled={saving || !can("utilisateurs_modifier")}>
               {saving ? "Enregistrement..." : "Enregistrer"}
             </button>
           </>

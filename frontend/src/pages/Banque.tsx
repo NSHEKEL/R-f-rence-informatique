@@ -13,7 +13,7 @@ interface BankAccount {
   label: string;
   currency: string;
   is_active: boolean;
-  balance: number;
+  balance: number | null;
 }
 
 interface Deposit {
@@ -176,7 +176,7 @@ export default function Banque() {
               <Plus size={16} /> Compte bancaire
             </button>
           )}
-          <button
+          {can("versements_gerer") && <button
             className="btn-primary"
             onClick={() => {
               setDepositDraft({
@@ -188,7 +188,7 @@ export default function Banque() {
             disabled={accounts.length === 0}
           >
             <Plus size={16} /> Nouveau versement
-          </button>
+          </button>}
         </div>
       </div>
 

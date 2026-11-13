@@ -10,9 +10,10 @@ from ..accounts import (
     normalize_identifier,
     password_error,
 )
-from ..auth import get_current_user, hash_password, require_admin
+from ..auth import get_current_user, hash_password
+from ..permissions import require_permission
 from ..database import get_db
-from ..licensing import has_feature
+from ..licensing import has_feature, require_feature
 from ..models import User
 from ..schemas import UserCreate, UserOut, UserPhoto, UserUpdate
 
@@ -21,16 +22,16 @@ router = APIRouter(prefix="/api/users", tags=["users"])
 ROLES = {"admin", "vendeur", "gestionnaire"}
 
 
-@router.get("", response_model=list[UserOut])
-def list_users(db: Session = Depends(get_db), _: User = Depends(require_admin)):
+@router.get("", response_model=list[UserOut], dependencies=[Depends(require_feature("droits_acces"))])
+def list_users(db: Session = Depends(get_db), _: User = Depends(require_permission("utilisateurs_consulter"))):
     return db.query(User).order_by(User.name).all()
 
 
-@router.post("", response_model=UserOut, status_code=201)
+@router.post("", response_model=UserOut, status_code=201, dependencies=[Depends(require_feature("droits_acces"))])
 def create_user(
     payload: UserCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_permission("utilisateurs_modifier")),
 ):
     if payload.role not in ROLES:
         raise HTTPException(status_code=400, detail="Rôle invalide")
@@ -82,12 +83,12 @@ def update_my_photo(
     return current_user
 
 
-@router.put("/{user_id}", response_model=UserOut)
+@router.put("/{user_id}", response_model=UserOut, dependencies=[Depends(require_feature("droits_acces"))])
 def update_user(
     user_id: int,
     payload: UserUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_permission("utilisateurs_modifier")),
 ):
     user = db.query(User).get(user_id)
     if not user:
@@ -166,11 +167,11 @@ def update_user(
     return user
 
 
-@router.post("/{user_id}/reset-password")
+@router.post("/{user_id}/reset-password", dependencies=[Depends(require_feature("droits_acces"))])
 def reset_user_password(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_permission("utilisateurs_modifier")),
 ):
     """Give a user a temporary password, shown once to the administrator."""
     user = db.query(User).get(user_id)
@@ -189,11 +190,11 @@ def reset_user_password(
     return {"password": temporary}
 
 
-@router.delete("/{user_id}", status_code=204)
+@router.delete("/{user_id}", status_code=204, dependencies=[Depends(require_feature("droits_acces"))])
 def delete_user(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_permission("utilisateurs_modifier")),
 ):
     user = db.query(User).get(user_id)
     if not user:

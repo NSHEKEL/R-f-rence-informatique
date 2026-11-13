@@ -27,7 +27,7 @@ function TicketBody({
   kind,
 }: Omit<CashTicketProps, "format">) {
   const currency = company?.currency || "FCFA";
-  const money = (v: number) => formatMoney(v, currency);
+  const money = (v: number | null) => formatMoney(v, currency);
   const closing = kind === "close";
 
   return (
@@ -94,6 +94,12 @@ function TicketBody({
                   {money(session.expected_balance ?? session.expected_cash)}
                 </td>
               </tr>
+              {([
+                ["Recettes de caisse", session.entries_total],
+                ["Sorties de caisse", session.exits_total],
+                ["Règlements espèces nets", session.cash_settlements],
+                ["Remboursements espèces", session.cash_refunds],
+              ] as const).map(([label, amount]) => <tr key={label}><td>{label}</td><td className="num strong">{money(amount)}</td></tr>)}
               <tr>
                 <td>Solde compté</td>
                 <td className="num strong">

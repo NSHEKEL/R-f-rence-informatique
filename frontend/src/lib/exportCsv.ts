@@ -5,6 +5,8 @@
  * stay typed as numbers, so the file opens clean in Excel — unlike a CSV,
  * which cannot carry any formatting.
  */
+import { saveReportFile } from "./reportFiles";
+
 function esc(value: string | number): string {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -38,19 +40,6 @@ function workbookXml(headers: string[], rows: (string | number)[][]): string {
   );
 }
 
-/** Native window bridge: it saves the file itself, downloads being blocked. */
-function desktopSave():
-  | ((name: string, body: string) => Promise<string>)
-  | undefined {
-  return (
-    window as unknown as {
-      pywebview?: {
-        api?: { save_file?: (name: string, body: string) => Promise<string> };
-      };
-    }
-  ).pywebview?.api?.save_file;
-}
-
 /**
  * Returns where the file went: the path the desktop bridge wrote, the file
  * name for a browser download, or "" when the user cancelled the save dialog.
@@ -63,53 +52,7 @@ export async function exportCsv(
 ): Promise<string> {
   const body = workbookXml(headers, rows);
   const name = filename.endsWith(".xls") ? filename : `${filename}.xls`;
-  const save = desktopSave();
-  if (save) {
-    return (await save(name, body)) || "";
-  }
-  const blob = new Blob([body], { type: "application/vnd.ms-excel" });
-  // Chrome/Edge: ask where to save, like the desktop save dialog does.
-  const picker = (
-    window as unknown as {
-      showSaveFilePicker?: (options: object) => Promise<{
-        createWritable: () => Promise<{
-          write: (data: Blob) => Promise<void>;
-          close: () => Promise<void>;
-        }>;
-      }>;
-    }
-  ).showSaveFilePicker;
-  if (picker) {
-    try {
-      const handle = await picker({
-        suggestedName: name,
-        types: [
-          {
-            description: "Classeur Excel",
-            accept: { "application/vnd.ms-excel": [".xls"] },
-          },
-        ],
-      });
-      const writable = await handle.createWritable();
-      await writable.write(blob);
-      await writable.close();
-      return name;
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") {
-        return "";
-      }
-      throw error;
-    }
-  }
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = name;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-  return name;
+  return saveReportFile(name, body, "application/vnd.ms-excel");
 }
 
 /** File name stamped with the day, so exports never overwrite each other. */

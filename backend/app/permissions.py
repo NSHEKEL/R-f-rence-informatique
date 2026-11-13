@@ -10,10 +10,15 @@ from sqlalchemy.orm import Session
 
 from .auth import get_current_user
 from .database import get_db
-from .models import RolePermission, User
+from .models import RolePermission, SecurityLog, User
 
 # key -> (label shown to the administrator, section)
 PERMISSIONS: dict[str, tuple[str, str]] = {
+    "depots_gerer": ("Gérer les dépôts", "Actions"),
+    "depots_transferer": ("Transférer entre dépôts", "Actions"),
+    "comptabilite_journaux_consulter": ("Consulter les documents comptables", "Trésorerie"),
+    "comptabilite_journaux_imprimer": ("Imprimer et exporter les documents comptables", "Trésorerie"),
+    "plan_comptable_modifier": ("Modifier le plan et les comptes de liaison", "Trésorerie"),
     "tableau_bord": ("Tableau de bord", "Pages"),
     "caisse": ("Ma caisse", "Pages"),
     "vente_nouvelle": ("Nouvelle vente", "Pages"),
@@ -49,11 +54,13 @@ PERMISSIONS: dict[str, tuple[str, str]] = {
     ),
     "prix_modifier": ("Modifier le prix pendant une vente", "Actions"),
     "inventaire_appliquer": ("Appliquer un inventaire (ajuster le stock)", "Actions"),
+    "inventaire_valider": ("Valider une session d'inventaire", "Actions"),
+    "inventaire_voir_theorique": ("Voir le théorique des inventaires aveugles", "Actions"),
     "dettes_gerer": ("Créer et modifier une dette ou une créance", "Actions"),
     "dettes_regler": ("Enregistrer un règlement de dette ou de créance", "Actions"),
     "dettes_annuler": ("Annuler un règlement (avec motif)", "Actions"),
     "dettes_recu": ("Imprimer un reçu de paiement", "Actions"),
-    "rapports_financiers": ("Voir les états des créances et des dettes", "Actions"),
+    "rapports_financiers": ("Consulter les rapports financiers", "Trésorerie"),
     "rapports_exporter": ("Exporter ou imprimer les rapports", "Actions"),
     "approvisionnements_gerer": (
         "Créer, réceptionner et supprimer un approvisionnement",
@@ -81,14 +88,30 @@ PERMISSIONS: dict[str, tuple[str, str]] = {
         "Actions",
     ),
     "caisse_fermer": ("Clôturer une session de caisse", "Actions"),
-    "caisse_z": ("Consulter et imprimer l'état Z de caisse", "Actions"),
-    "versements_gerer": ("Enregistrer un versement bancaire", "Actions"),
+    "caisse_z": ("Imprimer le ticket de clôture de sa caisse", "Trésorerie"),
+    "tresorerie_consulter": ("Consulter la trésorerie", "Trésorerie"),
+    "recette_enregistrer": ("Enregistrer une recette", "Trésorerie"),
+    "soldes_consulter": ("Consulter les soldes", "Trésorerie"),
+    "caisse_operations": ("Effectuer les opérations de caisse", "Trésorerie"),
+    "clotures_consulter": ("Consulter les clôtures", "Trésorerie"),
+    "versements_gerer": ("Enregistrer un versement bancaire", "Trésorerie"),
     "versements_valider": (
         "Valider, rejeter, annuler ou rapprocher un versement",
-        "Actions",
+        "Trésorerie",
     ),
-    "depenses_gerer": ("Enregistrer et annuler une dépense", "Actions"),
+    "depenses_gerer": ("Enregistrer une dépense", "Trésorerie"),
 }
+
+SETTINGS_CATEGORIES = {
+    "generaux": "Généraux", "articles": "Articles et catalogue", "tarifs": "Tarifs",
+    "fiscaux": "Fiscalité et FNE", "imprimantes": "Impression partagée", "poste": "Ce poste",
+    "peripheriques": "Périphériques", "caisse": "Réglages de caisse",
+    "utilisateurs": "Utilisateurs et droits", "sauvegarde": "Sauvegardes",
+}
+for category, label in SETTINGS_CATEGORIES.items():
+    for action, verb in (("consulter", "Consulter"), ("modifier", "Modifier")):
+        PERMISSIONS[f"{category}_{action}"] = (f"{verb} : {label}", "Paramètres")
+PERMISSIONS["parametres_sauvegarde_restaurer"] = ("Restaurer une sauvegarde", "Paramètres")
 
 CONFIGURABLE_ROLES = ("vendeur", "gestionnaire")
 
@@ -97,7 +120,6 @@ DEFAULTS: dict[str, set[str]] = {
     "vendeur": {
         "caisse",
         "caisse_fermer",
-        "caisse_z",
         "vente_nouvelle",
         "assistance",
     },
@@ -140,7 +162,7 @@ def allowed_keys(db: Session, user: User) -> list[str]:
     return [key for key, ok in rights.items() if ok]
 
 
-def save_matrix(db: Session, matrix: dict[str, dict[str, bool]]) -> None:
+def save_matrix(db: Session, matrix: dict[str, dict[str, bool]], actor: User | None = None) -> None:
     rows = {(row.role, row.permission): row for row in db.query(RolePermission).all()}
     for role, rights in matrix.items():
         if role not in CONFIGURABLE_ROLES:
@@ -149,6 +171,10 @@ def save_matrix(db: Session, matrix: dict[str, dict[str, bool]]) -> None:
             if key not in PERMISSIONS:
                 continue
             row = rows.get((role, key))
+            old = row.allowed if row is not None else default_allows(role, key)
+            if actor is not None and old != bool(allowed):
+                db.add(SecurityLog(event="permission_modifiee", user_id=actor.id, identifier=actor.email,
+                    detail=f"role={role}; key={key}; {str(bool(old)).lower()} → {str(bool(allowed)).lower()}", success=True))
             if row is None:
                 db.add(
                     RolePermission(role=role, permission=key, allowed=bool(allowed))
@@ -172,19 +198,28 @@ def has_permission(db: Session, user: User, key: str) -> bool:
     return row.allowed if row is not None else default_allows(user.role, key)
 
 
-def require_permission(key: str):
-    """Dependency guarding an endpoint with one configurable right."""
+def require_permission(key: str, *additional: str):
+    """Dependency requiring every named right."""
 
     def guard(
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user),
     ) -> User:
-        if not has_permission(db, current_user, key):
-            label = PERMISSIONS.get(key, (key, ""))[0]
-            raise HTTPException(
-                status_code=403,
-                detail=f"Accès refusé : {label}",
-            )
+        for required in (key, *additional):
+            if not has_permission(db, current_user, required):
+                label = PERMISSIONS.get(required, (required, ""))[0]
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Accès refusé : {label}",
+                )
         return current_user
 
+    return guard
+
+
+def require_any_permission(*keys):
+    def guard(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> User:
+        if not any(has_permission(db, current_user, key) for key in keys):
+            raise HTTPException(status_code=403, detail="Accès refusé")
+        return current_user
     return guard

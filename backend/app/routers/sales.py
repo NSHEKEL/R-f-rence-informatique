@@ -21,12 +21,33 @@ from ..models import (
 from ..permissions import has_permission, require_permission
 from ..schemas import SaleCreate, SaleOut, SaleUpdate
 from ..sequences import next_reference
-from .cash import current_session
+from .cash import lock_current_session
+from ..units import base_quantity, prices, snapshot, selected_packaging, resolve_tier
+from ..profits import financials
+from .. import stock
+from ..product_codes import scanned_product
 
 router = APIRouter(prefix="/api/sales", tags=["sales"])
 
 
 MAX_REFERENCE_ATTEMPTS = 5
+
+
+def sale_output(sale, db, user):
+    result = SaleOut.model_validate(sale)
+    if has_permission(db, user, "rapports_financiers"):
+        purchase_prices = {item.product_id: (item.product.purchase_price or 0) if item.product else 0 for item in sale.items}
+        for source, target in zip(sale.items, result.items):
+            for key, value in financials(sale, source, purchase_prices).items():
+                setattr(target, key, value)
+        result.cost = sum(item.cost for item in result.items)
+        result.profit = sum(item.profit for item in result.items)
+        revenue = sum(item.revenue for item in result.items)
+        result.margin = result.profit / revenue * 100 if revenue else 0.0
+    else:
+        for item in result.items:
+            item.unit_cost = None
+    return result
 
 
 def _generate_reference(db: Session) -> str:
@@ -38,34 +59,34 @@ def _generate_reference(db: Session) -> str:
 @router.get("", response_model=list[SaleOut])
 def list_sales(
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("ventes")),
+    user: User = Depends(require_permission("ventes")),
 ):
-    return db.query(Sale).order_by(Sale.date.desc()).all()
+    return [sale_output(sale, db, user) for sale in db.query(Sale).order_by(Sale.date.desc()).all()]
 
 
 @router.get("/by-reference/{reference}", response_model=SaleOut)
 def get_sale_by_reference(
     reference: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("ventes")),
+    user: User = Depends(require_permission("ventes")),
 ):
     """Ticket lookup used by the returns screen."""
     sale = db.query(Sale).filter(Sale.reference == reference.strip()).first()
     if not sale:
         raise HTTPException(status_code=404, detail="Ticket introuvable")
-    return sale
+    return sale_output(sale, db, user)
 
 
 @router.get("/{sale_id}", response_model=SaleOut)
 def get_sale(
     sale_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("ventes")),
+    user: User = Depends(require_permission("ventes")),
 ):
     sale = db.query(Sale).get(sale_id)
     if not sale:
         raise HTTPException(status_code=404, detail="Vente introuvable")
-    return sale
+    return sale_output(sale, db, user)
 
 
 @router.post("", response_model=SaleOut, status_code=201)
@@ -83,15 +104,21 @@ def create_sale(
             db.query(Sale).filter(Sale.client_id == payload.client_id).first()
         )
         if existing:
-            return existing
+            return sale_output(existing, db, current_user)
 
     # Several workstations may checkout at the same time: retry when two of
     # them pick the same reference.
     for attempt in range(MAX_REFERENCE_ATTEMPTS):
         try:
-            return _persist_sale(db, payload, current_user)
-        except IntegrityError:
+            return sale_output(_persist_sale(db, payload, current_user), db, current_user)
+        except (IntegrityError, HTTPException) as exc:
             db.rollback()
+            if payload.client_id:
+                existing = db.query(Sale).filter(Sale.client_id == payload.client_id).first()
+                if existing:
+                    return sale_output(existing, db, current_user)
+            if isinstance(exc, HTTPException):
+                raise
             if attempt == MAX_REFERENCE_ATTEMPTS - 1:
                 raise HTTPException(
                     status_code=409,
@@ -100,7 +127,7 @@ def create_sale(
     raise HTTPException(status_code=409, detail="Caisse occupée, veuillez réessayer")
 
 
-def _consume_lots_fefo(db: Session, product: Product, quantity: int) -> None:
+def _consume_lots_fefo(db: Session, product: Product, quantity: int, depot_id=None) -> None:
     """Draw `quantity` from the product's tagged lots, earliest expiry first.
 
     Never fails the sale: if the tagged lots run out, the remainder comes
@@ -112,6 +139,7 @@ def _consume_lots_fefo(db: Session, product: Product, quantity: int) -> None:
         .filter(
             StockLot.product_id == product.id,
             StockLot.quantity > 0,
+            (StockLot.depot_id == stock.resolve(db, depot_id)) | (StockLot.depot_id.is_(None) & (stock.resolve(db, depot_id) == stock.resolve(db))),
             # Expired lots never reach the customer.
             (StockLot.expiry_date.is_(None)) | (StockLot.expiry_date >= datetime.now()),
         )
@@ -127,6 +155,9 @@ def _consume_lots_fefo(db: Session, product: Product, quantity: int) -> None:
 
 
 def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
+    depot_id = stock.resolve(db)
+    if payload.discount > 0 and not has_permission(db, current_user, "prix_modifier"):
+        raise HTTPException(status_code=403, detail="Vous n'avez pas le droit de modifier le prix de vente")
     if payload.is_gift and not has_permission(
         db, current_user, "ventes_cadeau"
     ):
@@ -134,7 +165,8 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
             status_code=403,
             detail="Vous n'avez pas le droit d'enregistrer une vente cadeau",
         )
-    session = current_session(db, current_user)
+    reference = _generate_reference(db)
+    session = lock_current_session(db, current_user)
     if session is None:
         raise HTTPException(
             status_code=400,
@@ -142,15 +174,16 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
             "caisse avant d'effectuer une vente.",
         )
     sale = Sale(
-        reference=_generate_reference(db),
+        reference=reference,
         client_id=payload.client_id,
         customer_id=payload.customer_id,
         status=payload.status,
         payment_method=payload.payment_method,
         note=payload.note,
-        price_mode="gros" if payload.price_mode == "gros" else "detail",
+        price_mode=payload.price_mode if payload.price_mode in {"detail", "semi_gros", "gros", "auto"} else "detail",
         paid_amount=max(payload.paid_amount, 0.0),
         discount=max(payload.discount, 0.0),
+        discount_by_id=current_user.id if payload.discount > 0 else None,
         is_gift=bool(payload.is_gift),
         created_by_id=current_user.id,
         cash_session_id=session.id,
@@ -164,18 +197,26 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
             raise HTTPException(
                 status_code=404, detail=f"Produit {item.product_id} introuvable"
             )
-        if item.quantity <= 0:
+        spec = selected_packaging(db, product, item.packaging_id)
+        if item.expected_units_per_packaging is not None and item.expected_units_per_packaging != (spec.units_per_packaging or 1):
+            raise HTTPException(status_code=409, detail="Conditionnement modifié : vérifiez le ticket avant synchronisation")
+        quantity = base_quantity(item, spec)
+        if quantity <= 0:
             raise HTTPException(status_code=400, detail="Quantité invalide")
+        item = item.model_copy(update={"quantity": quantity})
         if product.quantity < item.quantity:
             raise HTTPException(
                 status_code=400,
                 detail=f"Stock insuffisant pour {product.name} "
                 f"(disponible : {product.quantity})",
             )
-        unit_price = product.sale_price
-        if sale.price_mode == "gros" and (product.wholesale_price or 0) > 0:
-            unit_price = product.wholesale_price
-        if item.unit_price is not None and item.unit_price != unit_price:
+        tier = resolve_tier(product, item.price_tier or sale.price_mode, quantity)
+        base_price, pack_price = prices(spec, tier)
+        packs = item.packaging_quantity or 0
+        pieces = item.piece_quantity if item.piece_quantity is not None else (0 if item.packaging_quantity is not None else item.quantity)
+        unit_price = (packs * pack_price + pieces * base_price) / quantity
+        catalog_unit_price = unit_price
+        if item.unit_price is not None and abs(item.unit_price - unit_price) > 0.000001:
             if not has_permission(db, current_user, "prix_modifier"):
                 raise HTTPException(
                     status_code=403,
@@ -184,6 +225,8 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
             if item.unit_price < 0:
                 raise HTTPException(status_code=400, detail="Prix invalide")
             unit_price = float(item.unit_price)
+            base_price = unit_price
+            pack_price = unit_price * (spec.units_per_packaging or 1)
         line_discount = 0.0
         if (item.discount or 0) > 0:
             # A line discount is a price change: same right required.
@@ -195,8 +238,24 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
             line_discount = min(float(item.discount), unit_price * item.quantity)
         subtotal = unit_price * item.quantity - line_discount
         total += subtotal
+        scanned_label = None
+        if item.scanned_code:
+            scanned, _, alias = scanned_product(db, item.scanned_code)
+            if scanned.id != product.id:
+                raise HTTPException(400, "Le code scanné ne correspond pas à cet article")
+            scanned_label = alias.label if alias else None
         sale.items.append(
             SaleItem(
+                scanned_code=item.scanned_code.strip() if item.scanned_code else None,
+                scanned_label=scanned_label,
+                packaging_id=item.packaging_id,
+                price_tier=tier,
+                catalog_unit_price=catalog_unit_price,
+                unit_cost=product.purchase_price or 0,
+                **snapshot(spec),
+                sold_unit="mixte" if packs and pieces else (spec.packaging_unit if packs else spec.base_unit),
+                packaging_quantity=packs, piece_quantity=pieces, base_quantity=quantity,
+                base_unit_price=base_price, packaging_sale_price=pack_price,
                 product_id=product.id,
                 product_name=product.name,
                 quantity=item.quantity,
@@ -206,37 +265,21 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
             )
         )
         if payload.status != "Annulée":
-            # Conditional update: keeps stock correct when two tills sell the
-            # same product simultaneously.
-            result = db.execute(
-                update(Product)
-                .where(
-                    Product.id == product.id,
-                    Product.quantity >= item.quantity,
-                )
-                .values(quantity=Product.quantity - item.quantity)
-            )
-            if result.rowcount == 0:
-                db.rollback()
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Stock insuffisant pour {product.name}",
-                )
-            db.refresh(product)
-            before = product.quantity + item.quantity
+            before, after = stock.adjust(db, product, -item.quantity, check_total=True)
             db.add(
                 StockMovement(
+                    depot_id=depot_id,
                     product_id=product.id,
                     product_name=product.name,
                     kind="vente",
                     quantity=-item.quantity,
                     stock_before=before,
-                    stock_after=product.quantity,
+                    stock_after=after,
                     reason=sale.reference,
                     created_by_id=current_user.id,
                 )
             )
-            _consume_lots_fefo(db, product, item.quantity)
+            _consume_lots_fefo(db, product, item.quantity, depot_id)
             if product.quantity <= product.min_stock:
                 low_stock.append(product)
 
@@ -386,7 +429,7 @@ def _backup_after_sale(db: Session) -> None:
 def register_print(
     sale_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("ventes")),
+    user: User = Depends(require_permission("ventes")),
 ):
     """Count receipt prints so reprints can be flagged as duplicates."""
     sale = db.query(Sale).get(sale_id)
@@ -395,7 +438,7 @@ def register_print(
     sale.print_count = (sale.print_count or 0) + 1
     db.commit()
     db.refresh(sale)
-    return sale
+    return sale_output(sale, db, user)
 
 
 @router.put("/{sale_id}", response_model=SaleOut)
@@ -403,7 +446,7 @@ def update_sale(
     sale_id: int,
     payload: SaleUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("ventes_supprimer")),
+    user: User = Depends(require_permission("ventes_supprimer")),
 ):
     """Update editable receipt metadata (customer, payment, note, footer).
 
@@ -423,7 +466,7 @@ def update_sale(
         sale.receipt_footer = data["receipt_footer"]
     db.commit()
     db.refresh(sale)
-    return sale
+    return sale_output(sale, db, user)
 
 
 @router.delete("/{sale_id}", status_code=204)
@@ -441,16 +484,17 @@ def delete_sale(
             if item.product_id:
                 product = db.query(Product).get(item.product_id)
                 if product:
-                    before = product.quantity
-                    product.quantity += item.quantity
+                    remaining = item.quantity - item.returned_quantity
+                    before, after = stock.adjust(db, product, remaining)
                     db.add(
                         StockMovement(
+                            depot_id=stock.resolve(db),
                             product_id=product.id,
                             product_name=product.name,
                             kind="ajustement",
-                            quantity=item.quantity,
+                            quantity=remaining,
                             stock_before=before,
-                            stock_after=product.quantity,
+                            stock_after=after,
                             reason=f"Annulation {sale.reference}",
                             created_by_id=current_user.id,
                         )

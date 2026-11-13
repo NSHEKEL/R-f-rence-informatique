@@ -21,6 +21,7 @@ lost.
 import os
 import shutil
 import sys
+import uuid
 from pathlib import Path
 
 APP_DIR_NAME = "EasyGest"
@@ -119,7 +120,10 @@ def apply_pending_restore(current: Path) -> None:
     if not pending.exists():
         return
     if current.exists():
-        current.replace(current.with_suffix(current.suffix + ".before-restore"))
+        previous = current.with_suffix(current.suffix + ".before-restore")
+        if previous.exists():
+            previous.replace(backups_dir() / f"easygest-{uuid.uuid4().hex}.before-restore")
+        current.replace(previous)
     for suffix in ("-wal", "-shm"):
         stale = current.with_name(current.name + suffix)
         if stale.exists():

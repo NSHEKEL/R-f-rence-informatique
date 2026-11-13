@@ -13,14 +13,18 @@ import {
 import api, { formatDate, formatDateTime, formatXOF } from "../api/client";
 import type { Product, Purchase, PurchaseSummary, Supplier } from "../types";
 import Modal from "../components/Modal";
+import AccountingPayment from "../components/AccountingPayment";
 import BulkDelete, { SelectBox } from "../components/BulkDelete";
 import { useSelection } from "../lib/selection";
 import { documentBarcode, documentHeader, printSheet } from "../lib/print";
 import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSyncVersion } from "../context/SyncContext";
+import PackagingQuantity from "../components/PackagingQuantity";
+import { formatQuantity, quantityHtml, withPackaging } from "../lib/units";
 
 interface DraftLine {
+  packaging_id?: number | null;
   product_id: number | null;
   quantity: number;
   unit_cost: number;
@@ -54,6 +58,8 @@ export default function Approvisionnements() {
   const [expected, setExpected] = useState("");
   const [invoice, setInvoice] = useState("");
   const [paidAmount, setPaidAmount] = useState(0);
+  const [paymentMethod, setPaymentMethod] = useState("");
+  const [bankAccount, setBankAccount] = useState("");
   const [note, setNote] = useState("");
   const [lines, setLines] = useState<DraftLine[]>([]);
   const [saving, setSaving] = useState(false);
@@ -104,6 +110,7 @@ export default function Approvisionnements() {
     updateLine(index, {
       product_id: product?.id ?? null,
       unit_cost: product?.purchase_price ?? 0,
+      packaging_id: undefined,
     });
   }
 
@@ -115,6 +122,8 @@ export default function Approvisionnements() {
     setExpected("");
     setInvoice("");
     setPaidAmount(0);
+    setPaymentMethod("");
+    setBankAccount("");
     setNote("");
   }
 
@@ -132,6 +141,7 @@ export default function Approvisionnements() {
     setLines(
       purchase.items.map((item) => ({
         product_id: item.product_id,
+        packaging_id: item.packaging_id,
         quantity: item.quantity,
         unit_cost: item.unit_cost,
       }))
@@ -152,6 +162,7 @@ export default function Approvisionnements() {
     setError("");
     try {
       const body = {
+        ...(!editing ? { payment_method: paymentMethod || null, bank_account_id: bankAccount ? Number(bankAccount) : null } : {}),
         supplier_id: supplierId ? Number(supplierId) : null,
         supplier_name: supplierName,
         expected_date: expected ? new Date(expected).toISOString() : null,
@@ -160,6 +171,7 @@ export default function Approvisionnements() {
         note,
         items: lines.map((l) => ({
           product_id: l.product_id,
+          packaging_id: l.packaging_id,
           quantity: l.quantity,
           unit_cost: l.unit_cost,
         })),
@@ -247,8 +259,8 @@ export default function Approvisionnements() {
       .map(
         (it) =>
           `<tr><td>${it.product_name}</td>` +
-          `<td class="num">${it.quantity}</td>` +
-          `<td class="num">${it.received_quantity}</td>` +
+          `<td class="num">${quantityHtml(it, it.quantity)}</td>` +
+          `<td class="num">${quantityHtml(it, it.received_quantity)}</td>` +
           `<td class="num">${formatXOF(it.unit_cost)}</td>` +
           `<td class="num">${formatXOF(it.subtotal)}</td></tr>`
       )
@@ -561,13 +573,19 @@ export default function Approvisionnements() {
                     <option value="">— Choisir —</option>
                     {products.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.name} ({p.quantity} en stock)
+                        {p.name} ({formatQuantity(p, p.quantity)} en stock)
                       </option>
                     ))}
                   </select>
                 </div>
                 <div className="w-24">
                   <label className="label">Qté</label>
+                  {products.find((p) => p.id === l.product_id)?.packagings?.some((p) => p.active) && <select className="input mb-1" aria-label="Conditionnement acheté" value={l.packaging_id ?? ""} onChange={(e) => {
+                    const product = products.find((p) => p.id === l.product_id)!;
+                    const packaging = product.packagings?.find((p) => p.id === Number(e.target.value));
+                    updateLine(index, { packaging_id: packaging?.id, quantity: packaging?.factor || 1, unit_cost: packaging?.purchase_price != null ? packaging.purchase_price / packaging.factor : product.purchase_price });
+                  }}><option value="">Principal</option>{products.find((p) => p.id === l.product_id)?.packagings?.filter((p) => p.active).map((p) => <option key={p.id} value={p.id}>{p.name} (×{p.factor})</option>)}</select>}
+                  {products.find((p) => p.id === l.product_id) && withPackaging(products.find((p) => p.id === l.product_id)!, l.packaging_id).packaging_unit ? <PackagingQuantity product={withPackaging(products.find((p) => p.id === l.product_id)!, l.packaging_id)} value={l.quantity} onChange={(quantity) => updateLine(index, { quantity })} /> :
                   <input
                     type="number"
                     min={1}
@@ -577,9 +595,10 @@ export default function Approvisionnements() {
                       updateLine(index, { quantity: Number(e.target.value) })
                     }
                   />
+                  }
                 </div>
                 <div className="w-36">
-                  <label className="label">Coût d'achat</label>
+                  <label className="label">Coût d'achat par unité de base</label>
                   <input
                     type="number"
                     className="input"
@@ -615,6 +634,7 @@ export default function Approvisionnements() {
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div>
+              {!editing && <AccountingPayment method={paymentMethod} bank={bankAccount} onChange={(method, bank) => { setPaymentMethod(method); setBankAccount(bank); }} />}
               <label className="label">Facture fournisseur</label>
               <input
                 className="input"
@@ -696,9 +716,10 @@ export default function Approvisionnements() {
                   <tr key={it.id}>
                     <td className="py-2">{it.product_name}</td>
                     <td className="py-2 text-right text-slate-500">
-                      {remaining}
+                      {formatQuantity(it, remaining)}
                     </td>
                     <td className="py-2 text-right">
+                      {it.packaging_unit ? <PackagingQuantity product={it} value={received[it.id] ?? 0} max={remaining} onChange={(quantity) => setReceived((prev) => ({ ...prev, [it.id]: quantity }))} /> :
                       <input
                         type="number"
                         min={0}
@@ -712,6 +733,7 @@ export default function Approvisionnements() {
                           }))
                         }
                       />
+                      }
                     </td>
                   </tr>
                 );

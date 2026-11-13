@@ -22,6 +22,7 @@ import api, { formatXOF } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import type { AccountingSummary, CashSession, Expense } from "../types";
 import Modal from "../components/Modal";
+import AccountingPayment from "../components/AccountingPayment";
 import { useSyncVersion } from "../context/SyncContext";
 
 const EXPENSE_CATEGORIES = [
@@ -45,6 +46,8 @@ function firstOfMonth(): string {
 export default function Comptabilite() {
   const version = useSyncVersion();
   const { can } = useAuth();
+  const canReports = can("rapports_financiers") && can("soldes_consulter");
+  const canClosures = can("clotures_consulter");
   const [start, setStart] = useState(firstOfMonth());
   const [end, setEnd] = useState(today());
   const [summary, setSummary] = useState<AccountingSummary | null>(null);
@@ -57,16 +60,18 @@ export default function Comptabilite() {
   const [category, setCategory] = useState(EXPENSE_CATEGORIES[0]);
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(today());
+  const [paymentMethod, setPaymentMethod] = useState("");
+  const [bankAccount, setBankAccount] = useState("");
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const [s, e, c] = await Promise.all([
-        api.get<AccountingSummary>("/accounting/summary", {
+        canReports ? api.get<AccountingSummary>("/accounting/summary", {
           params: { start, end },
-        }),
+        }) : Promise.resolve({ data: null }),
         api.get<Expense[]>("/accounting/expenses"),
-        api.get<CashSession[]>("/cash-sessions", { params: { limit: 10 } }),
+        canClosures ? api.get<CashSession[]>("/cash-sessions", { params: { limit: 10 } }) : Promise.resolve({ data: [] }),
       ]);
       setSummary(s.data);
       setExpenses(e.data);
@@ -76,7 +81,7 @@ export default function Comptabilite() {
         setError(err.response?.data?.detail ?? "Erreur de chargement");
       }
     }
-  }, [start, end]);
+  }, [start, end, canReports, canClosures]);
 
   useEffect(() => {
     load();
@@ -87,6 +92,8 @@ export default function Comptabilite() {
     setError("");
     try {
       await api.post("/accounting/expenses", {
+        payment_method: paymentMethod || null,
+        bank_account_id: bankAccount ? Number(bankAccount) : null,
         label,
         category,
         amount: Number(amount) || 0,
@@ -95,6 +102,8 @@ export default function Comptabilite() {
       setAddOpen(false);
       setLabel("");
       setAmount("");
+      setPaymentMethod("");
+      setBankAccount("");
       await load();
     } catch (err) {
       if (axios.isAxiosError(err)) {
@@ -142,6 +151,7 @@ export default function Comptabilite() {
 
   return (
     <div className="space-y-5">
+      {can("comptabilite_journaux_consulter") && <Link className="btn-secondary" to="/comptabilite/documents">Documents comptables · Plan comptable &amp; comptes de liaison</Link>}
       <div className="card flex flex-wrap items-end gap-4 p-5">
         <div>
           <label className="label">Du</label>
@@ -167,9 +177,9 @@ export default function Comptabilite() {
               <Wallet size={16} /> Paie & bulletins
             </Link>
           )}
-          <button className="btn-primary" onClick={() => setAddOpen(true)}>
+          {can("depenses_gerer") && <button className="btn-primary" onClick={() => setAddOpen(true)}>
             <Plus size={16} /> Ajouter une dépense
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -322,13 +332,13 @@ export default function Comptabilite() {
                   {formatXOF(e.amount)}
                 </td>
                 <td className="py-2 text-right">
-                  <button
+                  {can("depenses_gerer") && <button
                     className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
                     onClick={() => removeExpense(e)}
                     title="Supprimer la dépense" aria-label="Supprimer la dépense"
                   >
                     <Trash2 size={16} />
-                  </button>
+                  </button>}
                 </td>
               </tr>
             ))}
@@ -343,7 +353,7 @@ export default function Comptabilite() {
         </table>
       </div>
 
-      <div className="card p-5">
+      {canClosures && <div className="card p-5">
         <h3 className="mb-4 text-base font-bold text-slate-900">
           Historique des caisses
         </h3>
@@ -419,7 +429,7 @@ export default function Comptabilite() {
             )}
           </tbody>
         </table>
-      </div>
+      </div>}
 
       <Modal
         open={addOpen}
@@ -466,6 +476,7 @@ export default function Comptabilite() {
             </div>
           </div>
           <div>
+            <AccountingPayment method={paymentMethod} bank={bankAccount} onChange={(method, bank) => { setPaymentMethod(method); setBankAccount(bank); }} />
             <label className="label">Date</label>
             <input
               type="date"

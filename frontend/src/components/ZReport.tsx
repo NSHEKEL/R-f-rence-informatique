@@ -30,6 +30,10 @@ export interface ZReportData {
   deposits_total: number;
   deposits: { id: number; amount: number; bank: string; status: string }[];
   expected_cash: number;
+  entries_total?: number;
+  exits_total?: number;
+  cash_refunds?: number;
+  cash_settlements?: number;
   counted_cash: number | null;
   difference: number | null;
   note: string;
@@ -196,6 +200,10 @@ export default function ZReport({
       )}
       <hr className="my-2 border-dashed" />
       <Row label="Montant théorique" value={formatXOF(report.expected_cash)} />
+      <Row label="Recettes de caisse" value={formatXOF(report.entries_total)} />
+      <Row label="Sorties de caisse" value={formatXOF(report.exits_total)} />
+      <Row label="Remboursements espèces" value={formatXOF(report.cash_refunds)} />
+      <Row label="Règlements espèces nets" value={formatXOF(report.cash_settlements)} />
       <Row
         label="Montant compté"
         value={

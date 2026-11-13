@@ -5,8 +5,12 @@ from ..database import get_db
 from ..models import Notification, Product, StockMovement, User
 from ..permissions import require_permission
 from ..schemas import InventoryApply, StockMovementOut
+from ..units import base_quantity
+from .. import stock
+from .inventory_sessions import router as sessions_router
 
 router = APIRouter(prefix="/api/inventory", tags=["inventory"])
+router.include_router(sessions_router)
 
 
 @router.get("/movements", response_model=list[StockMovementOut])
@@ -39,20 +43,21 @@ def apply_inventory(
             raise HTTPException(
                 status_code=404, detail=f"Produit {line.product_id} introuvable"
             )
+        line = line.model_copy(update={"counted_quantity": base_quantity(line, product, "counted_quantity")})
         if line.counted_quantity < 0:
             raise HTTPException(status_code=400, detail="Quantité invalide")
-        before = product.quantity
-        delta = line.counted_quantity - before
+        before, after = stock.set_total(db, product, line.counted_quantity)
+        delta = after - before
         if delta == 0:
             continue
-        product.quantity = line.counted_quantity
         movement = StockMovement(
+            depot_id=stock.resolve(db),
             product_id=product.id,
             product_name=product.name,
             kind="inventaire",
             quantity=delta,
             stock_before=before,
-            stock_after=line.counted_quantity,
+            stock_after=after,
             reason=payload.note or "Inventaire physique",
             created_by_id=current_user.id,
         )
