@@ -56,6 +56,8 @@ import type {
 } from "../types";
 import Modal from "../components/Modal";
 import { scanCodes } from "../lib/scan";
+import { useScanner } from "../lib/useScanner";
+import { packagingChoices, switchPackaging } from "../lib/posPackaging";
 import { vatBreakdown } from "../lib/vat";
 import {
   fetchCached,
@@ -112,6 +114,8 @@ function unitPrice(product: Product, mode: PriceMode): number {
 }
 
 interface CartLine {
+  scanned_code?: string | null;
+  scanned_label?: string | null;
   packaging_id?: number;
   price_tier?: PriceMode;
   packagingQuantity?: number;
@@ -409,14 +413,18 @@ export default function NouvelleVente() {
     [cart]
   );
 
+  const [selectedLine, setSelectedLine] = useState<number | null>(null);
+  const lastAdded = useRef<{ id: number; packaging_id?: number; code?: string | null; tier: PriceTier } | null>(null);
   const addToCart = useCallback((original: Product, packaging_id?: number) => {
     const product = withPackaging(original, packaging_id);
     const increment = packaging_id ? product.units_per_packaging || 1 : 1;
     setError("");
+    lastAdded.current = { id: product.id, packaging_id, code: original.scanned_code, tier: priceMode };
+    setSelectedLine(null);
     setCart((prev) => {
-      const existing = prev.find((l) => l.product.id === product.id && l.packaging_id === packaging_id && (l.price_tier || "detail") === priceMode && (packaging_id ? l.unitMode === "packaging" : (!l.unitMode || l.unitMode === "base")));
+      const existing = prev.find((l) => l.product.id === product.id && l.scanned_code === original.scanned_code && l.packaging_id === packaging_id && (l.price_tier || "detail") === priceMode && (packaging_id ? l.unitMode === "packaging" : (!l.unitMode || l.unitMode === "base")));
       if (prev.filter((l) => l.product.id === product.id).reduce((sum, l) => sum + l.quantity, 0) + increment > stockLimit(product)) return prev;
-      if (!existing) return [...prev, { product, packaging_id, quantity: increment, price_tier: priceMode, unitMode: packaging_id ? "packaging" : "base" }];
+      if (!existing) return [...prev, { product, scanned_code: original.scanned_code, scanned_label: original.scanned_label, packaging_id, quantity: increment, price_tier: priceMode, unitMode: packaging_id ? "packaging" : "base" }];
       return prev.map((l) =>
         l === existing ? (() => {
           const packs = l.unitMode === "packaging" ? 1 : 0;
@@ -428,6 +436,30 @@ export default function NouvelleVente() {
       );
     });
   }, [priceMode]);
+
+  useScanner(async (codes) => {
+    if (!readPosteSettings().scanner_auto_add) { setQuery(codes[0]); return; }
+    setQuery("");
+    for (const code of codes) {
+      const cached = products.find((p) => scanCodes(p).includes(code.toLowerCase()));
+      let target: Product;
+      if (cached) {
+        const alias = cached.barcodes?.find((b) => b.active && b.code.toLowerCase() === code.toLowerCase());
+        target = { ...cached, scanned_code: code, scanned_label: alias?.label };
+      } else {
+        try { target = (await api.get<Product>(`/products/by-code/${encodeURIComponent(code)}`)).data; }
+        catch (error) { if (axios.isAxiosError(error) && error.response?.status === 404) continue; throw error; }
+      }
+      const packaging = target.packagings?.find((p) => p.active && p.barcode?.toLowerCase() === code.toLowerCase());
+      if (stockLimit(target) <= 0) throw new Error(`${target.name} est en rupture de stock`);
+      addToCart(target, packaging?.id);
+      setSelectedLine(null);
+      setError("");
+      setFlash(`${target.name}${target.scanned_label ? ` — ${target.scanned_label}` : ""} ajouté`);
+      return;
+    }
+    throw new Error(`Aucun article pour « ${codes[0]} »`);
+  }, (error) => setError(error instanceof Error ? error.message : "Lecture impossible, vérifiez la connexion"));
 
   /**
    * Enter moves the cashier forward: each field hands the focus to the next
@@ -648,6 +680,7 @@ export default function NouvelleVente() {
       is_gift: gift,
       paid_amount: gift ? 0 : paidAmount,
       items: cart.map((l) => ({
+        scanned_code: l.scanned_code,
         product_id: l.product.id,
         packaging_id: l.packaging_id,
         price_tier: l.price_tier || "detail",
@@ -1018,7 +1051,7 @@ export default function NouvelleVente() {
         {/* Ticket in progress */}
         <div
           ref={cartRef}
-          style={cartW ? { width: cartW } : undefined}
+          style={cartW ? { width: `min(${cartW}px, 55%)` } : undefined}
           className={`card min-h-0 w-full flex-col overflow-hidden p-0 md:order-3 md:flex md:w-[380px] md:shrink-0 lg:w-[420px] xl:w-[460px] 2xl:w-[500px] ${
             mobileView === "cart" ? "flex" : "hidden"
           }`}
@@ -1145,6 +1178,7 @@ export default function NouvelleVente() {
                   {cart.map((l, index) => (
                     <tr
                       key={index}
+                      onClick={() => setSelectedLine(index)}
                       className="border-b border-slate-100 last:border-0"
                     >
                       <td className="px-2 py-1 text-xs text-slate-400">
@@ -1715,13 +1749,14 @@ export default function NouvelleVente() {
             <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
               <input
                 ref={searchRef}
+                data-scan="pos"
                 autoFocus
                 className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
                 placeholder="Rechercher un article, un code ou une catégorie..."
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === readPosteSettings().scanner_suffix) {
+                  if (e.key === readPosteSettings().scanner_suffix && !e.nativeEvent.isComposing) {
                     e.preventDefault();
                     if (readPosteSettings().scanner_auto_add) submitSearch();
                     else setQuery(scanValue(query));
@@ -1760,7 +1795,7 @@ export default function NouvelleVente() {
             )}
             <button
               className="shrink-0 rounded-xl border border-brand-200 bg-white p-2.5 text-brand-600 transition hover:bg-brand-50"
-              onClick={submitSearch}
+              onClick={() => submitSearch()}
               title="Scanner un code-barres ou ajouter l'article trouvé"
               aria-label="Scanner un code-barres ou ajouter l'article trouvé"
             >
@@ -1769,6 +1804,21 @@ export default function NouvelleVente() {
           </div>
           <PosProductGrid key={`${query}|${activeCategory}|${supplierFilter}`} products={filtered} config={posDisplay} stockRight={can("produits") || can("inventaire")} selected={new Set(cart.map((line) => line.product.id))} onAdd={addToCart} price={(product) => unitPrice(product, priceMode)} />
             {/* Modes de paiement — sous la liste des articles */}
+            {cart.length > 0 && (() => {
+              const lastIndex = cart.findIndex((line) => line.product.id === lastAdded.current?.id && line.packaging_id === lastAdded.current?.packaging_id && line.scanned_code === lastAdded.current?.code && (line.price_tier || "detail") === lastAdded.current?.tier);
+              const index = selectedLine != null && selectedLine < cart.length ? selectedLine : lastIndex >= 0 ? lastIndex : cart.length - 1;
+              const line = cart[index];
+              const original = products.find((p) => p.id === line.product.id) || line.product;
+              return <div className="flex flex-wrap gap-2 py-2" aria-label="Conditionnement de la ligne sélectionnée">
+                {packagingChoices(original).map((choice) => <button key={choice.key} className="btn-ghost" onClick={() => {
+                  const next = switchPackaging(original, choice.key, line.price_tier || "detail");
+                  const others = cart.filter((l, i) => i !== index && l.product.id === original.id).reduce((sum, l) => sum + l.quantity, 0);
+                  if (next.quantity + others > stockLimit(original)) { setError("Stock insuffisant pour ce conditionnement"); return; }
+                  setCart((prev) => prev.map((l, i) => i === index ? { ...l, ...next } : l));
+                  setSelectedLine(index);
+                }}>{choice.label}</button>)}
+              </div>;
+            })()}
             <div className="border-t border-slate-100 pt-2">
               <label className="label">Mode de paiement</label>
               <div className="grid grid-cols-4 gap-1 sm:grid-cols-8">

@@ -22,12 +22,17 @@ test("POS cart keeps units and tiers separate and edits only the selected line",
   const state = { ...units, cart: [], priceMode: "detail", product, error: "", stockLimit: (p) => p.quantity };
   state.setCart = (change) => { state.cart = change(state.cart); };
   state.setError = (error) => { state.error = error; };
+  state.lastAdded = { current: null };
+  state.setSelectedLine = (index) => { state.selectedLine = index; };
   const context = vm.createContext(state);
   vm.runInContext(ts.transpileModule(functions.join("\n"), {}).outputText, context);
   const run = (code) => vm.runInContext(code, context);
   run('addToCart(product); setUnitMode(0, "packaging"); addToCart(product);');
   state.priceMode = "gros";
   run("addToCart(product); addToCart(product);");
+  assert.equal(state.lastAdded.current.id, product.id);
+  assert.equal(state.lastAdded.current.tier, "gros");
+  assert.equal(state.selectedLine, null);
   assert.deepEqual(Array.from(state.cart, (line) => line.quantity), [24, 1, 2]);
   assert.deepEqual(Array.from(state.cart, (line) => line.price_tier), ["detail", "detail", "gros"]);
   run('setQuantity(1, 5); setLinePrice(1, "120"); setLineDiscount(1, "10");');

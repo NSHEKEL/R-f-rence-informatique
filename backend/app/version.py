@@ -7,7 +7,7 @@ update checker compares the tag of the latest GitHub release with this number.
 import struct
 
 APP_NAME = "EasyGest"
-APP_VERSION = "2.18.1"
+APP_VERSION = "2.18.2"
 
 # Repository publishing the Windows releases consumed by the update checker.
 UPDATE_REPO = "NSHEKEL/R-f-rence-informatique"

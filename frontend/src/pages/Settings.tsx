@@ -559,7 +559,7 @@ export default function Settings() {
   }
 
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="min-h-full w-full min-w-0 space-y-6">
       <div className="card p-6">
         <div className="flex items-center gap-4">
           <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-slate-50 text-xs text-slate-400 ring-1 ring-slate-100">

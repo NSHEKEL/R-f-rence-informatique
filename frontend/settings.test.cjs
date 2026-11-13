@@ -116,14 +116,16 @@ test("the real POS suffix handler normalizes Tab scans without adding when auto-
   let prevented = false;
   const context = { readPosteSettings: p.readPosteSettings, scanValue: p.scanValue, query, setQuery: (value) => { query = value; }, submitSearch: () => { added++; } };
   const handler = vm.runInNewContext(ts.transpileModule(`const handler = ${arrow}; handler;`, {}).outputText, context);
-  handler({ key: "Enter", preventDefault: () => { prevented = true; } });
+  handler({ key: "Enter", nativeEvent: { isComposing: false }, preventDefault: () => { prevented = true; } });
   assert.equal(prevented, false);
-  handler({ key: "Tab", preventDefault: () => { prevented = true; } });
+  handler({ key: "Tab", nativeEvent: { isComposing: false }, preventDefault: () => { prevented = true; } });
   assert.equal(prevented, true);
   assert.equal(query, "1234");
   assert.equal(added, 0);
   p.writePosteSettings({ ...p.readPosteSettings(), scanner_auto_add: true });
-  handler({ key: "Tab", preventDefault() {} });
+  handler({ key: "Tab", nativeEvent: { isComposing: false }, preventDefault() {} });
+  assert.equal(added, 1);
+  handler({ key: "Tab", nativeEvent: { isComposing: true }, preventDefault() { assert.fail("composition must not be intercepted"); } });
   assert.equal(added, 1);
 });
 

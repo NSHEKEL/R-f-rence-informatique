@@ -427,7 +427,16 @@ class ProductPackagingInput(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ProductBarcodeInput(BaseModel):
+    id: Optional[int] = None
+    code: str = Field(min_length=1, max_length=200)
+    label: str = Field(default="", max_length=200)
+    active: bool = True
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ProductBase(BaseModel):
+    barcodes: Optional[List[ProductBarcodeInput]] = None
     rayon: Optional[str] = Field(default=None, max_length=200)
     emplacement: Optional[str] = Field(default=None, max_length=200)
     semi_wholesale_price: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
@@ -464,6 +473,8 @@ class ProductUpdate(ProductBase):
 
 
 class ProductOut(ProductBase):
+    scanned_code: Optional[str] = None
+    scanned_label: Optional[str] = None
     packaging_id: Optional[int] = None
     quantity: Optional[int] = None
     min_stock: Optional[int] = None
@@ -491,6 +502,7 @@ class PriceHistoryOut(BaseModel):
 
 # ---------- Sales ----------
 class SaleItemCreate(PackagingQuantities):
+    scanned_code: Optional[str] = Field(default=None, max_length=200)
     packaging_id: Optional[int] = Field(default=None, ge=1)
     price_tier: Optional[Literal["detail", "semi_gros", "gros", "auto"]] = None
     expected_units_per_packaging: Optional[int] = Field(default=None, ge=1)
@@ -544,6 +556,8 @@ class SalePaymentOut(BaseModel):
 
 
 class SaleItemOut(UnitSnapshotOut):
+    scanned_code: Optional[str] = None
+    scanned_label: Optional[str] = None
     packaging_id: Optional[int] = None
     price_tier: Optional[str] = "detail"
     catalog_unit_price: Optional[float] = None

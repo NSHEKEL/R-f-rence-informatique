@@ -454,7 +454,11 @@ export interface ProductPackaging {
   sort_order: number;
 }
 
+export interface ProductBarcode { id?: number; code: string; label: string; active: boolean }
 export interface Product extends UnitSpec {
+  barcodes?: ProductBarcode[];
+  scanned_code?: string | null;
+  scanned_label?: string | null;
   rayon?: string | null;
   emplacement?: string | null;
   packagings?: ProductPackaging[];
@@ -483,6 +487,8 @@ export interface Product extends UnitSpec {
 }
 
 export interface SaleItem extends UnitSpec {
+  scanned_code?: string | null;
+  scanned_label?: string | null;
   packaging_id?: number | null;
   price_tier?: "detail" | "semi_gros" | "gros" | null;
   catalog_unit_price?: number | null;

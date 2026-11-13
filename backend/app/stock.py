@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
-from .models import Depot, DepotStock, DepotTransferItem, InventoryCount, Product
+from .models import Depot, DepotStock, DepotTransferItem, InventoryCount, Product, ProductBarcode
 
 
 def _insert(connection, table, values, keys):
@@ -89,6 +89,8 @@ def create_product(db, **values):
 
 def replay_product(connection, target, other):
     if target is None:
+        if connection.execute(select(ProductBarcode.id).where(ProductBarcode.product_id == other["id"]).limit(1)).first():
+            raise HTTPException(409, "Conservez cet article pour préserver l'historique des codes")
         if connection.execute(select(DepotTransferItem.id).where(DepotTransferItem.product_id == other["id"]).limit(1)).first() or connection.execute(select(InventoryCount.id).where(InventoryCount.product_id == other["id"]).limit(1)).first():
             raise HTTPException(409, "Conservez cet article pour préserver l'historique des dépôts et inventaires")
         connection.execute(DepotStock.__table__.delete().where(DepotStock.product_id == other["id"]))

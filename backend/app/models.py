@@ -275,6 +275,19 @@ class Product(UnitSnapshot, Base):
     category = relationship("Category", back_populates="products")
     supplier = relationship("Supplier", back_populates="products")
     packagings = relationship("ProductPackaging", order_by="ProductPackaging.sort_order, ProductPackaging.id")
+    barcodes = relationship("ProductBarcode", order_by="ProductBarcode.id")
+
+
+class ProductBarcode(Base):
+    __tablename__ = "product_barcodes"
+
+    id = Column(Integer, primary_key=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False, index=True)
+    code = Column(String, nullable=False, unique=True)
+    label = Column(String, nullable=False, default="")
+    active = Column(Boolean, nullable=False, default=True)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
 
 
 class ProductPackaging(Base):
@@ -375,6 +388,8 @@ class SaleItem(UnitSnapshot, Base):
     __tablename__ = "sale_items"
 
     id = Column(Integer, primary_key=True, index=True)
+    scanned_code = Column(String, nullable=True)
+    scanned_label = Column(String, nullable=True)
     sale_id = Column(Integer, ForeignKey("sales.id"), nullable=False)
     packaging_id = Column(Integer, ForeignKey("product_packagings.id"), nullable=True)
     price_tier = Column(String, default="detail")

@@ -7,7 +7,7 @@ export function scanCode(product: Product): string {
 
 /** Every code a scanner may send for this article. */
 export function scanCodes(product: Product): string[] {
-  return [product.barcode, product.qr_code, product.sku, ...(product.packagings || []).filter((p) => p.active).map((p) => p.barcode)]
+  return [product.barcode, product.qr_code, product.sku, ...(product.barcodes || []).filter((p) => p.active).map((p) => p.code), ...(product.packagings || []).filter((p) => p.active).map((p) => p.barcode)]
     .map((code) => (code || "").trim().toLowerCase())
     .filter(Boolean);
 }

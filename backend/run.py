@@ -690,6 +690,7 @@ def _open_window(url: str) -> bool:
             startup.page_url(),
             width=1400,
             height=900,
+            maximized=True,
             min_size=(1024, 700),
             confirm_close=True,
             localization=FRENCH,

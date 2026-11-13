@@ -35,8 +35,12 @@ import { useSyncVersion } from "../context/SyncContext";
 import { formatQuantity } from "../lib/units";
 import PackagingQuantity from "../components/PackagingQuantity";
 import ProductPackagings from "../components/ProductPackagings";
+import { useScanner } from "../lib/useScanner";
+import { scanCandidates } from "../lib/scanCapture";
+import type { ProductBarcode } from "../types";
 
 const empty = {
+  barcodes: [] as ProductBarcode[],
   packagings: [] as ProductPackaging[],
   semi_wholesale_price: "" as number | "",
   supplier_purchase_price: "" as number | "",
@@ -234,6 +238,7 @@ export default function Products() {
     setEditing(p);
     setForm({
       packagings: p.packagings || [],
+      barcodes: p.barcodes || [],
       semi_wholesale_price: p.semi_wholesale_price ?? "",
       supplier_purchase_price: p.supplier_purchase_price ?? "",
       semi_wholesale_min_qty: p.semi_wholesale_min_qty ?? "",
@@ -392,8 +397,8 @@ export default function Products() {
   }
 
   /** Scanner/handler lookup: fill the form with a known article. */
-  async function lookupBarcode() {
-    const code = form.barcode.trim();
+  async function lookupBarcode(raw = form.barcode) {
+    const code = raw.trim();
     if (!code) return;
     try {
       const { data } = await api.get<Product>(
@@ -408,6 +413,20 @@ export default function Products() {
       }
     }
   }
+
+  useScanner(async (codes) => {
+    for (const code of codes) {
+      try {
+        const { data } = await api.get<Product>(`/products/by-code/${encodeURIComponent(code)}`);
+        setNotice(`Article reconnu : ${data.name} — fiche chargée`);
+        openEdit(data);
+        return;
+      } catch (error) { if (!axios.isAxiosError(error) || error.response?.status !== 404) throw error; }
+    }
+    const code = codes.find((value) => /^\d+$/.test(value)) || codes[0];
+    setForm((prev) => ({ ...prev, barcode: code }));
+    setNotice("Article inconnu — poursuivez l'enregistrement");
+  }, () => setError("Lecture impossible, vérifiez la connexion"), modalOpen);
 
   async function generateBarcode() {
     try {
@@ -856,6 +875,15 @@ export default function Products() {
             ["wholesale_min_qty", "Seuil gros (unités de base)"],
           ] as const).map(([key, label]) => <label key={key} className="label">{label}<input className="input" type="number" min={key.endsWith("qty") ? "1" : "0"} step={key.endsWith("qty") ? "1" : "any"} value={form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.value === "" ? "" : Number(e.target.value) })} /></label>)}
           <ProductPackagings value={form.packagings} onChange={(packagings) => setForm({ ...form, packagings })} />
+          <div className="space-y-2 sm:col-span-2">
+            <h3 className="font-semibold">Codes supplémentaires / variantes</h3>
+            {form.barcodes.map((barcode, index) => <div className="flex flex-wrap gap-2" key={barcode.id || `new-${index}`}>
+              <input aria-label="Code variante" className="input flex-1" disabled={!!barcode.id} value={barcode.code} onChange={(e) => setForm({ ...form, barcodes: form.barcodes.map((b, i) => i === index ? { ...b, code: e.target.value } : b) })} />
+              <input aria-label="Libellé variante" className="input flex-1" value={barcode.label} onChange={(e) => setForm({ ...form, barcodes: form.barcodes.map((b, i) => i === index ? { ...b, label: e.target.value } : b) })} />
+              <button type="button" className="btn-ghost" onClick={() => setForm({ ...form, barcodes: barcode.id ? form.barcodes.map((b, i) => i === index ? { ...b, active: !b.active } : b) : form.barcodes.filter((_, i) => i !== index) })}>{barcode.active ? "Retirer" : "Réactiver"}</button>
+            </div>)}
+            <button type="button" className="btn-ghost" onClick={() => setForm({ ...form, barcodes: [...form.barcodes, { code: "", label: "", active: true }] })}>Ajouter un code</button>
+          </div>
           <div>
             <label className="label">Seuil d'alerte</label>
             <input
@@ -891,21 +919,22 @@ export default function Products() {
             <div className="flex gap-2">
               <input
                 className="input"
+                data-scan="barcode"
                 inputMode="numeric"
                 value={form.barcode}
                 onChange={(e) =>
                   setForm({
                     ...form,
-                    barcode: e.target.value.replace(/\D/g, ""),
+                    barcode: e.target.value,
                   })
                 }
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") {
+                  if (e.key === "Enter" && !e.nativeEvent.isComposing) {
                     e.preventDefault();
-                    lookupBarcode();
+                    void lookupBarcode(e.currentTarget.value);
                   }
                 }}
-                onBlur={lookupBarcode}
+                onBlur={(e) => { const code = scanCandidates(e.target.value).find((value) => /^\d+$/.test(value)) || e.target.value; setForm((prev) => ({ ...prev, barcode: code })); void lookupBarcode(code); }}
                 placeholder="Scannez le code ou tapez les chiffres"
               />
               <button className="btn-ghost shrink-0" onClick={generateBarcode}>

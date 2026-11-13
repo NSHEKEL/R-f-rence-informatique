@@ -154,6 +154,7 @@ COLUMNS: dict[str, dict[str, str]] = {
         "validated_at": "TIMESTAMP",
     },
     "sale_items": {
+        "scanned_code": "VARCHAR", "scanned_label": "VARCHAR",
         # Per-line discount at the register (proforma/order lines had it).
         "discount": "FLOAT DEFAULT 0",
     },

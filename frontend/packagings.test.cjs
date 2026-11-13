@@ -55,6 +55,8 @@ test("POS scanning adds one packaging and keeps packaging and tier identities se
   state.scanValue = (raw) => poste.scanValue(raw, poste.DEFAULT_POSTE);
   state.setCart = (change) => { state.cart = change(state.cart); };
   state.setError = (error) => { state.error = error; };
+  state.lastAdded = { current: null };
+  state.setSelectedLine = (index) => { state.selectedLine = index; };
   state.setQuery = (query) => { state.query = query; };
   const context = vm.createContext(state);
   vm.runInContext(ts.transpileModule(functions.join("\n"), {}).outputText, context);

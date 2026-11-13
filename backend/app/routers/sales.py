@@ -25,6 +25,7 @@ from .cash import lock_current_session
 from ..units import base_quantity, prices, snapshot, selected_packaging, resolve_tier
 from ..profits import financials
 from .. import stock
+from ..product_codes import scanned_product
 
 router = APIRouter(prefix="/api/sales", tags=["sales"])
 
@@ -237,8 +238,16 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
             line_discount = min(float(item.discount), unit_price * item.quantity)
         subtotal = unit_price * item.quantity - line_discount
         total += subtotal
+        scanned_label = None
+        if item.scanned_code:
+            scanned, _, alias = scanned_product(db, item.scanned_code)
+            if scanned.id != product.id:
+                raise HTTPException(400, "Le code scanné ne correspond pas à cet article")
+            scanned_label = alias.label if alias else None
         sale.items.append(
             SaleItem(
+                scanned_code=item.scanned_code.strip() if item.scanned_code else None,
+                scanned_label=scanned_label,
                 packaging_id=item.packaging_id,
                 price_tier=tier,
                 catalog_unit_price=catalog_unit_price,
