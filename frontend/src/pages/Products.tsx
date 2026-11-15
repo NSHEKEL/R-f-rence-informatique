@@ -30,6 +30,8 @@ import { useLicense } from "../context/LicenseContext";
 import { stockBadge } from "../components/badges";
 import DepotStock from "../components/DepotStock";
 import ProductDetails from "../components/ProductDetails";
+import { readProductSort, saveProductSort, sortProducts } from "../lib/productSort";
+import type { ProductSort } from "../lib/productSort";
 import { StockColumnChooser, StockExtraCells, StockExtraHeaders } from "../components/StockColumns";
 import { useStockColumns } from "../lib/useStockColumns";
 import { useAuth } from "../context/AuthContext";
@@ -103,6 +105,7 @@ export default function Products() {
   const [state, setState] = useState("active");
   const csvInputRef = useRef<HTMLInputElement>(null);
   const [products, setProducts] = useState<Product[]>([]);
+  const [sort, setSort] = useState<ProductSort>(readProductSort);
   const stockColumns = useStockColumns(products, "products");
   const [categories, setCategories] = useState<Category[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -148,14 +151,14 @@ export default function Products() {
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
-    return products.filter(
+    return sortProducts(products.filter(
       (p) =>
         p.name.toLowerCase().includes(q) ||
         p.sku.toLowerCase().includes(q) ||
         (p.qr_code || "").toLowerCase().includes(q) ||
         (p.barcode || "").toLowerCase().includes(q)
-    );
-  }, [products, query]);
+    ), sort);
+  }, [products, query, sort]);
 
   function exportExcel() {
     exportCsv(
@@ -515,6 +518,19 @@ export default function Products() {
           />
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <select className="input sm:w-64" aria-label="Trier les articles" value={sort} onChange={(e) => {
+            const next = e.target.value as ProductSort;
+            setSort(next);
+            saveProductSort(next);
+            setPage(1);
+            selection.clear();
+          }}>
+            <option value="default">Ordre habituel</option>
+            <option value="created_asc">Date de création — croissant</option>
+            <option value="created_desc">Date de création — décroissant</option>
+            <option value="name_asc">Nom — croissant</option>
+            <option value="name_desc">Nom — décroissant</option>
+          </select>
           <select className="input sm:w-44" aria-label="État des articles" value={state} onChange={(e) => { setState(e.target.value); setPage(1); selection.clear(); }}>
             <option value="active">Actifs</option>
             <option value="inactive">Désactivés</option>

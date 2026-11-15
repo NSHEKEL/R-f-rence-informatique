@@ -11,6 +11,41 @@ function load(path, imports = {}, globals = {}) {
   return exports;
 }
 const navigation = load("lib/productNavigation.ts");
+test("French product name sorting ignores case/accents and details follow the whole sorted list", () => {
+  const { sortProducts } = load("lib/productSort.ts");
+  const rows = [{ id: 1, name: "Zoo" }, { id: 2, name: "Éclair" }, { id: 3, name: "eclair" }, { id: 4, name: "banane" }, { id: 5, name: "Àbricot" }];
+  const ascending = sortProducts(rows, "name_asc");
+  assert.deepEqual(Array.from(ascending, (p) => p.id), [5, 4, 2, 3, 1]);
+  assert.deepEqual(Array.from(sortProducts(rows, "name_desc"), (p) => p.id), [1, 2, 3, 4, 5]);
+  assert.equal(navigation.productStep(ascending, 4, 1), 2);
+  assert.equal(navigation.productStep(ascending, 5, -1), null);
+  assert.equal(navigation.productStep(ascending, 1, 1), null);
+  assert.deepEqual(rows.map((p) => p.id), [1, 2, 3, 4, 5]);
+});
+test("product creation sorting uses timestamps, preserves default order and handles empty lists", () => {
+  const { sortProducts } = load("lib/productSort.ts");
+  const rows = [{ id: 10, name: "A", created_at: "2026-01-01T00:00:00Z" }, { id: 2, name: "B", created_at: "2028-01-01T00:00:00Z" }, { id: 8, name: "C", created_at: "2024-01-01T00:00:00Z" }];
+  assert.deepEqual(Array.from(sortProducts(rows, "created_asc"), (p) => p.id), [8, 10, 2]);
+  assert.deepEqual(Array.from(sortProducts(rows, "created_desc"), (p) => p.id), [2, 10, 8]);
+  assert.deepEqual(Array.from(sortProducts(rows, "default"), (p) => p.id), [10, 2, 8]);
+  assert.equal(sortProducts([], "name_asc").length, 0);
+  assert.deepEqual(Array.from(sortProducts([rows[0]], "created_desc"), (p) => p.id), [10]);
+  assert.deepEqual(Array.from(sortProducts([{ id: 2, name: "A", created_at: "bad" }, { id: 1, name: "B" }], "created_asc"), (p) => p.id), [1, 2]);
+});
+test("product sort preference persists locally and safely defaults on invalid or blocked storage", () => {
+  const storage = new Map();
+  const localStorage = { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) };
+  const sort = load("lib/productSort.ts", {}, { localStorage });
+  assert.equal(sort.readProductSort(), "default");
+  for (const value of ["created_asc", "created_desc", "name_asc", "name_desc", "default"]) {
+    sort.saveProductSort(value);
+    assert.equal(load("lib/productSort.ts", {}, { localStorage }).readProductSort(), value);
+  }
+  for (const value of ["", "bad", "null"]) { storage.set("ri_products_sort", value); assert.equal(sort.readProductSort(), "default"); }
+  const blocked = load("lib/productSort.ts", {}, { localStorage: { getItem() { throw Error("blocked"); }, setItem() { throw Error("blocked"); } } });
+  assert.equal(blocked.readProductSort(), "default");
+  assert.doesNotThrow(() => blocked.saveProductSort("name_asc"));
+});
 test("product navigation respects filtered ordering, empty/missing items and both boundaries", () => {
   const rows = [{ id: 9 }, { id: 2 }, { id: 7 }];
   assert.equal(navigation.productStep(rows, 9, -1), null);
