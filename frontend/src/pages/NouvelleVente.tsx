@@ -811,8 +811,11 @@ export default function NouvelleVente() {
     const restored = entry.cart.filter((l) => {
       const fresh = products.find((p) => p.id === l.product.id);
       if (!fresh) return false;
-      if (cartParts(l).packaging_quantity && l.product.units_per_packaging !== fresh.units_per_packaging) return false;
-      l.product = fresh;
+      if (l.packaging_id != null && !fresh.packagings?.some((p) => p.id === l.packaging_id && p.active)) return false;
+      const selected = withPackaging(fresh, l.packaging_id);
+      if (cartParts(l).packaging_quantity && l.product.units_per_packaging !== selected.units_per_packaging) return false;
+      l.product = selected;
+      l.sourceProduct = fresh;
       return l.quantity <= stockLimit(fresh);
     });
     if (restored.length < entry.cart.length) {

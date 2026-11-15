@@ -43,17 +43,17 @@ test("POS scanning adds one packaging and keeps packaging and tier identities se
   const file = ts.createSourceFile("NouvelleVente.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const functions = [];
   function visit(node) {
-    if (ts.isFunctionDeclaration(node) && ["linePrice", "cartParts", "submitSearch", "setPackaging"].includes(node.name?.text)) functions.push(node.getText(file));
+    if (ts.isFunctionDeclaration(node) && ["linePrice", "cartParts", "submitSearch", "setPackaging", "resumeCart"].includes(node.name?.text)) functions.push(node.getText(file));
     if (ts.isVariableDeclaration(node) && node.name.getText(file) === "addToCart") functions.push(`const addToCart = ${node.initializer.arguments[0].getText(file)};`);
     ts.forEachChild(node, visit);
   }
   visit(file);
-  assert.equal(functions.length, 5);
+  assert.equal(functions.length, 6);
   const poste = {};
   vm.runInNewContext(ts.transpileModule(readFileSync(`${__dirname}/src/lib/poste.ts`, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports: poste });
   const state = { ...units, ...scan, cart: [], priceMode: "auto", product, products: [product], filtered: [], query: "PACK24", stockLimit: (p) => p.quantity, window: { setTimeout() {} }, setFlash() {}, error: "" };
   state.scanValue = (raw) => poste.scanValue(raw, poste.DEFAULT_POSTE);
-  state.setCart = (change) => { state.cart = change(state.cart); };
+  state.setCart = (change) => { state.cart = typeof change === "function" ? change(state.cart) : change; };
   state.setError = (error) => { state.error = error; };
   state.lastAdded = { current: null };
   state.setSelectedLine = (index) => { state.selectedLine = index; };
@@ -79,6 +79,30 @@ test("POS scanning adds one packaging and keeps packaging and tier identities se
   assert.equal(state.cart[2].product.units_per_packaging, 12);
   assert.equal(state.cart[2].packaging_id, undefined);
   assert.equal(state.cart[2].quantity, 12);
+  state.readParked = () => JSON.parse(JSON.stringify(state.parked));
+  state.PARK_KEY = "parked-test";
+  state.localStorage = { setItem(_key, value) { state.savedParked = JSON.parse(value); } };
+  for (const setter of ["setCustomer", "setCustomerQuery", "setNote", "setDiscount", "setPayment", "setLegs", "setParked"]) state[setter] = () => {};
+  const packed = { product: units.withPackaging(product, 7), packaging_id: 7, quantity: 24, unitMode: "packaging", price_tier: "detail" };
+  state.parked = [{ id: "restore", cart: [packed, { product, quantity: 12, unitMode: "packaging" }, { ...packed, product }, { ...packed, packaging_id: 999 }], customer_name: "Client", discount: 0 }];
+  run('resumeCart("restore")');
+  assert.equal(state.cart.length, 2);
+  assert.equal(state.cart[0].packaging_id, 7);
+  assert.equal(state.cart[0].product.units_per_packaging, 24);
+  assert.equal(state.cart[0].sourceProduct.units_per_packaging, 12);
+  assert.equal(run('linePrice(cart[0], "detail") * 24'), 2100);
+  assert.equal(state.cart[1].product.units_per_packaging, 12);
+  assert.equal(state.savedParked.length, 0);
+  state.parked[0].cart = [packed];
+  for (const changes of [{ active: false }, { factor: 48 }]) {
+    state.products = [{ ...product, packagings: [{ ...product.packagings[0], ...changes }] }];
+    run('resumeCart("restore")');
+    assert.equal(state.cart.length, 0);
+    assert.match(state.error, /ne sont plus disponibles/);
+  }
+  state.parked = [];
+  run('resumeCart("missing")');
+  assert.equal(state.cart.length, 0);
 });
 
 test("packaging editor renders empty, editable and deactivated rows without deletion", () => {
