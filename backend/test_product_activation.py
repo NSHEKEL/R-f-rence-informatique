@@ -1,9 +1,10 @@
 import unittest
+from unittest.mock import patch
 
 import test_wholesale as wholesale
 from app import stock
 from app.models import Product, Sale, SaleItem
-from app.routers import deliveries, orders, proformas
+from app.routers import deliveries, orders, proformas, transfers
 
 
 class ProductActivationTests(unittest.TestCase):
@@ -20,6 +21,20 @@ class ProductActivationTests(unittest.TestCase):
 
     def activate(self, active, status=200):
         return self.call(f"/api/products/{self.product.id}/activation", "PUT", {"active": active}, status)
+
+    def test_pending_reception_accepts_inactive_articles_before_acknowledging(self):
+        self.app.include_router(transfers.router)
+        self.activate(False)
+        before = self.stock()
+        with patch.object(transfers, "_central_base", return_value=("https://central.invalid", "shop", "token")), \
+                patch("app.licensing._post") as acknowledge:
+            received = self.call("/api/transfers/recevoir", "POST", {"central_id": 42, "from_shop": "Autre magasin",
+                "items": [{"product_id": self.product.id, "quantity": 5}]}, 201)
+            self.assertEqual(received["items"][0]["quantity"], 5)
+            self.assertEqual(self.stock(), before + 5)
+            acknowledge.assert_called_once()
+        self.assertEqual(stock.inconsistencies(self.db), [])
+        self.assertEqual(self.call("/api/products"), [])
 
     def test_deactivation_hides_every_code_and_blocks_new_documents_without_losing_history(self):
         payload = self.call(f"/api/products/{self.product.id}")

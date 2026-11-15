@@ -178,40 +178,36 @@ export default function Inventaire() {
     try {
       items = JSON.parse(t.items || "[]");
     } catch {
-      items = [];
+      setError("Envoi illisible : réception annulée, envoi conservé en attente.");
+      return;
     }
-    const matched = items
-      .map((i) => {
-        const product = products.find(
-          (p) => p.name.trim().toLowerCase() === i.product_name.trim().toLowerCase()
-        );
-        return product ? { product_id: product.id, quantity: i.quantity } : null;
-      })
-      .filter((i): i is TransferLine => i !== null);
-    if (matched.length === 0) {
-      setError(
-        "Aucun article de cet envoi n'existe dans votre catalogue : créez-les d'abord."
-      );
+    if (!Array.isArray(items) || items.length === 0) {
+      setError("Envoi vide : réception annulée, envoi conservé en attente.");
       return;
     }
     setSaving(true);
     try {
+      const { data: catalogue } = await api.get<Product[]>("/products", { params: { state: "all" } });
+      const matched = items.map((i) => {
+        const product = catalogue.find(
+          (p) => p.name.trim().toLowerCase() === i.product_name.trim().toLowerCase()
+        );
+        return product ? { product_id: product.id, quantity: i.quantity } : null;
+      });
+      if (matched.some((i) => i === null)) {
+        setError("Certains articles sont introuvables : créez-les avant de recevoir cet envoi. Aucun stock modifié, envoi conservé en attente.");
+        return;
+      }
       await api.post("/transfers/recevoir", {
         central_id: t.id,
         from_shop: t.from_shop,
         note: t.note,
         items: matched,
       });
-      const skipped = items.length - matched.length;
-      setMessage(
-        `Réception ${t.reference} enregistrée.` +
-          (skipped > 0 ? ` ${skipped} article(s) ignoré(s) (non trouvés).` : "")
-      );
+      setMessage(`Réception ${t.reference} enregistrée.`);
       await load();
     } catch (err) {
-      if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Réception impossible");
-      }
+      setError(axios.isAxiosError(err) ? err.response?.data?.detail ?? "Réception impossible" : "Réception impossible : envoi conservé en attente.");
     } finally {
       setSaving(false);
     }

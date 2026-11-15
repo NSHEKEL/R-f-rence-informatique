@@ -86,6 +86,36 @@ function mountAutomatic(runner, printReceipt) {
 }
 const settle = () => new Promise(setImmediate);
 
+test("pending reception matches inactive articles and refuses missing, empty, corrupt or unavailable catalogues without acknowledging", async () => {
+  const page = readFileSync(`${__dirname}/src/pages/Inventaire.tsx`, "utf8");
+  const source = page.slice(page.indexOf("  async function receivePending("), page.indexOf("  /** Registers the transfer:"));
+  for (const scenario of ["complete", "missing", "empty", "corrupt", "network"]) {
+    const errors = [], messages = [], posts = [], saving = [];
+    let loads = 0, reads = 0;
+    const exports = {};
+    const api = {
+      async get(path, options) {
+        reads++; assert.equal(path, "/products"); assert.equal(options.params.state, "all");
+        if (scenario === "network") throw new Error("Déconnecté");
+        return { data: [{ id: 1, name: "Actif", active: true }, ...(scenario === "missing" ? [] : [{ id: 2, name: "Désactivé", active: false }])] };
+      },
+      async post(path, payload) { posts.push({ path, payload: plain(payload) }); },
+    };
+    vm.runInNewContext(ts.transpileModule(source + "\nexports.receivePending = receivePending;", { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText,
+      { exports, api, products: [{ id: 1, name: "Actif", active: true }], setError: (value) => errors.push(value), setMessage: (value) => messages.push(value),
+        setSaving: (value) => saving.push(value), load: async () => { loads++; }, axios: { isAxiosError: () => false } });
+    await exports.receivePending({ id: 42, reference: "TFR-42", from_shop: "Autre magasin", note: "Envoi", items: scenario === "corrupt" ? "bad JSON" : JSON.stringify(scenario === "empty" ? [] : [{ product_name: " actif ", quantity: 3 }, { product_name: "Désactivé", quantity: 5 }]) });
+    if (scenario === "complete") {
+      assert.equal(reads, 1); assert.equal(posts.length, 1); assert.equal(posts[0].path, "/transfers/recevoir");
+      assert.deepEqual(posts[0].payload.items, [{ product_id: 1, quantity: 3 }, { product_id: 2, quantity: 5 }]);
+      assert.equal(loads, 1); assert.match(messages.at(-1), /enregistrée/);
+    } else {
+      assert.equal(posts.length, 0); assert.equal(loads, 0); assert.match(errors.at(-1), /en attente/);
+    }
+    if (saving.length) assert.equal(saving.at(-1), false);
+  }
+});
+
 test("automatic printing has no modal, keeps error and retries without recreating a sale or drawer kick", async () => {
   const runner = load("lib/printJob.ts").createPrintRunner(30000, 0);
   let calls = 0;
