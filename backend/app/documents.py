@@ -14,6 +14,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from .models import CompanySettings, Delivery, Order, OrderItem, Product
+from .catalogue import require_active
 from .printing import read_config
 from .sequences import next_reference
 from .units import prices
@@ -58,6 +59,7 @@ def fill_order_items(db: Session, order: Order, items) -> None:
             raise HTTPException(
                 status_code=404, detail=f"Produit {item.product_id} introuvable"
             )
+        require_active(product)
         if item.quantity <= 0:
             raise HTTPException(status_code=400, detail="Quantité invalide")
         price = (

@@ -12,6 +12,7 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..catalogue import require_active
 from .. import stock
 from ..documents import (
     delivery_reference,
@@ -192,6 +193,7 @@ def duplicate_order(
         created_by_id=current_user.id,
     )
     for item in source.items:
+        require_active(db.get(Product, item.product_id) if item.product_id else None)
         order.items.append(
             OrderItem(
                 product_id=item.product_id,
@@ -301,6 +303,7 @@ def deliver_order(
                 status_code=400,
                 detail=f"L'article « {item.product_name} » n'existe plus",
             )
+        require_active(product)
         before, after = stock.adjust(db, product, -quantity, check_total=True)
         db.add(
             StockMovement(

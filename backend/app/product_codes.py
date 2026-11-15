@@ -27,6 +27,6 @@ def scanned_product(db, code):
     pack = db.query(ProductPackaging).filter(func.lower(ProductPackaging.barcode) == value, ProductPackaging.active.is_(True)).first()
     product = db.get(Product, pack.product_id if pack else alias.product_id) if pack or alias else db.query(Product).filter(
         (func.lower(Product.barcode) == value) | (func.lower(Product.sku) == value) | (func.lower(Product.qr_code) == value)).first()
-    if not product:
+    if not product or not product.active:
         raise HTTPException(404, "Article introuvable")
     return product, pack, alias

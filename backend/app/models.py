@@ -5,6 +5,7 @@ from sqlalchemy import (
     event,
     inspect,
     select,
+    true,
     CheckConstraint,
     Column,
     DateTime,
@@ -250,6 +251,7 @@ class Product(UnitSnapshot, Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
+    active = Column(Boolean, nullable=False, default=True, server_default=true())
     sku = Column(String, unique=True, index=True, nullable=False)
     description = Column(Text, default="")
     rayon = Column(String, nullable=True)
@@ -316,6 +318,7 @@ class PriceHistory(Base):
         Integer, ForeignKey("products.id"), nullable=False, index=True
     )
     field = Column(String, default="")  # sale_price, purchase_price, ...
+    purchase_reference = Column(String, nullable=True)
     old_value = Column(Float, default=0)
     new_value = Column(Float, default=0)
     changed_at = Column(DateTime, default=utcnow)
@@ -638,6 +641,7 @@ class StockLot(Base):
     lot_number = Column(String, default="")
     expiry_date = Column(DateTime, nullable=True)
     quantity = Column(Integer, default=0)
+    unit_cost = Column(Float, nullable=True)
     created_at = Column(DateTime, default=utcnow)
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 

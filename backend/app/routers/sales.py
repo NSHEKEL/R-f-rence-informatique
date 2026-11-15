@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from .. import backup, remote_sales
 from ..database import get_db
+from ..catalogue import require_active
 from ..models import (
     Debt,
     Notification,
@@ -197,6 +198,7 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
             raise HTTPException(
                 status_code=404, detail=f"Produit {item.product_id} introuvable"
             )
+        require_active(product)
         spec = selected_packaging(db, product, item.packaging_id)
         if item.expected_units_per_packaging is not None and item.expected_units_per_packaging != (spec.units_per_packaging or 1):
             raise HTTPException(status_code=409, detail="Conditionnement modifié : vérifiez le ticket avant synchronisation")

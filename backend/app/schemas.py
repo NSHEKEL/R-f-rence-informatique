@@ -473,6 +473,7 @@ class ProductUpdate(ProductBase):
 
 
 class ProductOut(ProductBase):
+    active: bool = True
     scanned_code: Optional[str] = None
     scanned_label: Optional[str] = None
     packaging_id: Optional[int] = None
@@ -494,6 +495,7 @@ class PriceHistoryOut(BaseModel):
     id: int
     product_id: int
     field: str
+    purchase_reference: Optional[str] = None
     old_value: Optional[float]
     new_value: Optional[float]
     changed_at: datetime
@@ -1341,11 +1343,24 @@ class PurchaseReceiveItem(PackagingQuantities):
     quantity: int = 0
 
 
+class CataloguePriceChange(BaseModel):
+    product_id: int
+    packaging_id: Optional[int] = None
+    field: str
+    old_value: Optional[float] = Field(ge=0, allow_inf_nan=False)
+    new_value: Optional[float] = Field(ge=0, allow_inf_nan=False)
+
+
+class ProductActivation(BaseModel):
+    active: bool
+
+
 class PurchaseReceive(BaseModel):
     """Quantities actually delivered; empty means "everything ordered"."""
 
     items: List[PurchaseReceiveItem] = []
-    update_cost: bool = True  # refresh the product purchase price
+    update_cost: bool = False
+    price_changes: List[CataloguePriceChange] = Field(default_factory=list)
     note: str = ""
 
 

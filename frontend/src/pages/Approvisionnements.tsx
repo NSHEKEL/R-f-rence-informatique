@@ -15,6 +15,8 @@ import type { Product, Purchase, PurchaseSummary, Supplier } from "../types";
 import Modal from "../components/Modal";
 import AccountingPayment from "../components/AccountingPayment";
 import BulkDelete, { SelectBox } from "../components/BulkDelete";
+import PurchasePriceReview from "../components/PurchasePriceReview";
+import type { CataloguePriceChange } from "../lib/purchasePrices";
 import { useSelection } from "../lib/selection";
 import { documentBarcode, documentHeader, printSheet } from "../lib/print";
 import { useAuth } from "../context/AuthContext";
@@ -67,7 +69,8 @@ export default function Approvisionnements() {
 
   const [receiving, setReceiving] = useState<Purchase | null>(null);
   const [received, setReceived] = useState<Record<number, number>>({});
-  const [updateCost, setUpdateCost] = useState(true);
+  const [priceChanges, setPriceChanges] = useState<CataloguePriceChange[]>([]);
+  const [reviewReady, setReviewReady] = useState(false);
 
   const selection = useSelection(purchases);
 
@@ -194,6 +197,9 @@ export default function Approvisionnements() {
   }
 
   function startReceive(purchase: Purchase) {
+    setPriceChanges([]);
+    setReviewReady(false);
+    setError("");
     setReceiving(purchase);
     setReceived(
       Object.fromEntries(
@@ -206,7 +212,7 @@ export default function Approvisionnements() {
   }
 
   async function confirmReceive() {
-    if (!receiving) return;
+    if (!receiving || !reviewReady) return;
     setSaving(true);
     setError("");
     try {
@@ -215,7 +221,8 @@ export default function Approvisionnements() {
           item_id: Number(id),
           quantity,
         })),
-        update_cost: updateCost,
+        update_cost: false,
+        price_changes: can("tarifs_modifier") ? priceChanges : [],
       });
       setReceiving(null);
       await load();
@@ -688,7 +695,7 @@ export default function Approvisionnements() {
             <button
               className="btn-primary"
               onClick={confirmReceive}
-              disabled={saving}
+              disabled={saving || !reviewReady}
             >
               {saving ? "Réception..." : "Valider la réception"}
             </button>
@@ -740,14 +747,8 @@ export default function Approvisionnements() {
               })}
             </tbody>
           </table>
-          <label className="flex items-center gap-2 text-sm text-slate-600">
-            <input
-              type="checkbox"
-              checked={updateCost}
-              onChange={(e) => setUpdateCost(e.target.checked)}
-            />
-            Mettre à jour le prix d'achat des articles reçus
-          </label>
+          {receiving && <PurchasePriceReview purchaseId={receiving.id} editable={can("tarifs_modifier")} onChange={setPriceChanges} onReady={setReviewReady} />}
+          {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
       </Modal>
     </div>

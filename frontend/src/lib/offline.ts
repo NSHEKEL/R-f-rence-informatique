@@ -90,6 +90,15 @@ export function cacheWrite<T>(key: string, value: T): void {
   }
 }
 
+export function activeCatalogue<T extends { active?: boolean }>(products: T[]): T[] {
+  return products.filter((product) => product.active !== false);
+}
+
+function catalogueData<T>(path: string, data: T): T {
+  return ["/products", "/products/pos"].includes(path.split("?")[0]) && Array.isArray(data)
+    ? activeCatalogue(data) as T : data;
+}
+
 /** Fetches from the API, falling back to the last cached payload offline. */
 export async function fetchCached<T>(
   path: string,
@@ -97,11 +106,12 @@ export async function fetchCached<T>(
 ): Promise<{ data: T; fromCache: boolean }> {
   try {
     const res = await api.get<T>(path);
-    cacheWrite(key, res.data);
-    return { data: res.data, fromCache: false };
+    const data = catalogueData(path, res.data);
+    cacheWrite(key, data);
+    return { data, fromCache: false };
   } catch (err) {
     const cached = cacheRead<T>(key);
-    if (cached !== null) return { data: cached, fromCache: true };
+    if (cached !== null) return { data: catalogueData(path, cached), fromCache: true };
     throw err;
   }
 }

@@ -456,6 +456,7 @@ export interface ProductPackaging {
 
 export interface ProductBarcode { id?: number; code: string; label: string; active: boolean }
 export interface Product extends UnitSpec {
+  active?: boolean;
   barcodes?: ProductBarcode[];
   scanned_code?: string | null;
   scanned_label?: string | null;

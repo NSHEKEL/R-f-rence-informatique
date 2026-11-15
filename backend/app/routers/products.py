@@ -2,7 +2,9 @@ import csv
 import math
 import io
 import random
-from datetime import datetime, timedelta
+from calendar import monthrange
+from datetime import date, datetime, time, timedelta
+from typing import Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy import func
@@ -31,6 +33,7 @@ from ..pos_display import read_display
 from ..schemas import (
     PriceHistoryOut,
     ProductCreate,
+    ProductActivation,
     ProductBarcodeInput,
     ProductOut,
     ProductUpdate,
@@ -64,7 +67,7 @@ def pos_products(images: bool = False, db: Session = Depends(get_db), user: User
     config = read_display(settings) if settings else None
     include_images = bool(images and config and config.images and config.mode.startswith('image+'))
     stock_visible = _stock_allowed(db, user)
-    query = db.query(Product).filter(Product.quantity > 0).order_by(Product.name)
+    query = db.query(Product).filter(Product.active.is_(True), Product.quantity > 0).order_by(Product.name)
     if not include_images:
         query = query.options(defer(Product.image))
     return [_product_out(p, stock_visible, include_images) for p in query.all()]
@@ -215,6 +218,7 @@ def _sales_stats(db: Session) -> dict[int, tuple[int, object]]:
 @router.get("", response_model=list[ProductOut])
 def list_products(
     sold: str = "",
+    state: Literal["active", "inactive", "all"] = "active",
     db: Session = Depends(get_db),
     user: User = Depends(require_open_till),
 ):
@@ -225,7 +229,12 @@ def list_products(
     """
     stats = _sales_stats(db)
     stock_visible = _stock_allowed(db, user)
-    products = db.query(Product).order_by(Product.name).all()
+    query = db.query(Product)
+    if state != "active" and not (has_permission(db, user, "produits") or has_permission(db, user, "inventaire")):
+        raise HTTPException(403, "Le droit de consulter les articles est requis")
+    if state != "all":
+        query = query.filter(Product.active.is_(state == "active"))
+    products = query.order_by(Product.name).all()
     for product in products:
         quantity, last = stats.get(product.id, (0, None))
         product.sold_quantity = quantity
@@ -264,7 +273,7 @@ def best_sellers(
     if not order:
         return []
     products = (
-        db.query(Product).options(defer(Product.image)).filter(Product.id.in_(list(order))).all()
+        db.query(Product).options(defer(Product.image)).filter(Product.active.is_(True), Product.id.in_(list(order))).all()
     )
     stock_visible = _stock_allowed(db, user)
     return [_product_out(p, stock_visible, False) for p in sorted(products, key=lambda p: order[p.id])]
@@ -571,6 +580,18 @@ def price_history(
     )
 
 
+@router.put("/{product_id}/activation", response_model=ProductOut)
+def activate_product(product_id: int, payload: ProductActivation,
+    db: Session = Depends(get_db), user: User = Depends(require_permission("produits_gerer"))):
+    product = db.get(Product, product_id)
+    if not product:
+        raise HTTPException(404, "Produit introuvable")
+    product.active = payload.active
+    db.commit()
+    db.refresh(product)
+    return _product_out(product, _stock_allowed(db, user))
+
+
 @router.delete("/{product_id}", status_code=204)
 def delete_product(
     product_id: int,
@@ -582,7 +603,7 @@ def delete_product(
         raise HTTPException(status_code=404, detail="Produit introuvable")
     if product.packagings or product.barcodes or db.query(InventoryCount.id).filter_by(product_id=product_id).first():
         raise HTTPException(status_code=400, detail="Conservez cet article pour préserver l'historique des conditionnements et des inventaires")
-    stock.delete_product(db, product)
+    product.active = False
     db.commit()
 
 
@@ -666,6 +687,7 @@ def create_lot(
         lot_number=payload.lot_number.strip(),
         expiry_date=payload.expiry_date,
         quantity=payload.quantity,
+        unit_cost=product.purchase_price or 0,
         created_by_id=current_user.id,
     )
     db.add(lot)
@@ -790,24 +812,45 @@ def expired_lots(
     search: str = "",
     date_from: str = "",
     date_to: str = "",
+    period: Literal["expired", "7d", "1m", "2m", "3m", "4m", "9m", "all", "custom"] = "expired",
     db: Session = Depends(get_db),
     _: User = Depends(require_permission("produits")),
 ):
-    """Expired lots still on hand: the write-off candidates, with their loss."""
+    """Dated lots on hand; month horizons use calendar months."""
     today = datetime.now().date()
     query = (
         db.query(StockLot)
         .join(Product, Product.id == StockLot.product_id)
-        .filter(StockLot.quantity > 0, StockLot.expiry_date < today)
+        .filter(StockLot.quantity > 0, StockLot.expiry_date.isnot(None))
     )
+    try:
+        start = date.fromisoformat(date_from) if date_from else None
+        end = date.fromisoformat(date_to) if date_to else None
+    except ValueError:
+        raise HTTPException(400, "Période invalide : utilisez AAAA-MM-JJ")
+    if start and end and start > end:
+        raise HTTPException(400, "La date de début doit précéder la date de fin")
+    if period == "expired":
+        query = query.filter(StockLot.expiry_date < datetime.combine(today, time.min))
+    elif period not in ("all", "custom"):
+        if period == "7d":
+            horizon = today + timedelta(days=7)
+        else:
+            month = today.month - 1 + int(period[:-1])
+            year, month = today.year + month // 12, month % 12 + 1
+            horizon = today.replace(year=year, month=month, day=min(today.day, monthrange(year, month)[1]))
+        query = query.filter(StockLot.expiry_date >= datetime.combine(today, time.min),
+            StockLot.expiry_date < datetime.combine(horizon + timedelta(days=1), time.min))
+    elif period == "custom" and not (start or end):
+        raise HTTPException(400, "Choisissez au moins une date pour la période personnalisée")
     if category_id:
         query = query.filter(Product.category_id == category_id)
     if supplier_id:
         query = query.filter(Product.supplier_id == supplier_id)
-    if date_from:
-        query = query.filter(StockLot.expiry_date >= date_from)
-    if date_to:
-        query = query.filter(StockLot.expiry_date <= date_to + " 23:59:59")
+    if start:
+        query = query.filter(StockLot.expiry_date >= datetime.combine(start, time.min))
+    if end:
+        query = query.filter(StockLot.expiry_date <= datetime.combine(end, time.max))
     rows = []
     for lot in query.order_by(StockLot.expiry_date.asc()).all():
         product = lot.product
@@ -818,7 +861,7 @@ def expired_lots(
             haystack = f"{product.name} {product.sku} {product.barcode} {lot.lot_number}".lower()
             if text not in haystack:
                 continue
-        unit_cost = product.purchase_price or 0
+        unit_cost = lot.unit_cost if lot.unit_cost is not None else (product.purchase_price or 0)
         rows.append(
             {
                 "lot_id": lot.id,
@@ -831,9 +874,12 @@ def expired_lots(
                 "lot_number": lot.lot_number,
                 "expiry_date": lot.expiry_date.date().isoformat(),
                 "expired_since": (today - lot.expiry_date.date()).days,
+                "days_left": (lot.expiry_date.date() - today).days,
+                "months_left": round((lot.expiry_date.date() - today).days / 30.4375, 1),
                 "quantity": lot.quantity,
                 "unit_cost": unit_cost,
                 "loss_value": lot.quantity * unit_cost,
+                "value": lot.quantity * unit_cost,
             }
         )
     return rows

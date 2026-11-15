@@ -20,7 +20,7 @@ import Modal from "../components/Modal";
 import ProductQrCode from "../components/ProductQrCode";
 import StockDashboard from "../components/StockDashboard";
 import Perimes from "../components/Perimes";
-import BulkDelete, { SelectBox } from "../components/BulkDelete";
+import { SelectBox } from "../components/BulkDelete";
 import { useSelection } from "../lib/selection";
 import { scanCode } from "../lib/scan";
 import { printLabels } from "../lib/print";
@@ -75,6 +75,7 @@ const MAX_IMAGE_BYTES = 700_000;
 interface PriceChange {
   id: number;
   field: string;
+  purchase_reference?: string | null;
   old_value: number | null;
   new_value: number | null;
   changed_at: string;
@@ -96,6 +97,7 @@ export default function Products() {
   const { hasFeature } = useLicense();
   const version = useSyncVersion();
   const [sold, setSold] = useState<SoldFilter>("");
+  const [state, setState] = useState("active");
   const csvInputRef = useRef<HTMLInputElement>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -126,14 +128,14 @@ export default function Products() {
 
   const load = useCallback(async () => {
     const [p, c, s] = await Promise.all([
-      api.get<Product[]>("/products", { params: sold ? { sold } : {} }),
+      api.get<Product[]>("/products", { params: { sold, state } }),
       api.get<Category[]>("/categories"),
       api.get<Supplier[]>("/suppliers"),
     ]);
     setProducts(p.data);
     setCategories(c.data);
     setSuppliers(s.data);
-  }, [sold]);
+  }, [sold, state]);
 
   useEffect(() => {
     load();
@@ -452,9 +454,12 @@ export default function Products() {
   }
 
   async function remove(p: Product) {
-    if (!confirm(`Supprimer le produit "${p.name}" ?`)) return;
-    await api.delete(`/products/${p.id}`);
-    await load();
+    if (!can("produits_gerer")) return;
+    if (p.active !== false && !confirm(`Désactiver le produit "${p.name}" ? Son historique sera conservé.`)) return;
+    try {
+      await api.put(`/products/${p.id}/activation`, { active: p.active === false });
+      await load();
+    } catch { setNotice("Modification impossible : vérifiez vos droits puis réessayez."); }
   }
 
   /** Price labels to stick on the shelves, one per article. */
@@ -501,6 +506,11 @@ export default function Products() {
           />
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <select className="input sm:w-44" aria-label="État des articles" value={state} onChange={(e) => { setState(e.target.value); setPage(1); selection.clear(); }}>
+            <option value="active">Actifs</option>
+            <option value="inactive">Désactivés</option>
+            <option value="all">Tous</option>
+          </select>
           <select
             className="input sm:w-56"
             value={sold}
@@ -558,13 +568,13 @@ export default function Products() {
       )}
 
       {can("produits_gerer") && (
-        <BulkDelete
-          ids={selection.ids}
-          path="/products"
-          noun={["produit", "produits"]}
-          onDone={load}
-          onClear={selection.clear}
-        />
+        selection.ids.length > 0 && <button className="btn-ghost" onClick={async () => {
+          if (!confirm(`Désactiver ${selection.ids.length} article(s) ? L'historique sera conservé.`)) return;
+          try {
+            await Promise.all(selection.ids.map((id) => api.put(`/products/${id}/activation`, { active: false })));
+            selection.clear(); await load();
+          } catch { setNotice("Certains articles n'ont pas pu être désactivés. Actualisez puis réessayez."); await load(); }
+        }}>Désactiver la sélection ({selection.ids.length})</button>
       )}
 
       <div className="card overflow-hidden">
@@ -617,7 +627,7 @@ export default function Products() {
                         </span>
                       )}
                       <div>
-                        <p className="font-semibold text-slate-800">{p.name}</p>
+                        <p className="font-semibold text-slate-800">{p.name} {p.active === false && <span className="text-xs font-normal text-amber-700">Désactivé</span>}</p>
                         <p className="text-xs text-slate-400">
                           {p.sku}
                           {p.barcode ? ` · ${p.barcode}` : ""}
@@ -698,10 +708,10 @@ export default function Products() {
                           </button>
                           <button
                             onClick={() => remove(p)}
-                            title="Supprimer l'article" aria-label="Supprimer l'article"
+                            title={p.active === false ? "Réactiver l'article" : "Désactiver l'article"} aria-label={p.active === false ? "Réactiver l'article" : "Désactiver l'article"}
                             className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
                           >
-                            <Trash2 size={16} />
+                            {p.active === false ? "Réactiver" : "Désactiver"}
                           </button>
                         </>
                       )}
@@ -1052,6 +1062,7 @@ export default function Products() {
                   </td>
                   <td className="py-2 font-medium text-slate-700">
                     {FIELD_LABEL[h.field] ?? h.field}
+                    {h.purchase_reference && <span className="block text-xs text-slate-500">{h.purchase_reference}</span>}
                   </td>
                   <td className="py-2 text-right text-slate-500">
                     {h.old_value === null ? "Automatique" : formatXOF(h.old_value)}

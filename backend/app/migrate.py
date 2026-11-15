@@ -20,7 +20,7 @@ FALSE_LITERAL = "0" if engine.dialect.name == "sqlite" else "FALSE"
 
 # table -> column -> SQL type/default appended to "ALTER TABLE ... ADD COLUMN".
 COLUMNS: dict[str, dict[str, str]] = {
-    "stock_lots": {"depot_id": "INTEGER"},
+    "stock_lots": {"depot_id": "INTEGER", "unit_cost": "FLOAT DEFAULT NULL"},
     "stock_movements": {"depot_id": "INTEGER"},
     "expenses": {"payment_method": "VARCHAR", "bank_account_id": "INTEGER"},
     "debts": {"purchase_id": "INTEGER"},
@@ -185,6 +185,8 @@ for _table in ("products", "sale_items", "sale_return_items", "purchase_items", 
         "units_per_packaging": "INTEGER DEFAULT 1",
     })
 COLUMNS["products"]["packaging_sale_price"] = "FLOAT DEFAULT NULL"
+COLUMNS["products"]["active"] = f"BOOLEAN NOT NULL DEFAULT {TRUE_LITERAL}"
+COLUMNS.setdefault("price_history", {})["purchase_reference"] = "VARCHAR DEFAULT NULL"
 COLUMNS["products"]["wholesale_packaging_price"] = "FLOAT DEFAULT NULL"
 COLUMNS["products"].update({
     "semi_wholesale_price": "FLOAT DEFAULT NULL",
@@ -356,6 +358,10 @@ def migrate() -> None:
         seed_accounts(conn)
         Depot.metadata.create_all(bind=conn, tables=[Depot.__table__, DepotStock.__table__, DepotTransfer.__table__, DepotTransferItem.__table__])
         default_id(conn)
+        cost_marker = "stock_lot_cost_snapshot_v1"
+        if {"products", "stock_lots"}.issubset(tables) and "purchase_price" in _columns(inspect(conn), "products") and not conn.execute(select(AppMigration.name).where(AppMigration.name == cost_marker)).first():
+            conn.execute(text("UPDATE stock_lots SET unit_cost = COALESCE((SELECT purchase_price FROM products WHERE products.id = stock_lots.product_id), 0) WHERE unit_cost IS NULL"))
+            conn.execute(AppMigration.__table__.insert().values(name=cost_marker))
         marker = "depot_stock_initialization_v1"
         if "products" in tables and not conn.execute(select(AppMigration.name).where(AppMigration.name == marker)).first():
             for row in conn.execute(select(Product.id, Product.quantity)):

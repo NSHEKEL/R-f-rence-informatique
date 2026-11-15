@@ -293,7 +293,7 @@ export default function NouvelleVente() {
     const stockRight = can("produits") || can("inventaire");
     const images = tileVisibility(config, stockRight).image;
     const { data } = await fetchCached<Product[]>(`/products/pos?images=${images}`, `pos-products-${user?.id}-${stockRight}-${images}`);
-    setProducts(data);
+    setProducts(data.filter((product) => product.active !== false));
     const cats = await fetchCached<Category[]>("/categories", "categories");
     setCategories(cats.data);
     try {
@@ -363,7 +363,7 @@ export default function NouvelleVente() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const available = products.filter((p) => stockLimit(p) > 0);
+    const available = products.filter((p) => p.active !== false && stockLimit(p) > 0);
     if (q) {
       return available
         .filter(
@@ -421,6 +421,7 @@ export default function NouvelleVente() {
   const activeLineIndex = selectedLine != null && selectedLine < cart.length ? selectedLine : lastIndex >= 0 ? lastIndex : cart.length - 1;
   const [mixedTarget, setMixedTarget] = useState<{ line: CartLine; product: Product } | null>(null);
   const addToCart = useCallback((original: Product, packaging_id?: number) => {
+    if (original.active === false) { setError("Cet article est désactivé."); return; }
     const product = withPackaging(original, packaging_id);
     const increment = packaging_id ? product.units_per_packaging || 1 : 1;
     setError("");
@@ -810,7 +811,7 @@ export default function NouvelleVente() {
     // Drop lines whose product vanished or no longer has enough stock.
     const restored = entry.cart.filter((l) => {
       const fresh = products.find((p) => p.id === l.product.id);
-      if (!fresh) return false;
+      if (!fresh || fresh.active === false) return false;
       if (l.packaging_id != null && !fresh.packagings?.some((p) => p.id === l.packaging_id && p.active)) return false;
       const selected = withPackaging(fresh, l.packaging_id);
       if (cartParts(l).packaging_quantity && l.product.units_per_packaging !== selected.units_per_packaging) return false;

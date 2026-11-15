@@ -11,6 +11,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..catalogue import require_active
+from ..purchase_prices import apply_changes, review
 from .. import stock
 from ..models import (
     Notification,
@@ -21,10 +23,11 @@ from ..models import (
     Supplier,
     User,
 )
-from ..permissions import require_permission
+from ..permissions import has_permission, require_permission
 from ..receivables import open_purchase_payable
 from ..schemas import (
     PurchaseCreate,
+    CataloguePriceChange,
     PurchaseOut,
     PurchaseReceive,
     PurchaseSummary,
@@ -62,6 +65,7 @@ def _fill_items(db: Session, purchase: Purchase, payload) -> None:
             raise HTTPException(
                 status_code=404, detail=f"Produit {item.product_id} introuvable"
             )
+        require_active(product)
         spec = selected_packaging(db, product, item.packaging_id)
         quantity = base_quantity(item, spec)
         if quantity <= 0:
@@ -246,6 +250,12 @@ def receive_purchase(
         )
 
     wanted = {entry.item_id: entry for entry in payload.items}
+    if len(wanted) != len(payload.items) or set(wanted) - {item.id for item in purchase.items}:
+        raise HTTPException(400, "Ligne de réception inconnue ou dupliquée")
+    changes = list(payload.price_changes)
+    legacy_costs = {}
+    update_cost = payload.update_cost and has_permission(db, current_user, "tarifs_modifier")
+    received_ids = set()
     moved = 0
     for item in purchase.items:
         remaining = (item.quantity or 0) - (item.received_quantity or 0)
@@ -269,8 +279,9 @@ def receive_purchase(
             )
         depot_id = stock.resolve(db)
         before, after = stock.adjust(db, product, quantity, depot_id)
-        if payload.update_cost and (item.unit_cost or 0) > 0:
-            product.purchase_price = item.unit_cost
+        received_ids.add(product.id)
+        if update_cost and (item.unit_cost or 0) > 0 and not any(change.product_id == product.id and change.packaging_id is None and change.field == "purchase_price" for change in changes):
+            legacy_costs[product.id] = CataloguePriceChange(product_id=product.id, field="purchase_price", old_value=product.purchase_price, new_value=item.unit_cost)
         item.received_quantity = (item.received_quantity or 0) + quantity
         moved += quantity
         db.add(
@@ -290,6 +301,7 @@ def receive_purchase(
 
     if moved == 0:
         raise HTTPException(status_code=400, detail="Aucune quantité à réceptionner")
+    apply_changes(db, purchase, changes + list(legacy_costs.values()), received_ids, current_user)
 
     complete = all(
         (item.received_quantity or 0) >= (item.quantity or 0)
@@ -312,6 +324,12 @@ def receive_purchase(
     db.commit()
     db.refresh(purchase)
     return purchase
+
+
+@router.get("/{purchase_id}/price-review")
+def price_review(purchase_id: int, db: Session = Depends(get_db),
+    _: User = Depends(require_permission("approvisionnements_gerer"))):
+    return review(db, _get(db, purchase_id))
 
 
 @router.post("/{purchase_id}/cancel", response_model=PurchaseOut)

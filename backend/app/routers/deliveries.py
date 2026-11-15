@@ -12,6 +12,7 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..catalogue import require_active
 from .. import stock
 from ..documents import delivery_reference, refresh_order_status
 from ..models import (
@@ -67,6 +68,7 @@ def _fill_lines(db: Session, delivery: Delivery, items) -> None:
             raise HTTPException(
                 status_code=404, detail=f"Produit {item.product_id} introuvable"
             )
+        require_active(product)
         if item.quantity <= 0:
             raise HTTPException(status_code=400, detail="Quantité invalide")
         line = _order_line(order, product.id)
@@ -253,6 +255,7 @@ def validate_note(
                 status_code=400,
                 detail=f"L'article « {line.product_name} » n'existe plus",
             )
+        require_active(product)
         depot_id = stock.resolve(db)
         before, after = stock.adjust(db, product, -line.quantity, check_total=True)
         db.add(

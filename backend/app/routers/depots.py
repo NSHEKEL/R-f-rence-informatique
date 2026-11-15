@@ -115,7 +115,7 @@ def _move_lots(db, product, amount, source, destination, user, deficit=0):
         absorbed = min(deficit, moved)
         deficit -= absorbed
         if moved > absorbed:
-            db.add(StockLot(product_id=product.id, depot_id=destination, lot_number=lot.lot_number, expiry_date=lot.expiry_date, quantity=moved - absorbed, created_by_id=user.id))
+            db.add(StockLot(product_id=product.id, depot_id=destination, lot_number=lot.lot_number, expiry_date=lot.expiry_date, quantity=moved - absorbed, unit_cost=lot.unit_cost, created_by_id=user.id))
         amount -= moved
 
 
