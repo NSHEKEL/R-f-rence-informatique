@@ -141,6 +141,7 @@ test("workstation controls render read-only or editable for the correct category
       if (name.endsWith("/context/AuthContext")) return { useAuth: () => ({ can: can(...keys) }) };
       if (name.endsWith("/context/CompanyContext")) return { readPostePrinters: () => ({}), writePostePrinters() {}, useCompany: () => ({ reload() {}, printing: { receipt: {} } }) };
       if (name.endsWith("/lib/poste")) return p;
+      if (name === "./StockColumnSettings") return { default: () => null, __esModule: true };
       return require(name);
     } });
     return renderToStaticMarkup(React.createElement(exports.default));

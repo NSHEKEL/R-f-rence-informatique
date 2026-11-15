@@ -5,7 +5,6 @@ import {
   ArrowLeftRight,
   ClipboardCheck,
   Download,
-  History,
   Plus,
   Printer,
   RotateCcw,
@@ -13,7 +12,10 @@ import {
   Trash2,
 } from "lucide-react";
 import api, { formatDate, formatXOF } from "../api/client";
-import type { Product, StockLot, StockMovement } from "../types";
+import type { Product, StockLot } from "../types";
+import StockMovements from "../components/StockMovements";
+import { StockColumnChooser, StockExtraCells, StockExtraHeaders } from "../components/StockColumns";
+import { useStockColumns } from "../lib/useStockColumns";
 import { documentHeader, printSheet } from "../lib/print";
 import { exportCsv, stampedName } from "../lib/exportCsv";
 import { useCompany } from "../context/CompanyContext";
@@ -30,13 +32,6 @@ function countedTotal(entry?: { rayon: string; stock: string }): number | null {
   if (!entry || (entry.rayon === "" && entry.stock === "")) return null;
   return Number(entry.rayon || 0) + Number(entry.stock || 0);
 }
-
-const kindLabels: Record<string, string> = {
-  vente: "Vente",
-  inventaire: "Inventaire",
-  ajustement: "Ajustement",
-  transfert: "Transfert",
-};
 
 /** One line of an inter-store transfer being composed. */
 interface TransferLine {
@@ -59,7 +54,6 @@ export default function Inventaire() {
   const { company, printing } = useCompany();
   const { hasFeature } = useLicense();
   const [products, setProducts] = useState<Product[]>([]);
-  const [movements, setMovements] = useState<StockMovement[]>([]);
   const [counted, setCounted] = useState<Counted>({});
   const [blind, setBlind] = useState(false);
   const [query, setQuery] = useState("");
@@ -79,17 +73,13 @@ export default function Inventaire() {
   const [expiryDays, setExpiryDays] = useState(90);
 
   const load = useCallback(async () => {
-    const [p, m, r] = await Promise.all([
+    const [p, r] = await Promise.all([
       api.get<Product[]>("/products"),
-      api.get<StockMovement[]>("/inventory/movements", {
-        params: { limit: 50 },
-      }),
       api.get<PendingTransfer[]>("/transfers/entrantes").catch(() => ({
         data: [] as PendingTransfer[],
       })),
     ]);
     setProducts(p.data);
-    setMovements(m.data);
     setPending(r.data);
     const lots = await api
       .get<StockLot[]>("/products/lots/alertes", {
@@ -124,6 +114,8 @@ export default function Inventaire() {
         .filter((d): d is { product: Product; delta: number } => d !== null),
     [products, counted]
   );
+
+  const stockColumns = useStockColumns(filtered, "inventory", blind);
 
   const impact = useMemo(
     () =>
@@ -487,13 +479,14 @@ export default function Inventaire() {
         )}
 
         <div className="max-h-[24rem] overflow-y-auto">
+          <StockColumnChooser config={stockColumns} />
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-white">
               <tr className="border-b border-slate-100 text-left text-xs font-semibold uppercase text-slate-500">
-                <th className="py-2">Produit</th>
-                <th className="py-2">Code</th>
-                {!blind && (
-                  <th className="py-2 text-center">Stock théorique</th>
+                {stockColumns.show("article") && <th className="py-2">Article</th>}
+                <StockExtraHeaders columns={stockColumns.visible} />
+                {stockColumns.show("quantity") && (
+                  <th className="py-2 text-center">Qté pièces (base)</th>
                 )}
                 <th className="py-2 text-center">Qté en rayon</th>
                 <th className="py-2 text-center">Qté en stock</th>
@@ -507,13 +500,13 @@ export default function Inventaire() {
                 const delta = total === null ? null : total - p.quantity;
                 return (
                   <tr key={p.id}>
-                    <td className="py-2 font-medium text-slate-800">
+                    {stockColumns.show("article") && <td className="py-2 font-medium text-slate-800">
                       {p.name}
-                    </td>
-                    <td className="py-2 text-slate-500">{p.sku}</td>
-                    {!blind && (
+                    </td>}
+                    <StockExtraCells product={p} columns={stockColumns.visible} />
+                    {stockColumns.show("quantity") && (
                       <td className="py-2 text-center text-slate-700">
-                        {formatQuantity(p, p.quantity)}
+                        {p.quantity} {p.base_unit || "pcs"}
                       </td>
                     )}
                     <td className="py-2 text-center">
@@ -788,61 +781,7 @@ export default function Inventaire() {
         )}
       </div>
 
-      <div className="card p-5">
-        <div className="mb-4 flex items-center gap-2">
-          <History size={18} className="text-brand-600" />
-          <h3 className="text-base font-bold text-slate-900">
-            Mouvements de stock
-          </h3>
-        </div>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-slate-100 text-left text-xs font-semibold uppercase text-slate-500">
-              <th className="py-2">Date</th>
-              <th className="py-2">Produit</th>
-              <th className="py-2">Type</th>
-              <th className="py-2 text-center">Mouvement</th>
-              <th className="py-2 text-center">Stock</th>
-              <th className="py-2">Motif</th>
-              <th className="py-2">Par</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {movements.map((m) => (
-              <tr key={m.id}>
-                <td className="py-2 text-slate-500">{formatDate(m.date)}</td>
-                <td className="py-2 font-medium text-slate-800">
-                  {m.product_name}
-                </td>
-                <td className="py-2 text-slate-600">
-                  {kindLabels[m.kind] ?? m.kind}
-                </td>
-                <td
-                  className={`py-2 text-center font-semibold ${
-                    m.quantity < 0 ? "text-red-600" : "text-emerald-600"
-                  }`}
-                >
-                  {formatQuantity(m, m.quantity)}
-                </td>
-                <td className="py-2 text-center text-slate-500">
-                  {formatQuantity(m, m.stock_before)} → {formatQuantity(m, m.stock_after)}
-                </td>
-                <td className="py-2 text-slate-500">{m.reason}</td>
-                <td className="py-2 text-slate-500">
-                  {m.created_by?.name ?? "—"}
-                </td>
-              </tr>
-            ))}
-            {movements.length === 0 && (
-              <tr>
-                <td colSpan={7} className="py-8 text-center text-slate-400">
-                  Aucun mouvement enregistré.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <StockMovements products={products} version={version} />
     </div>
   );
 }

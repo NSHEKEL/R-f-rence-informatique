@@ -3,6 +3,7 @@ import { localApi } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { readPostePrinters, writePostePrinters, useCompany } from "../context/CompanyContext";
 import { readPosteSettings, writePosteSettings } from "../lib/poste";
+import StockColumnSettings from "./StockColumnSettings";
 
 const PRINTER_LABELS: Record<string, string> = { receipt: "Reçus", label: "Étiquettes", documents: "Documents", delivery: "Livraisons", quote: "Devis", reports: "Rapports", settlement: "Règlements" };
 
@@ -22,14 +23,16 @@ export default function WorkstationSettings() {
       setMessage("Longueur, échelle ou code du tiroir invalide."); return;
     }
     const current = readPosteSettings();
-    writePosteSettings({ ...current, ...(scannerEdit ? { scanner_suffix: form.scanner_suffix, scanner_prefix: form.scanner_prefix, scanner_auto_add: form.scanner_auto_add, scanner_min_length: form.scanner_min_length } : {}), ...(edit ? { display_scale: form.display_scale } : {}), ...(peripherals ? { drawer_port: form.drawer_port, drawer_code: form.drawer_code } : {}) });
+    writePosteSettings({ ...current, ...(scannerEdit ? { scanner_suffix: form.scanner_suffix, scanner_prefix: form.scanner_prefix, scanner_auto_add: form.scanner_auto_add, scanner_min_length: form.scanner_min_length } : {}), ...(edit ? { display_scale: form.display_scale, receipt_auto_return: form.receipt_auto_return } : {}), ...(peripherals ? { drawer_port: form.drawer_port, drawer_code: form.drawer_code } : {}) });
     if (edit) writePostePrinters(printers);
     void reload();
     setMessage("Préférences enregistrées sur ce poste uniquement.");
   }
-  return <section className="card space-y-4 p-6"><h3 className="font-bold">Ce poste uniquement</h3>
+  return <><section className="card space-y-4 p-6"><h3 className="font-bold">Ce poste uniquement</h3>
     <p>Choix locaux, conservés dans le profil navigateur et sauvegardés dans le fichier natif du poste. Aucun réglage partagé n'est modifié.</p>
     {can("poste_consulter") && <fieldset disabled={!edit} className="space-y-3">
+      <label className="flex items-center gap-2"><input type="checkbox" checked={form.receipt_auto_return} onChange={(event) => setForm({ ...form, receipt_auto_return: event.target.checked })} /> Imprimer automatiquement le ticket et revenir à la vente</label>
+      <p className="text-sm text-slate-600">Sans imprimante configurée : fenêtre du ticket conservée, impression navigateur sur demande.</p>
       <datalist id="local-printers">{available.map((name) => <option key={name} value={name} />)}</datalist>
       {Object.entries(PRINTER_LABELS).map(([key, label]) => <label className="label" key={key}>Imprimante locale — {label}<input className="input" list="local-printers" value={printers[key] ?? ""} onChange={(e) => setPrinters({ ...printers, [key]: e.target.value })} /></label>)}
       <label className="label">Échelle POS locale (%)<input className="input" type="number" min={70} max={130} value={form.display_scale} onChange={(e) => setForm({ ...form, display_scale: Number(e.target.value) })} /></label>
@@ -48,5 +51,5 @@ export default function WorkstationSettings() {
     <button className="btn-primary" disabled={!edit && !peripherals} onClick={save}>Enregistrer sur ce poste</button>
     <button className="btn-secondary" disabled={!edit} onClick={async () => { try { await localApi.post("/settings/printers/test", { printer_name: printers.receipt ?? printing.receipt.printer_name }); setMessage("Test envoyé."); } catch { setMessage("Test impossible."); } }}>Tester l'imprimante locale</button>
     <p role="status">{message}</p>
-  </section>;
+  </section><StockColumnSettings /></>;
 }

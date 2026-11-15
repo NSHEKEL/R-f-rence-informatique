@@ -44,6 +44,8 @@ import api, { formatXOF, localApi } from "../api/client";
 import PackagingQuantity from "../components/PackagingQuantity";
 import PosProductGrid from "../components/PosProductGrid";
 import SalePrintModal from "../components/SalePrintModal";
+import AutomaticReceipt from "../components/AutomaticReceipt";
+import { automaticReceipt } from "../lib/autoReceipt";
 import PosMixedEditor, { type MixedSelection } from "../components/PosMixedEditor";
 import { DEFAULT_POS, mergePos, stockLimit, tileVisibility, type PosDisplay } from "../lib/posDisplay";
 import { catalogPrices, catalogUnitPrice, formatQuantity, splitQuantity, withPackaging, resolveTier, type PriceTier, type UnitMode } from "../lib/units";
@@ -246,6 +248,7 @@ export default function NouvelleVente() {
   const [paidAmount, setPaidAmount] = useState(0);
   const [error, setError] = useState("");
   const [flash, setFlash] = useState("");
+  const [automaticTickets, setAutomaticTickets] = useState<Sale[]>([]);
   const [saving, setSaving] = useState(false);
   const [mobileView, setMobileView] = useState<"catalog" | "cart">("catalog");
   const [showParked, setShowParked] = useState(true);
@@ -674,8 +677,15 @@ export default function NouvelleVente() {
    * asked to open.
    */
   function finishSale(sale: Sale) {
+    if (automaticReceipt(readPosteSettings().receipt_auto_return, printing.receipt.printer_name)) {
+      setAutomaticTickets((tickets) => [...tickets, sale]);
+      setFlash("Vente enregistrée — nouveau ticket prêt.");
+      window.setTimeout(() => setFlash(""), 2500);
+      searchRef.current?.focus();
+      return;
+    }
     setLastSale(sale);
-    if (!printing.receipt.auto_print) openDrawer();
+    if (!printing.receipt.auto_print || !printing.receipt.printer_name?.trim()) openDrawer();
   }
 
   async function checkout() {
@@ -1962,7 +1972,8 @@ export default function NouvelleVente() {
       </Modal>
 
       {mixedTarget && <PosMixedEditor product={mixedTarget.product} tier={mixedTarget.line.price_tier || "detail"} packagingId={mixedTarget.line.packaging_id} quantity={mixedTarget.line.quantity} discount={mixedTarget.line.discount || 0} error={error} onClose={() => setMixedTarget(null)} onConfirm={applyMixed} />}
-      {lastSale && <SalePrintModal key={lastSale.reference} sale={lastSale} company={company} config={printing.receipt} kick={receiptKick()} onPrinted={(opened) => { if (!opened) openDrawer(); }} onClose={() => { setLastSale(null); searchRef.current?.focus(); }} />}
+      <div className="fixed right-3 top-16 z-40 max-h-[40vh] w-[min(36rem,calc(100vw-1.5rem))] overflow-y-auto">{automaticTickets.map((sale) => <AutomaticReceipt key={sale.id} sale={sale} company={company} config={printing.receipt} kick={receiptKick()} onPrinted={(opened) => { if (!opened) openDrawer(); }} onDone={() => setAutomaticTickets((tickets) => tickets.filter((ticket) => ticket.id !== sale.id))} />)}</div>
+      {lastSale && <SalePrintModal key={lastSale.reference} sale={lastSale} company={company} config={printing.receipt.printer_name?.trim() ? printing.receipt : { ...printing.receipt, auto_print: false }} kick={receiptKick()} onPrinted={(opened) => { if (!opened) openDrawer(); }} onClose={() => { setLastSale(null); searchRef.current?.focus(); }} />}
     </div>
   );
 }

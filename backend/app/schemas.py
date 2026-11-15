@@ -473,6 +473,9 @@ class ProductUpdate(ProductBase):
 
 
 class ProductOut(ProductBase):
+    stock_purchase_price: Optional[float] = None
+    stock_value: Optional[float] = None
+    nearest_expiry: Optional[datetime] = None
     active: bool = True
     scanned_code: Optional[str] = None
     scanned_label: Optional[str] = None

@@ -25,7 +25,7 @@ export default function SalePrintModal({ sale, company, config, kick, onClose, o
       document.body.appendChild(root);
       try {
         await Promise.allSettled(Array.from(root.querySelectorAll("img")).map((image) => image.decode()));
-        const drawer = await printReceipt(format, config, openCashDrawer ? kick : [], { controlled: true });
+        const drawer = await printReceipt(format, config, openCashDrawer ? kick : [], { controlled: Boolean(config.printer_name?.trim()) });
         if (openCashDrawer) onPrinted(drawer);
       }
       catch (error) { if (openCashDrawer) onPrinted(false); throw error; }

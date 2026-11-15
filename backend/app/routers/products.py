@@ -235,7 +235,12 @@ def list_products(
     if state != "all":
         query = query.filter(Product.active.is_(state == "active"))
     products = query.order_by(Product.name).all()
+    expiries = dict(db.query(StockLot.product_id, func.min(StockLot.expiry_date)).filter(StockLot.quantity > 0, StockLot.expiry_date.isnot(None)).group_by(StockLot.product_id).all())
+    cost_visible = stock_visible and has_permission(db, user, "rapports_financiers")
     for product in products:
+        product.stock_purchase_price = product.purchase_price if cost_visible else None
+        product.stock_value = product.quantity * (product.purchase_price or 0) if cost_visible else None
+        product.nearest_expiry = expiries.get(product.id)
         quantity, last = stats.get(product.id, (0, None))
         product.sold_quantity = quantity
         product.last_sold_at = last

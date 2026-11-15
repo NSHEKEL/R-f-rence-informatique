@@ -3,15 +3,17 @@ export type PrintStatus = { state: "idle" | "printing" | "success" | "error"; me
 export function createPrintRunner(timeout = 30_000, debounce = 750) {
   let busy = false;
   let lastStarted = -Infinity;
+  let lastKey: string | undefined;
   const now = () => typeof performance === "undefined" ? Date.now() : performance.now();
   const listeners = new Set<() => void>();
   return {
     isBusy: () => busy,
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
-    async run(job: () => Promise<unknown>, report: (status: PrintStatus) => void) {
+    async run(job: () => Promise<unknown>, report: (status: PrintStatus) => void, key?: string) {
       if (busy) { report({ state: "error", message: "Une impression est encore en cours sur ce poste. Attendez sa fin avant de réimprimer." }); return; }
-      if (now() - lastStarted < debounce) { report({ state: "idle", message: "Réimpression rapprochée ignorée pour éviter un doublon. Patientez un instant avant de réessayer." }); return; }
+      if (key === lastKey && now() - lastStarted < debounce) { report({ state: "idle", message: "Réimpression rapprochée ignorée pour éviter un doublon. Patientez un instant avant de réessayer." }); return; }
       lastStarted = now();
+      lastKey = key;
       busy = true; listeners.forEach((listener) => listener());
       report({ state: "printing", message: "Impression en cours… La vente est conservée." });
       const timer = setTimeout(() => report({ state: "error", message: "Délai de 30 secondes dépassé. Résultat inconnu : vérifiez l'imprimante avant toute réimpression. Vous pouvez fermer cette fenêtre." }), timeout);

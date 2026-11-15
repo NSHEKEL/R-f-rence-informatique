@@ -618,7 +618,7 @@ class StockMovement(UnitSnapshot, Base):
     stock_before = Column(Integer, default=0)
     stock_after = Column(Integer, default=0)
     reason = Column(String, default="")
-    date = Column(DateTime, default=utcnow)
+    date = Column(DateTime, default=utcnow, index=True)
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     product = relationship("Product")

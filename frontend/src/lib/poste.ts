@@ -1,6 +1,7 @@
 import type { CompanySettings } from "../types";
 
 export interface PosteSettings {
+  receipt_auto_return: boolean;
   scanner_suffix: "Enter" | "Tab";
   scanner_prefix: string;
   scanner_auto_add: boolean;
@@ -9,13 +10,14 @@ export interface PosteSettings {
   drawer_port?: string;
   drawer_code?: string;
 }
-export const DEFAULT_POSTE: PosteSettings = { scanner_suffix: "Enter", scanner_prefix: "", scanner_auto_add: true, scanner_min_length: 1, display_scale: 100 };
+export const DEFAULT_POSTE: PosteSettings = { receipt_auto_return: true, scanner_suffix: "Enter", scanner_prefix: "", scanner_auto_add: true, scanner_min_length: 1, display_scale: 100 };
 const KEY = "easygest_poste";
 const FILE = "easygest-poste.json";
 function valid(value: unknown): Partial<PosteSettings> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   const p = value as Partial<PosteSettings>;
   const result: Partial<PosteSettings> = {};
+  if (typeof p.receipt_auto_return === "boolean") result.receipt_auto_return = p.receipt_auto_return;
   if (p.scanner_suffix === "Enter" || p.scanner_suffix === "Tab") result.scanner_suffix = p.scanner_suffix;
   if (typeof p.scanner_prefix === "string" && p.scanner_prefix.length <= 128) result.scanner_prefix = p.scanner_prefix;
   if (typeof p.scanner_auto_add === "boolean") result.scanner_auto_add = p.scanner_auto_add;

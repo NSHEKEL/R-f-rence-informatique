@@ -29,6 +29,8 @@ import { exportCsv, stampedName } from "../lib/exportCsv";
 import { useLicense } from "../context/LicenseContext";
 import { stockBadge } from "../components/badges";
 import DepotStock from "../components/DepotStock";
+import { StockColumnChooser, StockExtraCells, StockExtraHeaders } from "../components/StockColumns";
+import { useStockColumns } from "../lib/useStockColumns";
 import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSyncVersion } from "../context/SyncContext";
@@ -100,6 +102,7 @@ export default function Products() {
   const [state, setState] = useState("active");
   const csvInputRef = useRef<HTMLInputElement>(null);
   const [products, setProducts] = useState<Product[]>([]);
+  const stockColumns = useStockColumns(products, "products");
   const [categories, setCategories] = useState<Category[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [searchParams] = useSearchParams();
@@ -577,6 +580,7 @@ export default function Products() {
         }}>Désactiver la sélection ({selection.ids.length})</button>
       )}
 
+      <StockColumnChooser config={stockColumns} />
       <div className="card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -591,10 +595,11 @@ export default function Products() {
                     />
                   </th>
                 )}
-                <th className="px-5 py-3">Produit</th>
+                {stockColumns.show("article") && <th className="px-5 py-3">Article</th>}
                 <th className="px-5 py-3">Catégorie</th>
                 <th className="px-5 py-3 text-right">Prix vente</th>
-                <th className="px-5 py-3 text-center">Stock</th>
+                {stockColumns.show("quantity") && <th className="px-5 py-3 text-center">Qté pièces (base)</th>}
+                <StockExtraHeaders columns={stockColumns.visible} />
                 <th className="px-5 py-3 text-center">État</th>
                 <th className="px-5 py-3">Ventes</th>
                 <th className="px-5 py-3 text-center">QR</th>
@@ -613,7 +618,7 @@ export default function Products() {
                       />
                     </td>
                   )}
-                  <td className="px-5 py-3.5">
+                  {stockColumns.show("article") && <td className="px-5 py-3.5">
                     <div className="flex items-center gap-3">
                       {p.image ? (
                         <img
@@ -628,23 +633,20 @@ export default function Products() {
                       )}
                       <div>
                         <p className="font-semibold text-slate-800">{p.name} {p.active === false && <span className="text-xs font-normal text-amber-700">Désactivé</span>}</p>
-                        <p className="text-xs text-slate-400">
-                          {p.sku}
-                          {p.barcode ? ` · ${p.barcode}` : ""}
-                        </p>
                       </div>
                     </div>
-                  </td>
+                  </td>}
                   <td className="px-5 py-3.5 text-slate-600">
                     {p.category?.name ?? "—"}
                   </td>
                   <td className="px-5 py-3.5 text-right font-medium text-slate-800">
                     {formatXOF(p.sale_price)}
                   </td>
-                  <td className="px-5 py-3.5 text-center font-semibold text-slate-700">
-                    {formatQuantity(p, p.quantity)}
+                  {stockColumns.show("quantity") && <td className="px-5 py-3.5 text-center font-semibold text-slate-700">
+                    {p.quantity} {p.base_unit || "pcs"}
                     {p.quantity != null && (can("produits") || can("inventaire")) && <DepotStock productId={p.id} total={p.quantity} />}
-                  </td>
+                  </td>}
+                  <StockExtraCells product={p} columns={stockColumns.visible} />
                   <td className="px-5 py-3.5 text-center">{stockBadge(p)}</td>
                   <td className="px-5 py-3.5 text-xs text-slate-500">
                     {p.sold_quantity > 0 ? (

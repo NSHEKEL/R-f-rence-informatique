@@ -456,6 +456,9 @@ export interface ProductPackaging {
 
 export interface ProductBarcode { id?: number; code: string; label: string; active: boolean }
 export interface Product extends UnitSpec {
+  nearest_expiry?: string | null;
+  stock_purchase_price?: number | null;
+  stock_value?: number | null;
   active?: boolean;
   barcodes?: ProductBarcode[];
   scanned_code?: string | null;
@@ -756,6 +759,7 @@ export interface Expense {
 }
 
 export interface StockMovement extends UnitSpec {
+  depot_id?: number | null;
   id: number;
   product_id: number | null;
   product_name: string;
