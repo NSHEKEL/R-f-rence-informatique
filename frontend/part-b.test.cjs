@@ -116,6 +116,28 @@ test("pending reception matches inactive articles and refuses missing, empty, co
   }
 });
 
+test("pending reception prefers active Riz id 2 over inactive namesake id 1 listed first", async () => {
+  const page = readFileSync(`${__dirname}/src/pages/Inventaire.tsx`, "utf8");
+  const source = page.slice(page.indexOf("  async function receivePending("), page.indexOf("  /** Registers the transfer:"));
+  const posts = [], errors = [];
+  const exports = {};
+  const api = {
+    async get(path, options) {
+      assert.equal(path, "/products");
+      assert.equal(options.params.state, "all");
+      return { data: [{ id: 1, name: "Riz", sku: "RIZ-ANCIEN", active: false }, { id: 2, name: "Riz", sku: "RIZ-ACTIF", active: true }] };
+    },
+    async post(path, payload) { posts.push({ path, payload: plain(payload) }); },
+  };
+  vm.runInNewContext(ts.transpileModule(source + "\nexports.receivePending = receivePending;", { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText,
+    { exports, api, setError: (value) => errors.push(value), setMessage() {}, setSaving() {}, load: async () => {}, axios: { isAxiosError: () => false } });
+  await exports.receivePending({ id: 42, reference: "TFR-42", from_shop: "Autre magasin", note: "Envoi", items: JSON.stringify([{ product_name: "Riz", quantity: 5 }]) });
+  assert.equal(posts.length, 1);
+  assert.equal(posts[0].path, "/transfers/recevoir");
+  assert.deepEqual(posts[0].payload.items, [{ product_id: 2, quantity: 5 }]);
+  assert.deepEqual(errors, [""]);
+});
+
 test("automatic printing has no modal, keeps error and retries without recreating a sale or drawer kick", async () => {
   const runner = load("lib/printJob.ts").createPrintRunner(30000, 0);
   let calls = 0;

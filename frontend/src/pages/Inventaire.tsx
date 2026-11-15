@@ -189,9 +189,10 @@ export default function Inventaire() {
     try {
       const { data: catalogue } = await api.get<Product[]>("/products", { params: { state: "all" } });
       const matched = items.map((i) => {
-        const product = catalogue.find(
+        const candidates = catalogue.filter(
           (p) => p.name.trim().toLowerCase() === i.product_name.trim().toLowerCase()
         );
+        const product = candidates.find((p) => p.active !== false) ?? candidates[0];
         return product ? { product_id: product.id, quantity: i.quantity } : null;
       });
       if (matched.some((i) => i === null)) {
