@@ -744,7 +744,12 @@ def stock_dashboard(
     out_count = 0
     low_count = 0
     expired_qty_total = 0
-    expired_value_total = 0.0
+    expired_value_total = db.query(func.sum(
+        StockLot.quantity * func.coalesce(StockLot.unit_cost, Product.purchase_price, 0)
+    )).join(Product, Product.id == StockLot.product_id).filter(
+        StockLot.quantity > 0,
+        StockLot.expiry_date < datetime.combine(today, time.min),
+    ).scalar() or 0.0
     usable_value = 0.0
 
     for product in products:
@@ -758,7 +763,6 @@ def stock_dashboard(
         elif qty <= (product.min_stock or 0):
             low_count += 1
         expired_qty_total += expired_qty
-        expired_value_total += expired_qty * (product.purchase_price or 0)
         usable_value += max(qty - expired_qty, 0) * (product.purchase_price or 0)
 
     # Lots about to expire (not expired yet), per bucket.

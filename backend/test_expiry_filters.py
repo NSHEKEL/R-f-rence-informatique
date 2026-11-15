@@ -84,6 +84,27 @@ class ExpiryFiltersTests(unittest.TestCase):
             ("period=custom&date_from=2030-02-03&date_to=2030-01-01", 400), ("period=unknown", 422)):
             self.call("/api/products/stock/perimes?" + query, status=status)
 
+    def test_dashboard_expired_value_matches_lot_report_after_price_change_and_fallbacks(self):
+        self.product.purchase_price = 999
+        self.db.add_all([
+            StockLot(product_id=self.product.id, lot_number="fallback", quantity=2, unit_cost=None,
+                expiry_date=datetime(2030, 1, 30, 23, 59, 59, 999999)),
+            StockLot(product_id=self.product.id, lot_number="zero-cost", quantity=4, unit_cost=0,
+                expiry_date=datetime(2030, 1, 30)),
+        ])
+        self.db.commit()
+        dashboard = self.call("/api/products/stock/dashboard")
+        self.assertEqual(dashboard["expired_value"], 3 * 7.5 + 2 * 999)
+        self.assertEqual(dashboard["expired_value"], sum(row["value"] for row in self.rows()))
+        self.assertEqual(dashboard["loss_value"], dashboard["expired_value"])
+        self.product.purchase_price = None
+        self.db.commit()
+        self.assertEqual(self.call("/api/products/stock/dashboard")["expired_value"], 22.5)
+        self.db.query(StockLot).filter(StockLot.product_id == self.product.id).delete()
+        self.db.commit()
+        self.assertEqual(self.rows(), [])
+        self.assertEqual(self.call("/api/products/stock/dashboard")["expired_value"], 0)
+
     def test_new_lots_capture_cost_and_keep_it_after_catalogue_price_changes(self):
         self.product.purchase_price = 77
         self.db.commit()
