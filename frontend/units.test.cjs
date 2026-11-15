@@ -27,9 +27,10 @@ test("base-only, empty and unset packaging price preserve unit pricing", () => {
   assert.equal(output.saleUnitPrice(product, 12, 100, "base"), 100);
   assert.equal(output.quantityHtml({ base_unit: "<kg>" }, 2), "2 &lt;kg&gt;");
 });
-test("POS has an optional selector, mixed entry and server factor guard without grid changes", () => {
+test("POS has packaging buttons, mixed entry and server factor guard without per-line selects", () => {
   const source = readFileSync(`${__dirname}/src/pages/NouvelleVente.tsx`, "utf8");
-  for (const text of ["Unité vendue", 'value="base"', 'value="packaging"', 'value="mixed"', "expected_units_per_packaging", "PackagingQuantity"]) assert.ok(source.includes(text), text);
+  for (const text of ["packagingChoices(original)", "MIXTE", "PosMixedEditor", "expected_units_per_packaging", "PackagingQuantity"]) assert.ok(source.includes(text), text);
+  assert.doesNotMatch(source, /aria-label=\{`(?:Conditionnement|Unité vendue|Tarif) de /);
   assert.match(source, /quantity: capped, packagingQuantity: undefined, pieceQuantity: undefined/);
 });
 

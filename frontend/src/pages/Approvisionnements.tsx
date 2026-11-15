@@ -524,7 +524,7 @@ export default function Approvisionnements() {
         }
       >
         <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             <div>
               <label className="label">Fournisseur enregistré</label>
               <select
@@ -632,7 +632,7 @@ export default function Approvisionnements() {
             </button>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             <div>
               {!editing && <AccountingPayment method={paymentMethod} bank={bankAccount} onChange={(method, bank) => { setPaymentMethod(method); setBankAccount(bank); }} />}
               <label className="label">Facture fournisseur</label>

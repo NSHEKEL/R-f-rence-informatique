@@ -40,7 +40,7 @@ export default function SalePrintModal({ sale, company, config, kick, onClose, o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return <>
-    <Modal open onClose={onClose} wide title={`${sale.pending_sync ? "Vente en attente de synchronisation" : "Vente enregistrée"} — ${sale.reference}`} footer={<div className="flex w-full flex-wrap items-center justify-end gap-3">
+    <Modal open size="compact" onClose={onClose} wide title={`${sale.pending_sync ? "Vente en attente de synchronisation" : "Vente enregistrée"} — ${sale.reference}`} footer={<div className="flex w-full flex-wrap items-center justify-end gap-3">
       <button className="btn-ghost" onClick={onClose}>Quitter / Fermer</button>
       <select aria-label="Format du reçu" className="input w-auto" disabled={busy} value={format} onChange={(e) => setFormat(e.target.value as ReceiptFormat)}><option value="A4">Feuille A4</option><option value="80mm">Ticket 80 mm</option><option value="58mm">Ticket 58 mm</option></select>
       <button className="btn-primary" disabled={busy} onClick={() => start()}>Réimprimer</button>

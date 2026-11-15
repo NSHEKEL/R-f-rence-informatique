@@ -350,8 +350,9 @@ export default function Banque() {
         open={accountOpen}
         onClose={() => setAccountOpen(false)}
         title="Nouveau compte bancaire"
+        footer={<button type="submit" form="bank-account-form" className="btn-primary">Enregistrer</button>}
       >
-        <form onSubmit={saveAccount} className="space-y-3">
+        <form id="bank-account-form" onSubmit={saveAccount} className="space-y-3">
           <input
             required
             className="input"
@@ -361,7 +362,7 @@ export default function Banque() {
               setAccountDraft({ ...accountDraft, bank_name: e.target.value })
             }
           />
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
             <input
               className="input"
               placeholder="Titulaire"
@@ -398,7 +399,6 @@ export default function Banque() {
               }
             />
           </div>
-          <button className="btn-primary w-full">Enregistrer</button>
         </form>
       </Modal>
 
@@ -406,8 +406,9 @@ export default function Banque() {
         open={depositOpen}
         onClose={() => setDepositOpen(false)}
         title="Nouveau versement bancaire"
+        footer={<button type="submit" form="bank-deposit-form" className="btn-primary">Enregistrer</button>}
       >
-        <form onSubmit={saveDeposit} className="space-y-3">
+        <form id="bank-deposit-form" onSubmit={saveDeposit} className="space-y-3">
           <p className="text-xs text-slate-500">
             Transfert interne de trésorerie : le montant sort de la caisse et
             entre sur le compte — ce n'est pas un chiffre d'affaires.
@@ -432,7 +433,7 @@ export default function Banque() {
                 </option>
               ))}
           </select>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
             <input
               required
               type="number"
@@ -480,16 +481,17 @@ export default function Banque() {
               setDepositDraft({ ...depositDraft, note: e.target.value })
             }
           />
-          <button className="btn-primary w-full">Enregistrer</button>
         </form>
       </Modal>
 
       <Modal
         open={reconcileId !== null}
+        size="compact"
         onClose={() => setReconcileId(null)}
         title="Rapprochement bancaire"
+        footer={<button type="submit" form="bank-reconcile-form" className="btn-primary">Marquer rapproché</button>}
       >
-        <form onSubmit={reconcile} className="space-y-3">
+        <form id="bank-reconcile-form" onSubmit={reconcile} className="space-y-3">
           <p className="text-xs text-slate-500">
             Confirmez que ce versement figure sur le relevé bancaire.
           </p>
@@ -499,7 +501,6 @@ export default function Banque() {
             value={statementRef}
             onChange={(e) => setStatementRef(e.target.value)}
           />
-          <button className="btn-primary w-full">Marquer rapproché</button>
         </form>
       </Modal>
     </div>

@@ -579,6 +579,7 @@ export default function Caisse() {
 
       <Modal
         open={ticket !== null}
+        size="compact"
         onClose={() => setTicket(null)}
         title={
           ticket?.kind === "close"

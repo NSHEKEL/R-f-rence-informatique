@@ -319,7 +319,7 @@ export default function Users() {
             {error}
           </div>
         )}
-        <div className="space-y-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           <div>
             <label className="label">Nom complet</label>
             <input
@@ -381,7 +381,7 @@ export default function Users() {
             onError={setError}
           />
           {form.role !== "admin" && Object.keys(kinds).length > 0 && (
-            <div>
+            <div className="col-span-full">
               <label className="label">Notifications reçues</label>
               <div className="grid grid-cols-2 gap-x-4 gap-y-1 rounded-xl border border-slate-200 p-3">
                 {Object.entries(kinds).map(([kind, label]) => (

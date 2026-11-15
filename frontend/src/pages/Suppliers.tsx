@@ -264,7 +264,7 @@ export default function Suppliers() {
           </>
         }
       >
-        <div className="space-y-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           <div>
             <label className="label">Nom de l'entreprise</label>
             <input

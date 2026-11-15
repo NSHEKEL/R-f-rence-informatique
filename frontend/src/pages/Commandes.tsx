@@ -587,7 +587,7 @@ export default function Commandes() {
         }
       >
         <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             <div>
               <label className="label">Client enregistré</label>
               <select
@@ -623,8 +623,8 @@ export default function Commandes() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div className="sm:col-span-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            <div className="md:col-span-2">
               <label className="label">Adresse de livraison</label>
               <input
                 className="input"
@@ -646,7 +646,7 @@ export default function Commandes() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             <div>
               <label className="label">Statut</label>
               <select
@@ -771,7 +771,7 @@ export default function Commandes() {
             </button>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
               <label className="label">Acompte versé</label>
               <input

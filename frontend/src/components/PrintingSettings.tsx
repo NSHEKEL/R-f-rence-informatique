@@ -1301,11 +1301,12 @@ export default function PrintingSettings({
         </div>
       </div>
 
-      <Modal open={stylePreview !== null} onClose={() => setStylePreview(null)} title={stylePreview === 'label' ? 'Aperçu des étiquettes' : 'Aperçu du style commercial'}>
+      <Modal open={stylePreview !== null} size="compact" onClose={() => setStylePreview(null)} title={stylePreview === 'label' ? 'Aperçu des étiquettes' : 'Aperçu du style commercial'}>
         <iframe title="Aperçu d'impression" sandbox="" className="h-[65vh] w-full border-0" srcDoc={stylePreview === 'label' ? `<style>${labelPrintStyle(form.label)}</style><div class="grid">${labelSample}</div>` : `<style>body{padding:12mm}table{width:100%;border-collapse:collapse}td,th{padding:8px;border:1px solid #ddd}</style>${documentSample}`} />
       </Modal>
       <Modal
         open={preview}
+        size="compact"
         onClose={() => setPreview(false)}
         title="Aperçu du reçu"
         footer={

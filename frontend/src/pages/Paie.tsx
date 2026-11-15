@@ -1810,6 +1810,7 @@ export default function Paie() {
 
       <Modal
         open={cancelling !== null}
+        size="compact"
         onClose={() => setCancelling(null)}
         title="Annuler le bulletin"
         footer={

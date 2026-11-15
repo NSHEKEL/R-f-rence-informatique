@@ -12,11 +12,11 @@ export default function ProductPackagings({ value, onChange }: {
   function update(index: number, changes: Partial<ProductPackaging>) {
     onChange(value.map((p, i) => i === index ? { ...p, ...changes } : p));
   }
-  return <section className="space-y-3 sm:col-span-2">
+  return <section className="col-span-full space-y-3">
     <h3 className="font-semibold">Conditionnements</h3>
     <p className="text-xs text-slate-500">Le conditionnement principal reste inchangé. Prix vides : facteur × prix pièce du tarif. Retirer désactive sans effacer l'historique.</p>
     <datalist id="packaging-names">{["Colis", "Carton", "Gros", "Demi-gros", "Semi-gros", "Paquet", "Sachet", "Pièce", "Bouteille"].map((name) => <option key={name} value={name} />)}</datalist>
-    {value.map((p, index) => <fieldset key={p.id ?? `new-${index}`} className={`grid gap-2 rounded-lg border p-3 sm:grid-cols-2 ${p.active ? "" : "opacity-60"}`}>
+    {value.map((p, index) => <fieldset key={p.id ?? `new-${index}`} className={`grid grid-cols-1 gap-2 rounded-lg border p-3 md:grid-cols-2 xl:grid-cols-4 ${p.active ? "" : "opacity-60"}`}>
       <legend>{p.name || "Nouveau conditionnement"}{!p.active && " — inactif"}</legend>
       <label className="label">Nom libre<input className="input" list="packaging-names" value={p.name} onChange={(e) => update(index, { name: e.target.value })} /></label>
       <label className="label">Facteur (unités de base)<input className="input" type="number" min="1" step="1" value={p.factor} onChange={(e) => update(index, { factor: Number(e.target.value) })} /></label>

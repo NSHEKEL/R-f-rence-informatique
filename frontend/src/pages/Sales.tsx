@@ -495,6 +495,7 @@ export default function Sales() {
       {/* Receipt modal */}
       <Modal
         open={receiptSale !== null}
+        size="compact"
         onClose={() => setReceiptSale(null)}
         title={
           receiptSale

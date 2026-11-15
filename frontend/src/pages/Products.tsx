@@ -769,8 +769,8 @@ export default function Products() {
             {error}
           </div>
         )}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="sm:col-span-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          <div className="col-span-full">
             <label className="label">Nom du produit</label>
             <input
               className="input"
@@ -875,7 +875,7 @@ export default function Products() {
             ["wholesale_min_qty", "Seuil gros (unités de base)"],
           ] as const).map(([key, label]) => <label key={key} className="label">{label}<input className="input" type="number" min={key.endsWith("qty") ? "1" : "0"} step={key.endsWith("qty") ? "1" : "any"} value={form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.value === "" ? "" : Number(e.target.value) })} /></label>)}
           <ProductPackagings value={form.packagings} onChange={(packagings) => setForm({ ...form, packagings })} />
-          <div className="space-y-2 sm:col-span-2">
+          <div className="col-span-full space-y-2">
             <h3 className="font-semibold">Codes supplémentaires / variantes</h3>
             {form.barcodes.map((barcode, index) => <div className="flex flex-wrap gap-2" key={barcode.id || `new-${index}`}>
               <input aria-label="Code variante" className="input flex-1" disabled={!!barcode.id} value={barcode.code} onChange={(e) => setForm({ ...form, barcodes: form.barcodes.map((b, i) => i === index ? { ...b, code: e.target.value } : b) })} />
@@ -912,7 +912,7 @@ export default function Products() {
               </p>
             </div>
           )}
-          <div className="sm:col-span-2">
+          <div className="col-span-full">
             <label className="label">
               Code-barres de l'article (chiffres imprimés sur l'emballage)
             </label>
@@ -946,7 +946,7 @@ export default function Products() {
               créer un et l'imprimer depuis la colonne QR.
             </p>
           </div>
-          <div className="sm:col-span-2">
+          <div className="col-span-full">
             <label className="label">
               Code QR (laisser vide pour utiliser le SKU)
             </label>
@@ -957,7 +957,7 @@ export default function Products() {
               placeholder="Collez ici le code déjà imprimé sur l'article"
             />
           </div>
-          <div className="sm:col-span-2">
+          <div className="col-span-full">
             <label className="label">Photo de l'article</label>
             <div className="flex items-center gap-4">
               {form.image ? (
@@ -996,7 +996,7 @@ export default function Products() {
               />
             </div>
           </div>
-          <div className="sm:col-span-2">
+          <div className="col-span-full">
             <label className="label">Description</label>
             <textarea
               className="input min-h-[80px]"
@@ -1009,6 +1009,7 @@ export default function Products() {
 
       <Modal
         open={qrProduct !== null}
+        size="compact"
         onClose={() => setQrProduct(null)}
         title="Code QR de l'article"
       >

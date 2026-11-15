@@ -318,6 +318,7 @@ export default function Login() {
 
       <Modal
         open={serverOpen}
+        size="compact"
         onClose={() => setServerOpen(false)}
         title="Adresse du poste serveur"
         footer={
@@ -359,6 +360,7 @@ export default function Login() {
 
       <Modal
         open={forgotOpen}
+        size="compact"
         onClose={() => setForgotOpen(false)}
         title="Mot de passe oublié"
         footer={
@@ -423,6 +425,7 @@ export default function Login() {
 
       <Modal
         open={diagOpen}
+        size="compact"
         onClose={() => setDiagOpen(false)}
         title="Diagnostic de connexion"
       >
@@ -462,6 +465,7 @@ export default function Login() {
 
       <Modal
         open={recoveryOpen}
+        size="compact"
         onClose={() => setRecoveryOpen(false)}
         title="Récupération administrateur"
         footer={

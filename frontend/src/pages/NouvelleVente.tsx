@@ -44,6 +44,7 @@ import api, { formatXOF, localApi } from "../api/client";
 import PackagingQuantity from "../components/PackagingQuantity";
 import PosProductGrid from "../components/PosProductGrid";
 import SalePrintModal from "../components/SalePrintModal";
+import PosMixedEditor, { type MixedSelection } from "../components/PosMixedEditor";
 import { DEFAULT_POS, mergePos, stockLimit, tileVisibility, type PosDisplay } from "../lib/posDisplay";
 import { catalogPrices, catalogUnitPrice, formatQuantity, splitQuantity, withPackaging, resolveTier, type PriceTier, type UnitMode } from "../lib/units";
 import type {
@@ -57,7 +58,7 @@ import type {
 import Modal from "../components/Modal";
 import { scanCodes } from "../lib/scan";
 import { useScanner } from "../lib/useScanner";
-import { packagingChoices, switchPackaging } from "../lib/posPackaging";
+import { packagingChoices } from "../lib/posPackaging";
 import { vatBreakdown } from "../lib/vat";
 import {
   fetchCached,
@@ -114,6 +115,7 @@ function unitPrice(product: Product, mode: PriceMode): number {
 }
 
 interface CartLine {
+  sourceProduct?: Product;
   scanned_code?: string | null;
   scanned_label?: string | null;
   packaging_id?: number;
@@ -415,6 +417,9 @@ export default function NouvelleVente() {
 
   const [selectedLine, setSelectedLine] = useState<number | null>(null);
   const lastAdded = useRef<{ id: number; packaging_id?: number; code?: string | null; tier: PriceTier } | null>(null);
+  const lastIndex = cart.findIndex((line) => line.product.id === lastAdded.current?.id && line.packaging_id === lastAdded.current?.packaging_id && line.scanned_code === lastAdded.current?.code && (line.price_tier || "detail") === lastAdded.current?.tier);
+  const activeLineIndex = selectedLine != null && selectedLine < cart.length ? selectedLine : lastIndex >= 0 ? lastIndex : cart.length - 1;
+  const [mixedTarget, setMixedTarget] = useState<{ line: CartLine; product: Product } | null>(null);
   const addToCart = useCallback((original: Product, packaging_id?: number) => {
     const product = withPackaging(original, packaging_id);
     const increment = packaging_id ? product.units_per_packaging || 1 : 1;
@@ -424,7 +429,7 @@ export default function NouvelleVente() {
     setCart((prev) => {
       const existing = prev.find((l) => l.product.id === product.id && l.scanned_code === original.scanned_code && l.packaging_id === packaging_id && (l.price_tier || "detail") === priceMode && (packaging_id ? l.unitMode === "packaging" : (!l.unitMode || l.unitMode === "base")));
       if (prev.filter((l) => l.product.id === product.id).reduce((sum, l) => sum + l.quantity, 0) + increment > stockLimit(product)) return prev;
-      if (!existing) return [...prev, { product, scanned_code: original.scanned_code, scanned_label: original.scanned_label, packaging_id, quantity: increment, price_tier: priceMode, unitMode: packaging_id ? "packaging" : "base" }];
+      if (!existing) return [...prev, { product, sourceProduct: original, scanned_code: original.scanned_code, scanned_label: original.scanned_label, packaging_id, quantity: increment, price_tier: priceMode, unitMode: packaging_id ? "packaging" : "base" }];
       return prev.map((l) =>
         l === existing ? (() => {
           const packs = l.unitMode === "packaging" ? 1 : 0;
@@ -548,21 +553,44 @@ export default function NouvelleVente() {
     const line = cart[lineIndex];
     if (!line) return;
     const factor = line.product.units_per_packaging || 1;
-    const quantity = unitMode === "packaging" ? Math.max(1, Math.floor(line.quantity / factor)) * factor : line.quantity;
+    const quantity = unitMode === "base" ? 1 : unitMode === "packaging" ? Math.max(1, Math.floor(line.quantity / factor)) * factor : line.quantity;
     const others = cart.filter((l) => l !== line && l.product.id === line.product.id).reduce((sum, l) => sum + l.quantity, 0);
     if (quantity + others > stockLimit(line.product)) { setError("Stock insuffisant pour un conditionnement complet"); return; }
-    setCart((prev) => prev.map((l, index) => index === lineIndex ? { ...l, unitMode, quantity, price: undefined, packagingQuantity: undefined, pieceQuantity: undefined } : l));
+    const product = unitMode === "base" ? products.find((p) => p.id === line.product.id) || line.sourceProduct || line.product : line.product;
+    setCart((prev) => prev.map((l, index) => index === lineIndex ? { ...l, product, packaging_id: unitMode === "base" ? undefined : l.packaging_id, unitMode, quantity, price: undefined, packagingQuantity: undefined, pieceQuantity: undefined } : l));
   }
 
   function setPackaging(lineIndex: number, packaging_id?: number) {
     const line = cart[lineIndex];
-    const original = products.find((p) => p.id === line.product.id);
+    const original = products.find((p) => p.id === line.product.id) || line.sourceProduct || line.product;
     if (!original) return;
     const product = withPackaging(original, packaging_id);
     const quantity = product.packaging_unit ? product.units_per_packaging || 1 : 1;
     const others = cart.filter((l, i) => i !== lineIndex && l.product.id === product.id).reduce((sum, l) => sum + l.quantity, 0);
     if (quantity + others > stockLimit(product)) { setError("Stock insuffisant pour ce conditionnement"); return; }
     setCart((prev) => prev.map((l, i) => i === lineIndex ? { ...l, product, packaging_id, quantity, unitMode: product.packaging_unit ? "packaging" : "base", packagingQuantity: undefined, pieceQuantity: undefined, price: undefined } : l));
+  }
+
+  function applyMixed(selection: MixedSelection) {
+    if (!mixedTarget) return;
+    const { line, product } = mixedTarget;
+    const index = cart.indexOf(line);
+    if (index < 0) { setError("La ligne a changé. Rouvrez la vente mixte."); setMixedTarget(null); return; }
+    const quantity = selection.packs * (selection.product.units_per_packaging || 1) + selection.pieces;
+    const others = cart.filter((item) => item !== line && item.product.id === product.id).reduce((sum, item) => sum + item.quantity, 0);
+    if (quantity + others > stockLimit(product)) { setError("Stock insuffisant pour cette vente mixte"); return; }
+    const replacements: CartLine[] = [];
+    let discount = line.discount || 0;
+    if (selection.packs) {
+      const packDiscount = Math.min(discount, selection.packPrice * selection.packs);
+      replacements.push({ ...line, product: selection.product, packaging_id: selection.packaging_id, price_tier: selection.tier, unitMode: "packaging", quantity: selection.packs * (selection.product.units_per_packaging || 1), packagingQuantity: selection.packs, pieceQuantity: 0, price: undefined, discount: packDiscount });
+      discount -= packDiscount;
+    }
+    if (selection.pieces) replacements.push({ ...line, product, packaging_id: undefined, price_tier: selection.tier, unitMode: "base", quantity: selection.pieces, packagingQuantity: undefined, pieceQuantity: undefined, price: undefined, discount: Math.min(discount, selection.piecePrice * selection.pieces) });
+    setCart((prev) => prev.flatMap((item) => item === line ? replacements : [item]));
+    setSelectedLine(index);
+    setMixedTarget(null);
+    setError("");
   }
 
   async function createCustomer() {
@@ -1179,7 +1207,8 @@ export default function NouvelleVente() {
                     <tr
                       key={index}
                       onClick={() => setSelectedLine(index)}
-                      className="border-b border-slate-100 last:border-0"
+                      className={`border-b border-slate-100 last:border-0 ${index === activeLineIndex ? "bg-brand-50 ring-1 ring-inset ring-brand-300" : ""}`}
+                      aria-selected={index === activeLineIndex}
                     >
                       <td className="px-2 py-1 text-xs text-slate-400">
                         {index + 1}
@@ -1201,21 +1230,7 @@ export default function NouvelleVente() {
                             {l.product.name}
                           </p>
                         </div>
-                        {(l.product.packagings || []).some((p) => p.active) && <select className="input mt-1" aria-label={`Conditionnement de ${l.product.name}`} value={l.packaging_id ?? ""} onChange={(e) => setPackaging(index, e.target.value ? Number(e.target.value) : undefined)}>
-                          <option value="">Principal : {products.find((p) => p.id === l.product.id)?.packaging_unit || "pièce"}</option>
-                          {l.product.packagings?.filter((p) => p.active).map((p) => <option key={p.id} value={p.id}>{p.name} (×{p.factor})</option>)}
-                        </select>}
-                        {l.product.packaging_unit && <>
-                          <select aria-label={`Unité vendue de ${l.product.name}`} className="input mt-1" value={l.unitMode || "base"} onChange={(e) => setUnitMode(index, e.target.value as UnitMode)}>
-                            <option value="base">{l.product.base_unit || "pièce"}</option>
-                            <option value="packaging">{l.product.packaging_unit}</option>
-                            <option value="mixed">Mixte : {l.product.packaging_unit} + {l.product.base_unit || "pièce"}</option>
-                          </select>
-                          <p className="text-xs text-slate-500">{formatQuantity(l.product, l.quantity)} · {formatXOF(catalogPrices(l.product, l.price_tier, l.quantity).carton)}/{l.product.packaging_unit}</p>
-                        </>}
-                        <select className="input mt-1" aria-label={`Tarif de ${l.product.name}`} value={l.price_tier || "detail"} onChange={(e) => setCart((prev) => prev.map((line, i) => i === index ? { ...line, price_tier: e.target.value as PriceMode, price: undefined } : line))}>
-                          <option value="detail">Détail</option><option value="semi_gros">Semi-gros</option><option value="gros">Gros</option><option value="auto">Auto</option>
-                        </select>
+                        <p className="text-xs text-slate-500">{l.unitMode === "packaging" ? l.product.packaging_unit : l.product.base_unit || "pièce"}{l.scanned_label ? ` · ${l.scanned_label}` : ""}</p>
                       </td>
                       <td className="px-1 py-1 text-right">
                         {canChangePrice ? (
@@ -1805,18 +1820,16 @@ export default function NouvelleVente() {
           <PosProductGrid key={`${query}|${activeCategory}|${supplierFilter}`} products={filtered} config={posDisplay} stockRight={can("produits") || can("inventaire")} selected={new Set(cart.map((line) => line.product.id))} onAdd={addToCart} price={(product) => unitPrice(product, priceMode)} />
             {/* Modes de paiement — sous la liste des articles */}
             {cart.length > 0 && (() => {
-              const lastIndex = cart.findIndex((line) => line.product.id === lastAdded.current?.id && line.packaging_id === lastAdded.current?.packaging_id && line.scanned_code === lastAdded.current?.code && (line.price_tier || "detail") === lastAdded.current?.tier);
-              const index = selectedLine != null && selectedLine < cart.length ? selectedLine : lastIndex >= 0 ? lastIndex : cart.length - 1;
+              const index = activeLineIndex;
               const line = cart[index];
-              const original = products.find((p) => p.id === line.product.id) || line.product;
+              const original = products.find((p) => p.id === line.product.id) || line.sourceProduct || line.product;
               return <div className="flex flex-wrap gap-2 py-2" aria-label="Conditionnement de la ligne sélectionnée">
                 {packagingChoices(original).map((choice) => <button key={choice.key} className="btn-ghost" onClick={() => {
-                  const next = switchPackaging(original, choice.key, line.price_tier || "detail");
-                  const others = cart.filter((l, i) => i !== index && l.product.id === original.id).reduce((sum, l) => sum + l.quantity, 0);
-                  if (next.quantity + others > stockLimit(original)) { setError("Stock insuffisant pour ce conditionnement"); return; }
-                  setCart((prev) => prev.map((l, i) => i === index ? { ...l, ...next } : l));
+                  if (choice.key === "base") setUnitMode(index, "base");
+                  else setPackaging(index, choice.key === "primary" ? undefined : Number(choice.key));
                   setSelectedLine(index);
                 }}>{choice.label}</button>)}
+                {packagingChoices(original).length > 1 && <button className="btn-ghost" onClick={() => { setError(""); setMixedTarget({ line, product: original }); }}>MIXTE</button>}
               </div>;
             })()}
             <div className="border-t border-slate-100 pt-2">
@@ -1909,7 +1922,7 @@ export default function NouvelleVente() {
               }
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div>
               <label className="label">Téléphone</label>
               <input
@@ -1944,6 +1957,7 @@ export default function NouvelleVente() {
         </div>
       </Modal>
 
+      {mixedTarget && <PosMixedEditor product={mixedTarget.product} tier={mixedTarget.line.price_tier || "detail"} packagingId={mixedTarget.line.packaging_id} quantity={mixedTarget.line.quantity} discount={mixedTarget.line.discount || 0} error={error} onClose={() => setMixedTarget(null)} onConfirm={applyMixed} />}
       {lastSale && <SalePrintModal key={lastSale.reference} sale={lastSale} company={company} config={printing.receipt} kick={receiptKick()} onPrinted={(opened) => { if (!opened) openDrawer(); }} onClose={() => { setLastSale(null); searchRef.current?.focus(); }} />}
     </div>
   );
