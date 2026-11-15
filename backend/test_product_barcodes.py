@@ -66,7 +66,7 @@ class ProductBarcodeTests(unittest.TestCase):
         data = "sku;nom;extra_codes\nCSV-NEW;Variante;CSV-RED|CSV-BLUE\n"
         response = self.client.post("/api/products/import", files={"file": ("codes.csv", data.encode(), "text/csv")})
         self.assertEqual(response.status_code, 200, response.text)
-        self.assertEqual(response.json(), {"created": 1, "updated": 0, "errors": []})
+        self.assertEqual(response.json(), {"created": 1, "updated": 0, "errors": [], "duplicates": []})
         red = self.call("/api/products/by-code/CSV-RED")
         self.assertEqual(red["id"], self.call("/api/products/by-code/CSV-BLUE")["id"])
         data = "sku;nom;extra_codes\nCSV-COLLISION;Conflit;CSV-RED\n"

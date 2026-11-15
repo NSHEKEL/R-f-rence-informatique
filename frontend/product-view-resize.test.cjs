@@ -11,6 +11,38 @@ function load(path, imports = {}, globals = {}) {
   return exports;
 }
 const navigation = load("lib/productNavigation.ts");
+test("catalogue import reports duplicates beside successes, handles duplicate-only and preserves empty/error feedback", async () => {
+  const source = readFileSync(`${__dirname}/src/pages/Products.tsx`, "utf8");
+  const start = source.indexOf("  async function importCsv(");
+  const end = source.indexOf("\n  const totalPages =", start);
+  assert.ok(start > 0 && end > start);
+  const code = ts.transpileModule(source.slice(start, end) + "\nexports.run = importCsv;", {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+  }).outputText;
+  const duplicate = { line: 2, name: "Riz", sku: "NEW", existing: { id: 1, name: "RIZ", sku: "OLD" } };
+  for (const [response, expected, shouldLoad] of [
+    [{ created: 1, updated: 2, errors: [], duplicates: [duplicate] }, /1 créé\(s\), 2 mis à jour, 1 doublon/, true],
+    [{ created: 0, updated: 0, errors: [], duplicates: [duplicate] }, /1 doublon/, true],
+    [{ created: 0, updated: 0, errors: [] }, /Colonnes attendues/, false],
+    [{ created: 0, updated: 0, errors: [{ line: 2, message: "Code invalide" }] }, /Première erreur : Code invalide/, false],
+    [{ created: 1, updated: 0, errors: [] }, /1 créé\(s\), 0 mis à jour/, true],
+  ]) {
+    const state = { error: "old", notice: "old", duplicates: [duplicate], loads: 0 };
+    const exports = {};
+    vm.runInNewContext(code, { exports, FormData: class { append() {} },
+      api: { post: async () => ({ data: response }) }, axios: { isAxiosError: () => false },
+      setError: (value) => { state.error = value; }, setNotice: (value) => { state.notice = value; },
+      setImportDuplicates: (value) => { state.duplicates = value; }, load: async () => { state.loads++; } });
+    await exports.run({});
+    assert.match(state.notice || state.error, expected);
+    assert.equal(state.loads, shouldLoad ? 1 : 0);
+    assert.deepEqual(JSON.parse(JSON.stringify(state.duplicates)), response.duplicates || []);
+    if (response.duplicates?.length) assert.equal(state.error, "");
+  }
+  assert.match(source, /importDuplicates\.map/);
+  assert.match(source, /Nom dans le fichier/);
+  assert.match(source, /Référence existante/);
+});
 test("French product name sorting ignores case/accents and details follow the whole sorted list", () => {
   const { sortProducts } = load("lib/productSort.ts");
   const rows = [{ id: 1, name: "Zoo" }, { id: 2, name: "Éclair" }, { id: 3, name: "eclair" }, { id: 4, name: "banane" }, { id: 5, name: "Àbricot" }];

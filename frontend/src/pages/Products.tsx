@@ -76,6 +76,13 @@ const empty = {
 
 const MAX_IMAGE_BYTES = 700_000;
 
+interface ImportDuplicate {
+  line: number;
+  name: string;
+  sku: string;
+  existing: { id: number; name: string; sku: string };
+}
+
 /** One recorded price change on an article. */
 interface PriceChange {
   id: number;
@@ -118,6 +125,7 @@ export default function Products() {
   const [form, setForm] = useState({ ...empty });
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [importDuplicates, setImportDuplicates] = useState<ImportDuplicate[]>([]);
   const [saving, setSaving] = useState(false);
   const [qrProduct, setQrProduct] = useState<Product | null>(null);
   const [historyProduct, setHistoryProduct] = useState<Product | null>(null);
@@ -204,6 +212,7 @@ export default function Products() {
   async function importCsv(file: File) {
     setError("");
     setNotice("");
+    setImportDuplicates([]);
     const body = new FormData();
     body.append("file", file);
     try {
@@ -211,14 +220,17 @@ export default function Products() {
         created: number;
         updated: number;
         errors: { line: number; message: string }[];
+        duplicates?: ImportDuplicate[];
       }>("/products/import", body);
-      const { created, updated, errors } = res.data;
-      if (!created && !updated) {
+      const { created, updated, errors, duplicates = [] } = res.data;
+      setImportDuplicates(duplicates);
+      if (!created && !updated && !duplicates.length) {
         setError("Aucune ligne article reconnue ou importée. Colonnes attendues : Nom/Désignation, Référence/SKU, Prix d'achat, Prix de vente, Prix de gros, Stock, Stock minimum, Code-barres." + (errors[0] ? ` Première erreur : ${errors[0].message}` : ""));
         return;
       }
       setNotice(
         `Import terminé : ${created} créé(s), ${updated} mis à jour` +
+          (duplicates.length ? `, ${duplicates.length} doublon(s) ignoré(s) à vérifier` : "") +
           (errors.length
             ? `, ${errors.length} ligne(s) en erreur (l. ${errors
                 .map((e) => e.line)
@@ -590,6 +602,19 @@ export default function Products() {
         <div className="rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
           {notice}
         </div>
+      )}
+
+      {importDuplicates.length > 0 && (
+        <section className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100" aria-labelledby="import-duplicates-title">
+          <h3 id="import-duplicates-title" className="font-bold">Doublons ignorés à vérifier ({importDuplicates.length})</h3>
+          <p className="mb-3 text-sm">Ces lignes n'ont pas été importées : un article portait déjà ce nom avant l'import. Vérifiez les références.</p>
+          <div className="max-h-64 overflow-auto">
+            <table className="w-full text-left text-sm">
+              <thead><tr><th scope="col" className="p-2">Ligne</th><th scope="col" className="p-2">Nom dans le fichier</th><th scope="col" className="p-2">Référence du fichier</th><th scope="col" className="p-2">Article existant</th><th scope="col" className="p-2">Référence existante</th></tr></thead>
+              <tbody>{importDuplicates.map((duplicate) => <tr key={duplicate.line} className="border-t border-amber-200 dark:border-amber-800"><td className="p-2">{duplicate.line}</td><td className="p-2">{duplicate.name}</td><td className="p-2">{duplicate.sku || "Sans référence"}</td><td className="p-2">{duplicate.existing.name}</td><td className="p-2">{duplicate.existing.sku}</td></tr>)}</tbody>
+            </table>
+          </div>
+        </section>
       )}
 
       {can("produits_gerer") && (

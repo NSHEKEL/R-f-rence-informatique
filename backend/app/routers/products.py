@@ -357,6 +357,11 @@ def _to_int(value: str, default: int = 0) -> int:
     return int(round(_to_float(value, float(default))))
 
 
+def _import_name(name: str) -> str:
+    value = unicodedata.normalize("NFKD", name.casefold())
+    return " ".join("".join(char for char in value if not unicodedata.combining(char)).split())
+
+
 @router.post("/import")
 def import_products(
     file: UploadFile = File(...),
@@ -367,7 +372,8 @@ def import_products(
 
     The first line must hold headers; `,` and `;` separators are both read,
     as are Excel's UTF-8 files. A row already in the catalogue (same SKU) is
-    updated, the others are created — an entry is never removed by an import.
+    updated; other rows with a pre-existing name are reported, not created.
+    An entry is never removed by an import.
     """
     try:
         fieldnames, rows = read_catalogue(file.file.read(20 * 1024 * 1024 + 1), file.filename or "")
@@ -386,6 +392,10 @@ def import_products(
         raise HTTPException(400, "Aucune colonne article reconnue. Colonnes attendues : Nom/Désignation, Référence/SKU, Prix d'achat, Prix de vente, Prix de gros, Stock, Stock minimum, Code-barres.")
 
     created, updated, errors = 0, 0, []
+    duplicates = []
+    existing_names = {}
+    for product in db.query(Product.id, Product.name, Product.sku).order_by(Product.id).all():
+        existing_names.setdefault(_import_name(product.name), {"id": product.id, "name": product.name, "sku": product.sku})
     categories = {c.name.lower(): c for c in db.query(Category).all()}
     seen_barcodes = {p.barcode for p in db.query(Product).all() if p.barcode}
 
@@ -395,11 +405,17 @@ def import_products(
         sku = fields.get("sku", "")
         if not name and not sku:
             continue  # blank line
+        existing = db.query(Product).filter(Product.sku == sku).first() if sku else None
+        if existing is None and name:
+            match = existing_names.get(_import_name(name))
+            if match:
+                duplicates.append({"line": number, "name": name, "sku": sku, "existing": match})
+                continue
         if not sku:
             sku = f"IMP-{number:05d}"
+            existing = db.query(Product).filter(Product.sku == sku).first()
         if not name:
             name = sku
-        existing = db.query(Product).filter(Product.sku == sku).first()
         barcode = fields.get("barcode", "")
         if barcode:
             if not barcode.isdigit():
@@ -500,7 +516,7 @@ def import_products(
             db.rollback()
             categories = {c.name.lower(): c for c in db.query(Category).all()}
             errors.append({"line": number, "message": str(exc)[:120]})
-    return {"created": created, "updated": updated, "errors": errors}
+    return {"created": created, "updated": updated, "errors": errors, "duplicates": duplicates}
 
 
 @router.post("", response_model=ProductOut, status_code=201)
