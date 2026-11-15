@@ -48,6 +48,10 @@ class WholesaleTests(unittest.TestCase):
         self.assertAlmostEqual(result["gross_margin"], revenue - cost)
         self.assertEqual(self.stock(), stock)
         report = self.call("/api/reports/sales")
+        gross_revenue = sum(sale.total for sale in self.db.query(Sale).filter(Sale.status != "Annulée", Sale.is_gift.is_(False)))
+        self.assertAlmostEqual(report["revenue"], gross_revenue)
+        self.assertAlmostEqual(report["net_revenue"], gross_revenue - report["returns_total"])
+        self.assertAlmostEqual(report["average_ticket"], gross_revenue / report["sales_count"] if report["sales_count"] else 0)
         self.assertAlmostEqual(sum(row["profit"] for row in report["profit_by_product"]), revenue - cost)
         self.assertAlmostEqual(sum(row["profit"] for row in report["profit_by_sale"]), revenue - cost)
 

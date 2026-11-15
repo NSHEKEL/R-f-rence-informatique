@@ -125,10 +125,10 @@ def sales_report(
 
         for sale in sales:
             for item in sale.items:
-                revenue = line_revenue(sale, item)
+                item_revenue = line_revenue(sale, item)
                 cost = unit_cost(item, purchase_prices) * item.quantity
-                add(profit_by_product, item.product_id or item.product_name, item.product_name, revenue, cost)
-                add(profit_by_sale, sale.id, sale.reference, revenue, cost)
+                add(profit_by_product, item.product_id or item.product_name, item.product_name, item_revenue, cost)
+                add(profit_by_sale, sale.id, sale.reference, item_revenue, cost)
         for credit in credits:
             for item in credit.items:
                 cost = unit_cost(item, purchase_prices) * item.quantity
