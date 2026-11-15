@@ -147,6 +147,11 @@ def derive(db):
             total = money(sale.total)
             ht, vat = tax(sale, total)
             legs = [(p.method, money(p.amount)) for p in sale.payments] or [(sale.payment_method, total)]
+            if not sale.payments and sale.status == "En attente":
+                paid = min(total, money(sale.paid_amount))
+                if paid < 0:
+                    raise ValueError("Montant payé invalide")
+                legs = ([(sale.payment_method, paid)] if paid else []) + ([("Crédit", total - paid)] if paid < total else [])
             if sum((amount for _, amount in legs), Decimal(0)) != total:
                 raise ValueError("Ventilation des paiements différente du total de vente")
             discount = money((sale.discount or 0) + sum(item.discount or 0 for item in sale.items))

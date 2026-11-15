@@ -8,9 +8,9 @@ from sqlalchemy import create_engine, inspect, text
 import test_wholesale as wholesale
 from app import migrate as migration
 from app.accounting_ledger import seed_accounts
-from app.models import AccountingAccount, AccountingSetting, AppMigration, BankAccount, CompanySettings, Customer, Debt, Expense, Product, Purchase, RolePermission, Sale, SecurityLog
+from app.models import AccountingAccount, AccountingSetting, AppMigration, BankAccount, CompanySettings, Customer, Debt, Expense, Product, Purchase, RolePermission, Sale, SalePayment, SecurityLog
 from app.profits import financials
-from app.routers import accounting_documents
+from app.routers import accounting_documents, deliveries
 
 
 class AccountingDocumentsTests(unittest.TestCase):
@@ -176,6 +176,24 @@ class AccountingDocumentsTests(unittest.TestCase):
         self.assertIn("actuels", stock["footer"])
         self.call("/api/accounting/documents/report?start=2030-01-01&end=2000-01-01", status=400)
         self.call("/api/accounting/documents/report?kind=account", status=400)
+        self.app.include_router(deliveries.router)
+        self.call("/api/accounting/documents/historical-tax", "PUT", {"rate": 0})
+
+        def debits(sale_id):
+            return {line["account"]: line["debit"] for entry in self.report()["entries"] if entry["source_type"] == "sale" and entry["source_id"] == sale_id for line in entry["lines"] if line["debit"]}
+
+        for paid, expected in ((False, {"411": 100}), (True, {"571": 100})):
+            delivery = self.call("/api/delivery-notes", "POST", {"customer_id": self.customer.id, "items": [{"product_id": self.product.id, "quantity": 1}]}, 201)
+            validated = self.call(f"/api/delivery-notes/{delivery['id']}/validate", "POST", {"paid": paid, "payment_method": "Espèces"})
+            self.assertEqual(debits(validated["sale_id"]), expected)
+        partial = Sale(reference="PARTIAL", total=100, customer_id=self.customer.id, status="En attente", payment_method="Espèces", paid_amount=40, vat_rate_snapshot=0)
+        explicit = Sale(reference="EXPLICIT", total=100, customer_id=self.customer.id, status="En attente", payment_method="Mixte", paid_amount=0, vat_rate_snapshot=0,
+            payments=[SalePayment(method="Espèces", amount=30), SalePayment(method="Crédit", amount=70)])
+        self.db.add_all([partial, explicit])
+        self.db.commit()
+        self.assertEqual(debits(partial.id), {"571": 40, "411": 60})
+        self.assertEqual(debits(explicit.id), {"571": 30, "411": 70})
+        self.assertEqual(self.report()["unposted"], [])
 
     def test_seed_and_additive_migration_preserve_existing_rows_and_rights(self):
         engine = create_engine("sqlite://")
