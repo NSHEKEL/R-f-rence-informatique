@@ -31,10 +31,12 @@ def list_users(db: Session = Depends(get_db), _: User = Depends(require_permissi
 def create_user(
     payload: UserCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("utilisateurs_modifier")),
+    current_user: User = Depends(require_permission("utilisateurs_modifier")),
 ):
     if payload.role not in ROLES:
         raise HTTPException(status_code=400, detail="Rôle invalide")
+    if payload.role == "admin" and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Seul un administrateur peut créer un administrateur")
     if not has_feature(db, "multi_utilisateurs"):
         others = db.query(User).filter(User.is_active.is_(True)).count()
         if others >= 1:
@@ -96,6 +98,8 @@ def update_user(
 
     if payload.role is not None and payload.role not in ROLES:
         raise HTTPException(status_code=400, detail="Rôle invalide")
+    if current_user.role != "admin" and (user.role == "admin" or payload.role == "admin"):
+        raise HTTPException(status_code=403, detail="Seul un administrateur peut modifier un administrateur")
 
     # Protect the last active admin from losing admin/being disabled.
     def _demoting_last_admin() -> bool:
@@ -177,6 +181,8 @@ def reset_user_password(
     user = db.query(User).get(user_id)
     if not user:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    if user.role == "admin" and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Seul un administrateur peut réinitialiser un administrateur")
     temporary = secrets.token_urlsafe(6)
     user.hashed_password = hash_password(temporary)
     db.commit()
@@ -199,6 +205,8 @@ def delete_user(
     user = db.query(User).get(user_id)
     if not user:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    if user.role == "admin" and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Seul un administrateur peut supprimer un administrateur")
     if user.id == current_user.id:
         raise HTTPException(
             status_code=400, detail="Vous ne pouvez pas supprimer votre propre compte"

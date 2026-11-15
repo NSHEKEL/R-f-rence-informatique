@@ -118,6 +118,39 @@ class SettingsPermissionTests(unittest.TestCase):
         self.assertIn("role=vendeur; key=poste_consulter; false → true", rows[0].detail)
         self.check("PUT", "/permissions", json={"matrix": {"vendeur": {"poste_consulter": False}}})
         self.assertEqual(self.db.query(SecurityLog).filter_by(event="permission_modifiee").count(), 2)
+        account = {"name": "Admin secondaire", "email": "second-admin", "password": "Valid-Password-482!", "role": "admin"}
+        target = self.check("POST", "/users", 201, json=account).json()
+        self.check("PUT", f"/users/{target['id']}", json={"role": "gestionnaire"})
+        self.check("PUT", f"/users/{target['id']}", json={"role": "admin"})
+        self.check("POST", f"/users/{target['id']}/reset-password")
+        spare = self.check("POST", "/users", 201, json={**account, "email": "spare-admin"}).json()
+        self.user.role = "vendeur"
+        self.db.commit()
+        self.grant("utilisateurs_modifier")
+        for role in ("vendeur", "gestionnaire"):
+            self.user.role = role
+            self.db.commit()
+            if role == "gestionnaire":
+                save_matrix(self.db, {role: {"utilisateurs_modifier": True}})
+            for method, path, body in [
+                ("POST", "/users", {**account, "email": "forbidden-admin"}),
+                ("PUT", f"/users/{self.user.id}", {"role": "admin"}),
+                ("PUT", f"/users/{target['id']}", {"password": "Changed-Password-482!"}),
+                ("PUT", f"/users/{target['id']}", {"name": "Forbidden"}),
+                ("PUT", f"/users/{target['id']}", {"is_active": False}),
+                ("PUT", f"/users/{target['id']}", {"role": "vendeur"}),
+                ("POST", f"/users/{target['id']}/reset-password", None),
+                ("DELETE", f"/users/{target['id']}", None),
+            ]:
+                with self.subTest(actor=role, method=method, path=path):
+                    self.check(method, path, 403, json=body)
+        ordinary = self.check("POST", "/users", 201, json={**account, "email": "ordinary", "role": "vendeur"}).json()
+        self.check("PUT", f"/users/{ordinary['id']}", json={"name": "Allowed"})
+        self.check("POST", f"/users/{ordinary['id']}/reset-password")
+        self.check("DELETE", f"/users/{ordinary['id']}", 204)
+        self.user.role = "admin"
+        self.db.commit()
+        self.check("DELETE", f"/users/{spare['id']}", 204)
         self.features.return_value.allows = lambda code: False
         self.check("GET", "/permissions", 403)
         self.check("GET", "/users", 403)
