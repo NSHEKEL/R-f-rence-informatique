@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
+import type { CSSProperties } from "react";
+import ResizeHandle from "../components/ResizeHandle";
+import { clampPanel } from "../lib/panelSize";
+import { usePanelMeasure, usePanelSize } from "../lib/usePanelSize";
 import { Link, useNavigate } from "react-router-dom";
 import { readPosteSettings, scanValue, writePosteSettings } from "../lib/poste";
 import {
@@ -252,10 +256,16 @@ export default function NouvelleVente() {
   const [saving, setSaving] = useState(false);
   const [mobileView, setMobileView] = useState<"catalog" | "cart">("catalog");
   const [showParked, setShowParked] = useState(true);
-  const [cartW, setCartW] = useState(
-    () => Number(localStorage.getItem("ri_cart_w")) || 0
-  );
-  const cartRef = useRef<HTMLDivElement>(null);
+  const layoutSize = usePanelMeasure();
+  const cartSize = usePanelMeasure();
+  const cartPanel = usePanelSize("ri_cart_w", 420, 280, 760);
+  const checkoutPanel = usePanelSize("ri_checkout_h", 280, 120, 600);
+  const cartMax = layoutSize.width ? Math.max(280, Math.min(760, layoutSize.width - 400, (layoutSize.width - 60) * 0.6)) : 500;
+  const cartMin = Math.min(320, cartMax);
+  const cartWidth = clampPanel(cartPanel.value, cartMin, cartMax);
+  const checkoutMax = cartSize.height ? Math.max(120, cartSize.height - 180) : 400;
+  const checkoutMin = Math.min(200, checkoutMax);
+  const checkoutHeight = clampPanel(checkoutPanel.value, checkoutMin, checkoutMax);
   const [uiScale, setUiScale] = useState(
     () => Number(localStorage.getItem("ri_ui_scale")) || 1
   );
@@ -1089,12 +1099,12 @@ export default function NouvelleVente() {
         ))}
       </div>
 
-      <div className="flex min-h-0 flex-1 gap-3 p-3">
+      <div ref={layoutSize.ref} className="flex min-h-0 flex-1 gap-3 p-3">
         {/* Ticket in progress */}
         <div
-          ref={cartRef}
-          style={cartW ? { width: `min(${cartW}px, 55%)` } : undefined}
-          className={`card min-h-0 w-full flex-col overflow-hidden p-0 md:order-3 md:flex md:w-[380px] md:shrink-0 lg:w-[420px] xl:w-[460px] 2xl:w-[500px] ${
+          ref={cartSize.ref}
+          style={{ "--pos-cart-width": `${cartWidth}px` } as CSSProperties}
+          className={`card min-h-0 w-full flex-col overflow-hidden p-0 md:order-3 md:flex md:w-[var(--pos-cart-width)] md:shrink-0 ${
             mobileView === "cart" ? "flex" : "hidden"
           }`}
         >
@@ -1341,12 +1351,14 @@ export default function NouvelleVente() {
             </p>
           )}
 
+          {!cartCollapsed && <ResizeHandle axis="y" label="Hauteur du bloc client et totaux" value={checkoutHeight} min={checkoutMin} max={checkoutMax} onChange={checkoutPanel.change} onReset={checkoutPanel.reset} />}
           <div
-            className={`shrink-0 bg-white ${
-              cartCollapsed ? "hidden" : ""
+            style={{ "--pos-checkout-height": `${checkoutHeight}px` } as CSSProperties}
+            className={`shrink-0 bg-white md:min-h-0 md:flex-col md:h-[var(--pos-checkout-height)] ${
+              cartCollapsed ? "hidden" : "md:flex"
             }`}
           >
-          <div className="max-h-[24vh] space-y-1.5 overflow-y-auto border-t border-slate-100 px-3 py-1.5">
+          <div className="max-h-[24vh] space-y-1.5 overflow-y-auto border-t border-slate-100 px-3 py-1.5 md:max-h-none md:min-h-0 md:flex-1">
             <div className="grid gap-2 grid-cols-1">
               <div className="flex items-center gap-2">
                 <label className="mb-0 w-14 shrink-0 text-xs font-bold uppercase tracking-wide text-slate-500">Client</label>
@@ -1544,7 +1556,7 @@ export default function NouvelleVente() {
             </div>
           </div>
 
-          <div className="relative flex items-stretch gap-2 p-1.5">
+          <div className="relative flex shrink-0 items-stretch gap-2 p-1.5">
             <div className="w-[46%] shrink-0 rounded-xl bg-[#1d4ed8] px-2.5 py-1 text-white">
               {vat && (
                 <div className="flex items-center justify-between text-[11px] text-slate-300">
@@ -1660,34 +1672,7 @@ export default function NouvelleVente() {
           </div>
         </div>
 
-        {/* Poignée de redimensionnement catalogue / panier */}
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          title="Glisser pour redimensionner le panier"
-          className="hidden w-1.5 shrink-0 cursor-col-resize rounded-full bg-slate-200 transition hover:bg-brand-400 md:order-2 md:block"
-          onPointerDown={(e) => {
-            e.preventDefault();
-            const startX = e.clientX;
-            const startW =
-              cartRef.current?.getBoundingClientRect().width ?? 420;
-            const maxW = Math.min(760, Math.round(window.innerWidth * 0.6));
-            const onMove = (ev: PointerEvent) => {
-              const w = Math.round(startW + (startX - ev.clientX));
-              setCartW(Math.max(300, Math.min(maxW, w)));
-            };
-            const onUp = () => {
-              window.removeEventListener("pointermove", onMove);
-              window.removeEventListener("pointerup", onUp);
-              setCartW((w) => {
-                if (w) localStorage.setItem("ri_cart_w", String(w));
-                return w;
-              });
-            };
-            window.addEventListener("pointermove", onMove);
-            window.addEventListener("pointerup", onUp);
-          }}
-        />
+        <ResizeHandle axis="x" label="Largeur du panier" className="md:order-2" value={cartWidth} min={cartMin} max={cartMax} onChange={cartPanel.change} onReset={cartPanel.reset} />
 
         {/* Article picker */}
         <div

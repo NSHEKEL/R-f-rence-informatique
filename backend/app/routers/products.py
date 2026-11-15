@@ -1,7 +1,7 @@
-import csv
 import math
-import io
 import random
+import re
+import unicodedata
 from calendar import monthrange
 from datetime import date, datetime, time, timedelta
 from typing import Literal
@@ -11,6 +11,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, defer
 
 from ..database import get_db
+from ..catalogue_import import read_catalogue
 from ..product_codes import check_code, scanned_product
 from .. import stock
 from ..models import (
@@ -306,8 +307,8 @@ _CSV_ALIASES = {
     "sku": {"sku", "reference", "référence", "ref", "code", "code_article"},
     "description": {"description", "desc"},
     "category": {"categorie", "catégorie", "category"},
-    "purchase_price": {"prix_achat", "purchase_price", "achat", "cout", "coût"},
-    "sale_price": {"prix_vente", "sale_price", "prix", "vente", "price"},
+    "purchase_price": {"prix_achat", "prix_d_achat", "purchase_price", "achat", "cout", "coût"},
+    "sale_price": {"prix_vente", "prix_de_vente", "sale_price", "prix", "vente", "price"},
     "wholesale_price": {
         "prix_gros",
         "wholesale_price",
@@ -322,7 +323,11 @@ _CSV_ALIASES = {
 
 
 def _norm_header(header: str) -> str:
-    return header.strip().lower().replace(" ", "_")
+    value = "".join(char for char in unicodedata.normalize("NFKD", header.lower()) if not unicodedata.combining(char))
+    return re.sub(r"[\s'’\-]+", "_", value).strip("_")
+
+
+_CSV_ALIASES = {field: {_norm_header(alias) for alias in aliases} for field, aliases in _CSV_ALIASES.items()}
 
 
 def _map_row(row: dict) -> dict[str, str]:
@@ -364,34 +369,27 @@ def import_products(
     as are Excel's UTF-8 files. A row already in the catalogue (same SKU) is
     updated, the others are created — an entry is never removed by an import.
     """
-    raw = file.file.read()
     try:
-        text = raw.decode("utf-8-sig")
-    except UnicodeDecodeError:
-        text = raw.decode("latin-1")
-    try:
-        sample = text[:4096]
-        dialect = csv.Sniffer().sniff(sample, delimiters=",;")
-    except csv.Error:
-        dialect = csv.excel
-    reader = csv.DictReader(io.StringIO(text), dialect=dialect)
-    if not reader.fieldnames:
-        raise HTTPException(status_code=400, detail="Fichier vide ou illisible")
+        fieldnames, rows = read_catalogue(file.file.read(20 * 1024 * 1024 + 1), file.filename or "")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     # Fields the file actually carries: an update never wipes a column the
     # file does not mention.
-    headers = {_norm_header(h) for h in reader.fieldnames if h}
+    headers = {_norm_header(h) for h in fieldnames if h}
     present = {
         field
         for field, aliases in _CSV_ALIASES.items()
         if aliases & headers or field in headers
     }
+    if not present.intersection({"name", "sku"}):
+        raise HTTPException(400, "Aucune colonne article reconnue. Colonnes attendues : Nom/Désignation, Référence/SKU, Prix d'achat, Prix de vente, Prix de gros, Stock, Stock minimum, Code-barres.")
 
     created, updated, errors = 0, 0, []
     categories = {c.name.lower(): c for c in db.query(Category).all()}
     seen_barcodes = {p.barcode for p in db.query(Product).all() if p.barcode}
 
-    for number, row in enumerate(reader, start=2):
+    for number, row in enumerate(rows, start=2):
         fields = _map_row(row)
         name = fields.get("name", "")
         sku = fields.get("sku", "")
@@ -401,6 +399,7 @@ def import_products(
             sku = f"IMP-{number:05d}"
         if not name:
             name = sku
+        existing = db.query(Product).filter(Product.sku == sku).first()
         barcode = fields.get("barcode", "")
         if barcode:
             if not barcode.isdigit():
@@ -408,7 +407,7 @@ def import_products(
                     {"line": number, "message": f"Code-barres non numérique : {barcode}"}
                 )
                 continue
-            if barcode in seen_barcodes:
+            if barcode in seen_barcodes and not (existing and existing.barcode == barcode):
                 errors.append(
                     {"line": number, "message": f"Code-barres déjà utilisé : {barcode}"}
                 )
@@ -456,7 +455,6 @@ def import_products(
         if barcode:
             values["barcode"] = barcode
             seen_barcodes.add(barcode)
-        existing = db.query(Product).filter(Product.sku == sku).first()
         was_existing = existing is not None
         try:
             _check_code(db, sku, product_id=existing.id if existing else None)

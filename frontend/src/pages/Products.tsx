@@ -29,6 +29,7 @@ import { exportCsv, stampedName } from "../lib/exportCsv";
 import { useLicense } from "../context/LicenseContext";
 import { stockBadge } from "../components/badges";
 import DepotStock from "../components/DepotStock";
+import ProductDetails from "../components/ProductDetails";
 import { StockColumnChooser, StockExtraCells, StockExtraHeaders } from "../components/StockColumns";
 import { useStockColumns } from "../lib/useStockColumns";
 import { useAuth } from "../context/AuthContext";
@@ -109,6 +110,7 @@ export default function Products() {
   const [query, setQuery] = useState(() => searchParams.get("q") ?? "");
   const [page, setPage] = useState(1);
   const [modalOpen, setModalOpen] = useState(false);
+  const [viewProductId, setViewProductId] = useState<number | null>(null);
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState({ ...empty });
   const [error, setError] = useState("");
@@ -208,6 +210,10 @@ export default function Products() {
         errors: { line: number; message: string }[];
       }>("/products/import", body);
       const { created, updated, errors } = res.data;
+      if (!created && !updated) {
+        setError("Aucune ligne article reconnue ou importée. Colonnes attendues : Nom/Désignation, Référence/SKU, Prix d'achat, Prix de vente, Prix de gros, Stock, Stock minimum, Code-barres." + (errors[0] ? ` Première erreur : ${errors[0].message}` : ""));
+        return;
+      }
       setNotice(
         `Import terminé : ${created} créé(s), ${updated} mis à jour` +
           (errors.length
@@ -540,7 +546,7 @@ export default function Products() {
               <input
                 ref={csvInputRef}
                 type="file"
-                accept=".csv,text/csv"
+                accept=".csv,.xlsx,.xls"
                 className="hidden"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
@@ -552,7 +558,7 @@ export default function Products() {
                 className="btn-ghost"
                 onClick={() => csvInputRef.current?.click()}
               >
-                <FileSpreadsheet size={16} /> Importer CSV
+                <FileSpreadsheet size={16} /> Importer (Excel/CSV)
               </button>
             </>
           )}
@@ -676,6 +682,7 @@ export default function Products() {
                   </td>
                   <td className="px-5 py-3.5">
                     <div className="flex justify-end gap-1">
+                      <button className="btn-ghost" onClick={() => setViewProductId(p.id)}>Voir</button>
                       <button
                         onClick={() => printPrices([p])}
                         title="Imprimer l'étiquette de prix" aria-label="Imprimer l'étiquette de prix"
@@ -760,6 +767,7 @@ export default function Products() {
         </div>
       </div>
 
+      {viewProductId != null && <ProductDetails key={viewProductId} products={filtered} productId={viewProductId} onNavigate={setViewProductId} onClose={() => setViewProductId(null)} onEdit={(product) => { setViewProductId(null); openEdit(product); }} />}
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
