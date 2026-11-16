@@ -447,7 +447,7 @@ def import_products(
 
     The first line must hold headers; `,` and `;` separators are both read,
     as are Excel's UTF-8 files. A row already in the catalogue (same SKU) is
-    updated; other rows with a pre-existing name are reported, not created.
+    updated; names already registered under an unreferenced SKU are reported.
     An entry is never removed by an import.
     """
     try:
@@ -468,22 +468,23 @@ def import_products(
 
     created, updated, errors = 0, 0, []
     duplicates = []
+    mapped_rows = [_map_row(row) for row in rows]
+    file_skus = {row["sku"] for row in mapped_rows if row.get("sku")}
     existing_names = {}
     created_names = {}
     for product in db.query(Product.id, Product.name, Product.sku).order_by(Product.id).all():
-        existing_names.setdefault(_import_name(product.name), {"id": product.id, "name": product.name, "sku": product.sku})
+        existing_names.setdefault(_import_name(product.name), []).append({"id": product.id, "name": product.name, "sku": product.sku})
     categories = {c.name.lower(): c for c in db.query(Category).all()}
     seen_barcodes = {p.barcode for p in db.query(Product).all() if p.barcode}
 
-    for number, row in enumerate(rows, start=2):
-        fields = _map_row(row)
+    for number, fields in enumerate(mapped_rows, start=2):
         name = fields.get("name", "")
         sku = fields.get("sku", "")
         if not name and not sku:
             continue  # blank line
         existing = db.query(Product).filter(Product.sku == sku).first() if sku else None
         if existing is None and name:
-            match = existing_names.get(_import_name(name))
+            match = next((product for product in existing_names.get(_import_name(name), []) if product["sku"] not in file_skus), None)
             if match:
                 duplicates.append({"line": number, "name": name, "sku": sku, "existing": match})
                 continue

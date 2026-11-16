@@ -106,6 +106,60 @@ class CatalogueImportTests(unittest.TestCase):
         self.assertEqual(self.db.get(Product, other["id"]).purchase_price, 5)
         self.assertEqual(self.db.query(Product).count(), 2)
 
+    def test_white_secret_distinct_code_is_created_when_existing_code_is_in_file(self):
+        self.product.sku, self.product.name = "2744", "WHITE SECRET"
+        self.db.commit()
+        result = self.upload("white.csv", "Référence;Désignation\n2742;WHITE SECRET\n2744;WHITE SECRET\n".encode())
+        self.assertEqual(result, {"created": 1, "updated": 1, "errors": [], "duplicates": []})
+        result = self.upload("white.csv", "Référence;Désignation\n2744;WHITE SECRET\n2742;WHITE SECRET\n".encode())
+        self.assertEqual(result, {"created": 0, "updated": 2, "errors": [], "duplicates": []})
+        self.assertEqual(self.db.query(Product).filter_by(name="WHITE SECRET").count(), 2)
+
+    def test_manual_product_name_is_skipped_when_its_reference_is_not_in_file(self):
+        self.product.sku, self.product.name = "MANUEL", "Riz"
+        self.db.commit()
+        result = self.upload("manual.csv", "Référence;Désignation\nNEW;Riz\n".encode())
+        self.assertEqual(result, {"created": 0, "updated": 0, "errors": [], "duplicates": [{
+            "line": 2, "name": "Riz", "sku": "NEW", "existing": {"id": self.product.id, "name": "Riz", "sku": "MANUEL"}}]})
+
+    def test_all_preexisting_homonyms_are_considered_including_inactive_ones(self):
+        self.product.sku, self.product.name = "REF-A", "Crème"
+        self.db.commit()
+        manual = self.call("/api/products", "POST", {"sku": "MANUAL", "name": "CREME"}, 201)
+        self.db.get(Product, manual["id"]).active = False
+        self.db.commit()
+        result = self.upload("mixed.csv", "Référence;Nom\nNEW; creme \nREF-A;Crème\n".encode())
+        self.assertEqual((result["created"], result["updated"], result["errors"]), (0, 1, []))
+        self.assertEqual(result["duplicates"][0]["existing"]["id"], manual["id"])
+        result = self.upload("all.csv", "Référence;Nom\nNEW;creme\nREF-A;Crème\nMANUAL;CREME\n".encode())
+        self.assertEqual(result, {"created": 1, "updated": 2, "errors": [], "duplicates": []})
+
+    def test_product_without_reference_is_still_reported_as_preexisting(self):
+        self.product.sku, self.product.name = "", "Riz"
+        self.db.commit()
+        result = self.upload("manual.csv", "Référence;Nom\nNEW;Riz\n;Autre article\n".encode())
+        self.assertEqual((result["created"], result["updated"], result["errors"]), (1, 0, []))
+        self.assertEqual(result["duplicates"][0]["existing"]["id"], self.product.id)
+        self.assertEqual(result["duplicates"][0]["existing"]["sku"], "")
+
+    def test_xlsx_integral_numeric_references_match_skus_without_decimal_suffix(self):
+        self.product.sku = "1001"
+        self.db.commit()
+        archive = io.BytesIO()
+        with ZipFile(archive, "w") as book:
+            book.writestr("xl/workbook.xml", '<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet r:id="r1"/></sheets></workbook>')
+            book.writestr("xl/_rels/workbook.xml.rels", '<Relationships><Relationship Id="r1" Target="worksheets/sheet1.xml"/></Relationships>')
+            book.writestr("xl/worksheets/sheet1.xml", '<worksheet><sheetData><row><c t="inlineStr"><is><t>Référence</t></is></c><c t="inlineStr"><is><t>Nom</t></is></c></row><row><c t="n"><v>1001.0</v></c><c t="inlineStr"><is><t>Mis à jour</t></is></c></row><row><c><v>1.002E3</v></c><c t="inlineStr"><is><t>Nouveau</t></is></c></row><row><c t="inlineStr"><is><t>001001</t></is></c><c t="inlineStr"><is><t>Code texte</t></is></c></row></sheetData></worksheet>')
+        result = self.upload("numeric.xlsx", archive.getvalue())
+        self.assertEqual(result, {"created": 2, "updated": 1, "errors": [], "duplicates": []})
+        self.assertEqual({p.sku for p in self.db.query(Product)}, {"1001", "1002", "001001"})
+
+    def test_spreadsheetml_numeric_references_preserve_text_codes(self):
+        body = '<Workbook xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Worksheet><Table><Row><Cell><Data>Référence</Data></Cell><Cell><Data>Nom</Data></Cell></Row><Row><Cell><Data ss:Type="Number">1001.0</Data></Cell><Cell><Data>Nombre</Data></Cell></Row><Row><Cell><Data ss:Type="String">001001</Data></Cell><Cell><Data>Texte</Data></Cell></Row></Table></Worksheet></Workbook>'
+        result = self.upload("numeric.xls", body.encode())
+        self.assertEqual((result["created"], result["errors"]), (2, []))
+        self.assertEqual({p.sku for p in self.db.query(Product) if p.id != self.product.id}, {"1001", "001001"})
+
     def test_explicit_skus_stay_distinct_and_missing_sku_merges_in_file(self):
         result = self.upload("new.csv", "Référence;Nom\nNEW-A;Nouveau\nNEW-B;Nouveau\n;Nouveau\n".encode())
         self.assertEqual(result, {"created": 2, "updated": 1, "errors": [], "duplicates": []})
@@ -236,12 +290,13 @@ class CatalogueImportTests(unittest.TestCase):
     def test_name_snapshot_does_not_change_when_existing_product_is_renamed(self):
         self.product.name = "Ancien nom"
         self.db.commit()
+        manual = self.call("/api/products", "POST", {"sku": "MANUAL", "name": "Ancien nom"}, 201)
         body = f"Référence;Nom\n{self.product.sku};Nouveau nom\nNEW-A;Ancien nom\nNEW-B;Nouveau nom\n"
         result = self.upload("snapshot.csv", body.encode())
         self.assertEqual((result["created"], result["updated"], result["errors"]), (1, 1, []))
         self.assertEqual(result["duplicates"], [{"line": 3, "name": "Ancien nom", "sku": "NEW-A", "existing": {
-            "id": self.product.id, "name": "Ancien nom", "sku": self.product.sku}}])
-        self.assertEqual(self.db.query(Product).count(), 2)
+            "id": manual["id"], "name": "Ancien nom", "sku": "MANUAL"}}])
+        self.assertEqual(self.db.query(Product).count(), 3)
 
 
 if __name__ == "__main__":

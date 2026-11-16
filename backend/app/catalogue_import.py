@@ -3,6 +3,7 @@ import io
 import posixpath
 import re
 import xml.etree.ElementTree as ET
+from decimal import Decimal, InvalidOperation
 from zipfile import BadZipFile, ZipFile
 
 
@@ -14,6 +15,16 @@ def _xml(raw):
     if len(raw) > 16 * 1024 * 1024 or b"<!doctype" in raw.lower() or b"<!entity" in raw.lower():
         raise ValueError("Document XML trop volumineux ou déclaration non autorisée")
     return ET.fromstring(raw)
+
+
+def _numeric_cell(value):
+    try:
+        number = Decimal(value)
+        if number.is_finite() and number.adjusted() < 1000 and number == number.to_integral_value():
+            return str(int(number))
+    except InvalidOperation:
+        pass
+    return value
 
 
 def _cells(row, xlsx=False, shared=None):
@@ -35,11 +46,16 @@ def _cells(row, xlsx=False, shared=None):
                 value = shared[int(value)] if value else ""
             elif kind == "inlineStr":
                 value = "".join(node.text or "" for node in cell.iter() if _local(node.tag) == "t")
+            elif kind in ("", "n"):
+                value = _numeric_cell(value)
         else:
             declared = next((value for key, value in cell.attrib.items() if _local(key) == "Index"), None)
             if declared is not None:
                 index = int(declared) - 1
-            value = next(("".join(node.itertext()) for node in cell if _local(node.tag) == "Data"), "")
+            data = next((node for node in cell if _local(node.tag) == "Data"), None)
+            value = "".join(data.itertext()) if data is not None else ""
+            if data is not None and any(_local(key) == "Type" and kind == "Number" for key, kind in data.attrib.items()):
+                value = _numeric_cell(value)
         if not 0 <= index < 1024:
             raise ValueError("La feuille dépasse 1024 colonnes")
         while len(values) <= index:
