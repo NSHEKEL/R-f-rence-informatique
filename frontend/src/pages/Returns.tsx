@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "../lib/apiErrors";
 import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import { Search, Undo2 } from "lucide-react";
@@ -46,7 +47,7 @@ export default function Returns() {
       setQuantities({});
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Ticket introuvable");
+        setError(apiErrorMessage(err.response?.data?.detail, "Ticket introuvable"));
       }
     }
   }
@@ -98,7 +99,7 @@ export default function Returns() {
       await loadCredits();
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Impossible d'enregistrer le retour");
+        setError(apiErrorMessage(err.response?.data?.detail, "Impossible d'enregistrer le retour"));
       }
     } finally {
       setSaving(false);

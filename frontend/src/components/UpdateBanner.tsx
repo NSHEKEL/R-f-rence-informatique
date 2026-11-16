@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "../lib/apiErrors";
 import { useCallback, useEffect, useState } from "react";
 import { DownloadCloud, X } from "lucide-react";
 import axios from "axios";
@@ -58,7 +59,7 @@ export default function UpdateBanner() {
       setBusy(false);
       setMessage(
         axios.isAxiosError(err)
-          ? err.response?.data?.detail ?? "Échec de la mise à jour"
+          ? apiErrorMessage(err.response?.data?.detail, "Échec de la mise à jour")
           : "Échec de la mise à jour"
       );
     }

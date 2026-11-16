@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "../lib/apiErrors";
 import { useCallback, useEffect, useRef, useState } from "react";
 import axios from "axios";
 import api from "../api/client";
@@ -28,7 +29,7 @@ export default function AccountingDocuments() {
   const [link, setLink] = useState({ debt: "", purchase: "" });
   const [mapping, setMapping] = useState({ key: "ventes", account: "" });
   const [paymentName, setPaymentName] = useState("");
-  const failure = useCallback((error: unknown) => setMessage(axios.isAxiosError(error) ? String(error.response?.data?.detail || "Erreur comptable") : error instanceof Error ? error.message : "Erreur comptable"), []);
+  const failure = useCallback((error: unknown) => setMessage(axios.isAxiosError(error) ? apiErrorMessage(error.response?.data?.detail, "Erreur comptable") : error instanceof Error ? error.message : "Erreur comptable"), []);
   const loadConfig = useCallback(async () => {
     try { const { data } = await api.get<Config>("/accounting/documents/config"); setConfig(data); setMapping((previous) => ({ ...previous, account: data.settings.find((s) => s.key === previous.key)?.value || "" })); const declared = data.settings.find((s) => s.key === "historical_tax"); if (declared) { const value = JSON.parse(declared.value); setHistorical({ rate: value.rate == null ? "" : String(value.rate), start: value.start || "" }); } } catch (error) { failure(error); }
   }, [failure]);

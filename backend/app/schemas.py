@@ -50,6 +50,7 @@ class UserPhoto(BaseModel):
 
 # ---------- Company settings ----------
 class CompanySettingsOut(BaseModel):
+    allow_negative_stock_sale: bool = False
     model_config = ConfigDict(from_attributes=True)
     id: int
     name: str
@@ -116,6 +117,7 @@ class CompanySettingsOut(BaseModel):
 
 
 class CompanySettingsUpdate(BaseModel):
+    allow_negative_stock_sale: bool = False
     name: Optional[str] = None
     slogan: Optional[str] = None
     logo: Optional[str] = None
@@ -994,6 +996,15 @@ class StockLotCreate(BaseModel):
     lot_number: str = ""
     expiry_date: Optional[datetime] = None
     quantity: int
+
+
+class ProductStockEntry(BaseModel):
+    quantity: int = Field(gt=0, le=2147483647, strict=True)
+    unit: Literal["base", "packaging"] = "base"
+    packaging_id: Optional[int] = Field(default=None, ge=1)
+    depot_id: Optional[int] = Field(default=None, ge=1)
+    reason: Literal["Arrivage", "Correction", "Autre"] = "Arrivage"
+    note: str = Field(default="", max_length=500)
 
 
 class StockLotOut(BaseModel):

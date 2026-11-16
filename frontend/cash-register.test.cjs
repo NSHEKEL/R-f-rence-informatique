@@ -53,7 +53,12 @@ test("Ma caisse renders a previous-day open session with closing available", asy
     useCallback: (fn) => fn,
     useEffect: (fn) => { effect = fn; },
   };
+  const apiErrors = {};
+  vm.runInNewContext(ts.transpileModule(readFileSync(`${__dirname}/src/lib/apiErrors.ts`, 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS },
+  }).outputText, { exports: apiErrors });
   const dependencies = {
+    '../lib/apiErrors': apiErrors,
     react: hooks,
     'react-router-dom': { Link: ({ to, children }) => React.createElement('a', { href: to }, children) },
     '../api/client': { default: api, formatXOF: (value) => String(value ?? 0) },

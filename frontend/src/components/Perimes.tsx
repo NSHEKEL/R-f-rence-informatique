@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "../lib/apiErrors";
 import { useCallback, useEffect, useRef, useState } from "react";
 import axios from "axios";
 import { FileSpreadsheet, Printer, Trash2 } from "lucide-react";
@@ -65,7 +66,7 @@ export default function Perimes({ onClose }: { onClose: () => void }) {
   }, [categoryId, supplierId, search, dateFrom, dateTo, period]);
 
   useEffect(() => {
-    load().catch((err) => setError(axios.isAxiosError(err) ? err.response?.data?.detail ?? "Chargement impossible" : "Chargement impossible"));
+    load().catch((err) => setError(axios.isAxiosError(err) ? apiErrorMessage(err.response?.data?.detail, "Chargement impossible") : "Chargement impossible"));
     api.get<Category[]>("/categories").then((r) => setCategories(r.data)).catch(() => undefined);
     api.get<Supplier[]>("/suppliers").then((r) => setSuppliers(r.data)).catch(() => undefined);
     api
@@ -109,7 +110,7 @@ export default function Perimes({ onClose }: { onClose: () => void }) {
       await load();
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Sortie impossible");
+        setError(apiErrorMessage(err.response?.data?.detail, "Sortie impossible"));
       }
     } finally {
       setSaving(false);

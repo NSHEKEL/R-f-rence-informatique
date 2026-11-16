@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "../lib/apiErrors";
 import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import {
@@ -78,7 +79,7 @@ export default function Comptabilite() {
       setSessions(c.data);
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Erreur de chargement");
+        setError(apiErrorMessage(err.response?.data?.detail, "Erreur de chargement"));
       }
     }
   }, [start, end, canReports, canClosures]);
@@ -107,7 +108,7 @@ export default function Comptabilite() {
       await load();
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Erreur lors de l'ajout");
+        setError(apiErrorMessage(err.response?.data?.detail, "Erreur lors de l'ajout"));
       }
     } finally {
       setSaving(false);

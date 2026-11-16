@@ -51,7 +51,7 @@ test("POS scanning adds one packaging and keeps packaging and tier identities se
   assert.equal(functions.length, 6);
   const poste = {};
   vm.runInNewContext(ts.transpileModule(readFileSync(`${__dirname}/src/lib/poste.ts`, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports: poste });
-  const state = { ...units, ...scan, cart: [], priceMode: "auto", product, products: [product], filtered: [], query: "PACK24", stockLimit: (p) => p.quantity, window: { setTimeout() {} }, setFlash() {}, error: "" };
+  const state = { ...units, ...scan, cart: [], priceMode: "auto", product, products: [product], filtered: [], query: "PACK24", allowNegativeStock: false, stockLimit: (p, allow) => allow ? Infinity : p.quantity, window: { setTimeout() {} }, setFlash() {}, error: "" };
   state.scanValue = (raw) => poste.scanValue(raw, poste.DEFAULT_POSTE);
   state.setCart = (change) => { state.cart = typeof change === "function" ? change(state.cart) : change; };
   state.setError = (error) => { state.error = error; };
@@ -118,6 +118,10 @@ test("packaging editor renders empty, editable and deactivated rows without dele
 });
 
 test("product form rejects invalid packaging and threshold values before sending", async () => {
+  const formHelpers = {};
+  vm.runInNewContext(ts.transpileModule(readFileSync(`${__dirname}/src/lib/productForm.ts`, "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS },
+  }).outputText, { exports: formHelpers });
   const source = readFileSync(`${__dirname}/src/pages/Products.tsx`, "utf8");
   const file = ts.createSourceFile("Products.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   let save;
@@ -134,7 +138,7 @@ test("product form rejects invalid packaging and threshold values before sending
     { wholesale_min_qty: 1.5 },
     { semi_wholesale_price: -1 },
   ]) {
-    const state = { form: { base_unit: "pièce", quantity: 0, packaging_unit: "", packagings: [], semi_wholesale_min_qty: "", wholesale_min_qty: "", semi_wholesale_price: "", supplier_purchase_price: "", ...changes }, error: "" };
+    const state = { ...formHelpers, form: { base_unit: "pièce", quantity: 0, packaging_unit: "", packagings: [], barcodes: [], semi_wholesale_min_qty: "", wholesale_min_qty: "", semi_wholesale_price: "", supplier_purchase_price: "", ...changes }, error: "" };
     state.setError = (error) => { state.error = error; };
     const context = vm.createContext(state);
     vm.runInContext(ts.transpileModule(save, {}).outputText, context);

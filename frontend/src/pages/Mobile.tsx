@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import axios from "axios";
+import { apiErrorMessage } from "../lib/apiErrors";
 import {
   BadgeInfo,
   Bell,
@@ -332,9 +333,8 @@ export default function Mobile() {
       setPassword("");
     } catch (err) {
       setError(
-        axios.isAxiosError(err) &&
-          typeof err.response?.data?.detail === "string"
-          ? err.response.data.detail
+        axios.isAxiosError(err)
+          ? apiErrorMessage(err.response?.data?.detail, "Connexion impossible")
           : "Connexion impossible",
       );
     } finally {

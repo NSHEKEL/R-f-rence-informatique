@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "../lib/apiErrors";
 import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import { Landmark, Plus, CheckCircle2, XCircle, Ban, Link2 } from "lucide-react";
@@ -108,7 +109,7 @@ export default function Banque() {
       await load();
     } catch (err) {
       if (axios.isAxiosError(err))
-        setError(err.response?.data?.detail ?? "Enregistrement impossible");
+        setError(apiErrorMessage(err.response?.data?.detail, "Enregistrement impossible"));
     }
   }
 
@@ -125,7 +126,7 @@ export default function Banque() {
       await load();
     } catch (err) {
       if (axios.isAxiosError(err))
-        setError(err.response?.data?.detail ?? "Enregistrement impossible");
+        setError(apiErrorMessage(err.response?.data?.detail, "Enregistrement impossible"));
     }
   }
 
@@ -140,7 +141,7 @@ export default function Banque() {
       await load();
     } catch (err) {
       if (axios.isAxiosError(err))
-        setError(err.response?.data?.detail ?? "Action impossible");
+        setError(apiErrorMessage(err.response?.data?.detail, "Action impossible"));
     }
   }
 
@@ -157,7 +158,7 @@ export default function Banque() {
       await load();
     } catch (err) {
       if (axios.isAxiosError(err))
-        setError(err.response?.data?.detail ?? "Rapprochement impossible");
+        setError(apiErrorMessage(err.response?.data?.detail, "Rapprochement impossible"));
     }
   }
 

@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "../lib/apiErrors";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import type { CSSProperties } from "react";
@@ -219,6 +220,7 @@ export default function NouvelleVente() {
   const canGift = can("ventes_cadeau");
   const canQuote = can("proformas");
   const { company, printing } = useCompany();
+  const allowNegativeStock = company?.allow_negative_stock_sale === true;
   const { online } = useNetwork();
   const version = useSyncVersion();
   const navigate = useNavigate();
@@ -376,7 +378,7 @@ export default function NouvelleVente() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const available = products.filter((p) => p.active !== false && stockLimit(p) > 0);
+    const available = products.filter((p) => p.active !== false && stockLimit(p, allowNegativeStock) > 0);
     if (q) {
       return available
         .filter(
@@ -401,7 +403,7 @@ export default function NouvelleVente() {
     return applySupplier(
       available.filter((p) => p.category_id === activeCategory)
     );
-  }, [products, query, activeCategory, bestSellerIds, supplierFilter]);
+  }, [products, query, activeCategory, bestSellerIds, supplierFilter, allowNegativeStock]);
 
   const PAYMENT_STYLE: Record<string, { icon: LucideIcon; tint: string }> = {
     Espèces: { icon: Banknote, tint: "bg-emerald-600" },
@@ -442,7 +444,7 @@ export default function NouvelleVente() {
     setSelectedLine(null);
     setCart((prev) => {
       const existing = prev.find((l) => l.product.id === product.id && l.scanned_code === original.scanned_code && l.packaging_id === packaging_id && (l.price_tier || "detail") === priceMode && (packaging_id ? l.unitMode === "packaging" : (!l.unitMode || l.unitMode === "base")));
-      if (prev.filter((l) => l.product.id === product.id).reduce((sum, l) => sum + l.quantity, 0) + increment > stockLimit(product)) return prev;
+      if (prev.filter((l) => l.product.id === product.id).reduce((sum, l) => sum + l.quantity, 0) + increment > stockLimit(product, allowNegativeStock)) return prev;
       if (!existing) return [...prev, { product, sourceProduct: original, scanned_code: original.scanned_code, scanned_label: original.scanned_label, packaging_id, quantity: increment, price_tier: priceMode, unitMode: packaging_id ? "packaging" : "base" }];
       return prev.map((l) =>
         l === existing ? (() => {
@@ -450,11 +452,11 @@ export default function NouvelleVente() {
           const pieces = packs ? 0 : 1;
           const quantity = l.quantity + packs * (product.units_per_packaging || 1) + pieces;
           const parts = cartParts(l);
-          return quantity > stockLimit(product) ? l : { ...l, quantity, packagingQuantity: parts.packaging_quantity + packs, pieceQuantity: parts.piece_quantity + pieces };
+          return quantity > stockLimit(product, allowNegativeStock) ? l : { ...l, quantity, packagingQuantity: parts.packaging_quantity + packs, pieceQuantity: parts.piece_quantity + pieces };
         })() : l
       );
     });
-  }, [priceMode]);
+  }, [priceMode, allowNegativeStock]);
 
   useScanner(async (codes) => {
     if (!readPosteSettings().scanner_auto_add) { setQuery(codes[0]); return; }
@@ -470,7 +472,7 @@ export default function NouvelleVente() {
         catch (error) { if (axios.isAxiosError(error) && error.response?.status === 404) continue; throw error; }
       }
       const packaging = target.packagings?.find((p) => p.active && p.barcode?.toLowerCase() === code.toLowerCase());
-      if (stockLimit(target) <= 0) throw new Error(`${target.name} est en rupture de stock`);
+      if (stockLimit(target, allowNegativeStock) <= 0) throw new Error(`${target.name} est en rupture de stock`);
       addToCart(target, packaging?.id);
       setSelectedLine(null);
       setError("");
@@ -507,7 +509,7 @@ export default function NouvelleVente() {
       setError(`Aucun article pour « ${query.trim()} »`);
       return;
     }
-    if (stockLimit(target) <= 0) {
+    if (stockLimit(target, allowNegativeStock) <= 0) {
       setError(`${target.name} est en rupture de stock`);
       return;
     }
@@ -557,7 +559,7 @@ export default function NouvelleVente() {
       prev.flatMap((l, index) => {
         if (index !== lineIndex) return [l];
         const others = prev.filter((other) => other !== l && other.product.id === l.product.id).reduce((sum, other) => sum + other.quantity, 0);
-        const capped = Math.min(Math.max(Math.floor(quantity), 0), stockLimit(l.product) - others);
+        const capped = Math.min(Math.max(Math.floor(quantity), 0), stockLimit(l.product, allowNegativeStock) - others);
         return capped === 0 ? [] : [{ ...l, quantity: capped, packagingQuantity: undefined, pieceQuantity: undefined }];
       })
     );
@@ -569,7 +571,7 @@ export default function NouvelleVente() {
     const factor = line.product.units_per_packaging || 1;
     const quantity = unitMode === "base" ? 1 : unitMode === "packaging" ? Math.max(1, Math.floor(line.quantity / factor)) * factor : line.quantity;
     const others = cart.filter((l) => l !== line && l.product.id === line.product.id).reduce((sum, l) => sum + l.quantity, 0);
-    if (quantity + others > stockLimit(line.product)) { setError("Stock insuffisant pour un conditionnement complet"); return; }
+    if (quantity + others > stockLimit(line.product, allowNegativeStock)) { setError("Stock insuffisant pour un conditionnement complet"); return; }
     const product = unitMode === "base" ? products.find((p) => p.id === line.product.id) || line.sourceProduct || line.product : line.product;
     setCart((prev) => prev.map((l, index) => index === lineIndex ? { ...l, product, packaging_id: unitMode === "base" ? undefined : l.packaging_id, unitMode, quantity, price: undefined, packagingQuantity: undefined, pieceQuantity: undefined } : l));
   }
@@ -581,7 +583,7 @@ export default function NouvelleVente() {
     const product = withPackaging(original, packaging_id);
     const quantity = product.packaging_unit ? product.units_per_packaging || 1 : 1;
     const others = cart.filter((l, i) => i !== lineIndex && l.product.id === product.id).reduce((sum, l) => sum + l.quantity, 0);
-    if (quantity + others > stockLimit(product)) { setError("Stock insuffisant pour ce conditionnement"); return; }
+    if (quantity + others > stockLimit(product, allowNegativeStock)) { setError("Stock insuffisant pour ce conditionnement"); return; }
     setCart((prev) => prev.map((l, i) => i === lineIndex ? { ...l, product, packaging_id, quantity, unitMode: product.packaging_unit ? "packaging" : "base", packagingQuantity: undefined, pieceQuantity: undefined, price: undefined } : l));
   }
 
@@ -592,7 +594,7 @@ export default function NouvelleVente() {
     if (index < 0) { setError("La ligne a changé. Rouvrez la vente mixte."); setMixedTarget(null); return; }
     const quantity = selection.packs * (selection.product.units_per_packaging || 1) + selection.pieces;
     const others = cart.filter((item) => item !== line && item.product.id === product.id).reduce((sum, item) => sum + item.quantity, 0);
-    if (quantity + others > stockLimit(product)) { setError("Stock insuffisant pour cette vente mixte"); return; }
+    if (quantity + others > stockLimit(product, allowNegativeStock)) { setError("Stock insuffisant pour cette vente mixte"); return; }
     const replacements: CartLine[] = [];
     let discount = line.discount || 0;
     if (selection.packs) {
@@ -621,7 +623,7 @@ export default function NouvelleVente() {
       setCustomerForm({ name: "", phone: "", email: "", address: "" });
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Impossible de créer le client");
+        setError(apiErrorMessage(err.response?.data?.detail, "Impossible de créer le client"));
       }
     }
   }
@@ -755,7 +757,7 @@ export default function NouvelleVente() {
       if (status) {
         setError(
           axios.isAxiosError(err)
-            ? err.response?.data?.detail ?? "Erreur lors de l'encaissement"
+            ? apiErrorMessage(err.response?.data?.detail, "Erreur lors de l'encaissement")
             : "Erreur lors de l'encaissement"
         );
         setSaving(false);
@@ -837,7 +839,7 @@ export default function NouvelleVente() {
       if (cartParts(l).packaging_quantity && l.product.units_per_packaging !== selected.units_per_packaging) return false;
       l.product = selected;
       l.sourceProduct = fresh;
-      return l.quantity <= stockLimit(fresh);
+      return l.quantity <= stockLimit(fresh, allowNegativeStock);
     });
     if (restored.length < entry.cart.length) {
       setError("Certaines lignes du ticket en attente ne sont plus disponibles.");
@@ -909,7 +911,7 @@ export default function NouvelleVente() {
     } catch (err) {
       setError(
         axios.isAxiosError(err)
-          ? err.response?.data?.detail ?? "Impossible d'enregistrer le devis"
+          ? apiErrorMessage(err.response?.data?.detail, "Impossible d'enregistrer le devis")
           : "Impossible d'enregistrer le devis"
       );
     } finally {
@@ -1255,6 +1257,7 @@ export default function NouvelleVente() {
                           </p>
                         </div>
                         <p className="text-xs text-slate-500">{l.unitMode === "packaging" ? l.product.packaging_unit : l.product.base_unit || "pièce"}{l.scanned_label ? ` · ${l.scanned_label}` : ""}</p>
+                        {allowNegativeStock && typeof l.product.quantity === "number" && l.product.quantity - cart.filter((line) => line.product.id === l.product.id).reduce((sum, line) => sum + line.quantity, 0) < 0 && <p className="text-xs font-medium text-amber-700">Stock insuffisant : stock deviendra {l.product.quantity - cart.filter((line) => line.product.id === l.product.id).reduce((sum, line) => sum + line.quantity, 0)}</p>}
                       </td>
                       <td className="px-1 py-1 text-right">
                         {canChangePrice ? (
@@ -1288,7 +1291,7 @@ export default function NouvelleVente() {
                           /> : <span>{formatXOF(l.discount ?? 0)}</span>}
                       </td>
                       <td className="px-1 py-1">
-                        {l.product.packaging_unit && l.unitMode && l.unitMode !== "base" ? <PackagingQuantity product={l.product} value={l.quantity} parts={cartParts(l)} max={stockLimit(l.product) - cart.filter((line) => line !== l && line.product.id === l.product.id).reduce((sum, line) => sum + line.quantity, 0)} mode={l.unitMode} onChange={(quantity, packs, pieces) => setCart((prev) => prev.flatMap((line, i) => i !== index ? [line] : quantity ? [{ ...line, quantity, packagingQuantity: packs, pieceQuantity: pieces }] : []))} /> :
+                        {l.product.packaging_unit && l.unitMode && l.unitMode !== "base" ? <PackagingQuantity product={l.product} value={l.quantity} parts={cartParts(l)} max={stockLimit(l.product, allowNegativeStock) - cart.filter((line) => line !== l && line.product.id === l.product.id).reduce((sum, line) => sum + line.quantity, 0)} mode={l.unitMode} onChange={(quantity, packs, pieces) => setCart((prev) => prev.flatMap((line, i) => i !== index ? [line] : quantity ? [{ ...line, quantity, packagingQuantity: packs, pieceQuantity: pieces }] : []))} /> :
                         <div className="flex items-center justify-center gap-0.5">
                           <button
                             className="rounded-lg bg-slate-100 p-1 text-slate-600 hover:bg-slate-200"

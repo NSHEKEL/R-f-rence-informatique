@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "../lib/apiErrors";
 import { useCallback, useEffect, useRef, useState } from "react";
 import axios from "axios";
 import {
@@ -129,7 +130,7 @@ export default function Rapports() {
       if (current !== requestId.current) return;
       if (axios.isAxiosError(err)) {
         setReport(null);
-        setError(err.response?.data?.detail ?? "Erreur de chargement");
+        setError(apiErrorMessage(err.response?.data?.detail, "Erreur de chargement"));
       }
     }
   }, [start, end]);

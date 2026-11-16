@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "../lib/apiErrors";
 import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import { Link } from "react-router-dom";
@@ -90,7 +91,7 @@ export default function Caisse() {
       await load();
       await refreshTill();
     } catch (err) {
-      if (axios.isAxiosError(err)) setError(err.response?.data?.detail ?? "Opération impossible");
+      if (axios.isAxiosError(err)) setError(apiErrorMessage(err.response?.data?.detail, "Opération impossible"));
     } finally {
       setSaving(false);
     }
@@ -114,7 +115,7 @@ export default function Caisse() {
       showTicket(res.data, "open", true);
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Impossible d'ouvrir la caisse");
+        setError(apiErrorMessage(err.response?.data?.detail, "Impossible d'ouvrir la caisse"));
       }
     } finally {
       setSaving(false);
@@ -137,7 +138,7 @@ export default function Caisse() {
       showTicket(res.data, "close", true);
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Impossible de fermer la caisse");
+        setError(apiErrorMessage(err.response?.data?.detail, "Impossible de fermer la caisse"));
       }
     } finally {
       setSaving(false);
@@ -151,7 +152,7 @@ export default function Caisse() {
       setZReport(res.data);
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "État Z indisponible");
+        setError(apiErrorMessage(err.response?.data?.detail, "État Z indisponible"));
       }
     }
   }
@@ -460,8 +461,7 @@ export default function Caisse() {
                           } catch (err) {
                             if (axios.isAxiosError(err)) {
                               setError(
-                                err.response?.data?.detail ??
-                                  "Réouverture impossible"
+                                apiErrorMessage(err.response?.data?.detail, "Réouverture impossible")
                               );
                             }
                           }

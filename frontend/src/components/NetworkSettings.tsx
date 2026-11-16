@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
+import { apiErrorMessage } from "../lib/apiErrors";
 import api, { formatDateTime, getServerUrl } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { useNetwork } from "../context/NetworkContext";
@@ -56,7 +57,7 @@ export default function NetworkSettings({ restricted, onRestrictionChange }: {
     try { await work(); await load(); setMessage("Configuration réseau mise à jour."); }
     catch (error) {
       const detail = axios.isAxiosError(error) ? error.response?.data?.detail : null;
-      setMessage(typeof detail === "string" ? detail : "Modification impossible. Vérifiez la connexion et le nom du poste (100 caractères maximum).");
+      setMessage(apiErrorMessage(detail, "Modification impossible. Vérifiez la connexion et le nom du poste (100 caractères maximum)."));
     }
   }
 

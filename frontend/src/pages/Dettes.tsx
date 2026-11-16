@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
+import { apiErrorMessage } from "../lib/apiErrors";
 import {
   AlertTriangle,
   Ban,
@@ -210,8 +211,8 @@ export default function Dettes() {
 
   function fail(error: unknown, fallback: string) {
     setMessage(
-      axios.isAxiosError(error) && typeof error.response?.data?.detail === "string"
-        ? error.response.data.detail
+      axios.isAxiosError(error)
+        ? apiErrorMessage(error.response?.data?.detail, fallback)
         : fallback
     );
   }

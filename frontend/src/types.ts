@@ -222,6 +222,7 @@ export const DEFAULT_PRINTING: PrintingConfig = {
 };
 
 export interface CompanySettings {
+  allow_negative_stock_sale?: boolean;
   id: number;
   name: string;
   slogan: string;

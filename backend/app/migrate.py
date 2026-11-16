@@ -207,6 +207,7 @@ COLUMNS["sale_return_items"].update({
     "unit_cost": "FLOAT DEFAULT NULL",
 })
 COLUMNS["company_settings"]["pos_display"] = "TEXT DEFAULT '{}'"
+COLUMNS["company_settings"]["allow_negative_stock_sale"] = f"BOOLEAN NOT NULL DEFAULT {FALSE_LITERAL}"
 COLUMNS["sale_items"].update({
     "sold_unit": "VARCHAR DEFAULT 'pièce'",
     "packaging_quantity": "INTEGER DEFAULT 0",

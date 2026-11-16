@@ -14,6 +14,7 @@ from ..database import get_db
 from ..catalogue_import import read_catalogue
 from ..product_codes import check_code, scanned_product
 from .. import stock
+from ..units import selected_packaging, snapshot
 from ..models import (
     Category,
     CompanySettings,
@@ -39,6 +40,7 @@ from ..schemas import (
     ProductPackagingInput,
     ProductOut,
     ProductUpdate,
+    ProductStockEntry,
     StockLotCreate,
     StockLotOut,
 )
@@ -69,7 +71,10 @@ def pos_products(images: bool = False, db: Session = Depends(get_db), user: User
     config = read_display(settings) if settings else None
     include_images = bool(images and config and config.images and config.mode.startswith('image+'))
     stock_visible = _stock_allowed(db, user)
-    query = db.query(Product).filter(Product.active.is_(True), Product.quantity > 0).order_by(Product.name)
+    query = db.query(Product).filter(Product.active.is_(True))
+    if not (settings and settings.allow_negative_stock_sale):
+        query = query.filter(Product.quantity > 0)
+    query = query.order_by(Product.name)
     if not include_images:
         query = query.options(defer(Product.image))
     return [_product_out(p, stock_visible, include_images) for p in query.all()]
@@ -758,6 +763,38 @@ def product_lots(
         .all()
     )
     return [_lot_out(lot) for lot in lots]
+
+
+@router.post("/{product_id}/stock-entry", response_model=ProductOut, status_code=201)
+def add_stock(
+    product_id: int,
+    payload: ProductStockEntry,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("produits_gerer")),
+):
+    product = db.get(Product, product_id)
+    if product is None:
+        raise HTTPException(404, "Produit introuvable")
+    if payload.unit == "base" and payload.packaging_id is not None:
+        raise HTTPException(400, "Choisissez une seule unité")
+    spec = selected_packaging(db, product, payload.packaging_id)
+    factor = spec.units_per_packaging if payload.unit == "packaging" else 1
+    if payload.unit == "packaging" and (not spec.packaging_unit or not factor or factor < 1):
+        raise HTTPException(400, "Conditionnement introuvable ou inactif")
+    quantity = payload.quantity * factor
+    if quantity > 2147483647:
+        raise HTTPException(400, "Quantité trop élevée")
+    depot_id = stock.resolve(db, payload.depot_id)
+    before, after = stock.adjust(db, product, quantity, depot_id)
+    db.add(StockMovement(
+        product_id=product.id, product_name=product.name, depot_id=depot_id,
+        kind="entree", quantity=quantity, stock_before=before, stock_after=after,
+        reason=payload.reason + (f" — {payload.note.strip()}" if payload.note.strip() else ""),
+        created_by_id=current_user.id, **snapshot(spec),
+    ))
+    db.commit()
+    db.refresh(product)
+    return product
 
 
 @router.post("/{product_id}/lots", response_model=StockLotOut, status_code=201)

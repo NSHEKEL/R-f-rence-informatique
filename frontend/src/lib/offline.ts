@@ -1,4 +1,5 @@
 import api from "../api/client";
+import { apiErrorMessage } from "./apiErrors";
 import type { Sale } from "../types";
 
 const CACHE_PREFIX = "ri_cache_";
@@ -177,21 +178,7 @@ export async function flushPendingSales(): Promise<SyncResult> {
         const detail = (
           err as { response?: { data?: { detail?: unknown } } }
         ).response?.data?.detail;
-        // A 422 body carries an array of {loc,msg,...} objects, not a string.
-        const reason =
-          typeof detail === "string"
-            ? detail
-            : Array.isArray(detail)
-              ? detail
-                  .map((d) =>
-                    d && typeof d === "object" && "msg" in d
-                      ? String((d as { msg: unknown }).msg)
-                      : String(d)
-                  )
-                  .join("; ")
-              : detail
-                ? JSON.stringify(detail)
-                : "refusé par le serveur";
+        const reason = apiErrorMessage(detail, "refusé par le serveur");
         rejected.push(`${entry.snapshot.reference} : ${reason}`);
         writeRejected([
           ...rejectedSales(),

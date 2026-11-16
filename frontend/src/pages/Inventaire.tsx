@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "../lib/apiErrors";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import {
@@ -148,7 +149,7 @@ export default function Inventaire() {
       await load();
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Erreur lors de l'inventaire");
+        setError(apiErrorMessage(err.response?.data?.detail, "Erreur lors de l'inventaire"));
       }
     } finally {
       setSaving(false);
@@ -208,7 +209,7 @@ export default function Inventaire() {
       setMessage(`Réception ${t.reference} enregistrée.`);
       await load();
     } catch (err) {
-      setError(axios.isAxiosError(err) ? err.response?.data?.detail ?? "Réception impossible" : "Réception impossible : envoi conservé en attente.");
+      setError(axios.isAxiosError(err) ? apiErrorMessage(err.response?.data?.detail, "Réception impossible") : "Réception impossible : envoi conservé en attente.");
     } finally {
       setSaving(false);
     }
@@ -240,7 +241,7 @@ export default function Inventaire() {
       await load();
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Transfert impossible");
+        setError(apiErrorMessage(err.response?.data?.detail, "Transfert impossible"));
       }
     } finally {
       setSaving(false);

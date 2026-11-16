@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "../lib/apiErrors";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import {
@@ -90,7 +91,7 @@ export default function Approvisionnements() {
       setSuppliers(sup.data);
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Erreur de chargement");
+        setError(apiErrorMessage(err.response?.data?.detail, "Erreur de chargement"));
       }
     }
   }, [statusFilter]);
@@ -189,7 +190,7 @@ export default function Approvisionnements() {
       await load();
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Erreur lors de l'enregistrement");
+        setError(apiErrorMessage(err.response?.data?.detail, "Erreur lors de l'enregistrement"));
       }
     } finally {
       setSaving(false);
@@ -228,7 +229,7 @@ export default function Approvisionnements() {
       await load();
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Réception impossible");
+        setError(apiErrorMessage(err.response?.data?.detail, "Réception impossible"));
       }
     } finally {
       setSaving(false);
@@ -243,7 +244,7 @@ export default function Approvisionnements() {
       await load();
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Annulation impossible");
+        setError(apiErrorMessage(err.response?.data?.detail, "Annulation impossible"));
       }
     }
   }
@@ -256,7 +257,7 @@ export default function Approvisionnements() {
       await load();
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Suppression impossible");
+        setError(apiErrorMessage(err.response?.data?.detail, "Suppression impossible"));
       }
     }
   }

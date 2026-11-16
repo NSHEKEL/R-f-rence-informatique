@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "../lib/apiErrors";
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import {
@@ -125,7 +126,7 @@ export default function Users() {
       if (editing && editing.id === current?.id) await refreshUser();
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Erreur lors de l'enregistrement");
+        setError(apiErrorMessage(err.response?.data?.detail, "Erreur lors de l'enregistrement"));
       }
     } finally {
       setSaving(false);
@@ -151,7 +152,7 @@ export default function Users() {
       );
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        alert(err.response?.data?.detail ?? "Action impossible");
+        alert(apiErrorMessage(err.response?.data?.detail, "Action impossible"));
       }
     }
   }
@@ -162,7 +163,7 @@ export default function Users() {
       await load();
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        alert(err.response?.data?.detail ?? "Action impossible");
+        alert(apiErrorMessage(err.response?.data?.detail, "Action impossible"));
       }
     }
   }

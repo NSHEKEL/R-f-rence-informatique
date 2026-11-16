@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "../lib/apiErrors";
 import { useState } from "react";
 import axios from "axios";
 import { Wallet } from "lucide-react";
@@ -30,7 +31,7 @@ export default function TillGate() {
       await refresh();
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Impossible d'ouvrir la caisse");
+        setError(apiErrorMessage(err.response?.data?.detail, "Impossible d'ouvrir la caisse"));
       }
     } finally {
       setSaving(false);

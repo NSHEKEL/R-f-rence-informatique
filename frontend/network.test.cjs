@@ -18,7 +18,7 @@ function load(path, imports, globals = {}) {
 
 function offline(post) {
   const storage = new Map();
-  const code = load("lib/offline.ts", { "../api/client": { default: { post } } }, {
+  const code = load("lib/offline.ts", { "../api/client": { default: { post } }, "./apiErrors": load("lib/apiErrors.ts", {}) }, {
     localStorage: { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) },
     window: { dispatchEvent() {} }, Event: class {},
   });

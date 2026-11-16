@@ -9,6 +9,7 @@ from .. import backup, remote_sales
 from ..database import get_db
 from ..catalogue import require_active
 from ..models import (
+    CompanySettings,
     Debt,
     Notification,
     Product,
@@ -157,6 +158,8 @@ def _consume_lots_fefo(db: Session, product: Product, quantity: int, depot_id=No
 
 def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
     depot_id = stock.resolve(db)
+    settings = db.query(CompanySettings).first()
+    allow_negative_stock = bool(settings and settings.allow_negative_stock_sale)
     if payload.discount > 0 and not has_permission(db, current_user, "prix_modifier"):
         raise HTTPException(status_code=403, detail="Vous n'avez pas le droit de modifier le prix de vente")
     if payload.is_gift and not has_permission(
@@ -206,7 +209,7 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
         if quantity <= 0:
             raise HTTPException(status_code=400, detail="Quantité invalide")
         item = item.model_copy(update={"quantity": quantity})
-        if product.quantity < item.quantity:
+        if not allow_negative_stock and product.quantity < item.quantity:
             raise HTTPException(
                 status_code=400,
                 detail=f"Stock insuffisant pour {product.name} "
@@ -267,7 +270,7 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
             )
         )
         if payload.status != "Annulée":
-            before, after = stock.adjust(db, product, -item.quantity, check_total=True)
+            before, after = stock.adjust(db, product, -item.quantity, check_total=not allow_negative_stock)
             db.add(
                 StockMovement(
                     depot_id=depot_id,

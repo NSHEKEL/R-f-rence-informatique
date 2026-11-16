@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "../lib/apiErrors";
 import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import {
@@ -335,7 +336,7 @@ export default function PrintingSettings({
         setPrintersError(
           axios.isAxiosError(err)
             ? `Détection impossible : ${
-                err.response?.data?.detail ?? err.message
+                apiErrorMessage(err.response?.data?.detail, err.message)
               }`
             : "Détection impossible sur ce poste."
         );
@@ -377,7 +378,7 @@ export default function PrintingSettings({
     } catch (err) {
       setError(
         axios.isAxiosError(err)
-          ? err.response?.data?.detail ?? "Enregistrement impossible"
+          ? apiErrorMessage(err.response?.data?.detail, "Enregistrement impossible")
           : "Enregistrement impossible"
       );
     } finally {
@@ -414,7 +415,7 @@ export default function PrintingSettings({
         );
         setActionMessage(data.sent ? `Ticket de test ${width} spoulé sur ${data.printer}.` : "Ticket non envoyé.");
       } catch (err) {
-        setActionMessage(axios.isAxiosError(err) ? err.response?.data?.detail ?? err.message : "Ticket non envoyé.");
+        setActionMessage(axios.isAxiosError(err) ? apiErrorMessage(err.response?.data?.detail, err.message) : "Ticket non envoyé.");
       }
       return;
     }
@@ -470,7 +471,7 @@ export default function PrintingSettings({
     } catch (err) {
       setActionMessage(
         axios.isAxiosError(err)
-          ? err.response?.data?.detail ?? "Changement impossible"
+          ? apiErrorMessage(err.response?.data?.detail, "Changement impossible")
           : "Changement impossible"
       );
     }
@@ -486,7 +487,7 @@ export default function PrintingSettings({
     } catch (err) {
       setActionMessage(
         axios.isAxiosError(err)
-          ? err.response?.data?.detail ?? "Ouverture impossible"
+          ? apiErrorMessage(err.response?.data?.detail, "Ouverture impossible")
           : "Ouverture impossible"
       );
     }
@@ -529,7 +530,7 @@ export default function PrintingSettings({
     } catch (err) {
       setDrawerMessage(
         axios.isAxiosError(err)
-          ? err.response?.data?.detail ?? "Ouverture impossible"
+          ? apiErrorMessage(err.response?.data?.detail, "Ouverture impossible")
           : "Ouverture impossible"
       );
     } finally {

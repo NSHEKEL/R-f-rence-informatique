@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "../lib/apiErrors";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
@@ -95,10 +96,9 @@ export default function Login() {
     } catch (err) {
       if (axios.isAxiosError(err)) {
         setError(
-          err.response?.data?.detail ??
-            (err.response
+          apiErrorMessage(err.response?.data?.detail, (err.response
               ? "Erreur de connexion"
-              : "Serveur injoignable — vérifiez l'adresse du poste serveur")
+              : "Serveur injoignable — vérifiez l'adresse du poste serveur"))
         );
       } else {
         setError("Erreur de connexion");
@@ -168,7 +168,7 @@ export default function Login() {
     } catch (err) {
       setForgotMessage(
         axios.isAxiosError(err)
-          ? err.response?.data?.detail ?? "Code invalide"
+          ? apiErrorMessage(err.response?.data?.detail, "Code invalide")
           : "Code invalide"
       );
     }
@@ -186,7 +186,7 @@ export default function Login() {
     } catch (err) {
       setRecoveryMessage(
         axios.isAxiosError(err)
-          ? err.response?.data?.detail ?? "Clé invalide"
+          ? apiErrorMessage(err.response?.data?.detail, "Clé invalide")
           : "Clé invalide"
       );
     }

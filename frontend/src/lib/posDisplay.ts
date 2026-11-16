@@ -35,6 +35,7 @@ export function tileVisibility(config: PosDisplay, stockRight: boolean) {
   return { image: config.images && config.mode.startsWith("image+"), price: config.mode.includes("prix"), stock: config.stock && config.mode.includes("stock") && stockRight };
 }
 
-export function stockLimit(product: { quantity?: number | null }) {
+export function stockLimit(product: { quantity?: number | null }, allowNegative = false) {
+  if (allowNegative) return Infinity;
   return typeof product.quantity === "number" ? product.quantity : Infinity;
 }

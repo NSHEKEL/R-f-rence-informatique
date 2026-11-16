@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "../lib/apiErrors";
 import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import { Cloud } from "lucide-react";
@@ -74,7 +75,7 @@ export default function GoogleDriveSettings({ company, onChange, onRestore }: {
     try { setMessage(await work()); }
     catch (error) {
       setMessage(axios.isAxiosError(error)
-        ? error.response?.data?.detail ?? "Google Drive indisponible. Vérifiez la connexion Internet."
+        ? apiErrorMessage(error.response?.data?.detail, "Google Drive indisponible. Vérifiez la connexion Internet.")
         : "Opération Google Drive impossible.");
     } finally {
       setBusy(false);
@@ -131,7 +132,7 @@ export default function GoogleDriveSettings({ company, onChange, onRestore }: {
         return "Paramètres Google Drive enregistrés.";
       })}>Enregistrer les paramètres Drive</button>
       <button className="btn-ghost" disabled={busy || !status?.connected} onClick={() => void action(async () => {
-        const { data } = await api.post<{ detail: string }>("/backups/drive/test", undefined, { timeout: 210000 }); return data.detail;
+        const { data } = await api.post<{ detail: string }>("/backups/drive/test", undefined, { timeout: 210000 }); return apiErrorMessage(data.detail, "Test terminé.");
       })}>Tester la connexion</button>
       <button className="btn-primary" disabled={busy || !status?.connected} onClick={() => void action(async () => {
         const { data } = await api.post<{ name: string; drive: { status: string; error?: string } }>("/backups?drive=true", undefined, { timeout: 240000 });

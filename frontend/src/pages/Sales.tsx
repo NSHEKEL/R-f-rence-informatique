@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "../lib/apiErrors";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
@@ -133,8 +134,8 @@ export default function Sales() {
       await load();
     } catch (err) {
       setError(
-        axios.isAxiosError(err) && err.response?.data?.detail
-          ? String(err.response.data.detail)
+        axios.isAxiosError(err)
+          ? apiErrorMessage(err.response?.data?.detail, "Certification FNE impossible.")
           : "Certification FNE impossible."
       );
     }
@@ -189,7 +190,7 @@ export default function Sales() {
     } catch (err) {
       if (axios.isAxiosError(err)) {
         setError(
-          err.response?.data?.detail ?? "Erreur lors de l'enregistrement"
+          apiErrorMessage(err.response?.data?.detail, "Erreur lors de l'enregistrement")
         );
       }
     } finally {

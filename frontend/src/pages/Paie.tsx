@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
+import { apiErrorMessage } from "../lib/apiErrors";
 import {
   Ban,
   BadgeCheck,
@@ -164,8 +165,7 @@ const EMPTY_ELEMENT = {
 
 function message(error: unknown, fallback: string): string {
   if (axios.isAxiosError(error)) {
-    const detail = error.response?.data?.detail;
-    if (typeof detail === "string") return detail;
+    return apiErrorMessage(error.response?.data?.detail, fallback);
   }
   return fallback;
 }

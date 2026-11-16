@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "../lib/apiErrors";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import {
@@ -79,7 +80,7 @@ export default function Proformas() {
       setCustomers(c.data);
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Erreur de chargement");
+        setError(apiErrorMessage(err.response?.data?.detail, "Erreur de chargement"));
       }
     }
   }, []);
@@ -191,7 +192,7 @@ export default function Proformas() {
       await load();
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Erreur lors de l'enregistrement");
+        setError(apiErrorMessage(err.response?.data?.detail, "Erreur lors de l'enregistrement"));
       }
     } finally {
       setSaving(false);
@@ -205,7 +206,7 @@ export default function Proformas() {
       await load();
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Opération impossible");
+        setError(apiErrorMessage(err.response?.data?.detail, "Opération impossible"));
       }
     }
   }

@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "../lib/apiErrors";
 import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import api, { formatDateTime } from "../api/client";
@@ -30,7 +31,7 @@ export default function DepotSettings() {
   async function action(work: () => Promise<unknown>) {
     setBusy(true); setMessage("");
     try { await work(); await load(); }
-    catch (error) { setMessage(axios.isAxiosError(error) ? String(error.response?.data?.detail || "Opération impossible") : "Opération impossible"); }
+    catch (error) { setMessage(axios.isAxiosError(error) ? apiErrorMessage(error.response?.data?.detail, "Opération impossible") : "Opération impossible"); }
     finally { setBusy(false); }
   }
   return <section className="card space-y-4 p-5"><h2 className="text-xl font-bold">Dépôts et transferts internes</h2>

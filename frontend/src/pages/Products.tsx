@@ -1,3 +1,5 @@
+import { apiErrorMessage } from "../lib/apiErrors";
+import { productBarcodes, productTextError } from "../lib/productForm";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import axios from "axios";
@@ -30,6 +32,7 @@ import { useLicense } from "../context/LicenseContext";
 import { stockBadge } from "../components/badges";
 import DepotStock from "../components/DepotStock";
 import ProductDetails from "../components/ProductDetails";
+import ProductStockEntry from "../components/ProductStockEntry";
 import { readProductSort, saveProductSort, sortProducts } from "../lib/productSort";
 import type { ProductSort } from "../lib/productSort";
 import { StockColumnChooser, StockExtraCells, StockExtraHeaders } from "../components/StockColumns";
@@ -120,6 +123,7 @@ export default function Products() {
   const [query, setQuery] = useState(() => searchParams.get("q") ?? "");
   const [page, setPage] = useState(1);
   const [modalOpen, setModalOpen] = useState(false);
+  const [stockEntryOpen, setStockEntryOpen] = useState(false);
   const [viewProductId, setViewProductId] = useState<number | null>(null);
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState({ ...empty });
@@ -243,7 +247,7 @@ export default function Products() {
     } catch (err) {
       setError(
         axios.isAxiosError(err)
-          ? err.response?.data?.detail ?? "Import impossible"
+          ? apiErrorMessage(err.response?.data?.detail, "Import impossible")
           : "Import impossible"
       );
     }
@@ -297,6 +301,12 @@ export default function Products() {
 
   async function save() {
     setError("");
+    const barcodes = productBarcodes(form.barcodes);
+    const textError = productTextError({ ...form, barcodes });
+    if (textError) {
+      setError(textError);
+      return;
+    }
     if (!Number.isInteger(form.quantity) || form.quantity < 0 || (form.packaging_unit.trim() && (!Number.isInteger(form.units_per_packaging) || form.units_per_packaging < 1))) {
       setError("Stock et facteur doivent être des nombres entiers valides.");
       return;
@@ -310,6 +320,7 @@ export default function Products() {
     setSaving(true);
     const payload = {
       ...form,
+      barcodes,
       semi_wholesale_price: form.semi_wholesale_price === "" ? null : Number(form.semi_wholesale_price),
       supplier_purchase_price: form.supplier_purchase_price === "" ? null : Number(form.supplier_purchase_price),
       semi_wholesale_min_qty: form.semi_wholesale_min_qty === "" ? null : Number(form.semi_wholesale_min_qty),
@@ -352,7 +363,7 @@ export default function Products() {
       await load();
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Erreur lors de l'enregistrement");
+        setError(apiErrorMessage(err.response?.data?.detail, "Erreur lors de l'enregistrement"));
       }
     } finally {
       setSaving(false);
@@ -404,9 +415,8 @@ export default function Products() {
       await load();
     } catch (error) {
       setLotError(
-        axios.isAxiosError(error) &&
-          typeof error.response?.data?.detail === "string"
-          ? error.response.data.detail
+        axios.isAxiosError(error)
+          ? apiErrorMessage(error.response?.data?.detail, "Enregistrement impossible.")
           : "Enregistrement impossible."
       );
     }
@@ -809,6 +819,10 @@ export default function Products() {
       </div>
 
       {viewProductId != null && <ProductDetails key={viewProductId} products={filtered} productId={viewProductId} onNavigate={setViewProductId} onClose={() => setViewProductId(null)} onEdit={(product) => { setViewProductId(null); openEdit(product); }} />}
+      {stockEntryOpen && editing && <ProductStockEntry product={editing} onClose={() => { setStockEntryOpen(false); setModalOpen(true); }} onSaved={async (product) => {
+        setEditing(product); setForm((previous) => ({ ...previous, quantity: product.quantity }));
+        await load().catch(() => setError("Entrée enregistrée. Actualisez la liste des produits."));
+      }} />}
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
@@ -816,6 +830,7 @@ export default function Products() {
         wide
         footer={
           <>
+            {editing && can("produits_gerer") && <button className="btn-ghost" disabled={saving} onClick={() => { setModalOpen(false); setStockEntryOpen(true); }}>+ Ajouter du stock</button>}
             <button className="btn-ghost" onClick={() => setModalOpen(false)}>
               Annuler
             </button>

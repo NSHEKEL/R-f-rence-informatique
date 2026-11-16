@@ -19,7 +19,7 @@ test("POS cart keeps units and tiers separate and edits only the selected line",
   visit(file);
   assert.equal(functions.length, names.size + 1);
   const product = { id: 1, name: "Article", quantity: 200, base_unit: "pièce", packaging_unit: "carton", units_per_packaging: 24, sale_price: 100, packaging_sale_price: 2000, wholesale_price: 80, wholesale_packaging_price: 1500 };
-  const state = { ...units, cart: [], priceMode: "detail", product, error: "", stockLimit: (p) => p.quantity };
+  const state = { ...units, cart: [], priceMode: "detail", product, error: "", allowNegativeStock: false, stockLimit: (p, allow) => allow ? Infinity : p.quantity };
   state.setCart = (change) => { state.cart = change(state.cart); };
   state.setError = (error) => { state.error = error; };
   state.lastAdded = { current: null };
@@ -50,5 +50,8 @@ test("POS cart keeps units and tiers separate and edits only the selected line",
   run('addToCart(product);');
   assert.equal(state.cart.length, 2);
   assert.equal(state.cart[1].quantity, 2);
+  state.allowNegativeStock = true;
+  run('addToCart(product); setQuantity(1, 50);');
+  assert.equal(state.cart[1].quantity, 50);
   assert.match(source, /ref=\{discountRef\}\s+disabled=\{!canChangePrice\}/);
 });

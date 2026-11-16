@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "../lib/apiErrors";
 import { useCallback, useEffect, useRef, useState } from "react";
 import axios from "axios";
 import { updateLocal } from "../lib/updateLocal";
@@ -239,7 +240,7 @@ export default function Settings() {
     } catch (err) {
       setPasswordMessage(
         axios.isAxiosError(err)
-          ? err.response?.data?.detail ?? "Changement impossible"
+          ? apiErrorMessage(err.response?.data?.detail, "Changement impossible")
           : "Changement impossible"
       );
     }
@@ -317,7 +318,7 @@ export default function Settings() {
     } catch (err) {
       setBackupMessage(
         axios.isAxiosError(err)
-          ? err.response?.data?.detail ?? "Sauvegarde impossible"
+          ? apiErrorMessage(err.response?.data?.detail, "Sauvegarde impossible")
           : "Sauvegarde impossible"
       );
     }
@@ -339,7 +340,7 @@ export default function Settings() {
     } catch (err) {
       setBackupMessage(
         axios.isAxiosError(err)
-          ? err.response?.data?.detail ?? "Copie impossible"
+          ? apiErrorMessage(err.response?.data?.detail, "Copie impossible")
           : "Copie impossible"
       );
     }
@@ -367,7 +368,7 @@ export default function Settings() {
     } catch (err) {
       setBackupMessage(
         axios.isAxiosError(err)
-          ? err.response?.data?.detail ?? "Enregistrement impossible"
+          ? apiErrorMessage(err.response?.data?.detail, "Enregistrement impossible")
           : "Enregistrement impossible"
       );
     }
@@ -388,7 +389,7 @@ export default function Settings() {
       setRestoreFile(file);
     } catch (err) {
       setBackupMessage(axios.isAxiosError(err)
-        ? err.response?.data?.detail ?? "Inspection impossible" : "Inspection impossible");
+        ? apiErrorMessage(err.response?.data?.detail, "Inspection impossible") : "Inspection impossible");
     } finally {
       setRestoreBusy(false);
     }
@@ -415,7 +416,7 @@ export default function Settings() {
     } catch (err) {
       setBackupMessage(
         axios.isAxiosError(err)
-          ? err.response?.data?.detail ?? "Restauration impossible"
+          ? apiErrorMessage(err.response?.data?.detail, "Restauration impossible")
           : "Restauration impossible"
       );
     } finally {
@@ -446,7 +447,7 @@ export default function Settings() {
     } catch (err) {
       setMailStatus(
         axios.isAxiosError(err)
-          ? err.response?.data?.detail ?? "Échec de l'envoi"
+          ? apiErrorMessage(err.response?.data?.detail, "Échec de l'envoi")
           : "Échec de l'envoi"
       );
     }
@@ -486,7 +487,7 @@ export default function Settings() {
     } catch (err) {
       setUpdateMessage(
         axios.isAxiosError(err)
-          ? err.response?.data?.detail ?? "Échec de la mise à jour"
+          ? apiErrorMessage(err.response?.data?.detail, "Échec de la mise à jour")
           : "Échec de la mise à jour"
       );
     }
@@ -509,9 +510,7 @@ export default function Settings() {
     } catch (err) {
       setMobileStatus(
         axios.isAxiosError(err)
-          ? typeof err.response?.data?.detail === "string"
-            ? err.response.data.detail
-            : "Serveur central injoignable. Vérifiez la connexion internet puis réessayez."
+          ? apiErrorMessage(err.response?.data?.detail, "Serveur central injoignable. Vérifiez la connexion internet puis réessayez.")
           : "Publication impossible pour le moment."
       );
     }
@@ -551,7 +550,7 @@ export default function Settings() {
       setSaved(true);
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Erreur lors de l'enregistrement");
+        setError(apiErrorMessage(err.response?.data?.detail, "Erreur lors de l'enregistrement"));
       }
     } finally {
       setSaving(false);
@@ -926,6 +925,11 @@ export default function Settings() {
                 affiche le total HT, la TVA et le total TTC.
               </p>
             </div>
+            <label className="flex items-center gap-3 text-sm sm:col-span-2">
+              <input type="checkbox" checked={company.allow_negative_stock_sale ?? false} disabled={!can("generaux_modifier")}
+                onChange={(e) => update({ allow_negative_stock_sale: e.target.checked })} />
+              Autoriser la vente sans stock (stock négatif)
+            </label>
             <div className="sm:col-span-2 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
               Reçus, tiroir-caisse et étiquettes se règlent désormais dans
               l'onglet <span className="font-semibold">Impression</span>.

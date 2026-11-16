@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "../lib/apiErrors";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import axios from "axios";
@@ -85,7 +86,7 @@ export default function Livraisons() {
       setCustomers(c.data);
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Erreur de chargement");
+        setError(apiErrorMessage(err.response?.data?.detail, "Erreur de chargement"));
       }
     }
   }, []);
@@ -239,7 +240,7 @@ export default function Livraisons() {
       await load();
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Enregistrement impossible");
+        setError(apiErrorMessage(err.response?.data?.detail, "Enregistrement impossible"));
       }
     } finally {
       setSaving(false);
@@ -254,7 +255,7 @@ export default function Livraisons() {
       await load();
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Opération impossible");
+        setError(apiErrorMessage(err.response?.data?.detail, "Opération impossible"));
       }
     }
   }
@@ -266,7 +267,7 @@ export default function Livraisons() {
       await load();
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Suppression impossible");
+        setError(apiErrorMessage(err.response?.data?.detail, "Suppression impossible"));
       }
     }
   }
