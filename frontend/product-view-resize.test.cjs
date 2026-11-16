@@ -11,6 +11,24 @@ function load(path, imports = {}, globals = {}) {
   return exports;
 }
 const navigation = load("lib/productNavigation.ts");
+test("product editor preserves empty or null base units and permits clearing the field", () => {
+  const source = readFileSync(`${__dirname}/src/pages/Products.tsx`, "utf8");
+  const start = source.indexOf("  function openEdit(");
+  const end = source.indexOf("\n  async function save()", start);
+  const code = ts.transpileModule(source.slice(start, end) + "\nexports.openEdit = openEdit;", {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+  }).outputText;
+  let form;
+  const exports = {};
+  vm.runInNewContext(code, { exports, setEditing() {}, setForm: (value) => { form = value; }, setError() {}, setModalOpen() {} });
+  for (const [base_unit, expected] of [["", ""], [null, ""], ["kg", "kg"]]) {
+    exports.openEdit({ base_unit });
+    assert.equal(form.base_unit, expected);
+  }
+  assert.doesNotMatch(source, /!form\.base_unit\.trim\(\)/);
+  assert.match(source, /base_unit: form\.base_unit\.trim\(\),/);
+  assert.doesNotMatch(source, /<input[^>]*required[^>]*value=\{form\.base_unit\}/);
+});
 test("catalogue import reports duplicates beside successes, handles duplicate-only and preserves empty/error feedback", async () => {
   const source = readFileSync(`${__dirname}/src/pages/Products.tsx`, "utf8");
   const start = source.indexOf("  async function importCsv(");

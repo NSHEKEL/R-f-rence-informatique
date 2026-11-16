@@ -9,7 +9,7 @@ from ..database import get_db
 from ..models import Depot, Notification, Product, StockMovement, User
 from ..permissions import require_permission
 from ..schemas import InventoryApply, StockMovementOut
-from ..units import base_quantity
+from ..units import base_quantity, selected_packaging, snapshot
 from .. import stock
 from .inventory_sessions import router as sessions_router
 
@@ -106,7 +106,8 @@ def apply_inventory(
             raise HTTPException(
                 status_code=404, detail=f"Produit {line.product_id} introuvable"
             )
-        line = line.model_copy(update={"counted_quantity": base_quantity(line, product, "counted_quantity")})
+        spec = selected_packaging(db, product, line.packaging_id)
+        line = line.model_copy(update={"counted_quantity": base_quantity(line, spec, "counted_quantity")})
         if line.counted_quantity < 0:
             raise HTTPException(status_code=400, detail="Quantité invalide")
         before, after = stock.set_total(db, product, line.counted_quantity)
@@ -123,6 +124,7 @@ def apply_inventory(
             stock_after=after,
             reason=payload.note or "Inventaire physique",
             created_by_id=current_user.id,
+            **snapshot(spec),
         )
         db.add(movement)
         movements.append(movement)

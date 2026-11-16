@@ -59,7 +59,7 @@ def prices(product, tier="detail"):
 
 def snapshot(product):
     return {
-        "base_unit": product.base_unit or "pièce",
+        "base_unit": product.base_unit if product.base_unit is not None else "pièce",
         "packaging_unit": product.packaging_unit or "",
         "units_per_packaging": product.units_per_packaging or 1,
     }

@@ -11,6 +11,9 @@ import { SyncProvider } from "./context/SyncContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { TillProvider } from "./context/TillContext";
 import FrontendMounted from "./components/FrontendMounted";
+import { installNumberWheelGuard } from "./lib/numberWheel";
+
+installNumberWheelGuard();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

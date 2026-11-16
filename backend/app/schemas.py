@@ -444,7 +444,7 @@ class ProductBase(BaseModel):
     semi_wholesale_min_qty: Optional[int] = Field(default=None, ge=1)
     wholesale_min_qty: Optional[int] = Field(default=None, ge=1)
     packagings: Optional[List[ProductPackagingInput]] = None
-    base_unit: str = Field(default="pièce", min_length=1, max_length=40)
+    base_unit: str = Field(default="pièce", min_length=0, max_length=40)
     packaging_unit: str = Field(default="", max_length=40)
     units_per_packaging: int = Field(default=1, ge=1)
     packaging_sale_price: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
@@ -980,6 +980,7 @@ class ExpenseOut(BaseModel):
 # ---------- Inventory ----------
 class InventoryLine(PackagingQuantities):
     product_id: int
+    packaging_id: Optional[int] = Field(default=None, ge=1)
     counted_quantity: int = 0
 
 

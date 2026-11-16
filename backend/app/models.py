@@ -279,6 +279,14 @@ class Product(UnitSnapshot, Base):
     packagings = relationship("ProductPackaging", order_by="ProductPackaging.sort_order, ProductPackaging.id")
     barcodes = relationship("ProductBarcode", order_by="ProductBarcode.id")
 
+    @property
+    def quantity_label(self):
+        from .units import quantity_label
+        packaging = next((p for p in self.packagings if p.active), None) if not self.packaging_unit else None
+        return quantity_label(self.quantity, self.base_unit,
+                              packaging.name if packaging else self.packaging_unit,
+                              packaging.factor if packaging else self.units_per_packaging)
+
 
 class ProductBarcode(Base):
     __tablename__ = "product_barcodes"
@@ -1468,7 +1476,7 @@ def capture_units(mapper, connection, target):
     if target.base_unit is None and target.product_id is not None:
         product = connection.execute(select(Product.base_unit, Product.packaging_unit, Product.units_per_packaging).where(Product.id == target.product_id)).first()
         if product:
-            target.base_unit = product.base_unit or "pièce"
+            target.base_unit = product.base_unit if product.base_unit is not None else "pièce"
             target.packaging_unit = product.packaging_unit or ""
             target.units_per_packaging = product.units_per_packaging or 1
     if isinstance(target, SaleItem):

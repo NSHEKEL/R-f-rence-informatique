@@ -36,6 +36,7 @@ from ..schemas import (
     ProductCreate,
     ProductActivation,
     ProductBarcodeInput,
+    ProductPackagingInput,
     ProductOut,
     ProductUpdate,
     StockLotCreate,
@@ -317,9 +318,25 @@ _CSV_ALIASES = {
         "prixen gros",
     },
     "quantity": {"quantite", "quantité", "quantity", "stock", "qte"},
+    "initial_quantity": {"quantite_a_la_creation", "quantite_initiale", "stock_initial"},
+    "quantity_unit": {"unite_de_la_quantite"},
+    "base_unit": {"unite", "unite_de_base"},
     "min_stock": {"min_stock", "seuil", "stock_min", "stock_minimum", "alerte"},
     "barcode": {"barcode", "code_barres", "code-barres", "ean", "ean13"},
 }
+
+for _group in range(1, 10):
+    for _field, _aliases in {
+        "name": ("conditionnement", "nom_du_conditionnement"),
+        "factor": ("facteur", "facteur_unite_de_base", "facteur_conditionnement"),
+        "price_gros": ("prix_gros_conditionnement", "prix_de_vente_en_gros_du_conditionnement"),
+        "price_detail": ("prix_detail_conditionnement",),
+        "price_semi_gros": ("prix_semi_gros_conditionnement",),
+    }.items():
+        _CSV_ALIASES[f"packaging_{_group}_{_field}"] = {
+            alias + suffix for alias in _aliases
+            for suffix in (("", "_1", "1") if _group == 1 else (f"_{_group}", str(_group)))
+        }
 
 
 def _norm_header(header: str) -> str:
@@ -362,6 +379,64 @@ def _import_name(name: str) -> str:
     return " ".join("".join(char for char in value if not unicodedata.combining(char)).split())
 
 
+def _import_packagings(db, product, fields):
+    rows = [ProductPackagingInput.model_validate(p) for p in db.query(ProductPackaging).filter_by(product_id=product.id).order_by(ProductPackaging.id)] if product else []
+    seen, changed = set(), False
+    for group in range(1, 10):
+        cells = {key: fields.get(f"packaging_{group}_{key}", "") for key in ("name", "factor", "price_detail", "price_semi_gros", "price_gros")}
+        if not any(cells.values()):
+            continue
+        name = cells["name"]
+        try:
+            factor = float(cells["factor"].replace(" ", "").replace(",", "."))
+        except ValueError:
+            factor = float("nan")
+        if not name or not math.isfinite(factor) or not factor.is_integer() or not 1 <= factor <= 2147483647:
+            raise ValueError(f"Conditionnement {group} : nom et facteur entier ≥ 1 requis")
+        normalized = _import_name(name)
+        if normalized in seen:
+            raise ValueError(f"Conditionnement répété : {name}")
+        seen.add(normalized)
+        match = next((row for row in rows if _import_name(row.name) == normalized), None)
+        values = match.model_dump() if match else {}
+        values.update(name=name, factor=int(factor))
+        for key in ("price_detail", "price_semi_gros", "price_gros"):
+            if cells[key]:
+                price = _to_float(cells[key], float("nan"))
+                if not math.isfinite(price) or price < 0:
+                    raise ValueError(f"Conditionnement {group} : prix invalide ({key})")
+                values[key] = price
+        merged = ProductPackagingInput(**values)
+        if match:
+            rows[rows.index(match)] = merged
+        else:
+            rows.append(merged)
+        changed = True
+    return rows if changed else None
+
+
+def _import_quantity(fields, present, product, packagings):
+    field = "quantity" if "quantity" in present else "initial_quantity" if product is None and "initial_quantity" in present else None
+    if field is None:
+        return None
+    quantity = _to_int(fields.get(field, ""))
+    unit = _import_name(fields.get("quantity_unit", ""))
+    base = fields.get("base_unit", product.base_unit if product else "pièce")
+    if not unit or unit in {_import_name(base or ""), "piece", "pieces", "unite"}:
+        return quantity
+    rows = packagings if packagings is not None else (product.packagings if product else [])
+    match = next((row for row in rows if row.active and _import_name(row.name) == unit), None)
+    if match:
+        quantity *= match.factor
+    elif product and product.packaging_unit and _import_name(product.packaging_unit) == unit:
+        quantity *= product.units_per_packaging or 1
+    else:
+        raise ValueError(f"Unité de la quantité inconnue : {fields.get('quantity_unit', '')}")
+    if not -2147483648 <= quantity <= 2147483647:
+        raise ValueError("Quantité trop élevée")
+    return quantity
+
+
 @router.post("/import")
 def import_products(
     file: UploadFile = File(...),
@@ -394,6 +469,7 @@ def import_products(
     created, updated, errors = 0, 0, []
     duplicates = []
     existing_names = {}
+    created_names = {}
     for product in db.query(Product.id, Product.name, Product.sku).order_by(Product.id).all():
         existing_names.setdefault(_import_name(product.name), {"id": product.id, "name": product.name, "sku": product.sku})
     categories = {c.name.lower(): c for c in db.query(Category).all()}
@@ -411,9 +487,12 @@ def import_products(
             if match:
                 duplicates.append({"line": number, "name": name, "sku": sku, "existing": match})
                 continue
+        if existing is None and not sku:
+            created_id = next((pid for pid, imported_name in created_names.items() if imported_name == _import_name(name)), None)
+            existing = db.get(Product, created_id) if created_id else None
         if not sku:
-            sku = f"IMP-{number:05d}"
-            existing = db.query(Product).filter(Product.sku == sku).first()
+            sku = existing.sku if existing else f"IMP-{number:05d}"
+            existing = existing or db.query(Product).filter(Product.sku == sku).first()
         if not name:
             name = sku
         barcode = fields.get("barcode", "")
@@ -436,24 +515,15 @@ def import_products(
                 if not math.isfinite(wholesale_packaging_price) or wholesale_packaging_price < 0:
                     errors.append({"line": number, "message": "Prix gros carton invalide"})
                     continue
-        category_id = None
         category_name = fields.get("category", "")
-        if category_name:
-            cat = categories.get(category_name.lower())
-            if cat is None:
-                cat = Category(name=category_name)
-                db.add(cat)
-                db.flush()
-                categories[category_name.lower()] = cat
-            category_id = cat.id
         values = {"name": name}
+        if "base_unit" in present:
+            values["base_unit"] = fields.get("base_unit", "")
         for field in ("rayon", "emplacement"):
             if field in present:
                 values[field] = fields.get(field, "").strip() or None
         if "description" in present:
             values["description"] = fields.get("description", "")
-        if "category" in present:
-            values["category_id"] = category_id
         if "purchase_price" in present:
             values["purchase_price"] = _to_float(fields.get("purchase_price", ""))
         if "sale_price" in present:
@@ -462,17 +532,26 @@ def import_products(
             values["wholesale_price"] = _to_float(
                 fields.get("wholesale_price", "")
             )
-        if "quantity" in present:
-            values["quantity"] = _to_int(fields.get("quantity", ""))
         if "wholesale_packaging_price" in present:
             values["wholesale_packaging_price"] = wholesale_packaging_price
         if "min_stock" in present:
             values["min_stock"] = _to_int(fields.get("min_stock", ""), 5)
         if barcode:
             values["barcode"] = barcode
-            seen_barcodes.add(barcode)
         was_existing = existing is not None
         try:
+            packagings = _import_packagings(db, existing, fields)
+            quantity = _import_quantity(fields, present, existing, packagings)
+            if quantity is not None:
+                values["quantity"] = quantity
+            if "category" in present:
+                cat = categories.get(category_name.lower()) if category_name else None
+                if category_name and cat is None:
+                    cat = Category(name=category_name)
+                    db.add(cat)
+                    db.flush()
+                    categories[category_name.lower()] = cat
+                values["category_id"] = cat.id if cat else None
             _check_code(db, sku, product_id=existing.id if existing else None)
             _check_code(db, barcode, product_id=existing.id if existing else None)
             if existing:
@@ -501,6 +580,8 @@ def import_products(
                 values.setdefault("quantity", 0)
                 values.setdefault("min_stock", 5)
                 existing = stock.create_product(db, sku=sku, **values)
+            db.flush()
+            _save_packagings(db, existing, packagings, current_user)
             extra_codes = [code.strip() for code in fields.get("extra_codes", "").split("|") if code.strip()]
             if extra_codes:
                 db.flush()
@@ -510,12 +591,16 @@ def import_products(
                 _save_barcodes(db, existing, aliases, current_user)
             # Each row lands on its own: a bad row later never undoes it.
             db.commit()
+            if barcode:
+                seen_barcodes.add(barcode)
+            if not was_existing or existing.id in created_names:
+                created_names[existing.id] = _import_name(name)
             updated += int(was_existing)
             created += int(not was_existing)
         except Exception as exc:  # a bad row must not drop the whole file
             db.rollback()
             categories = {c.name.lower(): c for c in db.query(Category).all()}
-            errors.append({"line": number, "message": str(exc)[:120]})
+            errors.append({"line": number, "message": str(getattr(exc, "detail", str(exc)))[:120]})
     return {"created": created, "updated": updated, "errors": errors, "duplicates": duplicates}
 
 

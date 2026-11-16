@@ -1454,14 +1454,6 @@ export default function NouvelleVente() {
             </div>
             <div className="flex gap-3">
               <div className="min-w-0 flex-1 space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold text-slate-500">
-                    Sous-total
-                  </span>
-                  <span className="text-sm font-extrabold text-slate-800">
-                    {formatXOF(vat ? vat.excluded : subtotal)}
-                  </span>
-                </div>
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm font-semibold text-slate-500">
                     Remise
@@ -1504,12 +1496,6 @@ export default function NouvelleVente() {
                     </button>
                   </span>
                 </div>
-                {vat && (
-                  <div className="flex items-center justify-between text-[11px] text-slate-400">
-                    <span>TVA ({vat.rate} %)</span>
-                    <span>{formatXOF(vat.vat)}</span>
-                  </div>
-                )}
               </div>
             </div>
             <div className="grid grid-cols-3 gap-2">

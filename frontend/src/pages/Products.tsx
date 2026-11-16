@@ -270,7 +270,7 @@ export default function Products() {
       semi_wholesale_min_qty: p.semi_wholesale_min_qty ?? "",
       wholesale_min_qty: p.wholesale_min_qty ?? "",
       name: p.name,
-      base_unit: p.base_unit || "pièce",
+      base_unit: p.base_unit ?? "",
       packaging_unit: p.packaging_unit || "",
       units_per_packaging: p.units_per_packaging || 1,
       packaging_sale_price: p.packaging_sale_price ?? "",
@@ -297,8 +297,8 @@ export default function Products() {
 
   async function save() {
     setError("");
-    if (!form.base_unit.trim() || !Number.isInteger(form.quantity) || form.quantity < 0 || (form.packaging_unit.trim() && (!Number.isInteger(form.units_per_packaging) || form.units_per_packaging < 1))) {
-      setError("Unité de base requise ; stock et facteur doivent être des nombres entiers valides.");
+    if (!Number.isInteger(form.quantity) || form.quantity < 0 || (form.packaging_unit.trim() && (!Number.isInteger(form.units_per_packaging) || form.units_per_packaging < 1))) {
+      setError("Stock et facteur doivent être des nombres entiers valides.");
       return;
     }
     if (form.packagings.some((p) => !p.name.trim() || !Number.isInteger(p.factor) || p.factor < 1 || p.factor > 2147483647 || !Number.isInteger(p.sort_order) || [p.price_detail, p.price_semi_gros, p.price_gros, p.purchase_price].some((price) => price != null && (!Number.isFinite(price) || price < 0))) ||
@@ -923,7 +923,7 @@ export default function Products() {
             <p className="text-xs text-slate-500">{formatQuantity(form, form.quantity)}</p>
             {form.packaging_unit && <PackagingQuantity product={form} value={form.quantity} onChange={(quantity) => setForm({ ...form, quantity })} />}
           </div>
-          <div><label className="label">Unité de base</label><input className="input" required value={form.base_unit} placeholder="pièce, kg, litre…" onChange={(e) => setForm({ ...form, base_unit: e.target.value })} /></div>
+          <div><label className="label">Unité de base</label><input className="input" value={form.base_unit} placeholder="pièce, kg, litre…" onChange={(e) => setForm({ ...form, base_unit: e.target.value })} /></div>
           <div><label className="label">Conditionnement (facultatif)</label><input className="input" value={form.packaging_unit} placeholder="carton, paquet, boîte, sac…" onChange={(e) => setForm({ ...form, packaging_unit: e.target.value })} /></div>
           {form.packaging_unit && <>
             <div><label className="label">Pièces par carton</label><input className="input" type="number" min="1" step="1" value={form.units_per_packaging} onChange={(e) => setForm({ ...form, units_per_packaging: Number(e.target.value) })} /></div>
