@@ -888,6 +888,36 @@ export default function Products() {
             />
           </div>
 <div>
+            <label className="label">Catégorie</label>
+            <select
+              className="input"
+              value={form.category_id ?? ""}
+              onChange={(e) => setForm({ ...form, category_id: e.target.value as unknown as number })}
+            >
+              <option value="">— Aucune —</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+<div>
+            <label className="label">Fournisseur</label>
+            <select
+              className="input"
+              value={form.supplier_id ?? ""}
+              onChange={(e) => setForm({ ...form, supplier_id: e.target.value as unknown as number })}
+            >
+              <option value="">— Aucun —</option>
+              {suppliers.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </div>
+<div>
             <label className="label">Référence (SKU)</label>
             <input
               className="input"
@@ -1005,36 +1035,6 @@ export default function Products() {
 <h4 className="col-span-full font-semibold">Autres informations et tarifs</h4>
 <label className="label">Rayon<input className="input" maxLength={200} value={form.rayon} onChange={(e) => setForm({ ...form, rayon: e.target.value })} /></label>
 <label className="label">Emplacement<input className="input" maxLength={200} value={form.emplacement} onChange={(e) => setForm({ ...form, emplacement: e.target.value })} /></label>
-<div>
-            <label className="label">Catégorie</label>
-            <select
-              className="input"
-              value={form.category_id ?? ""}
-              onChange={(e) => setForm({ ...form, category_id: e.target.value as unknown as number })}
-            >
-              <option value="">— Aucune —</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
-<div>
-            <label className="label">Fournisseur</label>
-            <select
-              className="input"
-              value={form.supplier_id ?? ""}
-              onChange={(e) => setForm({ ...form, supplier_id: e.target.value as unknown as number })}
-            >
-              <option value="">— Aucun —</option>
-              {suppliers.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-          </div>
 <div>
             <label className="label">Prix détail pièce (FCFA)</label>
             <input
