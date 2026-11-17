@@ -439,6 +439,11 @@ export async function printReceipt(
   kick: number[] = [],
   options: { controlled?: boolean } = {}
 ): Promise<boolean> {
+  const root = document.getElementById(PRINT_ROOT_ID);
+  if (format !== "A4" && root && config.use_system_font) {
+    root.style.fontFamily = `"${printFont(config.font_family)}"`;
+    root.style.fontSize = `${printNumber(config.font_size, 11, 8, 18)}px`;
+  }
   let style = document.getElementById(PAGE_STYLE_ID);
   if (!style) {
     style = document.createElement("style");
@@ -449,7 +454,6 @@ export async function printReceipt(
   const thermal = format === "80mm" || format === "58mm";
   // Measured before the copies are added, so every copy gets its own page.
   const pageHeight = format !== "A4" ? ticketHeightMm() : 297;
-  const root = document.getElementById(PRINT_ROOT_ID);
   const copies = Math.min(Math.max(Math.round(config.copies) || 1, 1), 5);
   const extras: HTMLElement[] = [];
   const printer = config.printer_name.trim();
@@ -481,7 +485,7 @@ export async function printReceipt(
       extras.push(copy);
     }
   }
-  const direct = desktopTicket();
+  const direct = config.use_system_font ? undefined : desktopTicket();
   if (direct && thermal && root) {
     const payload = JSON.stringify({
       printer,

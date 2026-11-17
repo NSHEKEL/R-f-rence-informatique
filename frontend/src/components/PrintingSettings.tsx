@@ -15,7 +15,7 @@ import Modal from "../components/Modal";
 import Receipt from "../components/Receipt";
 import { documentHeader as documentLetterhead, labelPrintStyle, printDocument, printLabels, printReceipt } from "../lib/print";
 import { DEFAULT_PRINTING } from "../types";
-import { commercialMarkup, receiptPreset, rememberPrinterCapabilities, ticketCapabilities } from "../lib/printStyle";
+import { commercialMarkup, receiptPreset, rememberPrinterCapabilities, ticketCapabilities, TICKET_FONTS } from "../lib/printStyle";
 import { DocumentStyleFields, LabelStyleFields, TicketStyleFields } from "./PrintStyleFields";
 import { priceLabelHtml } from "../lib/labels";
 import { useCompany } from "../context/CompanyContext";
@@ -212,8 +212,6 @@ function sampleSale(): Sale {
     discount: 1000,
   };
 }
-
-const FONTS = ["Arial", "Helvetica", "Tahoma", "Verdana", "Courier New"];
 
 /** Ticket elements the shop can switch on or off, in printing order. */
 const RECEIPT_SWITCHES: { key: keyof ReceiptPrinterConfig; label: string }[] = [
@@ -757,17 +755,17 @@ export default function PrintingSettings({
             <select
               className="input"
               value={form.receipt.font_family}
-              disabled={!capabilities.font || form.receipt.width === 'A4'}
-              onChange={(e) => patchReceipt({ font_family: e.target.value })}
+              disabled={form.receipt.width === 'A4'}
+              onChange={(e) => patchReceipt({ font_family: e.target.value, use_system_font: true })}
             >
-              {FONTS.map((f) => (
+              {TICKET_FONTS.map((f) => (
                 <option key={f}>{f}</option>
               ))}
             </select>
           </div>
           <div>
             <label className="label">Taille (px)</label>
-            {capabilities.raw ? <select className="input" value={form.receipt.font_size >= 14 ? 16 : 11} onChange={(e) => patchReceipt({ font_size: Number(e.target.value) })}><option value={11}>Normale</option><option value={16}>Agrandie (2×)</option></select> : <input
+            {capabilities.raw && !form.receipt.use_system_font ? <select className="input" value={form.receipt.font_size >= 14 ? 16 : 11} onChange={(e) => patchReceipt({ font_size: Number(e.target.value) })}><option value={11}>Normale</option><option value={16}>Agrandie (2×)</option></select> : <input
               className="input"
               type="number"
               min={8}

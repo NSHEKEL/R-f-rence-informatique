@@ -5,6 +5,48 @@ const { test } = require("node:test");
 const vm = require("node:vm");
 const ts = require("typescript");
 
+test("late session restoration cannot replace the session explicitly selected by the operator", async () => {
+  const state = [], refs = [], effects = [];
+  let stateIndex = 0, refIndex = 0, first = true, restore;
+  const oldReport = { id: 1, reference: "OLD", name: "Ancien", status: "validated", rows: [], stats: {}, scope: {} };
+  const newReport = { ...oldReport, id: 2, reference: "NEW", name: "Nouveau", status: "draft" };
+  const restored = new Promise((resolve) => { restore = resolve; });
+  const dependencies = {
+    react: {
+      useState(initial) { const index = stateIndex++; if (!(index in state)) state[index] = initial; return [state[index], (value) => { state[index] = typeof value === "function" ? value(state[index]) : value; }]; },
+      useRef(initial) { const index = refIndex++; return refs[index] ||= { current: initial }; },
+      useEffect(effect) { if (first) effects.push(effect); }, useCallback: (fn) => fn,
+    },
+    "../api/client": { formatDateTime: () => "" },
+    "../context/AuthContext": { useAuth: () => ({ can: () => true }) },
+    "../lib/exportCsv": {}, "../lib/print": {},
+    "../lib/inventoryReport": { INVENTORY_STATS: {} },
+    "./InventoryGrid": { default: "InventoryGrid" },
+    "../lib/depots": { useDepots: () => ({ depots: [] }) },
+    "../lib/useOnline": { useOnline: () => true }, "./OfflineBanner": { default: "OfflineBanner" },
+    "../lib/offlineInventory": {
+      lastSession: async () => 1,
+      readSession: (id) => id === 1 ? restored : Promise.resolve({ data: newReport, fromCache: false }),
+      readOffline: async (url) => ({ data: url.includes("options") ? { products: [], categories: [] } : [newReport] }),
+      rememberSession: async () => {},
+    },
+  };
+  const exports = {};
+  const source = readFileSync(path.join(__dirname, "src/components/InventorySessions.tsx"), "utf8");
+  vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText, { exports, URLSearchParams, require: (name) => dependencies[name] || require(name) });
+  const render = () => { stateIndex = refIndex = 0; const tree = exports.default(); first = false; return tree; };
+  const nodes = (node) => Array.isArray(node) ? node.flatMap(nodes) : node?.props ? [node, ...nodes(node.props.children)] : [];
+  render(); effects.forEach((effect) => effect());
+  await new Promise(setImmediate);
+  const button = nodes(render()).find((node) => node.type === "button" && JSON.stringify(node.props.children).includes("Nouveau"));
+  assert.ok(button, JSON.stringify(state));
+  await button.props.onClick();
+  assert.equal(nodes(render()).find((node) => node.props.report).props.report.id, 2);
+  restore({ data: oldReport, fromCache: false });
+  await new Promise(setImmediate);
+  assert.equal(nodes(render()).find((node) => node.props.report).props.report.id, 2);
+});
+
 function modules(window = {}) {
   const cache = {};
   function load(name) {
@@ -110,6 +152,12 @@ test("inventory UI autosaves, resumes, supports packaged scans and preserves qui
   assert.match(screen, /grid.current\?\.scan\(code\)/);
   assert.match(screen, /inventaire_valider/);
   assert.match(grid, /inventoryUnits\(row\)/);
+  assert.match(screen, /editable=\{!!open && \(current.status !== "draft" \|\| !offline\) && !busy\}/);
+  assert.match(screen, /consultation uniquement/);
+  assert.match(screen, /alive && !selected.current/);
+  assert.match(screen, /onClick=\{async \(\) => \{ selected.current = true;/);
+  assert.match(grid, /event.key === "Enter"\) \{ index\+\+; next = 0; \}/);
+  assert.match(grid, /result.status \|\| report.status/);
   const quick = readFileSync(path.join(__dirname, "src/pages/Inventaire.tsx"), "utf8");
   assert.match(quick, /<InventorySessions \/>/);
   assert.match(quick, /\/inventory\/apply/);

@@ -33,6 +33,7 @@ export interface ReceiptPrinterConfig {
   open_drawer: boolean;
   font_family: string;
   font_size: number;
+  use_system_font: boolean;
   line_height: number;
   align: "left" | "center";
   margin_mm: number;
@@ -149,6 +150,7 @@ export const DEFAULT_PRINTING: PrintingConfig = {
     open_drawer: true,
     font_family: "Arial",
     font_size: 11,
+    use_system_font: false,
     line_height: 1.35,
     align: "left",
     margin_mm: 3,

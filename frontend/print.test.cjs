@@ -58,10 +58,19 @@ function setup(api = {}) {
       alert(message) { calls.alerts.push(message); },
     },
   });
-  return { ...exports, calls };
+  return { ...exports, calls, root };
 }
 
 const receipt = { printer_name: "Ticket Fichier Test", copies: 2, margin_mm: 3 };
+
+test("selected system ticket font uses the Windows page printer, not fixed-font RAW", async () => {
+  let printed = 0;
+  const ctx = setup({ print_to: async () => { printed++; return true; }, print_ticket: () => assert.fail('system fonts cannot use RAW') });
+  assert.equal(await ctx.printReceipt('80mm', { ...receipt, font_family: 'Consolas', font_size: 14, use_system_font: true }), false);
+  assert.equal(printed, 1);
+  assert.equal(ctx.root.style.fontFamily, '"Consolas"');
+  assert.equal(ctx.root.style.fontSize, '14px');
+});
 
 test("paused, offline and error queues report their reason without sending a job", async () => {
   for (const format of ['A4', '80mm']) {

@@ -48,7 +48,7 @@ export default forwardRef<InventoryGridHandle, { report: InventoryReport; editab
         errors.current.delete(id);
         const result = await syncCounts(report.id);
         const remaining = await pendingCounts(report.id);
-        for (const saved of result.rows) onSaved(mergeCounts({ ...report, rows: [saved] }, remaining).rows[0], report.status);
+        for (const saved of result.rows) onSaved(mergeCounts({ ...report, rows: [saved] }, remaining).rows[0], result.status || report.status);
         setQueued(result.pending);
         if (result.error) setMessage(result.error);
       } catch (error) {
@@ -111,7 +111,8 @@ export default forwardRef<InventoryGridHandle, { report: InventoryReport; editab
     if (!["Enter", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) return;
     event.preventDefault();
     let index = rows.indexOf(row), next = column;
-    if (event.key === "ArrowDown") index++;
+    if (event.key === "Enter") { index++; next = 0; }
+    else if (event.key === "ArrowDown") index++;
     else if (event.key === "ArrowUp") index--;
     else next += event.key === "ArrowLeft" ? -1 : 1;
     if (next >= inventoryUnits(row).length) { index++; next = 0; }

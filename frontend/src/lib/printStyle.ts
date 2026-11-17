@@ -1,6 +1,7 @@
 import { DEFAULT_PRINTING, type DocumentConfig, type PrinterDevice, type PrintingConfig, type ReceiptPrinterConfig } from "../types";
 
-export const PRINT_FONTS = ["Arial", "Helvetica", "Verdana", "Tahoma", "Georgia", "Courier New", "Times New Roman"];
+export const TICKET_FONTS = ["Courier New", "Consolas", "Lucida Console", "Arial", "Tahoma", "Verdana"];
+export const PRINT_FONTS = ["Arial", "Helvetica", "Verdana", "Tahoma", "Georgia", "Courier New", "Times New Roman", "Consolas", "Lucida Console"];
 export const escapePrint = (value: string) => value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]!));
 export const printFont = (value: string) => PRINT_FONTS.includes(value) ? value : "Arial";
 export const printColor = (value: string) => /^#[0-9a-f]{6}$/i.test(value) ? value : "#000000";

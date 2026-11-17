@@ -241,6 +241,7 @@ class ReceiptPrinterConfig(BaseModel):
     open_drawer: bool = True
     font_family: str = "Arial"
     font_size: int = 11
+    use_system_font: bool = False
     line_height: float = 1.35
     align: str = "left"
     margin_mm: float = 3.0

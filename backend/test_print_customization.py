@@ -9,6 +9,18 @@ from app.schemas import PrintingConfig
 
 
 class PrintCustomizationTests(unittest.TestCase):
+    def test_system_ticket_fonts_round_trip_without_schema_migration(self):
+        settings = CompanySettings()
+        self.assertFalse(printing.read_config(settings).receipt.use_system_font)
+        for font in ("Courier New", "Consolas", "Lucida Console", "Arial", "Tahoma", "Verdana"):
+            config = PrintingConfig()
+            config.receipt.font_family = font
+            config.receipt.font_size = 14
+            config.receipt.use_system_font = True
+            printing.write_config(settings, config)
+            restored = printing.read_config(settings).receipt
+            self.assertEqual((restored.font_family, restored.font_size, restored.use_system_font), (font, 14, True))
+
     def test_defaults_merge_and_round_trip_preserve_saved_fields(self):
         settings = CompanySettings(printer_name='Legacy', receipt_format='58mm')
         config = printing.read_config(settings)

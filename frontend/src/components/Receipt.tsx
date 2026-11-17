@@ -277,7 +277,7 @@ export default function Receipt({
   // configuration: they are applied to both copies so what is previewed is
   // what comes out of the printer.
   const style = {
-    fontFamily: raw ? 'monospace' : printFont(settings.font_family),
+    fontFamily: raw && !settings.use_system_font ? 'monospace' : printFont(settings.font_family),
     fontSize: `${settings.font_size}px`,
     fontWeight: !a4 && settings.bold ? 700 : undefined,
     color: a4 ? printColor(doc.text_color) : colorAllowed ? printColor(settings.text_color) : '#000000',

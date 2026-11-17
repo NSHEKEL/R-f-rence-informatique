@@ -106,13 +106,13 @@ export async function queueCount(sessionId: number, productId: number, counts: R
   window.dispatchEvent(new Event("ri:inventory"));
   return entry!;
 }
-const syncing = new Map<string, Promise<{ rows: InventoryRow[]; pending: number; error: string }>>();
+const syncing = new Map<string, Promise<{ rows: InventoryRow[]; pending: number; error: string; status?: string }>>();
 export function syncCounts(sessionId: number) {
   const queueKey = key(`queue:${sessionId}`);
   const owner = scope(), snapshotKey = key(`cache:session:${sessionId}`);
   const existing = syncing.get(queueKey); if (existing) return existing;
   const operation = (async () => {
-    const rows: InventoryRow[] = []; let error = "";
+    const rows: InventoryRow[] = []; let error = "", status: string | undefined;
     if (navigator.onLine !== false) {
       for (const entry of Object.values(await read<Queue>(queueKey) || {})) {
         if (scope() !== owner) break;
@@ -120,6 +120,7 @@ export function syncCounts(sessionId: number) {
           const { data } = await api.put<InventoryReport>(`/inventory/sessions/${sessionId}/counts/${entry.product_id}?line_only=true`, entry, { timeout: 8000 });
           if (scope() !== owner) break;
           rows.push(data.rows[0]);
+          status = data.status;
           await mutate<Queue>(queueKey, (queue = {}) => {
             const next = { ...queue };
             if (next[entry.product_id]?.client_updated_at === entry.client_updated_at && next[entry.product_id]?.client_id === entry.client_id) delete next[entry.product_id];
@@ -133,7 +134,7 @@ export function syncCounts(sessionId: number) {
     }
     const pending = Object.keys(await read<Queue>(queueKey) || {}).length;
     window.dispatchEvent(new Event("ri:inventory"));
-    return { rows, pending, error };
+    return { rows, pending, error, status };
   })();
   syncing.set(queueKey, operation);
   void operation.finally(() => { syncing.delete(queueKey); }).catch(() => {});

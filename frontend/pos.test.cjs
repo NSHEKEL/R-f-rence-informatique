@@ -6,6 +6,17 @@ const ts = require('typescript');
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
 
+test('POS total is blue and discount/tax text has explicit light and dark contrast', () => {
+  const source = readFileSync(`${__dirname}/src/pages/NouvelleVente.tsx`, 'utf8');
+  assert.match(source, /text-base font-extrabold text-blue-700/);
+  assert.match(source, /text-slate-700[\s\S]*?TVA/);
+  assert.match(source, /text-slate-700[\s\S]*?Remise/);
+  assert.match(source, /text-right text-slate-900/);
+  const css = readFileSync(`${__dirname}/src/index.css`, 'utf8');
+  assert.match(css, /html.dark .text-slate-700\s*\{\s*color: #e2e8f0/);
+  assert.match(css, /html.dark .text-blue-700[\s\S]*?color: #93c5fd/);
+});
+
 function load(path, dependencies = {}, globals = {}) {
   const output = {};
   vm.runInNewContext(ts.transpileModule(readFileSync(`${__dirname}/src/${path}`, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText, {

@@ -85,6 +85,25 @@ class InventorySessionTests(unittest.TestCase):
         self.assertEqual(row["physical_qty"], 25)
         self.call(path + "/scan", "POST", {"code": "UNKNOWN"}, 404)
 
+    def test_initial_inventory_from_zero_starts_on_first_count(self):
+        self.second.quantity = self.third.quantity = 0
+        pack = self.db.query(ProductPackaging).filter_by(product_id=self.product.id).one()
+        pack.factor = 6
+        self.db.commit()
+        session = self.session()
+        path = f"/api/inventory/sessions/{session['id']}"
+        result = self.call(path + f"/counts/{self.product.id}?line_only=true", "PUT", {"counts": {str(pack.id): 2, "base": 3}})
+        self.assertEqual(result["status"], "in_progress")
+        self.assertEqual(result["rows"][0]["physical_qty"], 15)
+        self.call(path + f"/counts/{self.second.id}", "PUT", {"counts": {"base": 4}})
+        result = self.call(path + "/validate", "POST", {})
+        self.db.expire_all()
+        self.assertEqual([self.db.get(Product, p.id).quantity for p in (self.product, self.second, self.third)], [15, 4, 0])
+        moves = self.db.query(StockMovement).filter_by(kind="inventaire").all()
+        self.assertEqual(sorted(m.quantity for m in moves), [4, 15])
+        self.assertTrue(all(session["reference"] in m.reason for m in moves))
+        self.assertEqual(result["stats"]["not_counted"], 1)
+
     def test_mass_multi_packaging_resume_upsert_scan_focus_and_validation(self):
         self.product.units_per_packaging = 12
         self.product.quantity = 150

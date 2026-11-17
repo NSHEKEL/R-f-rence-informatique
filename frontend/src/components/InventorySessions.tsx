@@ -27,6 +27,7 @@ export default function InventorySessions() {
   const [form, setForm] = useState({ name: "", scope_type: "general", value: "", blind: false, note: "" });
   const [code, setCode] = useState("");
   const grid = useRef<InventoryGridHandle>(null);
+  const selected = useRef(false);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const queue = useRef<Promise<void>>(Promise.resolve());
@@ -38,7 +39,7 @@ export default function InventorySessions() {
   useEffect(() => {
     void readOffline<typeof options>("/inventory/sessions/options", "inventory-options").then(({ data }) => setOptions(data)).catch(() => setMessage("Liste du catalogue indisponible."));
     let alive = true;
-    void lastSession().then(async (id) => { if (id) { const result = await readSession(id); if (alive) { setCurrent(result.data); setCached(result.fromCache); setSavedAt(result.savedAt); } } }).catch(() => {});
+    void lastSession().then(async (id) => { if (id) { const result = await readSession(id); if (alive && !selected.current) { setCurrent(result.data); setCached(result.fromCache); setSavedAt(result.savedAt); } } }).catch(() => {});
     return () => { alive = false; };
   }, []);
   const currentId = current?.id;
@@ -67,6 +68,7 @@ export default function InventorySessions() {
     return operation;
   }
   async function create() {
+    selected.current = true;
     setBusy(true); setMessage("");
     const scope = form.scope_type === "depot" ? depotScope(form.value) : form.scope_type === "category" ? { category_id: Number(form.value) } : form.scope_type === "selection" ? { product_ids: form.value.split(/[,;\s]+/).filter(Boolean).map(Number) } : form.scope_type === "general" ? {} : { [form.scope_type]: form.value };
     try { const { data } = await api.post<InventoryReport>("/inventory/sessions", { ...form, scope }); await rememberSession(data); setCurrent(data); setCached(false); setSavedAt(new Date().toISOString()); await loadHistory(); }
@@ -152,7 +154,7 @@ export default function InventorySessions() {
       <input aria-label="Sessions depuis" type="date" className="input w-40" value={filter.start} onChange={(e) => setFilter({ ...filter, start: e.target.value })} /><input aria-label="Sessions jusqu'au" type="date" className="input w-40" value={filter.end} onChange={(e) => setFilter({ ...filter, end: e.target.value })} />
       <button className="btn-secondary" onClick={() => void loadHistory()}>Actualiser</button>
     </div>
-    <div className="max-h-48 overflow-auto">{history.length === 0 && <p>Aucune session.</p>}{history.map((session) => <button disabled={busy} className="block w-full border-b p-2 text-left" key={session.id} onClick={async () => { try { await grid.current?.flush(); await queue.current; const result = await readSession(session.id); setCurrent(result.data); setCached(result.fromCache); setSavedAt(result.savedAt); if (!result.fromCache) await rememberSession(result.data); } catch { setMessage("Session indisponible ou saisie non enregistrée."); } }}>{session.reference} — {session.name} — {STATUS[session.status]} — {session.created_by_name} {formatDateTime(session.created_at)}{session.validated_at && ` — Validé par ${session.validated_by_name} le ${formatDateTime(session.validated_at)}`}</button>)}</div>
+    <div className="max-h-48 overflow-auto">{history.length === 0 && <p>Aucune session.</p>}{history.map((session) => <button disabled={busy} className="block w-full border-b p-2 text-left" key={session.id} onClick={async () => { selected.current = true; try { await grid.current?.flush(); await queue.current; const result = await readSession(session.id); setCurrent(result.data); setCached(result.fromCache); setSavedAt(result.savedAt); if (!result.fromCache) await rememberSession(result.data); } catch { setMessage("Session indisponible ou saisie non enregistrée."); } }}>{session.reference} — {session.name} — {STATUS[session.status]} — {session.created_by_name} {formatDateTime(session.created_at)}{session.validated_at && ` — Validé par ${session.validated_by_name} le ${formatDateTime(session.validated_at)}`}</button>)}</div>
     {current && <div className="space-y-3">
       <h3 className="font-bold">{current.reference} — {current.name} — {STATUS[current.status]}</h3>
       <p>{current.scope?.depot_name ? `Dépôt : ${current.scope.depot_name}` : "Tous dépôts — écart appliqué au principal"}</p>
@@ -167,8 +169,10 @@ export default function InventorySessions() {
         <button className="btn-secondary" disabled={busy || offline} onClick={() => void output("grid")}>Exporter la grille Excel</button>
         {open && <label className="btn-secondary">Importer la grille<input className="hidden" type="file" accept=".xlsx,.xls,.csv" disabled={busy || offline} onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void importGrid(file); }} /></label>}
       </div>
-      {current.status === "in_progress" && <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); grid.current?.scan(code); setCode(""); }}><input className="input" aria-label="Scanner inventaire" placeholder="Code produit / variante / conditionnement + Entrée" value={code} onChange={(event) => setCode(event.target.value)} /><button className="btn-secondary">Trouver le comptage</button></form>}
-      <InventoryGrid key={current.id} ref={grid} report={current} editable={current.status === "in_progress" && !busy} onSaved={(row, status) => setCurrent((previous) => previous?.id === current.id ? { ...previous, status, rows: previous.rows.map((old) => old.product_id === row.product_id ? row : old) } : previous)} />
+      {!open && <p role="status" className="rounded border border-amber-500 bg-amber-50 p-3 text-amber-800">Session {STATUS[current.status].toLowerCase()} : consultation uniquement. Créez une nouvelle session ci-dessus pour saisir un nouveau comptage.</p>}
+      {current.status === "draft" && <p className="text-sm">Saisissez directement les quantités : la première sauvegarde démarre le comptage. Hors ligne, démarrez d'abord la session en étant connecté au serveur.</p>}
+      {open && <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); grid.current?.scan(code); setCode(""); }}><input className="input" aria-label="Scanner inventaire" placeholder="Code produit / variante / conditionnement + Entrée" value={code} onChange={(event) => setCode(event.target.value)} /><button className="btn-secondary">Trouver le comptage</button></form>}
+      <InventoryGrid key={current.id} ref={grid} report={current} editable={!!open && (current.status !== "draft" || !offline) && !busy} onSaved={(row, status) => setCurrent((previous) => previous?.id === current.id ? { ...previous, status, rows: previous.rows.map((old) => old.product_id === row.product_id ? row : old) } : previous)} />
     </div>}
     <p role="status">{message}</p>
   </section>;

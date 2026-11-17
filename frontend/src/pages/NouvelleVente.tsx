@@ -1458,14 +1458,14 @@ export default function NouvelleVente() {
             <div className="flex gap-3">
               <div className="min-w-0 flex-1 space-y-1">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-semibold text-slate-500">
+                  <span className="text-sm font-semibold text-slate-700">
                     Remise
                   </span>
                   <span className="flex items-center gap-1">
                     <input
                       ref={discountRef}
                       disabled={!canChangePrice}
-                      className="input w-20 px-2 py-1 text-right"
+                      className="input w-20 px-2 py-1 text-right text-slate-900"
                       type="number"
                       min={0}
                       max={discountPercent ? 100 : undefined}
@@ -1490,7 +1490,7 @@ export default function NouvelleVente() {
                     />
                     <button
                       type="button"
-                      className="rounded-md bg-slate-100 px-1.5 py-1 text-[10px] font-bold text-slate-500 hover:bg-slate-200"
+                      className="rounded-md bg-slate-100 px-1.5 py-1 text-[10px] font-bold text-slate-700 hover:bg-slate-200"
                       title="Basculer remise en % ou en FCFA"
                       disabled={!canChangePrice}
                       onClick={() => setDiscountPercent((v) => !v)}
@@ -1546,27 +1546,27 @@ export default function NouvelleVente() {
           </div>
 
           <div className="relative flex shrink-0 items-stretch gap-2 p-1.5">
-            <div className="w-[46%] shrink-0 rounded-xl bg-[#1d4ed8] px-2.5 py-1 text-white">
+            <div className="w-[46%] shrink-0 rounded-xl bg-blue-50 px-2.5 py-1 text-slate-900">
               {vat && (
-                <div className="flex items-center justify-between text-[11px] text-slate-300">
+                <div className="flex items-center justify-between text-[11px] text-slate-700">
                   <span>Total HT</span>
                   <span>{formatXOF(vat.excluded)}</span>
                 </div>
               )}
               {vat && (
-                <div className="flex items-center justify-between text-[11px] text-slate-300">
+                <div className="flex items-center justify-between text-[11px] text-slate-700">
                   <span>TVA ({vat.rate} %)</span>
                   <span>{formatXOF(vat.vat)}</span>
                 </div>
               )}
               {discount > 0 && (
-                <div className="flex items-center justify-between text-[11px] text-slate-300">
+                <div className="flex items-center justify-between text-[11px] text-slate-700">
                   <span>Remise</span>
                   <span>- {formatXOF(discount)}</span>
                 </div>
               )}
               {change > 0 && (
-                <div className="flex items-center justify-between text-[11px] text-emerald-300">
+                <div className="flex items-center justify-between text-[11px] text-emerald-700">
                   <span>Monnaie à rendre</span>
                   <span>{formatXOF(change)}</span>
                 </div>
@@ -1575,7 +1575,7 @@ export default function NouvelleVente() {
                 <span className="text-xs font-bold uppercase">
                   {vat ? "Total TTC" : "Total"}
                 </span>
-                <span className="text-base font-extrabold">
+                <span className="text-base font-extrabold text-blue-700">
                   {formatXOF(total)}
                 </span>
               </div>

@@ -6,6 +6,7 @@ function Font({ value, onChange }: { value: string; onChange: (value: string) =>
 }
 export function TicketStyleFields({ config, onChange, color, raw }: { config: ReceiptPrinterConfig; onChange: (patch: Partial<ReceiptPrinterConfig>) => void; color: boolean; raw: boolean }) {
   return <div className="my-4 grid gap-4 sm:grid-cols-3">
+    {config.width !== 'A4' && <label className="flex items-center gap-2 sm:col-span-3"><input type="checkbox" checked={config.use_system_font} onChange={(e) => onChange({ use_system_font: e.target.checked })} />Appliquer la police Windows au ticket (impression graphique via le pilote ; coupe selon le pilote)</label>}
     {config.width === 'custom' && <label className="label">Papier personnalisé (mm)<input className="input" type="number" min={40} max={216} value={config.paper_width_mm} onChange={(e) => onChange({ paper_width_mm: Number(e.target.value) || 80 })} /></label>}
     <label className="label">Couleur du texte<input className="input h-10" type="color" disabled={!color} value={config.text_color} onChange={(e) => onChange({ text_color: e.target.value })} /></label>
     <label className="label">Disposition des articles<select className="input" value={config.item_layout} onChange={(e) => onChange({ item_layout: e.target.value as ReceiptPrinterConfig['item_layout'] })}><option value="table">Article puis quantité / prix / total</option><option value="stacked">Détail empilé</option></select></label>
@@ -13,7 +14,7 @@ export function TicketStyleFields({ config, onChange, color, raw }: { config: Re
     <label className="flex items-center gap-2"><input type="checkbox" checked={config.show_company_info} onChange={(e) => onChange({ show_company_info: e.target.checked })} />Informations de l'entreprise</label>
     <label className="flex items-center gap-2"><input type="checkbox" checked={config.show_line_total} onChange={(e) => onChange({ show_line_total: e.target.checked })} />Total par article</label>
     <label className="label sm:col-span-3">Message de remerciement / pied de page<textarea className="input" value={config.footer_text} placeholder="Message de l'entreprise par défaut" onChange={(e) => onChange({ footer_text: e.target.value })} /></label>
-    <p className="text-xs text-slate-500 sm:col-span-3">{raw ? "ESC/POS : monochrome, police matérielle fixe. Taille normale / agrandie, gras, alignement et interligne envoyés à l'imprimante ; les pixels de l'aperçu restent indicatifs." : color ? "Cette file annonce la prise en charge de la couleur." : "Couleur désactivée : capacité couleur non déclarée ou file inconnue."}</p>
+    <p className="text-xs text-slate-500 sm:col-span-3">{raw && !config.use_system_font ? "ESC/POS : monochrome, police matérielle fixe. Choisir une police active l'impression graphique Windows. Taille normale / agrandie, gras, alignement et interligne envoyés à l'imprimante." : color ? "Cette file annonce la prise en charge de la couleur." : "Couleur désactivée : capacité couleur non déclarée ou file inconnue."}</p>
   </div>;
 }
 export function LabelStyleFields({ config, onChange }: { config: LabelPrinterConfig; onChange: (patch: Partial<LabelPrinterConfig>) => void }) {

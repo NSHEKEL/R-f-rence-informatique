@@ -13,6 +13,13 @@ function load(path, dependencies = {}, globals = {}) {
 const types = load('types.ts');
 const storage = new Map();
 const style = load('lib/printStyle.ts', { '../types': types }, { localStorage: { getItem: (key) => storage.get(key), setItem: (key,value) => storage.set(key,value) } });
+test('ticket font choices are exactly the six supported receipt fonts', () => {
+  const fonts = ['Courier New', 'Consolas', 'Lucida Console', 'Arial', 'Tahoma', 'Verdana'];
+  assert.deepEqual(Array.from(style.TICKET_FONTS), fonts);
+  for (const font of fonts) assert.equal(style.printFont(font), font);
+  assert.equal(style.printFont('invalid; color:red'), 'Arial');
+  assert.equal(types.DEFAULT_PRINTING.receipt.use_system_font, false);
+});
 test('defaults and paper presets fill missing keys without replacing saved values', () => {
   const config = style.mergePrinting({ receipt: { font_size: 9, show_customer: false }, label: { columns: 2 } });
   assert.equal(config.receipt.font_size, 9);
