@@ -40,6 +40,46 @@ class CatalogueImportTests(unittest.TestCase):
         self.assertEqual((self.product.purchase_price, self.product.sale_price, self.product.wholesale_price, self.product.min_stock), (45, 110, 85, 7))
         self.assertEqual(self.product.category.name, "Épicerie")
 
+    def test_existing_empty_cells_preserve_all_values_and_zero_updates_prices(self):
+        category = Category(name="À conserver")
+        self.db.add(category)
+        self.db.flush()
+        values = {"name": "Riz conservé", "purchase_price": 45, "sale_price": 125,
+                  "wholesale_price": 100, "wholesale_packaging_price": 900,
+                  "semi_wholesale_price": 110, "description": "Description conservée",
+                  "base_unit": "kg", "barcode": "1234567890123", "rayon": "A",
+                  "emplacement": "A-2", "quantity": 51, "min_stock": 8, "category_id": category.id}
+        for key, value in values.items():
+            setattr(self.product, key, value)
+        packaging = ProductPackaging(product_id=self.product.id, name="Colis", factor=6,
+                                     price_detail=600, price_semi_gros=550, price_gros=500)
+        self.db.add(packaging)
+        self.db.commit()
+        headers = ["Référence", "Nom", "Prix achat", "Prix vente", "Prix gros", "Prix gros carton",
+                   "semi_wholesale_price", "Description", "Unité de base", "Code-barres", "Rayon",
+                   "Emplacement", "Stock", "Stock minimum", "Catégorie", "Conditionnement", "Facteur",
+                   "Prix détail conditionnement", "Prix semi gros conditionnement", "Prix gros conditionnement"]
+        row = [self.product.sku] + [""] * (len(headers) - 1)
+        row[15] = "Colis"
+        result = self.upload("empty.csv", (";".join(headers) + "\n" + ";".join(row) + "\n").encode())
+        self.assertEqual(result, {"created": 0, "updated": 1, "errors": [], "duplicates": []})
+        self.db.refresh(self.product)
+        self.db.refresh(packaging)
+        self.assertEqual({key: getattr(self.product, key) for key in values}, values)
+        self.assertEqual((packaging.factor, packaging.price_detail, packaging.price_semi_gros, packaging.price_gros), (6, 600, 550, 500))
+        row[2:6] = ["0"] * 4
+        row[17:20] = ["0"] * 3
+        result = self.upload("zero.csv", (";".join(headers) + "\n" + ";".join(row) + "\n").encode())
+        self.assertEqual(result["errors"], [])
+        self.db.refresh(self.product)
+        self.db.refresh(packaging)
+        self.assertEqual((self.product.purchase_price, self.product.sale_price, self.product.wholesale_price, self.product.wholesale_packaging_price), (0, 0, 0, 0))
+        self.assertEqual((packaging.price_detail, packaging.price_semi_gros, packaging.price_gros), (0, 0, 0))
+        result = self.upload("merge.csv", b"sku;nom;prix_achat;prix_vente\nMERGE;Fusion;40;90\n;Fusion;;\n")
+        self.assertEqual((result["created"], result["updated"], result["errors"]), (1, 1, []))
+        merged = self.db.query(Product).filter_by(sku="MERGE").one()
+        self.assertEqual((merged.purchase_price, merged.sale_price), (40, 90))
+
     def test_accented_semicolon_csv_and_typographic_apostrophe(self):
         body = f"Référence;Désignation;Prix d’achat;Prix-de-vente;Stock minimum;Code-barres;Quantité et équivalence;Fournisseur\n{self.product.sku};Riz;45,5;125,75;8;12345678;ignoré;ignoré\n"
         self.assertEqual(self.upload("produits.csv", body.encode("utf-8-sig")), {"created": 0, "updated": 1, "errors": [], "duplicates": []})

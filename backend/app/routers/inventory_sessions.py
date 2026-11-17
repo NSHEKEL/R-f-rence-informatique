@@ -60,6 +60,7 @@ def _snapshot(product):
     return json.dumps({"name": product.name, "sku": product.sku, "barcode": product.barcode, "qr_code": product.qr_code,
         "rayon": product.rayon, "emplacement": product.emplacement, "base_unit": product.base_unit or "pièce",
         "packaging_unit": product.packaging_unit or "", "units_per_packaging": product.units_per_packaging or 1,
+        "barcodes": [p.code for p in product.barcodes if p.active],
         "packagings": [{"id": p.id, "name": p.name, "factor": p.factor, "barcode": p.barcode} for p in product.packagings if p.active]})
 
 
@@ -242,11 +243,10 @@ def scan(session_id: int, payload: ScanInput, db: Session = Depends(get_db), use
     code = payload.code.strip().casefold()
     for row in _counts(db, session_id):
         snapshot = json.loads(row.product_snapshot)
-        factor = 1 if code in [str(snapshot.get(key) or "").casefold() for key in ("sku", "barcode", "qr_code")] else None
-        if factor is None:
-            packaging = next((p for p in snapshot["packagings"] if p["barcode"] and p["barcode"].casefold() == code), None)
-            if packaging:
-                factor = packaging["factor"]
+        factor = 1 if code in [str(snapshot.get(key) or "").casefold() for key in ("sku", "barcode", "qr_code")] or code in [value.casefold() for value in snapshot.get("barcodes", [])] else None
+        packaging = next((p for p in snapshot["packagings"] if p["barcode"] and p["barcode"].casefold() == code), None)
+        if packaging:
+            factor = packaging["factor"]
         if factor is not None and code:
             row.physical_qty = (row.physical_qty or 0) + factor
             if row.physical_qty > 2147483647:

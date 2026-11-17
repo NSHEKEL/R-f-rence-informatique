@@ -11,6 +11,8 @@ interface ModalProps {
   /** Documents with many lines open on the whole screen. */
   fullscreen?: boolean;
   size?: "form" | "compact";
+  closeOnBackdrop?: boolean;
+  closeOnEscape?: boolean;
 }
 
 export default function Modal({
@@ -22,22 +24,24 @@ export default function Modal({
   wide,
   fullscreen,
   size = "form",
+  closeOnBackdrop = true,
+  closeOnEscape = true,
 }: ModalProps) {
   useEffect(() => {
     if (!open) return;
     const escape = (event: KeyboardEvent) => {
       if (document.querySelector("[data-easygest-print-preview]")) return;
-      if (event.key === "Escape") { event.preventDefault(); event.stopImmediatePropagation(); onClose(); }
+      if (event.key === "Escape") { event.preventDefault(); event.stopImmediatePropagation(); if (closeOnEscape) onClose(); }
     };
     window.addEventListener("keydown", escape, true);
     return () => window.removeEventListener("keydown", escape, true);
-  }, [open, onClose]);
+  }, [open, onClose, closeOnEscape]);
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 md:p-3">
       <div
         className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
-        onClick={onClose}
+        onClick={closeOnBackdrop ? onClose : undefined}
       />
       <div
         role="dialog"

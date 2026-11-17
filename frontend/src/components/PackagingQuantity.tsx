@@ -7,9 +7,10 @@ interface Props {
   parts?: { packaging_quantity: number; piece_quantity: number };
   mode?: UnitMode;
   max?: number;
+  blankZero?: boolean;
 }
 
-export default function PackagingQuantity({ product, value, onChange, mode = "mixed", max, parts }: Props) {
+export default function PackagingQuantity({ product, value, onChange, mode = "mixed", max, parts, blankZero = false }: Props) {
   const factor = product.units_per_packaging || 1;
   const { packaging_quantity: packs, piece_quantity: pieces } = parts ?? splitQuantity(product, value, mode);
   function change(nextPacks: number, nextPieces: number) {
@@ -18,8 +19,8 @@ export default function PackagingQuantity({ product, value, onChange, mode = "mi
   }
   return <div className="space-y-1">
     <div className="flex gap-2">
-      {product.packaging_unit && mode !== "base" && <label className="min-w-0 flex-1 text-xs">{product.packaging_unit}<input aria-label={`Quantité en ${product.packaging_unit}`} className="input" type="number" min="0" step="1" value={packs} onChange={(e) => change(Number(e.target.value), pieces)} /></label>}
-      {mode !== "packaging" && <label className="min-w-0 flex-1 text-xs">{product.base_unit || "pièce"}<input aria-label={`Quantité en ${product.base_unit || "pièce"}`} className="input" type="number" min="0" step="1" value={pieces} onChange={(e) => change(packs, Number(e.target.value))} /></label>}
+      {product.packaging_unit && mode !== "base" && <label className="min-w-0 flex-1 text-xs">{product.packaging_unit}<input aria-label={`Quantité en ${product.packaging_unit}`} className="input" type="number" min="0" step="1" value={blankZero && packs === 0 ? "" : packs} onChange={(e) => change(Number(e.target.value), pieces)} /></label>}
+      {mode !== "packaging" && <label className="min-w-0 flex-1 text-xs">{product.base_unit || "pièce"}<input aria-label={`Quantité en ${product.base_unit || "pièce"}`} className="input" type="number" min="0" step="1" value={blankZero && pieces === 0 ? "" : pieces} onChange={(e) => change(packs, Number(e.target.value))} /></label>}
     </div>
     <p className="text-xs text-slate-500">{formatQuantity(product, value)}</p>
   </div>;

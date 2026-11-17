@@ -391,9 +391,10 @@ def _import_packagings(db, product, fields):
         cells = {key: fields.get(f"packaging_{group}_{key}", "") for key in ("name", "factor", "price_detail", "price_semi_gros", "price_gros")}
         if not any(cells.values()):
             continue
-        name = cells["name"]
+        match = next((row for row in rows if _import_name(row.name) == _import_name(cells["name"])), None) if cells["name"] else rows[group - 1] if product and group <= len(rows) else None
+        name = cells["name"] or (match.name if match else "")
         try:
-            factor = float(cells["factor"].replace(" ", "").replace(",", "."))
+            factor = float(cells["factor"].replace(" ", "").replace(",", ".")) if cells["factor"] else float(match.factor) if match else float("nan")
         except ValueError:
             factor = float("nan")
         if not name or not math.isfinite(factor) or not factor.is_integer() or not 1 <= factor <= 2147483647:
@@ -402,7 +403,6 @@ def _import_packagings(db, product, fields):
         if normalized in seen:
             raise ValueError(f"Conditionnement répété : {name}")
         seen.add(normalized)
-        match = next((row for row in rows if _import_name(row.name) == normalized), None)
         values = match.model_dump() if match else {}
         values.update(name=name, factor=int(factor))
         for key in ("price_detail", "price_semi_gros", "price_gros"):
@@ -426,7 +426,7 @@ def _import_quantity(fields, present, product, packagings):
         return None
     quantity = _to_int(fields.get(field, ""))
     unit = _import_name(fields.get("quantity_unit", ""))
-    base = fields.get("base_unit", product.base_unit if product else "pièce")
+    base = (fields.get("base_unit") or product.base_unit) if product else fields.get("base_unit", "pièce")
     if not unit or unit in {_import_name(base or ""), "piece", "pieces", "unite"}:
         return quantity
     rows = packagings if packagings is not None else (product.packagings if product else [])
@@ -499,8 +499,9 @@ def import_products(
         if not sku:
             sku = existing.sku if existing else f"IMP-{number:05d}"
             existing = existing or db.query(Product).filter(Product.sku == sku).first()
+        row_present = {key for key in present if not existing or fields.get(key, "").strip()}
         if not name:
-            name = sku
+            name = existing.name if existing else sku
         barcode = fields.get("barcode", "")
         if barcode:
             if not barcode.isdigit():
@@ -514,7 +515,7 @@ def import_products(
                 )
                 continue
         wholesale_packaging_price = None
-        if "wholesale_packaging_price" in present:
+        if "wholesale_packaging_price" in row_present:
             value = fields.get("wholesale_packaging_price", "")
             if value:
                 wholesale_packaging_price = _to_float(value, float("nan"))
@@ -523,34 +524,34 @@ def import_products(
                     continue
         category_name = fields.get("category", "")
         values = {"name": name}
-        if "base_unit" in present:
+        if "base_unit" in row_present:
             values["base_unit"] = fields.get("base_unit", "")
         for field in ("rayon", "emplacement"):
-            if field in present:
+            if field in row_present:
                 values[field] = fields.get(field, "").strip() or None
-        if "description" in present:
+        if "description" in row_present:
             values["description"] = fields.get("description", "")
-        if "purchase_price" in present:
+        if "purchase_price" in row_present:
             values["purchase_price"] = _to_float(fields.get("purchase_price", ""))
-        if "sale_price" in present:
+        if "sale_price" in row_present:
             values["sale_price"] = _to_float(fields.get("sale_price", ""))
-        if "wholesale_price" in present:
+        if "wholesale_price" in row_present:
             values["wholesale_price"] = _to_float(
                 fields.get("wholesale_price", "")
             )
-        if "wholesale_packaging_price" in present:
+        if "wholesale_packaging_price" in row_present:
             values["wholesale_packaging_price"] = wholesale_packaging_price
-        if "min_stock" in present:
+        if "min_stock" in row_present:
             values["min_stock"] = _to_int(fields.get("min_stock", ""), 5)
         if barcode:
             values["barcode"] = barcode
         was_existing = existing is not None
         try:
             packagings = _import_packagings(db, existing, fields)
-            quantity = _import_quantity(fields, present, existing, packagings)
+            quantity = _import_quantity(fields, row_present, existing, packagings)
             if quantity is not None:
                 values["quantity"] = quantity
-            if "category" in present:
+            if "category" in row_present:
                 cat = categories.get(category_name.lower()) if category_name else None
                 if category_name and cat is None:
                     cat = Category(name=category_name)
@@ -775,21 +776,37 @@ def add_stock(
     product = db.get(Product, product_id)
     if product is None:
         raise HTTPException(404, "Produit introuvable")
-    if payload.unit == "base" and payload.packaging_id is not None:
-        raise HTTPException(400, "Choisissez une seule unité")
-    spec = selected_packaging(db, product, payload.packaging_id)
-    factor = spec.units_per_packaging if payload.unit == "packaging" else 1
-    if payload.unit == "packaging" and (not spec.packaging_unit or not factor or factor < 1):
-        raise HTTPException(400, "Conditionnement introuvable ou inactif")
-    quantity = payload.quantity * factor
-    if quantity > 2147483647:
-        raise HTTPException(400, "Quantité trop élevée")
+    breakdown = []
+    if payload.lines is None:
+        if payload.unit == "base" and payload.packaging_id is not None:
+            raise HTTPException(400, "Choisissez une seule unité")
+        entries = [payload]
+    else:
+        entries = payload.lines
+    quantity = 0
+    spec = product
+    for line in entries:
+        selected = selected_packaging(db, product, line.packaging_id)
+        packaged = line.packaging_id is not None or line.unit == "packaging"
+        factor = selected.units_per_packaging if packaged else 1
+        if packaged and (not selected.packaging_unit or not factor or factor < 1):
+            raise HTTPException(400, "Conditionnement introuvable ou inactif")
+        quantity += line.quantity * factor
+        if quantity > 2147483647:
+            raise HTTPException(400, "Quantité trop élevée")
+        if line.quantity:
+            breakdown.append(f"{line.quantity} {selected.packaging_unit if packaged else product.base_unit or 'pièce'}")
+        if payload.lines is None:
+            spec = selected
+    detail = payload.note.strip()
+    if payload.lines is not None:
+        detail = " + ".join(breakdown) + f" = {quantity} {product.base_unit or 'pièce'}" + (f" — {detail}" if detail else "")
     depot_id = stock.resolve(db, payload.depot_id)
     before, after = stock.adjust(db, product, quantity, depot_id)
     db.add(StockMovement(
         product_id=product.id, product_name=product.name, depot_id=depot_id,
         kind="entree", quantity=quantity, stock_before=before, stock_after=after,
-        reason=payload.reason + (f" — {payload.note.strip()}" if payload.note.strip() else ""),
+        reason=payload.reason + (f" — {detail}" if detail else ""),
         created_by_id=current_user.id, **snapshot(spec),
     ))
     db.commit()

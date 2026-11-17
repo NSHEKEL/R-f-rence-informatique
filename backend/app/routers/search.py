@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
 from ..database import get_db
-from ..models import Customer, Product, Sale, Supplier, User
+from ..models import Customer, Product, ProductBarcode, ProductPackaging, Sale, Supplier, User
 from ..permissions import has_permission
 
 router = APIRouter(prefix="/api/search", tags=["search"])
@@ -39,6 +39,9 @@ def global_search(
                     _like(Product.name, needle),
                     _like(Product.sku, needle),
                     _like(Product.barcode, needle),
+                    _like(Product.qr_code, needle),
+                    Product.id.in_(db.query(ProductBarcode.product_id).filter(ProductBarcode.active.is_(True), _like(ProductBarcode.code, needle))),
+                    Product.id.in_(db.query(ProductPackaging.product_id).filter(ProductPackaging.active.is_(True), _like(ProductPackaging.barcode, needle))),
                 )
             )
             .order_by(Product.name)

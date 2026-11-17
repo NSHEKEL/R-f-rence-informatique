@@ -30,7 +30,8 @@ function ReceiptBody({
   company,
   duplicate,
   config,
-}: Omit<ReceiptProps, "format"> & { config: ReceiptPrinterConfig }) {
+  numericQuantities = true,
+}: Omit<ReceiptProps, "format"> & { config: ReceiptPrinterConfig; numericQuantities?: boolean }) {
   const currency = company?.currency || "FCFA";
   const money = (v: number) => formatMoney(v, currency);
   const vat = vatBreakdown(sale.total, company);
@@ -154,7 +155,7 @@ function ReceiptBody({
           {sale.items.map((it) => (
             <tr key={it.id}>
               <td>{it.product_name}</td>
-              {config.show_qty && <td className="qty" data-field="qty">{it.quantity_label || it.quantity}</td>}
+              {config.show_qty && <td className="qty" data-field="qty">{numericQuantities ? it.quantity : it.quantity_label || it.quantity}</td>}
               {config.show_unit_price && (
                 <td className="num" data-field="price">{salePriceParts(it).map((part) => <div key={part.kind}>{money(part.amount)}{part.unit && <><br /><small>/{part.unit}</small></>}</div>)}</td>
               )}
@@ -265,6 +266,7 @@ export default function Receipt({
   const shared = a4 ? <><style>{commercialStyle(doc)}</style><p className="shared-header">{doc.header_text}</p></> : null;
   const body = (
     <ReceiptBody
+      numericQuantities={!a4}
       sale={sale}
       company={company}
       duplicate={duplicate}

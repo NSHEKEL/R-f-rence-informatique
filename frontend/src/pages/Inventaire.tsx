@@ -25,6 +25,7 @@ import { useSyncVersion } from "../context/SyncContext";
 import PackagingQuantity from "../components/PackagingQuantity";
 import InventorySessions from "../components/InventorySessions";
 import { formatQuantity, quantityHtml } from "../lib/units";
+import { scanCodes } from "../lib/scan";
 
 type Counted = Record<number, { rayon: string; stock: string }>;
 
@@ -99,7 +100,7 @@ export default function Inventaire() {
     if (!q) return products;
     return products.filter(
       (p) =>
-        p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)
+        p.name.toLowerCase().includes(q) || scanCodes(p).some((code) => code.includes(q))
     );
   }, [products, query]);
 

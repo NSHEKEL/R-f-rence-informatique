@@ -117,6 +117,31 @@ class StockEntryTests(unittest.TestCase):
         self.grant("produits_gerer")
         self.entry(quantity=1)
 
+    def test_multi_unit_entry_one_movement_and_validation_is_atomic(self):
+        depot = Depot(code="MULTI", name="Réserve multi", active=True)
+        self.db.add(depot)
+        self.db.commit()
+        result = self.entry(lines=[{"packaging_id": None, "quantity": 5},
+                                   {"packaging_id": None, "unit": "packaging", "quantity": 3},
+                                   {"packaging_id": self.pack.id, "quantity": 2}],
+                            depot_id=depot.id, reason="Correction", note="Livraison mixte")
+        self.assertEqual(result["quantity"], 89)
+        movement = self.db.query(StockMovement).filter_by(kind="entree").one()
+        self.assertEqual((movement.quantity, movement.stock_before, movement.stock_after), (89, 0, 89))
+        self.assertEqual((movement.depot_id, movement.created_by_id), (depot.id, self.user.id))
+        self.assertIn("Livraison mixte", movement.reason)
+        self.assertIn(f"5 pièce + 3 {self.product.packaging_unit} + 2 Colis = 89 pièce", movement.reason)
+        path = f"/api/products/{self.product.id}/stock-entry"
+        for lines in ([], [{"quantity": 0}], [{"quantity": -1}], [{"quantity": 1.5}],
+                      [{"quantity": True}], [{"quantity": "2"}]):
+            self.call(path, "POST", {"lines": lines}, 422)
+        self.call(path, "POST", {"quantity": 1, "lines": [{"quantity": 1}]}, 422)
+        for lines in ([{"quantity": 1}, {"packaging_id": 99999, "quantity": 1}],
+                      [{"quantity": 2147483647}, {"quantity": 1}]):
+            self.call(path, "POST", {"lines": lines}, 400)
+        self.assertEqual(self.stock(), 89)
+        self.assertEqual(self.db.query(StockMovement).filter_by(kind="entree").count(), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

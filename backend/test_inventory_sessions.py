@@ -9,7 +9,7 @@ from sqlalchemy.schema import CreateTable
 import test_wholesale as wholesale
 from app import migrate as migration
 from app.database import Base
-from app.models import AppMigration, Category, InventoryCount, InventorySession, Product, ProductPackaging, RolePermission, StockMovement
+from app.models import AppMigration, Category, InventoryCount, InventorySession, Product, ProductBarcode, ProductPackaging, RolePermission, StockMovement
 from app.permissions import role_matrix, save_matrix
 from app.routers import inventory
 
@@ -69,6 +69,18 @@ class InventorySessionTests(unittest.TestCase):
         self.call(path + "/cancel", "POST", {}, 409)
         self.call(path + "/scan", "POST", {"code": "PACK24"}, 409)
         self.call(path + f"/counts/{self.product.id}", "PUT", {"physical_qty": 500}, 409)
+
+    def test_variant_scan_and_packaging_code_keep_their_quantities(self):
+        self.db.add(ProductBarcode(product_id=self.product.id, code="VAR-INVENTORY", label="Variante", active=True))
+        self.db.add(ProductBarcode(product_id=self.product.id, code="PACK24", label="Variante carton", active=True))
+        self.db.commit()
+        session = self.session()
+        path = f"/api/inventory/sessions/{session['id']}"
+        for code in ("var-inventory", "PACK24"):
+            result = self.call(path + "/scan", "POST", {"code": code})
+        row = next(item for item in result["rows"] if item["product_id"] == self.product.id)
+        self.assertEqual(row["physical_qty"], 25)
+        self.call(path + "/scan", "POST", {"code": "UNKNOWN"}, 404)
 
     def test_blind_hides_theory_values_and_variance_in_every_response(self):
         session = self.session(blind=True)

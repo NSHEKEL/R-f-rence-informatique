@@ -5,9 +5,11 @@ const prices = [
   ["price_gros", "Prix gros"], ["purchase_price", "Prix d'achat du conditionnement"],
 ] as const;
 
-export default function ProductPackagings({ value, onChange }: {
+export default function ProductPackagings({ value, onChange, stock = 0, baseUnit = "pièce" }: {
   value: ProductPackaging[];
   onChange: (value: ProductPackaging[]) => void;
+  stock?: number;
+  baseUnit?: string;
 }) {
   function update(index: number, changes: Partial<ProductPackaging>) {
     onChange(value.map((p, i) => i === index ? { ...p, ...changes } : p));
@@ -21,7 +23,8 @@ export default function ProductPackagings({ value, onChange }: {
       <label className="label">Nom libre<input className="input" list="packaging-names" value={p.name} onChange={(e) => update(index, { name: e.target.value })} /></label>
       <label className="label">Facteur (unités de base)<input className="input" type="number" min="1" step="1" value={p.factor} onChange={(e) => update(index, { factor: Number(e.target.value) })} /></label>
       <label className="label">Code-barres<input className="input" value={p.barcode ?? ""} onChange={(e) => update(index, { barcode: e.target.value || null })} /></label>
-      <label className="label">Ordre<input className="input" type="number" step="1" value={p.sort_order} onChange={(e) => update(index, { sort_order: Number(e.target.value) })} /></label>
+      <label className="label">Ordre<input className="input" type="number" step="1" value={p.sort_order || ""} onChange={(e) => update(index, { sort_order: Number(e.target.value) })} /></label>
+      {p.factor > 0 && <p className="col-span-full text-xs text-slate-500">Disponible : {Math.floor(stock / p.factor)} {p.name || "carton"} + {stock - Math.floor(stock / p.factor) * p.factor} {baseUnit || "pièce"}</p>}
       {prices.map(([key, label]) => <label key={key} className="label">{label}<input className="input" type="number" min="0" value={p[key] ?? ""} onChange={(e) => update(index, { [key]: e.target.value === "" ? null : Number(e.target.value) })} /></label>)}
       <button type="button" className="btn-secondary" onClick={() => update(index, { active: !p.active })}>{p.active ? "Retirer" : "Réactiver"}</button>
     </fieldset>)}

@@ -70,7 +70,7 @@ const empty = {
   sale_price: 0,
   wholesale_price: 0,
   quantity: 0,
-  min_stock: 5,
+  min_stock: "" as number | "",
   qr_code: "",
   barcode: "",
   image: "",
@@ -127,6 +127,7 @@ export default function Products() {
   const [viewProductId, setViewProductId] = useState<number | null>(null);
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState({ ...empty });
+  const autoSku = useRef("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [importDuplicates, setImportDuplicates] = useState<ImportDuplicate[]>([]);
@@ -168,7 +169,9 @@ export default function Products() {
         p.name.toLowerCase().includes(q) ||
         p.sku.toLowerCase().includes(q) ||
         (p.qr_code || "").toLowerCase().includes(q) ||
-        (p.barcode || "").toLowerCase().includes(q)
+        (p.barcode || "").toLowerCase().includes(q) ||
+        (p.barcodes || []).some((code) => code.active && code.code.toLowerCase().includes(q)) ||
+        (p.packagings || []).some((packaging) => packaging.active && packaging.barcode?.toLowerCase().includes(q))
     ), sort);
   }, [products, query, sort]);
 
@@ -258,6 +261,7 @@ export default function Products() {
   const selection = useSelection(paged);
 
   function openCreate() {
+    autoSku.current = "";
     setEditing(null);
     setForm({ ...empty });
     setError("");
@@ -336,7 +340,7 @@ export default function Products() {
       sale_price: Number(form.sale_price),
       wholesale_price: Number(form.wholesale_price),
       quantity: Number(form.quantity),
-      min_stock: Number(form.min_stock),
+      min_stock: form.min_stock === "" ? 5 : Number(form.min_stock),
     };
     try {
       if (editing) {
@@ -434,13 +438,13 @@ export default function Products() {
 
   /** Scanner/handler lookup: fill the form with a known article. */
   async function lookupBarcode(raw = form.barcode) {
+    if (editing) return;
     const code = raw.trim();
     if (!code) return;
     try {
       const { data } = await api.get<Product>(
         `/products/by-code/${encodeURIComponent(code)}`
       );
-      if (editing?.id === data.id) return;
       setNotice(`Article reconnu : ${data.name} — fiche chargée`);
       openEdit(data);
     } catch (err) {
@@ -451,6 +455,11 @@ export default function Products() {
   }
 
   useScanner(async (codes) => {
+    if (editing) {
+      const code = codes.find((value) => /^\d+$/.test(value)) || codes[0];
+      setForm((previous) => ({ ...previous, barcode: code }));
+      return;
+    }
     for (const code of codes) {
       try {
         const { data } = await api.get<Product>(`/products/by-code/${encodeURIComponent(code)}`);
@@ -825,6 +834,8 @@ export default function Products() {
       }} />}
       <Modal
         open={modalOpen}
+        closeOnBackdrop={false}
+        closeOnEscape={false}
         onClose={() => setModalOpen(false)}
         title={editing ? "Modifier le produit" : "Nouveau produit"}
         wide
@@ -845,16 +856,23 @@ export default function Products() {
             {error}
           </div>
         )}
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-          <div className="col-span-full">
+<div className="space-y-6">
+<section className="grid grid-cols-1 gap-4 rounded-xl border border-slate-200 p-3 md:grid-cols-2 xl:grid-cols-3">
+<h4 className="col-span-full font-semibold">Identification, stock et conditionnements</h4>
+<div className="col-span-full">
             <label className="label">Nom du produit</label>
             <input
               className="input"
               value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              onChange={(e) => {
+                const name = e.target.value;
+                const sku = !editing && (!form.sku || form.sku === autoSku.current) ? name.trim() : form.sku;
+                autoSku.current = name.trim();
+                setForm({ ...form, name, sku });
+              }}
             />
           </div>
-          <div>
+<div>
             <label className="label">Référence (SKU)</label>
             <input
               className="input"
@@ -862,133 +880,27 @@ export default function Products() {
               onChange={(e) => setForm({ ...form, sku: e.target.value })}
             />
           </div>
-          <label className="label">Rayon<input className="input" maxLength={200} value={form.rayon} onChange={(e) => setForm({ ...form, rayon: e.target.value })} /></label>
-          <label className="label">Emplacement<input className="input" maxLength={200} value={form.emplacement} onChange={(e) => setForm({ ...form, emplacement: e.target.value })} /></label>
-          <div>
-            <label className="label">Catégorie</label>
-            <select
-              className="input"
-              value={form.category_id ?? ""}
-              onChange={(e) => setForm({ ...form, category_id: e.target.value as unknown as number })}
-            >
-              <option value="">— Aucune —</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="label">Fournisseur</label>
-            <select
-              className="input"
-              value={form.supplier_id ?? ""}
-              onChange={(e) => setForm({ ...form, supplier_id: e.target.value as unknown as number })}
-            >
-              <option value="">— Aucun —</option>
-              {suppliers.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
+<div>
             <label className="label">Prix d'achat usine (coût pour le bénéfice, FCFA)</label>
             <input
               type="number"
               className="input"
-              value={form.purchase_price}
+              value={form.purchase_price || ""}
               onChange={(e) => setForm({ ...form, purchase_price: Number(e.target.value) })}
             />
           </div>
-          <div>
-            <label className="label">Prix détail pièce (FCFA)</label>
-            <input
-              type="number"
-              className="input"
-              value={form.sale_price}
-              onChange={(e) => setForm({ ...form, sale_price: Number(e.target.value) })}
-            />
-          </div>
-          <div>
-            <label className="label">Prix gros pièce (FCFA, 0 = détail)</label>
-            <input
-              type="number"
-              className="input"
-              value={form.wholesale_price}
-              onChange={(e) =>
-                setForm({ ...form, wholesale_price: Number(e.target.value) })
-              }
-            />
-          </div>
-          <div>
-            <label className="label">Prix gros carton (FCFA, vide = calcul automatique)</label>
-            <input type="number" min={0} className="input" value={form.wholesale_packaging_price} onChange={(e) => setForm({ ...form, wholesale_packaging_price: e.target.value === "" ? "" : Number(e.target.value) })} />
-          </div>
-          <div>
+<div>
             <label className="label">Stock en unités de base (stock initial à la création)</label>
             <input
               type="number"
               className="input"
-              value={form.quantity}
+              value={form.quantity || ""}
               onChange={(e) => setForm({ ...form, quantity: Number(e.target.value) })}
             />
             <p className="text-xs text-slate-500">{formatQuantity(form, form.quantity)}</p>
-            {form.packaging_unit && <PackagingQuantity product={form} value={form.quantity} onChange={(quantity) => setForm({ ...form, quantity })} />}
+            {form.packaging_unit && <PackagingQuantity blankZero product={form} value={form.quantity} onChange={(quantity) => setForm({ ...form, quantity })} />}
           </div>
-          <div><label className="label">Unité de base</label><input className="input" value={form.base_unit} placeholder="pièce, kg, litre…" onChange={(e) => setForm({ ...form, base_unit: e.target.value })} /></div>
-          <div><label className="label">Conditionnement (facultatif)</label><input className="input" value={form.packaging_unit} placeholder="carton, paquet, boîte, sac…" onChange={(e) => setForm({ ...form, packaging_unit: e.target.value })} /></div>
-          {form.packaging_unit && <>
-            <div><label className="label">Pièces par carton</label><input className="input" type="number" min="1" step="1" value={form.units_per_packaging} onChange={(e) => setForm({ ...form, units_per_packaging: Number(e.target.value) })} /></div>
-            <div><label className="label">Prix détail carton (vide = pièces × prix détail pièce)</label><input className="input" type="number" min="0" value={form.packaging_sale_price} onChange={(e) => setForm({ ...form, packaging_sale_price: e.target.value === "" ? "" : Number(e.target.value) })} /></div>
-          </>}
-          {([
-            ["supplier_purchase_price", "Prix fournisseur pièce"],
-            ["semi_wholesale_price", "Prix semi-gros pièce"],
-            ["semi_wholesale_min_qty", "Seuil semi-gros (unités de base)"],
-            ["wholesale_min_qty", "Seuil gros (unités de base)"],
-          ] as const).map(([key, label]) => <label key={key} className="label">{label}<input className="input" type="number" min={key.endsWith("qty") ? "1" : "0"} step={key.endsWith("qty") ? "1" : "any"} value={form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.value === "" ? "" : Number(e.target.value) })} /></label>)}
-          <ProductPackagings value={form.packagings} onChange={(packagings) => setForm({ ...form, packagings })} />
-          <div className="col-span-full space-y-2">
-            <h3 className="font-semibold">Codes supplémentaires / variantes</h3>
-            {form.barcodes.map((barcode, index) => <div className="flex flex-wrap gap-2" key={barcode.id || `new-${index}`}>
-              <input aria-label="Code variante" className="input flex-1" disabled={!!barcode.id} value={barcode.code} onChange={(e) => setForm({ ...form, barcodes: form.barcodes.map((b, i) => i === index ? { ...b, code: e.target.value } : b) })} />
-              <input aria-label="Libellé variante" className="input flex-1" value={barcode.label} onChange={(e) => setForm({ ...form, barcodes: form.barcodes.map((b, i) => i === index ? { ...b, label: e.target.value } : b) })} />
-              <button type="button" className="btn-ghost" onClick={() => setForm({ ...form, barcodes: barcode.id ? form.barcodes.map((b, i) => i === index ? { ...b, active: !b.active } : b) : form.barcodes.filter((_, i) => i !== index) })}>{barcode.active ? "Retirer" : "Réactiver"}</button>
-            </div>)}
-            <button type="button" className="btn-ghost" onClick={() => setForm({ ...form, barcodes: [...form.barcodes, { code: "", label: "", active: true }] })}>Ajouter un code</button>
-          </div>
-          <div>
-            <label className="label">Seuil d'alerte</label>
-            <input
-              type="number"
-              className="input"
-              value={form.min_stock}
-              onChange={(e) => setForm({ ...form, min_stock: Number(e.target.value) })}
-            />
-          </div>
-          {!editing && (
-            <div>
-              <label className="label">
-                Date de péremption (laisser vide si non périssable)
-              </label>
-              <input
-                type="date"
-                className="input"
-                value={form.expiry_date}
-                onChange={(e) =>
-                  setForm({ ...form, expiry_date: e.target.value })
-                }
-              />
-              <p className="mt-1 text-xs text-slate-400">
-                Le stock initial sera enregistré comme lot périssable ; les
-                ventes le consommeront en priorité (FEFO).
-              </p>
-            </div>
-          )}
-          <div className="col-span-full">
+<div className="col-span-full">
             <label className="label">
               Code-barres de l'article (chiffres imprimés sur l'emballage)
             </label>
@@ -1022,7 +934,7 @@ export default function Products() {
               créer un et l'imprimer depuis la colonne QR.
             </p>
           </div>
-          <div className="col-span-full">
+<div className="col-span-full">
             <label className="label">
               Code QR (laisser vide pour utiliser le SKU)
             </label>
@@ -1033,7 +945,117 @@ export default function Products() {
               placeholder="Collez ici le code déjà imprimé sur l'article"
             />
           </div>
-          <div className="col-span-full">
+<div className="col-span-full space-y-2">
+            <h3 className="font-semibold">Codes supplémentaires / variantes</h3>
+            {form.barcodes.map((barcode, index) => <div className="flex flex-wrap gap-2" key={barcode.id || `new-${index}`}>
+              <input aria-label="Code variante" className="input flex-1" disabled={!!barcode.id} value={barcode.code} onChange={(e) => setForm({ ...form, barcodes: form.barcodes.map((b, i) => i === index ? { ...b, code: e.target.value } : b) })} />
+              <input aria-label="Libellé variante" className="input flex-1" value={barcode.label} onChange={(e) => setForm({ ...form, barcodes: form.barcodes.map((b, i) => i === index ? { ...b, label: e.target.value } : b) })} />
+              <button type="button" className="btn-ghost" onClick={() => setForm({ ...form, barcodes: barcode.id ? form.barcodes.map((b, i) => i === index ? { ...b, active: !b.active } : b) : form.barcodes.filter((_, i) => i !== index) })}>{barcode.active ? "Retirer" : "Réactiver"}</button>
+            </div>)}
+            <button type="button" className="btn-ghost" onClick={() => setForm({ ...form, barcodes: [...form.barcodes, { code: "", label: "", active: true }] })}>Ajouter un code</button>
+          </div>
+{!editing && (
+            <div>
+              <label className="label">
+                Date de péremption (laisser vide si non périssable)
+              </label>
+              <input
+                type="date"
+                className="input"
+                value={form.expiry_date}
+                onChange={(e) =>
+                  setForm({ ...form, expiry_date: e.target.value })
+                }
+              />
+              <p className="mt-1 text-xs text-slate-400">
+                Le stock initial sera enregistré comme lot périssable ; les
+                ventes le consommeront en priorité (FEFO).
+              </p>
+            </div>
+          )}
+<div><label className="label">Unité de base</label><input className="input" value={form.base_unit} placeholder="pièce, kg, litre…" onChange={(e) => setForm({ ...form, base_unit: e.target.value })} /></div>
+<div><label className="label">Conditionnement (facultatif)</label><input className="input" value={form.packaging_unit} placeholder="carton, paquet, boîte, sac…" onChange={(e) => setForm({ ...form, packaging_unit: e.target.value })} /></div>
+{form.packaging_unit && <>
+            <div><label className="label">Pièces par carton</label><input className="input" type="number" min="1" step="1" value={form.units_per_packaging} onChange={(e) => setForm({ ...form, units_per_packaging: Number(e.target.value) })} /></div>
+            <div><label className="label">Prix détail carton (vide = pièces × prix détail pièce)</label><input className="input" type="number" min="0" value={form.packaging_sale_price} onChange={(e) => setForm({ ...form, packaging_sale_price: e.target.value === "" ? "" : Number(e.target.value) })} /></div>
+          </>}
+<div>
+            <label className="label">Prix gros carton (FCFA, vide = calcul automatique)</label>
+            <input type="number" min={0} className="input" value={form.wholesale_packaging_price} onChange={(e) => setForm({ ...form, wholesale_packaging_price: e.target.value === "" ? "" : Number(e.target.value) })} />
+          </div>
+<ProductPackagings value={form.packagings} stock={form.quantity} baseUnit={form.base_unit} onChange={(packagings) => setForm({ ...form, packagings })} />
+{form.packaging_unit && form.units_per_packaging > 0 && <p className="col-span-full text-xs text-slate-500">Disponible : {Math.floor(form.quantity / form.units_per_packaging)} {form.packaging_unit} + {form.quantity - Math.floor(form.quantity / form.units_per_packaging) * form.units_per_packaging} {form.base_unit || "pièce"}</p>}
+</section>
+<section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+<h4 className="col-span-full font-semibold">Autres informations et tarifs</h4>
+<label className="label">Rayon<input className="input" maxLength={200} value={form.rayon} onChange={(e) => setForm({ ...form, rayon: e.target.value })} /></label>
+<label className="label">Emplacement<input className="input" maxLength={200} value={form.emplacement} onChange={(e) => setForm({ ...form, emplacement: e.target.value })} /></label>
+<div>
+            <label className="label">Catégorie</label>
+            <select
+              className="input"
+              value={form.category_id ?? ""}
+              onChange={(e) => setForm({ ...form, category_id: e.target.value as unknown as number })}
+            >
+              <option value="">— Aucune —</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+<div>
+            <label className="label">Fournisseur</label>
+            <select
+              className="input"
+              value={form.supplier_id ?? ""}
+              onChange={(e) => setForm({ ...form, supplier_id: e.target.value as unknown as number })}
+            >
+              <option value="">— Aucun —</option>
+              {suppliers.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </div>
+<div>
+            <label className="label">Prix détail pièce (FCFA)</label>
+            <input
+              type="number"
+              className="input"
+              value={form.sale_price || ""}
+              onChange={(e) => setForm({ ...form, sale_price: Number(e.target.value) })}
+            />
+          </div>
+<div>
+            <label className="label">Prix gros pièce (FCFA, 0 = détail)</label>
+            <input
+              type="number"
+              className="input"
+              value={form.wholesale_price || ""}
+              onChange={(e) =>
+                setForm({ ...form, wholesale_price: Number(e.target.value) })
+              }
+            />
+          </div>
+{([
+            ["supplier_purchase_price", "Prix fournisseur pièce"],
+            ["semi_wholesale_price", "Prix semi-gros pièce"],
+            ["semi_wholesale_min_qty", "Seuil semi-gros (unités de base)"],
+            ["wholesale_min_qty", "Seuil gros (unités de base)"],
+          ] as const).map(([key, label]) => <label key={key} className="label">{label}<input className="input" type="number" min={key.endsWith("qty") ? "1" : "0"} step={key.endsWith("qty") ? "1" : "any"} value={form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.value === "" ? "" : Number(e.target.value) })} /></label>)}
+<div>
+            <label className="label">Seuil d'alerte</label>
+            <input
+              type="number"
+              className="input"
+              value={form.min_stock || ""}
+              onChange={(e) => setForm({ ...form, min_stock: e.target.value === "" ? "" : Number(e.target.value) })}
+            />
+          </div>
+<div className="col-span-full">
             <label className="label">Photo de l'article</label>
             <div className="flex items-center gap-4">
               {form.image ? (
@@ -1072,7 +1094,7 @@ export default function Products() {
               />
             </div>
           </div>
-          <div className="col-span-full">
+<div className="col-span-full">
             <label className="label">Description</label>
             <textarea
               className="input min-h-[80px]"
@@ -1080,7 +1102,7 @@ export default function Products() {
               onChange={(e) => setForm({ ...form, description: e.target.value })}
             />
           </div>
-        </div>
+</section></div>
       </Modal>
 
       <Modal

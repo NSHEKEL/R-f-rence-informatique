@@ -62,6 +62,21 @@ class ProductBarcodeTests(unittest.TestCase):
         self.user.role = "vendeur"
         self.call(f"/api/products/{self.product.id}", "PUT", {**product, "barcodes": [{"code": "DENIED"}]}, 403)
 
+    def test_main_barcode_qr_edit_uniqueness_and_global_variant_search(self):
+        from app.routers import search
+        self.app.include_router(search.router)
+        self.update(barcode="1111111111111", qr_code="QR-OLD", barcodes=[{"code": "VAR-FIND"}])
+        self.update(barcode="2222222222222", qr_code="QR-NEW")
+        self.assertEqual(self.call("/api/products/by-code/2222222222222")["id"], self.product.id)
+        self.call("/api/products/by-code/1111111111111", status=404)
+        self.call("/api/products/by-code/QR-OLD", status=404)
+        self.assertEqual(self.call("/api/products/by-code/QR-NEW")["id"], self.product.id)
+        self.assertEqual(self.call("/api/search?q=VAR-FIND")["products"][0]["id"], self.product.id)
+        self.call("/api/products", "POST", {"name": "Autre", "sku": "OTHER-BAR", "barcode": "3333333333333"}, 201)
+        product = self.call(f"/api/products/{self.product.id}")
+        self.call(f"/api/products/{self.product.id}", "PUT", {**product, "barcode": "3333333333333"}, 400)
+        self.assertEqual(self.call("/api/products/by-code/2222222222222")["id"], self.product.id)
+
     def test_csv_extra_codes_append_and_collision_rolls_back_the_row(self):
         data = "sku;nom;extra_codes\nCSV-NEW;Variante;CSV-RED|CSV-BLUE\n"
         response = self.client.post("/api/products/import", files={"file": ("codes.csv", data.encode(), "text/csv")})

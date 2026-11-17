@@ -24,6 +24,7 @@ import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSyncVersion } from "../context/SyncContext";
 import PackagingQuantity from "../components/PackagingQuantity";
+import ProductSearch from "../components/ProductSearch";
 import { formatQuantity, quantityHtml, withPackaging } from "../lib/units";
 
 interface DraftLine {
@@ -569,6 +570,10 @@ export default function Approvisionnements() {
           </div>
 
           <div className="space-y-2">
+            <ProductSearch products={products} placeholder="Scanner un code article, variante ou conditionnement" onPick={(product) => {
+              const packaging = product.packagings?.find((item) => item.id === product.packaging_id);
+              setLines((previous) => [...previous, { product_id: product.id, packaging_id: packaging?.id, quantity: packaging?.factor || 1, unit_cost: packaging?.purchase_price != null ? packaging.purchase_price / packaging.factor : product.purchase_price }]);
+            }} />
             {lines.map((l, index) => (
               <div key={index} className="flex flex-wrap items-end gap-2">
                 <div className="min-w-[220px] flex-1">

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 # ---------- Auth ----------
@@ -998,13 +998,31 @@ class StockLotCreate(BaseModel):
     quantity: int
 
 
+class ProductStockEntryLine(BaseModel):
+    packaging_id: Optional[int] = Field(default=None, ge=1)
+    quantity: int = Field(ge=0, le=2147483647, strict=True)
+    unit: Literal["base", "packaging"] = "base"
+
+
 class ProductStockEntry(BaseModel):
-    quantity: int = Field(gt=0, le=2147483647, strict=True)
+    quantity: Optional[int] = Field(default=None, gt=0, le=2147483647, strict=True)
+    lines: Optional[List[ProductStockEntryLine]] = Field(default=None, min_length=1, max_length=1000)
     unit: Literal["base", "packaging"] = "base"
     packaging_id: Optional[int] = Field(default=None, ge=1)
     depot_id: Optional[int] = Field(default=None, ge=1)
     reason: Literal["Arrivage", "Correction", "Autre"] = "Arrivage"
     note: str = Field(default="", max_length=500)
+
+    @model_validator(mode="after")
+    def validate_quantities(self):
+        if self.lines is None:
+            if self.quantity is None:
+                raise ValueError("Quantité strictement positive requise")
+        elif self.quantity is not None or self.packaging_id is not None or self.unit != "base":
+            raise ValueError("Choisissez les lignes ou la quantité unique")
+        elif not any(line.quantity > 0 for line in self.lines):
+            raise ValueError("Au moins une quantité doit être strictement positive")
+        return self
 
 
 class StockLotOut(BaseModel):
