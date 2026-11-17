@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import api from "../api/client";
+import { readOffline } from "../lib/offlineInventory";
 import { replenishmentMessage } from "../lib/depots";
 
 interface Stock { depot_id: number; name: string; is_default: boolean; quantity: number }
@@ -9,7 +9,7 @@ export default function DepotStock({ productId, total }: { productId: number; to
   const [message, setMessage] = useState("");
   const load = useCallback(async () => {
     setMessage("");
-    try { const { data } = await api.get<Stock[]>(`/depots/stocks/${productId}`); setStocks(data); }
+    try { const { data } = await readOffline<Stock[]>(`/depots/stocks/${productId}`, `depot-stock:${productId}`); setStocks(data); }
     catch { setMessage("Stock par dépôt indisponible."); }
   }, [productId]);
   useEffect(() => { void load(); }, [load, total]);

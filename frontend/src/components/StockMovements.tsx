@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
-import api, { formatDateTime } from "../api/client";
+import { formatDateTime } from "../api/client";
+import { readOffline } from "../lib/offlineInventory";
+import { useOnline } from "../lib/useOnline";
+import OfflineBanner from "./OfflineBanner";
 import type { Product, StockMovement } from "../types";
 import { formatQuantity } from "../lib/units";
 
@@ -11,18 +14,23 @@ export default function StockMovements({ products, version }: { products: Produc
   const [options, setOptions] = useState<{ kinds: string[]; users: { id: number; name: string }[]; depots: { id: number; name: string }[]; products: { id: number; name: string }[] }>({ kinds: [], users: [], depots: [], products: [] });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  useEffect(() => { let alive = true; api.get("/inventory/movements/filters").then(({ data }) => { if (alive) setOptions(data); }).catch(() => { if (alive) setError("Filtres indisponibles"); }); return () => { alive = false; }; }, [version, products]);
+  const online = useOnline();
+  const [cached, setCached] = useState(false);
+  const [savedAt, setSavedAt] = useState("");
+  useEffect(() => { let alive = true; readOffline<typeof options>("/inventory/movements/filters", "movement-filters").then(({ data }) => { if (alive) setOptions(data); }).catch(() => { if (alive) setError("Filtres indisponibles"); }); return () => { alive = false; }; }, [version, products]);
   useEffect(() => {
     let alive = true;
     setError(""); setLoading(true); setData({ items: [], total: 0 });
     if (filters.period === "custom" && !filters.date_from && !filters.date_to) { setLoading(false); return; }
     const params: Record<string, string | number> = { page, page_size: 50 };
     for (const [key, value] of Object.entries(filters)) if (value && (filters.period === "custom" || !key.startsWith("date_"))) params[key] = value;
-    api.get("/inventory/movements/page", { params }).then(({ data }) => { if (alive) setData(data); }).catch(() => { if (alive) setError("Chargement impossible : vérifiez les dates et vos droits."); }).finally(() => { if (alive) setLoading(false); });
+    const query = new URLSearchParams(Object.entries(params).map(([key, value]) => [key, String(value)])).toString();
+    readOffline<typeof data>(`/inventory/movements/page?${query}`, `movements:${query}`).then((result) => { if (alive) { setData(result.data); setCached(result.fromCache); setSavedAt(result.savedAt); } }).catch(() => { if (alive) setError("Chargement impossible : vérifiez les dates, vos droits ou préparez ce filtre en ligne."); }).finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [filters, page, version, products]);
+  }, [filters, page, version, products, online]);
   function change(key: keyof typeof filters, value: string) { setPage(1); setFilters((previous) => ({ ...previous, [key]: value })); }
   return <section className="card space-y-3 overflow-x-auto p-5"><h3 className="font-bold">Mouvements de stock</h3>
+    <OfflineBanner visible={!online || cached} since={savedAt} />
     <div className="flex flex-wrap gap-2">
       <select className="input w-auto" aria-label="Période des mouvements" value={filters.period} onChange={(e) => change("period", e.target.value)}>{periods.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>
       <select className="input w-auto" aria-label="Ordre des mouvements" value={filters.sort} onChange={(e) => change("sort", e.target.value)}><option value="recent">Récent → ancien</option><option value="oldest">Ancien → récent</option></select>

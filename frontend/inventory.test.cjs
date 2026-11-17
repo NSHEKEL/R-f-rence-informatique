@@ -22,10 +22,29 @@ function modules(window = {}) {
 
 const row = { product_id: 1, sku: "ART-1", name: "Article <script>", rayon: "Frais", emplacement: "A-1", physical_qty: 235, theoretical_qty: 240, variance: -5, unit_cost: 40, theoretical_value: 9600, physical_value: 9400, variance_value: -200, status: "manquant", note: "Contrôle" };
 
+test("mass inventory calculates independent packaging counts and preserves empty versus zero", () => {
+  const { inventoryTotal, inventoryTable } = modules()("inventoryReport");
+  const product = { ...row, base_unit: "pièce", packaging_unit: "Carton", units_per_packaging: 12, packagings: [{ id: 6, name: "Colis", factor: 6 }] };
+  assert.equal(inventoryTotal({ primary: 10, 6: 3, base: 5 }, product), 143);
+  assert.equal(inventoryTotal({ primary: null, base: null }, product), null);
+  assert.equal(inventoryTotal({ base: 0 }, product), 0);
+  const table = inventoryTable({ theoretical_visible: true, rows: [{ ...product, counts: { primary: 10, 6: 3, base: 5 } }] });
+  assert.match(table.rows[0].at(-1), /10 Carton ×12.*3 Colis ×6.*5 Unité/);
+});
+
+test("cached inventory scan focuses variant and packaging units without incrementing", () => {
+  const { inventoryScan } = modules()("inventoryReport");
+  const product = { ...row, barcode: "MAIN", qr_code: "QR", barcodes: ["VAR", "PACK"], packagings: [{ id: 6, name: "Colis", factor: 6, barcode: "PACK" }] };
+  for (const code of ["MAIN", "QR", "ART-1", " var "]) assert.equal(inventoryScan([product], code).key, "base");
+  assert.equal(inventoryScan([product], "pack").key, "6");
+  assert.equal(inventoryScan([product], "unknown"), null);
+  assert.equal(product.physical_qty, 235);
+});
+
 test("inventory report has numeric Excel cells, complete columns and escaped print output", () => {
   const { inventoryTable, reportHtml } = modules()("inventoryReport");
   const { headers, rows } = inventoryTable({ theoretical_visible: true, rows: [row, { ...row, physical_qty: null, variance: null, status: "non compté" }] });
-  assert.equal(headers.length, 13);
+  assert.equal(headers.length, 14);
   assert.equal(rows[0][6], -5);
   assert.equal(rows[0][10], -200);
   assert.equal(rows[1][5], "");
@@ -38,7 +57,7 @@ test("inventory report has numeric Excel cells, complete columns and escaped pri
 test("blind exports cannot include theoretical quantities or financial values", () => {
   const { inventoryTable } = modules()("inventoryReport");
   const table = inventoryTable({ theoretical_visible: false, rows: [{ ...row, status: "compté" }] });
-  assert.equal(table.headers.length, 7);
+  assert.equal(table.headers.length, 8);
   assert.equal(table.rows[0].includes(240), false);
   assert.equal(table.rows[0].includes(-200), false);
   assert.equal(table.rows[0].includes(40), false);
@@ -84,11 +103,13 @@ test("native export cancel and errors propagate instead of silently downloading 
 
 test("inventory UI autosaves, resumes, supports packaged scans and preserves quick inventory", () => {
   const screen = readFileSync(path.join(__dirname, "src/components/InventorySessions.tsx"), "utf8");
-  assert.match(screen, /setTimeout\(flush, 500\)/);
-  assert.match(screen, /\/counts\/\$\{productId\}/);
-  assert.match(screen, /\/scan/);
+  const grid = readFileSync(path.join(__dirname, "src/components/InventoryGrid.tsx"), "utf8");
+  const offline = readFileSync(path.join(__dirname, "src/lib/offlineInventory.ts"), "utf8");
+  assert.match(grid, /setTimeout\([\s\S]*?, 500\)/);
+  assert.match(offline, /\/counts\/\$\{entry.product_id\}/);
+  assert.match(screen, /grid.current\?\.scan\(code\)/);
   assert.match(screen, /inventaire_valider/);
-  assert.match(screen, /PackagingQuantity/);
+  assert.match(grid, /inventoryUnits\(row\)/);
   const quick = readFileSync(path.join(__dirname, "src/pages/Inventaire.tsx"), "utf8");
   assert.match(quick, /<InventorySessions \/>/);
   assert.match(quick, /\/inventory\/apply/);

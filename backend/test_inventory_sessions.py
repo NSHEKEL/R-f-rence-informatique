@@ -1,5 +1,8 @@
 import json
+import csv
+import io
 import unittest
+from xml.sax.saxutils import escape
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -61,7 +64,7 @@ class InventorySessionTests(unittest.TestCase):
         with self.sessions() as db:
             moves = db.query(StockMovement).filter_by(kind="inventaire").all()
             self.assertEqual([(move.stock_before, move.stock_after, move.quantity) for move in moves], [(236, 231, -5), (100, 107, 7)])
-            self.assertTrue(all(move.reason == "Inventaire " + session["reference"] and move.created_by_id == self.user.id for move in moves))
+            self.assertTrue(all(move.reason.startswith("Inventaire " + session["reference"]) and move.created_by_id == self.user.id for move in moves))
             db.get(Product, self.product.id).purchase_price = 999
             db.commit()
         self.assertEqual(self.call(path + "/report")["stats"], result["stats"])
@@ -81,6 +84,105 @@ class InventorySessionTests(unittest.TestCase):
         row = next(item for item in result["rows"] if item["product_id"] == self.product.id)
         self.assertEqual(row["physical_qty"], 25)
         self.call(path + "/scan", "POST", {"code": "UNKNOWN"}, 404)
+
+    def test_mass_multi_packaging_resume_upsert_scan_focus_and_validation(self):
+        self.product.units_per_packaging = 12
+        self.product.quantity = 150
+        pack = self.db.query(ProductPackaging).filter_by(product_id=self.product.id).one()
+        pack.name, pack.factor = "Colis", 6
+        self.db.add(ProductPackaging(product_id=self.product.id, name="Inactif", factor=99, active=False))
+        self.db.add(Product(name="Inactif", sku="INACTIVE", active=False))
+        self.db.add(ProductBarcode(product_id=self.product.id, code="PACK24", active=True))
+        self.db.commit()
+        session = self.session()
+        self.assertEqual(len(session["rows"]), 3)
+        path = f"/api/inventory/sessions/{session['id']}"
+        counts = {"primary": 10, str(pack.id): 3, "base": 5}
+        for _ in range(2):
+            result = self.call(path + f"/counts/{self.product.id}?line_only=true", "PUT", {"counts": counts, "note": "Rayon terminé"})
+            self.assertEqual(len(result["rows"]), 1)
+            self.assertEqual(result["rows"][0]["physical_qty"], 143)
+        with TestClient(self.app) as resumed:
+            row = next(row for row in resumed.get(path).json()["rows"] if row["product_id"] == self.product.id)
+            self.assertEqual(row["counts"], counts)
+            self.assertEqual(row["counted_by_id"], self.user.id)
+            self.assertIsNotNone(row["counted_at"])
+        scanned = self.call(path + "/scan", "POST", {"code": "PACK24", "focus_only": True})
+        self.assertEqual(scanned["scan_match"], {"product_id": self.product.id, "key": str(pack.id), "already_counted": True})
+        self.assertEqual(scanned["rows"][0]["physical_qty"], 143)
+        variant = self.call(path + "/scan", "POST", {"code": "pack24", "focus_only": True})
+        self.assertEqual(variant["scan_match"]["key"], str(pack.id))
+        self.assertIn("PACK24", variant["rows"][0]["barcodes"])
+        self.sell([{"quantity": 2}])
+        result = self.call(path + "/validate", "POST", {})
+        self.assertEqual(self.quantity(self.product), 141)
+        self.assertEqual(result["stats"]["not_counted"], 2)
+        with self.sessions() as db:
+            self.assertEqual(db.query(InventoryCount).filter_by(session_id=session["id"], product_id=self.product.id).count(), 1)
+            move = db.query(StockMovement).filter_by(kind="inventaire").one()
+            self.assertEqual(move.quantity, -7)
+            self.assertIn("10 carton ×12", move.reason)
+            self.assertIn("3 Colis ×6", move.reason)
+            self.assertIn(session["reference"], move.reason)
+            self.assertIn("Rayon terminé", move.reason)
+
+    def test_mass_empty_zero_and_invalid_counts(self):
+        session = self.session()
+        path = f"/api/inventory/sessions/{session['id']}"
+        endpoint = path + f"/counts/{self.product.id}"
+        for counts in ({}, {"primary": None, "base": None}):
+            result = self.call(endpoint, "PUT", {"counts": counts})
+            self.assertEqual(result["stats"]["counted"], 0)
+            self.assertIsNone(result["rows"][0]["counted_at"])
+        result = self.call(endpoint, "PUT", {"counts": {"base": 0}})
+        self.assertEqual(result["stats"]["counted"], 1)
+        self.assertEqual(result["rows"][0]["physical_qty"], 0)
+        for counts, status in [({"unknown": 1}, 400), ({"base": -1}, 422), ({"base": 1.5}, 422), ({"primary": 2147483647}, 400), ({"base": True}, 422)]:
+            self.call(endpoint, "PUT", {"counts": counts}, status)
+        self.assertEqual(self.call(path)["rows"][0]["physical_qty"], 0)
+        self.call(path + "/validate", "POST", {})
+        self.assertEqual(self.quantity(self.third), 7)
+
+    def test_offline_upsert_is_idempotent_and_last_timestamp_wins(self):
+        session = self.session()
+        path = f"/api/inventory/sessions/{session['id']}/counts/{self.product.id}"
+        first = {"counts": {"base": 8}, "client_id": "warehouse-a", "client_updated_at": "2026-01-01T12:00:00Z"}
+        saved = self.call(path, "PUT", first)["rows"][0]
+        repeated = self.call(path, "PUT", {**first, "counts": {"base": 99}})["rows"][0]
+        self.assertEqual(saved, repeated)
+        newer = {**first, "client_id": "warehouse-b", "client_updated_at": "2026-01-01T12:00:01Z", "counts": {"base": 0}}
+        self.assertEqual(self.call(path, "PUT", newer)["rows"][0]["physical_qty"], 0)
+        self.assertEqual(self.call(path, "PUT", first)["rows"][0]["physical_qty"], 0)
+        self.call(path, "PUT", {"counts": {"base": 2}, "client_id": "missing-date"}, 422)
+        self.call(path, "PUT", {**first, "client_updated_at": "2026-01-01T12:00:00"}, 422)
+        with self.sessions() as db:
+            self.assertEqual(db.query(InventoryCount).filter_by(session_id=session["id"], product_id=self.product.id).count(), 1)
+            self.assertEqual(db.query(StockMovement).filter_by(kind="inventaire").count(), 0)
+
+    def test_mass_excel_grid_roundtrip_empty_zero_and_errors(self):
+        session = self.session()
+        path = f"/api/inventory/sessions/{session['id']}"
+        self.call(path + f"/counts/{self.product.id}", "PUT", {"counts": {"primary": 2, "base": 5}})
+        self.call(path + f"/counts/{self.second.id}", "PUT", {"counts": {"base": 0}})
+        grid = self.call(path + "/grid-export")
+        self.assertEqual(grid["headers"][:4], ["Référence", "Désignation", "Catégorie", "Stock théorique"])
+        self.assertEqual(grid["rows"][1][-1], 0)
+        self.assertEqual(grid["rows"][2][-1], "")
+        matrix = [grid["headers"], *grid["rows"]]
+        xml = '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Worksheet><Table>' + ''.join('<Row>' + ''.join(f'<Cell><Data ss:Type="String">{escape(str(value))}</Data></Cell>' for value in row) + '</Row>' for row in matrix) + '</Table></Worksheet></Workbook>'
+        target = self.session()
+        imported = self.client.post(f"/api/inventory/sessions/{target['id']}/grid-import", files={"file": ("grille.xls", xml.encode(), "application/vnd.ms-excel")})
+        self.assertEqual(imported.status_code, 200, imported.text)
+        result = imported.json()
+        self.assertEqual(result["errors"], [])
+        self.assertEqual([row["physical_qty"] for row in result["report"]["rows"]], [53, 0, None])
+        self.assertEqual(self.call(f"/api/inventory/sessions/{target['id']}/grid-export"), grid)
+        bad = list(grid["rows"][0]); bad[4] = "Inconnu"
+        stream = io.StringIO(); writer = csv.writer(stream); writer.writerows([grid["headers"], ["UNKNOWN"], bad])
+        response = self.client.post(path + "/grid-import", files={"file": ("erreurs.csv", stream.getvalue().encode(), "text/csv")})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(len(response.json()["errors"]), 2)
+        self.assertEqual(response.json()["updated"], 0)
 
     def test_blind_hides_theory_values_and_variance_in_every_response(self):
         session = self.session(blind=True)
@@ -191,3 +293,19 @@ class InventoryMigrationTests(unittest.TestCase):
             self.assertEqual(conn.execute(text("SELECT count(*) FROM app_migrations WHERE name='inventory_session_permissions_v1'")).scalar_one(), 1)
             self.assertFalse(conn.execute(text("SELECT count(*) FROM role_permissions WHERE permission='inventaire_voir_theorique' AND allowed=1")).scalar_one())
         self.assertTrue({"inventory_sessions", "inventory_counts"}.issubset(inspect(engine).get_table_names()))
+
+    def test_old_inventory_count_migrates_without_losing_count(self):
+        engine = create_engine("sqlite:///:memory:")
+        self.addCleanup(engine.dispose)
+        ddl = str(CreateTable(InventoryCount.__table__).compile(engine))
+        ddl = "\n".join(line for line in ddl.splitlines() if not line.strip().startswith(("counts_json ", "client_updated_at ", "client_id ")))
+        with engine.begin() as conn:
+            conn.execute(text(ddl))
+        Base.metadata.create_all(engine)
+        with engine.begin() as conn:
+            conn.execute(text("INSERT INTO inventory_counts (id,session_id,product_id,product_snapshot,theoretical_qty,physical_qty,unit_cost,note) VALUES (1,1,1,'{}',12,10,5,'ancien')"))
+        with patch.object(migration, "engine", engine):
+            migration.migrate()
+            migration.migrate()
+        with engine.connect() as conn:
+            self.assertEqual(conn.execute(text("SELECT physical_qty, counts_json, note FROM inventory_counts")).one(), (10, "{}", "ancien"))

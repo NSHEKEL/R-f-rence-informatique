@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
-import api, { formatDate, formatXOF } from "../api/client";
+import { formatDate, formatXOF } from "../api/client";
+import { readOffline } from "../lib/offlineInventory";
 import { useAuth } from "../context/AuthContext";
 import { productStep } from "../lib/productNavigation";
 import type { Product, StockLot } from "../types";
 import DepotStock from "./DepotStock";
 import Modal from "./Modal";
 
-export default function ProductDetails({ products, productId, onNavigate, onClose, onEdit }: {
+export default function ProductDetails({ products, productId, onNavigate, onClose, onEdit, readOnly = false }: {
   products: Product[]; productId: number; onNavigate: (id: number) => void; onClose: () => void; onEdit: (product: Product) => void;
+  readOnly?: boolean;
 }) {
   const { can } = useAuth();
   const product = products.find((item) => item.id === productId);
@@ -23,7 +25,7 @@ export default function ProductDetails({ products, productId, onNavigate, onClos
   useEffect(() => {
     if (!lotsAllowed) return;
     let alive = true;
-    api.get<StockLot[]>(`/products/${productId}/lots`).then(({ data }) => {
+    readOffline<StockLot[]>(`/products/${productId}/lots`, `lots:${productId}`).then(({ data }) => {
       if (alive) { setLots(data); setLotStatus(data.length ? "" : "Aucun lot enregistré."); }
     }).catch(() => { if (alive) setLotStatus("Lots indisponibles. Fermez puis rouvrez la fiche pour réessayer."); });
     return () => { alive = false; };
@@ -45,7 +47,7 @@ export default function ProductDetails({ products, productId, onNavigate, onClos
     <button className="btn-ghost" disabled={previous == null} onClick={() => { if (previous != null) onNavigate(previous); }}>Précédent</button>
     <span className="self-center font-semibold" aria-live="polite">{index + 1} / {products.length}</span>
     <button className="btn-ghost" disabled={next == null} onClick={() => { if (next != null) onNavigate(next); }}>Suivant</button>
-    {product && can("produits_gerer") && <button className="btn-primary" onClick={() => onEdit(product)}>Modifier</button>}
+    {product && can("produits_gerer") && <button disabled={readOnly} className="btn-primary" onClick={() => onEdit(product)}>Modifier</button>}
     <button className="btn-ghost" onClick={onClose}>Fermer</button>
   </>}>
     {!product ? <p role="status">Cet article n'est plus dans la liste filtrée.</p> : <div className="space-y-6">

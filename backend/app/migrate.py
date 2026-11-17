@@ -20,6 +20,7 @@ FALSE_LITERAL = "0" if engine.dialect.name == "sqlite" else "FALSE"
 
 # table -> column -> SQL type/default appended to "ALTER TABLE ... ADD COLUMN".
 COLUMNS: dict[str, dict[str, str]] = {
+    "inventory_counts": {"counts_json": "TEXT NOT NULL DEFAULT '{}'", "client_updated_at": "TIMESTAMP", "client_id": "VARCHAR NOT NULL DEFAULT ''"},
     "stock_lots": {"depot_id": "INTEGER", "unit_cost": "FLOAT DEFAULT NULL"},
     "stock_movements": {"depot_id": "INTEGER"},
     "expenses": {"payment_method": "VARCHAR", "bank_account_id": "INTEGER"},

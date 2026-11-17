@@ -26,6 +26,9 @@ import PackagingQuantity from "../components/PackagingQuantity";
 import InventorySessions from "../components/InventorySessions";
 import { formatQuantity, quantityHtml } from "../lib/units";
 import { scanCodes } from "../lib/scan";
+import { readOffline } from "../lib/offlineInventory";
+import { useOnline } from "../lib/useOnline";
+import OfflineBanner from "../components/OfflineBanner";
 
 type Counted = Record<number, { rayon: string; stock: string }>;
 
@@ -73,27 +76,29 @@ export default function Inventaire() {
   const [pending, setPending] = useState<PendingTransfer[]>([]);
   const [expiring, setExpiring] = useState<StockLot[]>([]);
   const [expiryDays, setExpiryDays] = useState(90);
+  const online = useOnline();
+  const [cached, setCached] = useState(false);
+  const [savedAt, setSavedAt] = useState("");
+  const readOnly = !online || cached;
 
   const load = useCallback(async () => {
     const [p, r] = await Promise.all([
-      api.get<Product[]>("/products"),
-      api.get<PendingTransfer[]>("/transfers/entrantes").catch(() => ({
+      readOffline<Product[]>("/products", "products:all:active"),
+      readOffline<PendingTransfer[]>("/transfers/entrantes", "stock-pending-transfers").catch(() => ({
         data: [] as PendingTransfer[],
       })),
     ]);
     setProducts(p.data);
+    setCached(p.fromCache); setSavedAt(p.savedAt);
     setPending(r.data);
-    const lots = await api
-      .get<StockLot[]>("/products/lots/alertes", {
-        params: { days: expiryDays },
-      })
+    const lots = await readOffline<StockLot[]>(`/products/lots/alertes?days=${expiryDays}`, `stock-expiry:${expiryDays}`)
       .catch(() => ({ data: [] as StockLot[] }));
     setExpiring(lots.data);
   }, [expiryDays]);
 
   useEffect(() => {
-    load();
-  }, [load, version]);
+    void load().catch(() => setError("Stocks indisponibles : chargez-les en ligne avant de partir hors réseau."));
+  }, [load, version, online]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -357,6 +362,8 @@ export default function Inventaire() {
   return (
     <div className="space-y-5">
       <InventorySessions />
+      <OfflineBanner visible={readOnly} since={savedAt} />
+      <fieldset disabled={readOnly} className="contents">
       {/* Suivi des péremptions */}
       <div className="card p-5">
         <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -440,7 +447,7 @@ export default function Inventaire() {
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <ClipboardCheck size={18} className="text-brand-600" />
           <h3 className="text-base font-bold text-slate-900">
-            Inventaire physique
+            Inventaire rapide (quantité totale)
           </h3>
           <p className="text-sm text-slate-500">
             Saisissez la quantité réellement comptée ; seuls les écarts sont
@@ -781,6 +788,7 @@ export default function Inventaire() {
       </div>
 
       <StockMovements products={products} version={version} />
+      </fieldset>
     </div>
   );
 }

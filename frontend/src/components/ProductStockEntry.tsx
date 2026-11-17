@@ -6,8 +6,9 @@ import { useDepots } from "../lib/depots";
 import { apiErrorMessage } from "../lib/apiErrors";
 import Modal from "./Modal";
 
-export default function ProductStockEntry({ product, onClose, onSaved }: {
+export default function ProductStockEntry({ product, onClose, onSaved, disabled = false }: {
   product: Product; onClose: () => void; onSaved: (product: Product) => Promise<void>;
+  disabled?: boolean;
 }) {
   const { depots, error: depotError } = useDepots();
   const [quantities, setQuantities] = useState<Record<string, number | "">>({});
@@ -28,6 +29,7 @@ export default function ProductStockEntry({ product, onClose, onSaved }: {
   const breakdown = units.filter((item) => Number(quantities[item.key]) > 0).map((item) => `${quantities[item.key]} ${item.name}`).join(" + ");
 
   async function saveEntry() {
+    if (disabled) { setError("Connexion requise pour ajouter du stock."); return; }
     if (units.some((item) => !Number.isInteger(Number(quantities[item.key] || 0)) || Number(quantities[item.key] || 0) < 0) || !Number.isSafeInteger(total) || total <= 0 || total > 2147483647) {
       setError("Quantités entières positives ou nulles requises, dont au moins une strictement positive (maximum 2147483647 unités de base)."); return;
     }
@@ -45,7 +47,7 @@ export default function ProductStockEntry({ product, onClose, onSaved }: {
 
   return <Modal open title="Ajouter du stock" size="compact" closeOnBackdrop={false} closeOnEscape={false} onClose={() => { if (!busy) onClose(); }} footer={<>
     <button className="btn-ghost" disabled={busy} onClick={onClose}>Annuler</button>
-    <button className="btn-primary" disabled={busy || !!depotError} onClick={saveEntry}>{busy ? "Enregistrement..." : "Confirmer l'entrée"}</button>
+    <button className="btn-primary" disabled={busy || disabled || !!depotError} onClick={saveEntry}>{busy ? "Enregistrement..." : "Confirmer l'entrée"}</button>
   </>}>
     <div className="space-y-3">
       <p className="text-sm font-semibold">{product.name} · Stock actuel : {product.quantity}</p>

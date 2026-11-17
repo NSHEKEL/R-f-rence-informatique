@@ -46,6 +46,9 @@ import ProductPackagings from "../components/ProductPackagings";
 import { useScanner } from "../lib/useScanner";
 import { scanCandidates } from "../lib/scanCapture";
 import type { ProductBarcode } from "../types";
+import { readOffline } from "../lib/offlineInventory";
+import { useOnline } from "../lib/useOnline";
+import OfflineBanner from "../components/OfflineBanner";
 
 const empty = {
   barcodes: [] as ProductBarcode[],
@@ -107,7 +110,12 @@ const FIELD_LABEL: Record<string, string> = {
 type SoldFilter = "" | "jamais" | "top";
 
 export default function Products() {
-  const { can } = useAuth();
+  const { can: permitted } = useAuth();
+  const online = useOnline();
+  const [cached, setCached] = useState(false);
+  const [savedAt, setSavedAt] = useState("");
+  const readOnly = !online || cached;
+  const can = (permission: string) => permitted(permission) && !(readOnly && ["produits_gerer", "stocks"].includes(permission));
   const { company, printing } = useCompany();
   const { hasFeature } = useLicense();
   const version = useSyncVersion();
@@ -148,19 +156,20 @@ export default function Products() {
   const pageSize = 8;
 
   const load = useCallback(async () => {
-    const [p, c, s] = await Promise.all([
-      api.get<Product[]>("/products", { params: { sold, state } }),
-      api.get<Category[]>("/categories"),
-      api.get<Supplier[]>("/suppliers"),
+    const p = await readOffline<Product[]>(`/products?${new URLSearchParams({ sold, state })}`, `products:${sold || "all"}:${state}`);
+    const [c, s] = await Promise.all([
+      readOffline<Category[]>("/categories", "categories").catch(() => ({ data: p.data.flatMap((product) => product.category ? [product.category] : []) })),
+      readOffline<Supplier[]>("/suppliers", "suppliers").catch(() => ({ data: p.data.flatMap((product) => product.supplier ? [product.supplier] : []) })),
     ]);
     setProducts(p.data);
     setCategories(c.data);
     setSuppliers(s.data);
+    setCached(p.fromCache); setSavedAt(p.savedAt);
   }, [sold, state]);
 
   useEffect(() => {
-    load();
-  }, [load, version]);
+    void load().catch(() => setError("Catalogue indisponible : ouvrez cette page en ligne pour préparer le cache."));
+  }, [load, version, online]);
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
@@ -217,6 +226,7 @@ export default function Products() {
 
   /** Sends the picked CSV to the bulk upsert endpoint and reports per row. */
   async function importCsv(file: File) {
+    if (readOnly) return;
     setError("");
     setNotice("");
     setImportDuplicates([]);
@@ -269,6 +279,7 @@ export default function Products() {
   }
 
   function openEdit(p: Product) {
+    if (readOnly) return;
     setEditing(p);
     setForm({
       packagings: p.packagings || [],
@@ -304,6 +315,7 @@ export default function Products() {
   }
 
   async function save() {
+    if (readOnly) return;
     setError("");
     const barcodes = productBarcodes(form.barcodes);
     const textError = productTextError({ ...form, barcodes });
@@ -403,6 +415,7 @@ export default function Products() {
   }
 
   async function addLot(event: React.FormEvent) {
+    if (readOnly) { event.preventDefault(); return; }
     event.preventDefault();
     if (!lotsProduct) return;
     setLotError("");
@@ -427,6 +440,7 @@ export default function Products() {
   }
 
   async function releaseLot(lot: StockLot) {
+    if (readOnly) return;
     if (!lotsProduct) return;
     try {
       await api.delete(`/products/lots/${lot.id}`);
@@ -530,6 +544,7 @@ export default function Products() {
 
   return (
     <div className="space-y-5">
+      <OfflineBanner visible={readOnly} since={savedAt} />
       <StockDashboard onShowExpired={() => setPerimesOpen(true)} />
       {perimesOpen && <Perimes onClose={() => setPerimesOpen(false)} />}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -827,8 +842,8 @@ export default function Products() {
         </div>
       </div>
 
-      {viewProductId != null && <ProductDetails key={viewProductId} products={filtered} productId={viewProductId} onNavigate={setViewProductId} onClose={() => setViewProductId(null)} onEdit={(product) => { setViewProductId(null); openEdit(product); }} />}
-      {stockEntryOpen && editing && <ProductStockEntry product={editing} onClose={() => { setStockEntryOpen(false); setModalOpen(true); }} onSaved={async (product) => {
+      {viewProductId != null && <ProductDetails readOnly={readOnly} key={viewProductId} products={filtered} productId={viewProductId} onNavigate={setViewProductId} onClose={() => setViewProductId(null)} onEdit={(product) => { setViewProductId(null); openEdit(product); }} />}
+      {stockEntryOpen && editing && <ProductStockEntry disabled={readOnly} product={editing} onClose={() => { setStockEntryOpen(false); setModalOpen(true); }} onSaved={async (product) => {
         setEditing(product); setForm((previous) => ({ ...previous, quantity: product.quantity }));
         await load().catch(() => setError("Entrée enregistrée. Actualisez la liste des produits."));
       }} />}
@@ -845,7 +860,7 @@ export default function Products() {
             <button className="btn-ghost" onClick={() => setModalOpen(false)}>
               Annuler
             </button>
-            <button className="btn-primary" onClick={save} disabled={saving}>
+            <button className="btn-primary" onClick={save} disabled={saving || readOnly}>
               {saving ? "Enregistrement..." : "Enregistrer"}
             </button>
           </>

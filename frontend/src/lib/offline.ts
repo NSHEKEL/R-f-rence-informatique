@@ -85,7 +85,8 @@ export function cacheRead<T>(key: string): T | null {
 
 export function cacheWrite<T>(key: string, value: T): void {
   try {
-    localStorage.setItem(CACHE_PREFIX + key, JSON.stringify(value));
+    localStorage.setItem(CACHE_PREFIX + key, JSON.stringify(value, (field, data) => ["image", "photo", "logo"].includes(field) ? "" : data));
+    localStorage.setItem(CACHE_PREFIX + key + "_at", new Date().toISOString());
   } catch {
     /* quota exceeded: the cache is best-effort */
   }
@@ -96,7 +97,7 @@ export function activeCatalogue<T extends { active?: boolean }>(products: T[]): 
 }
 
 function catalogueData<T>(path: string, data: T): T {
-  return ["/products", "/products/pos"].includes(path.split("?")[0]) && Array.isArray(data)
+  return ["/products", "/products/pos"].includes(path.split("?")[0]) && !/[?&]state=(all|inactive)(&|$)/.test(path) && Array.isArray(data)
     ? activeCatalogue(data) as T : data;
 }
 
@@ -106,11 +107,13 @@ export async function fetchCached<T>(
   key: string
 ): Promise<{ data: T; fromCache: boolean }> {
   try {
-    const res = await api.get<T>(path);
+    const res = await api.get<T>(path, { timeout: 8000 });
     const data = catalogueData(path, res.data);
     cacheWrite(key, data);
     return { data, fromCache: false };
   } catch (err) {
+    const status = (err as { response?: { status?: number } }).response?.status;
+    if (status === 401 || status === 403) throw err;
     const cached = cacheRead<T>(key);
     if (cached !== null) return { data: catalogueData(path, cached), fromCache: true };
     throw err;
