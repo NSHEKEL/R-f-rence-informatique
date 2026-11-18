@@ -39,6 +39,7 @@ def _spooler():
         "WritePrinter": ([ptr, ptr, dword, out_dword], ctypes.c_int),
         "EndPagePrinter": ([ptr], ctypes.c_int),
         "EndDocPrinter": ([ptr], ctypes.c_int),
+        "DeviceCapabilitiesW": ([ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint16, ptr, ptr], ctypes.c_int),
     }
     for name, (args, result) in signatures.items():
         function = getattr(dll, name)
@@ -47,7 +48,9 @@ def _spooler():
     return dll
 
 # Windows printer status bits that mean the queue cannot print right now.
+PRINTER_STATUS_PAUSED = 0x00000001
 PRINTER_STATUS_ERROR = 0x00000002
+PRINTER_STATUS_PAPER_JAM = 0x00000008
 PRINTER_STATUS_OFFLINE = 0x00000080
 PRINTER_STATUS_PAPER_OUT = 0x00000010
 PRINTER_STATUS_NOT_AVAILABLE = 0x00001000
@@ -144,6 +147,10 @@ def _status_label(status: int) -> str:
         return "Indisponible"
     if status & PRINTER_STATUS_ERROR:
         return "En erreur"
+    if status & PRINTER_STATUS_PAUSED:
+        return "En pause"
+    if status & PRINTER_STATUS_PAPER_JAM:
+        return "Bourrage papier"
     return ""
 
 
@@ -281,9 +288,11 @@ def queue_status(name: str) -> PrinterDevice | None:
         ):
             return None
         info = ctypes.cast(buffer, ctypes.POINTER(_PrinterInfo2)).contents
+        try:
+            color = spooler.DeviceCapabilitiesW(info.pPrinterName or name, info.pPortName, 32, None, info.pDevMode) == 1
+        except OSError:
+            color = False
         problem = _status_label(int(info.Status))
-        if not problem and int(info.Status) & 0x00000008:
-            problem = "En pause"
         return PrinterDevice(
             name=info.pPrinterName or name,
             port=info.pPortName or "",
@@ -292,6 +301,7 @@ def queue_status(name: str) -> PrinterDevice | None:
             jobs=int(info.cJobs),
             is_default=name == default_printer(),
             available=not problem,
+            supports_color=color,
             status=problem or "Prête",
         )
     finally:

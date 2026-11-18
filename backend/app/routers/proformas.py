@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..catalogue import require_active
 from ..models import Order, OrderItem, Product, Proforma, ProformaItem, User
 from ..permissions import require_permission
 from ..schemas import (
@@ -295,6 +296,7 @@ def convert_proforma(
             status_code=400, detail="L'acompte dépasse le total de la commande"
         )
     for line in source.items:
+        require_active(db.get(Product, line.product_id) if line.product_id else None)
         order.items.append(
             OrderItem(
                 product_id=line.product_id,

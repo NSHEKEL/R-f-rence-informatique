@@ -1,7 +1,7 @@
-from datetime import datetime
-from typing import List, Optional
+from datetime import date, datetime
+from typing import List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 # ---------- Auth ----------
@@ -50,6 +50,7 @@ class UserPhoto(BaseModel):
 
 # ---------- Company settings ----------
 class CompanySettingsOut(BaseModel):
+    allow_negative_stock_sale: bool = False
     model_config = ConfigDict(from_attributes=True)
     id: int
     name: str
@@ -94,11 +95,29 @@ class CompanySettingsOut(BaseModel):
     backup_keep: int = 30
     backup_on_sale: bool = False
     last_backup_at: Optional[datetime] = None
+    backup_auto_enabled: bool = False
+    backup_frequency: Literal["daily", "weekly", "monthly"] = "daily"
+    backup_time: str = "20:00"
+    backup_weekday: int = 0
+    backup_monthday: int = 1
+    last_backup_status: str = ""
+    last_backup_error: str = ""
+    drive_enabled: bool = False
+    drive_folder_name: str = "EasyGest Sauvegardes"
+    drive_folder_id: str = ""
+    drive_keep: int = 30
+    drive_last_upload_at: Optional[datetime] = None
+    drive_last_status: str = ""
+    drive_last_error: str = ""
+    drive_last_file_id: str = ""
+    drive_account_email: str = ""
+    network_restrict_workstations: bool = False
     support_whatsapp: str = ""
     support_email: str = ""
 
 
 class CompanySettingsUpdate(BaseModel):
+    allow_negative_stock_sale: bool = False
     name: Optional[str] = None
     slogan: Optional[str] = None
     logo: Optional[str] = None
@@ -140,10 +159,28 @@ class CompanySettingsUpdate(BaseModel):
     smtp_tls: Optional[bool] = None
     backup_dir: Optional[str] = None
     backup_auto: Optional[bool] = None
-    backup_keep: Optional[int] = None
+    backup_keep: Optional[int] = Field(default=None, ge=1)
     backup_on_sale: Optional[bool] = None
+    backup_auto_enabled: Optional[bool] = None
+    backup_frequency: Optional[Literal["daily", "weekly", "monthly"]] = None
+    backup_time: Optional[str] = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    backup_weekday: Optional[int] = Field(default=None, ge=0, le=6)
+    backup_monthday: Optional[int] = Field(default=None, ge=1, le=28)
+    drive_enabled: Optional[bool] = None
+    network_restrict_workstations: Optional[bool] = None
+    drive_folder_name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    drive_keep: Optional[int] = Field(default=None, ge=1, le=1000)
     support_whatsapp: Optional[str] = None
     support_email: Optional[str] = None
+
+    @field_validator("backup_auto_enabled", "backup_frequency", "backup_time", "backup_weekday", "backup_monthday", "backup_keep", "drive_enabled", "drive_folder_name", "drive_keep", "network_restrict_workstations")
+    @classmethod
+    def backup_not_null(cls, value):
+        if value is None:
+            raise ValueError("Les paramètres de sauvegarde ne peuvent pas être nuls")
+        if isinstance(value, str) and not value.strip():
+            raise ValueError("Le nom du dossier ne peut pas être vide")
+        return value
 
 
 # ---------- Assistance et support ----------
@@ -183,6 +220,7 @@ class PrinterDevice(BaseModel):
     is_default: bool = False
     available: bool = True
     status: str = "Disponible"
+    supports_color: bool = False
 
 
 class PrinterList(BaseModel):
@@ -203,6 +241,7 @@ class ReceiptPrinterConfig(BaseModel):
     open_drawer: bool = True
     font_family: str = "Arial"
     font_size: int = 11
+    use_system_font: bool = False
     line_height: float = 1.35
     align: str = "left"
     margin_mm: float = 3.0
@@ -233,6 +272,13 @@ class ReceiptPrinterConfig(BaseModel):
     show_barcode: bool = True
     # QR code at the foot of the ticket: off by default, opt-in per poste.
     show_qr: bool = False
+    paper_width_mm: float = Field(default=80, ge=40, le=216)
+    bold: bool = False
+    show_company_info: bool = True
+    text_color: str = Field(default='#000000', pattern=r'^#[0-9a-fA-F]{6}$')
+    footer_text: str = ''
+    item_layout: Literal['table', 'stacked'] = 'table'
+    show_line_total: bool = True
 
 
 class LabelPrinterConfig(BaseModel):
@@ -250,6 +296,8 @@ class LabelPrinterConfig(BaseModel):
     show_wholesale: bool = False
     show_code: bool = True
     show_barcode: bool = True
+    font_family: str = 'Arial'
+    code_type: Literal['barcode', 'qr'] = 'barcode'
 
 
 class DocumentConfig(BaseModel):
@@ -279,6 +327,21 @@ class DocumentConfig(BaseModel):
     show_prices_on_delivery: bool = False
     show_customer_signature: bool = True
     show_company_signature: bool = True
+    font_family: str = 'Arial'
+    font_size: int = Field(default=12, ge=8, le=24)
+    text_color: str = Field(default='#0f172a', pattern=r'^#[0-9a-fA-F]{6}$')
+    accent_color: str = Field(default='#0f172a', pattern=r'^#[0-9a-fA-F]{6}$')
+    logo_size_mm: float = Field(default=22, ge=5, le=60)
+    header_text: str = ''
+    footer_text: str = ''
+    info_position: Literal['left', 'center', 'right'] = 'left'
+    show_company: bool = True
+    show_customer: bool = True
+    show_reference: bool = True
+    show_date: bool = True
+    show_qty: bool = True
+    show_unit_price: bool = True
+    show_total: bool = True
 
 
 class PrintingConfig(BaseModel):
@@ -341,7 +404,54 @@ class CustomerOut(CustomerBase):
 
 
 # ---------- Product ----------
+class UnitSnapshotOut(BaseModel):
+    base_unit: Optional[str] = "pièce"
+    packaging_unit: Optional[str] = ""
+    units_per_packaging: Optional[int] = 1
+    quantity_label: Optional[str] = None
+
+
+class PackagingQuantities(BaseModel):
+    packaging_quantity: Optional[int] = Field(default=None, ge=0)
+    piece_quantity: Optional[int] = Field(default=None, ge=0)
+
+
+class ProductPackagingInput(BaseModel):
+    id: Optional[int] = None
+    name: str = Field(min_length=1, max_length=80)
+    factor: int = Field(ge=1, le=2147483647)
+    barcode: Optional[str] = None
+    price_detail: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    price_semi_gros: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    price_gros: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    purchase_price: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    active: bool = True
+    sort_order: int = 0
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ProductBarcodeInput(BaseModel):
+    id: Optional[int] = None
+    code: str = Field(min_length=1, max_length=200)
+    label: str = Field(default="", max_length=200)
+    active: bool = True
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ProductBase(BaseModel):
+    barcodes: Optional[List[ProductBarcodeInput]] = None
+    rayon: Optional[str] = Field(default=None, max_length=200)
+    emplacement: Optional[str] = Field(default=None, max_length=200)
+    semi_wholesale_price: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    supplier_purchase_price: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    semi_wholesale_min_qty: Optional[int] = Field(default=None, ge=1)
+    wholesale_min_qty: Optional[int] = Field(default=None, ge=1)
+    packagings: Optional[List[ProductPackagingInput]] = None
+    base_unit: str = Field(default="pièce", min_length=0, max_length=40)
+    packaging_unit: str = Field(default="", max_length=40)
+    units_per_packaging: int = Field(default=1, ge=1)
+    packaging_sale_price: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    wholesale_packaging_price: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     name: str
     sku: str
     description: str = ""
@@ -358,7 +468,8 @@ class ProductBase(BaseModel):
 
 
 class ProductCreate(ProductBase):
-    pass
+    client_uuid: Optional[str] = Field(default=None, min_length=1, max_length=64)
+    initial_expiry_date: Optional[date] = None
 
 
 class ProductUpdate(ProductBase):
@@ -366,6 +477,17 @@ class ProductUpdate(ProductBase):
 
 
 class ProductOut(ProductBase):
+    client_uuid: Optional[str] = None
+    stock_purchase_price: Optional[float] = None
+    stock_value: Optional[float] = None
+    nearest_expiry: Optional[datetime] = None
+    active: bool = True
+    scanned_code: Optional[str] = None
+    scanned_label: Optional[str] = None
+    packaging_id: Optional[int] = None
+    quantity: Optional[int] = None
+    min_stock: Optional[int] = None
+    quantity_label: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
     id: int
     created_at: datetime
@@ -381,21 +503,26 @@ class PriceHistoryOut(BaseModel):
     id: int
     product_id: int
     field: str
-    old_value: float
-    new_value: float
+    purchase_reference: Optional[str] = None
+    old_value: Optional[float]
+    new_value: Optional[float]
     changed_at: datetime
     changed_by: Optional["UserOut"] = None
 
 
 # ---------- Sales ----------
-class SaleItemCreate(BaseModel):
+class SaleItemCreate(PackagingQuantities):
+    scanned_code: Optional[str] = Field(default=None, max_length=200)
+    packaging_id: Optional[int] = Field(default=None, ge=1)
+    price_tier: Optional[Literal["detail", "semi_gros", "gros", "auto"]] = None
+    expected_units_per_packaging: Optional[int] = Field(default=None, ge=1)
     product_id: int
-    quantity: int
+    quantity: int = 0
     # Price agreed at the counter; ignored unless the seller holds the right
     # to change a price, and never written back to the product sheet.
-    unit_price: Optional[float] = None
+    unit_price: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     # Discount granted on this line only, in currency units (not %).
-    discount: float = 0
+    discount: float = Field(default=0, ge=0, allow_inf_nan=False)
 
 
 class SaleCreate(BaseModel):
@@ -407,7 +534,7 @@ class SaleCreate(BaseModel):
     # Cash handed over at the counter, so the ticket can print the change.
     paid_amount: float = 0
     # Discount granted on the whole ticket, deducted from the total.
-    discount: float = 0
+    discount: float = Field(default=0, ge=0, allow_inf_nan=False)
     # Gift sale: stock moves, revenue excluded, ticket marked OFFERT.
     is_gift: bool = False
     items: List[SaleItemCreate]
@@ -438,7 +565,23 @@ class SalePaymentOut(BaseModel):
     amount: float
 
 
-class SaleItemOut(BaseModel):
+class SaleItemOut(UnitSnapshotOut):
+    scanned_code: Optional[str] = None
+    scanned_label: Optional[str] = None
+    packaging_id: Optional[int] = None
+    price_tier: Optional[str] = "detail"
+    catalog_unit_price: Optional[float] = None
+    unit_cost: Optional[float] = None
+    cost: Optional[float] = None
+    revenue: Optional[float] = None
+    profit: Optional[float] = None
+    margin: Optional[float] = None
+    sold_unit: Optional[str] = None
+    packaging_quantity: Optional[int] = None
+    piece_quantity: Optional[int] = None
+    base_quantity: Optional[int] = None
+    base_unit_price: Optional[float] = None
+    packaging_sale_price: Optional[float] = None
     model_config = ConfigDict(from_attributes=True)
     id: int
     product_id: Optional[int]
@@ -470,22 +613,28 @@ class SaleOut(BaseModel):
     paid_amount: float = 0
     payments: List[SalePaymentOut] = []
     discount: float = 0
+    discount_by_id: Optional[int] = None
+    cost: Optional[float] = None
+    profit: Optional[float] = None
+    margin: Optional[float] = None
     is_gift: bool = False
 
 
 # ---------- Returns (avoirs) ----------
-class ReturnLine(BaseModel):
+class ReturnLine(PackagingQuantities):
+    sale_item_id: Optional[int] = None
     product_id: int
-    quantity: int
+    quantity: int = 0
 
 
 class ReturnCreate(BaseModel):
     sale_reference: str
     reason: str = ""
+    refund_method: Literal["Avoir", "Espèces"] = "Avoir"
     lines: List[ReturnLine]
 
 
-class ReturnItemOut(BaseModel):
+class ReturnItemOut(UnitSnapshotOut):
     model_config = ConfigDict(from_attributes=True)
     id: int
     product_id: Optional[int]
@@ -547,7 +696,7 @@ class ProformaConvert(BaseModel):
     deposit: float = 0
 
 
-class ProformaItemOut(BaseModel):
+class ProformaItemOut(UnitSnapshotOut):
     model_config = ConfigDict(from_attributes=True)
     id: int
     product_id: Optional[int]
@@ -649,12 +798,23 @@ class AuthRepairResult(BaseModel):
 
 # ---------- Reports ----------
 class ReportRow(BaseModel):
+    quantity_label: Optional[str] = None
     label: str
     quantity: float = 0
     amount: float = 0
 
 
+class ProfitRow(BaseModel):
+    label: str
+    revenue: float
+    cost: float
+    profit: float
+    margin: float
+
+
 class SalesReport(BaseModel):
+    profit_by_product: List[ProfitRow] = []
+    profit_by_sale: List[ProfitRow] = []
     period_start: datetime
     period_end: datetime
     sales_count: int
@@ -744,7 +904,7 @@ class CashSessionOut(BaseModel):
     opened_at: datetime
     business_day: str = ""
     opened_by: Optional[UserOut] = None
-    opening_balance: float
+    opening_balance: Optional[float] = None
     closed_at: Optional[datetime] = None
     closed_by: Optional[UserOut] = None
     closing_balance: Optional[float] = None
@@ -768,16 +928,46 @@ class CashSessionSaleLine(BaseModel):
 class CashSessionDetail(CashSessionOut):
     """Open session enriched with live totals."""
 
-    cash_sales: float = 0
-    other_sales: float = 0
-    sales_count: int = 0
-    deposits_total: float = 0
-    expected_cash: float = 0
+    cash_sales: Optional[float] = None
+    other_sales: Optional[float] = None
+    sales_count: Optional[int] = None
+    deposits_total: Optional[float] = None
+    expected_cash: Optional[float] = None
+    entries_total: Optional[float] = None
+    exits_total: Optional[float] = None
+    cash_refunds: Optional[float] = None
+    cash_settlements: Optional[float] = None
     sales: list[CashSessionSaleLine] = []
+    total_sales: Optional[float] = None
+    refunds_total: Optional[float] = None
+    net_sales: Optional[float] = None
+    expenses_total: Optional[float] = None
+    cash_expenses: Optional[float] = None
+    expenses: list[dict] = []
+
+
+class CashMovementCreate(BaseModel):
+    type: Literal["in", "out"]
+    amount: float = Field(gt=0, allow_inf_nan=False)
+    reason: str = Field(min_length=1, max_length=1000)
+
+
+class CashMovementOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    session_id: int
+    type: str
+    amount: Optional[float] = None
+    reason: str
+    user_id: int
+    created_at: datetime
+    workstation: str = ""
 
 
 # ---------- Expenses ----------
 class ExpenseCreate(BaseModel):
+    payment_method: Optional[str] = Field(default=None, max_length=100)
+    bank_account_id: Optional[int] = Field(default=None, ge=1)
     label: str
     category: str = "Divers"
     amount: float = 0
@@ -786,6 +976,8 @@ class ExpenseCreate(BaseModel):
 
 
 class ExpenseOut(BaseModel):
+    payment_method: Optional[str] = None
+    bank_account_id: Optional[int] = None
     model_config = ConfigDict(from_attributes=True)
     id: int
     label: str
@@ -797,9 +989,10 @@ class ExpenseOut(BaseModel):
 
 
 # ---------- Inventory ----------
-class InventoryLine(BaseModel):
+class InventoryLine(PackagingQuantities):
     product_id: int
-    counted_quantity: int
+    packaging_id: Optional[int] = Field(default=None, ge=1)
+    counted_quantity: int = 0
 
 
 class InventoryApply(BaseModel):
@@ -808,12 +1001,41 @@ class InventoryApply(BaseModel):
 
 
 class StockLotCreate(BaseModel):
+    depot_id: Optional[int] = Field(default=None, ge=1)
     lot_number: str = ""
     expiry_date: Optional[datetime] = None
     quantity: int
 
 
+class ProductStockEntryLine(BaseModel):
+    packaging_id: Optional[int] = Field(default=None, ge=1)
+    quantity: int = Field(ge=0, le=2147483647, strict=True)
+    unit: Literal["base", "packaging"] = "base"
+
+
+class ProductStockEntry(BaseModel):
+    quantity: Optional[int] = Field(default=None, gt=0, le=2147483647, strict=True)
+    lines: Optional[List[ProductStockEntryLine]] = Field(default=None, min_length=1, max_length=1000)
+    unit: Literal["base", "packaging"] = "base"
+    packaging_id: Optional[int] = Field(default=None, ge=1)
+    depot_id: Optional[int] = Field(default=None, ge=1)
+    reason: Literal["Arrivage", "Correction", "Autre"] = "Arrivage"
+    note: str = Field(default="", max_length=500)
+
+    @model_validator(mode="after")
+    def validate_quantities(self):
+        if self.lines is None:
+            if self.quantity is None:
+                raise ValueError("Quantité strictement positive requise")
+        elif self.quantity is not None or self.packaging_id is not None or self.unit != "base":
+            raise ValueError("Choisissez les lignes ou la quantité unique")
+        elif not any(line.quantity > 0 for line in self.lines):
+            raise ValueError("Au moins une quantité doit être strictement positive")
+        return self
+
+
 class StockLotOut(BaseModel):
+    depot_id: Optional[int] = None
     model_config = ConfigDict(from_attributes=True)
     id: int
     product_id: int
@@ -825,9 +1047,9 @@ class StockLotOut(BaseModel):
     days_left: Optional[int] = None
 
 
-class StockTransferItemCreate(BaseModel):
+class StockTransferItemCreate(PackagingQuantities):
     product_id: int
-    quantity: int
+    quantity: int = 0
 
 
 class StockTransferCreate(BaseModel):
@@ -837,7 +1059,7 @@ class StockTransferCreate(BaseModel):
     items: List[StockTransferItemCreate]
 
 
-class StockTransferItemOut(BaseModel):
+class StockTransferItemOut(UnitSnapshotOut):
     model_config = ConfigDict(from_attributes=True)
     id: int
     product_id: Optional[int]
@@ -857,7 +1079,8 @@ class StockTransferOut(BaseModel):
     items: List[StockTransferItemOut] = []
 
 
-class StockMovementOut(BaseModel):
+class StockMovementOut(UnitSnapshotOut):
+    depot_id: Optional[int] = None
     model_config = ConfigDict(from_attributes=True)
     id: int
     product_id: Optional[int]
@@ -947,7 +1170,7 @@ class OrderUpdate(BaseModel):
     items: Optional[List[OrderItemCreate]] = None
 
 
-class OrderItemOut(BaseModel):
+class OrderItemOut(UnitSnapshotOut):
     model_config = ConfigDict(from_attributes=True)
     id: int
     product_id: Optional[int] = None
@@ -1014,7 +1237,7 @@ class DeliveryValidate(BaseModel):
     payment_method: str = "Espèces"
 
 
-class DeliveryItemOut(BaseModel):
+class DeliveryItemOut(UnitSnapshotOut):
     model_config = ConfigDict(from_attributes=True)
     id: int
     product_id: Optional[int] = None
@@ -1126,13 +1349,17 @@ class UserPermissions(BaseModel):
 
 
 # ---------- Supply orders (approvisionnement) ----------
-class PurchaseItemCreate(BaseModel):
+class PurchaseItemCreate(PackagingQuantities):
+    packaging_id: Optional[int] = Field(default=None, ge=1)
+    packaging_unit_cost: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     product_id: int
-    quantity: int
+    quantity: int = 0
     unit_cost: Optional[float] = None
 
 
 class PurchaseCreate(BaseModel):
+    payment_method: Optional[str] = Field(default=None, max_length=100)
+    bank_account_id: Optional[int] = Field(default=None, ge=1)
     supplier_id: Optional[int] = None
     supplier_name: str = ""
     expected_date: Optional[datetime] = None
@@ -1153,20 +1380,34 @@ class PurchaseUpdate(BaseModel):
     items: Optional[List[PurchaseItemCreate]] = None
 
 
-class PurchaseReceiveItem(BaseModel):
+class PurchaseReceiveItem(PackagingQuantities):
     item_id: int
-    quantity: int
+    quantity: int = 0
+
+
+class CataloguePriceChange(BaseModel):
+    product_id: int
+    packaging_id: Optional[int] = None
+    field: str
+    old_value: Optional[float] = Field(ge=0, allow_inf_nan=False)
+    new_value: Optional[float] = Field(ge=0, allow_inf_nan=False)
+
+
+class ProductActivation(BaseModel):
+    active: bool
 
 
 class PurchaseReceive(BaseModel):
     """Quantities actually delivered; empty means "everything ordered"."""
 
     items: List[PurchaseReceiveItem] = []
-    update_cost: bool = True  # refresh the product purchase price
+    update_cost: bool = False
+    price_changes: List[CataloguePriceChange] = Field(default_factory=list)
     note: str = ""
 
 
-class PurchaseItemOut(BaseModel):
+class PurchaseItemOut(UnitSnapshotOut):
+    packaging_id: Optional[int] = None
     model_config = ConfigDict(from_attributes=True)
     id: int
     product_id: Optional[int] = None
@@ -1178,6 +1419,8 @@ class PurchaseItemOut(BaseModel):
 
 
 class PurchaseOut(BaseModel):
+    payment_method: Optional[str] = None
+    bank_account_id: Optional[int] = None
     model_config = ConfigDict(from_attributes=True)
     id: int
     reference: str
@@ -1266,6 +1509,7 @@ class OfferedPlan(BaseModel):
 
 # ---------- Debts and receivables ----------
 class DebtPaymentCreate(BaseModel):
+    bank_account_id: Optional[int] = Field(default=None, ge=1)
     amount: float
     method: str = "Espèces"
     note: str = ""
@@ -1588,7 +1832,7 @@ class BankAccountOut(BaseModel):
     is_active: bool = True
     note: str = ""
     created_at: Optional[datetime] = None
-    balance: float = 0  # validated deposits minus cancelled, after assembly
+    balance: Optional[float] = None  # validated deposits minus cancelled, after assembly
 
 
 class BankDepositIn(BaseModel):
@@ -1651,6 +1895,8 @@ class CashSessionZ(BaseModel):
     business_day: str = ""
     opening_balance: float = 0
     total_sales: float = 0
+    net_sales: float = 0
+    cash_expenses: float = 0
     sales_count: int = 0
     cancelled_total: float = 0
     cancelled_count: int = 0
@@ -1667,6 +1913,13 @@ class CashSessionZ(BaseModel):
     deposits_total: float = 0
     deposits: list[dict] = []
     expected_cash: float = 0
+    cash_sales: float = 0
+    other_sales: float = 0
+    cash_refunds: float = 0
+    cash_settlements: float = 0
+    entries_total: float = 0
+    exits_total: float = 0
+    sales: list[CashSessionSaleLine] = []
     counted_cash: Optional[float] = None
     difference: Optional[float] = None
     note: str = ""

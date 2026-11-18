@@ -10,9 +10,16 @@ import { NetworkProvider } from "./context/NetworkContext";
 import { SyncProvider } from "./context/SyncContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { TillProvider } from "./context/TillContext";
+import FrontendMounted from "./components/FrontendMounted";
+import ErrorBoundary from "./components/ErrorBoundary";
+import { installNumberWheelGuard } from "./lib/numberWheel";
+
+installNumberWheelGuard();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
+    <FrontendMounted>
+    <ErrorBoundary>
     <BrowserRouter>
       <ThemeProvider>
         <NetworkProvider>
@@ -30,5 +37,7 @@ createRoot(document.getElementById("root")!).render(
         </NetworkProvider>
       </ThemeProvider>
     </BrowserRouter>
+    </ErrorBoundary>
+    </FrontendMounted>
   </StrictMode>
 );

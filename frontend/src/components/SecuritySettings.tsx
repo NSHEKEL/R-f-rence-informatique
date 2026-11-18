@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "../lib/apiErrors";
 import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import {
@@ -113,7 +114,7 @@ export default function SecuritySettings() {
     } catch (err) {
       setMessage(
         axios.isAxiosError(err)
-          ? err.response?.data?.detail ?? "Réparation impossible"
+          ? apiErrorMessage(err.response?.data?.detail, "Réparation impossible")
           : "Réparation impossible"
       );
     } finally {

@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "../lib/apiErrors";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
@@ -105,7 +106,7 @@ export default function Commandes() {
       setDeliveries(d.data);
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Erreur de chargement");
+        setError(apiErrorMessage(err.response?.data?.detail, "Erreur de chargement"));
       }
     }
   }, []);
@@ -250,7 +251,7 @@ export default function Commandes() {
     } catch (err) {
       if (axios.isAxiosError(err)) {
         setError(
-          err.response?.data?.detail ?? "Erreur lors de l'enregistrement"
+          apiErrorMessage(err.response?.data?.detail, "Erreur lors de l'enregistrement")
         );
       }
     } finally {
@@ -266,7 +267,7 @@ export default function Commandes() {
       await load();
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Suppression impossible");
+        setError(apiErrorMessage(err.response?.data?.detail, "Suppression impossible"));
       }
     }
   }
@@ -286,7 +287,7 @@ export default function Commandes() {
       await load();
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Duplication impossible");
+        setError(apiErrorMessage(err.response?.data?.detail, "Duplication impossible"));
       }
     }
   }
@@ -300,7 +301,7 @@ export default function Commandes() {
       await load();
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Annulation impossible");
+        setError(apiErrorMessage(err.response?.data?.detail, "Annulation impossible"));
       }
     }
   }
@@ -587,7 +588,7 @@ export default function Commandes() {
         }
       >
         <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             <div>
               <label className="label">Client enregistré</label>
               <select
@@ -623,8 +624,8 @@ export default function Commandes() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div className="sm:col-span-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            <div className="md:col-span-2">
               <label className="label">Adresse de livraison</label>
               <input
                 className="input"
@@ -646,7 +647,7 @@ export default function Commandes() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             <div>
               <label className="label">Statut</label>
               <select
@@ -771,7 +772,7 @@ export default function Commandes() {
             </button>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
               <label className="label">Acompte versé</label>
               <input

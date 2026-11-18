@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { apiErrorMessage } from "../lib/apiErrors";
+import { useCallback, useEffect, useRef, useState } from "react";
 import axios from "axios";
 import { FileSpreadsheet, Printer, Trash2 } from "lucide-react";
 import api, { formatXOF } from "../api/client";
@@ -6,6 +7,7 @@ import type { Category, Supplier } from "../types";
 import Modal from "./Modal";
 import { exportCsv, stampedName } from "../lib/exportCsv";
 import { useAuth } from "../context/AuthContext";
+import { EXPIRY_PERIODS, expiryParams, remainingExpiry } from "../lib/expiry";
 
 interface ExpiredRow {
   lot_id: number;
@@ -18,6 +20,8 @@ interface ExpiredRow {
   lot_number: string;
   expiry_date: string;
   expired_since: number;
+  days_left: number;
+  months_left: number;
   quantity: number;
   unit_cost: number;
   loss_value: number;
@@ -33,27 +37,36 @@ export default function Perimes({ onClose }: { onClose: () => void }) {
   const [search, setSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [period, setPeriod] = useState("expired");
   const [writeOff, setWriteOff] = useState<ExpiredRow | null>(null);
   const [reason, setReason] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [thresholds, setThresholds] = useState({ critical: 7, alert: 30, watch: 60 });
+  const request = useRef(0);
 
   const load = useCallback(async () => {
-    const res = await api.get<ExpiredRow[]>("/products/stock/perimes", {
-      params: {
-        category_id: categoryId || 0,
-        supplier_id: supplierId || 0,
-        search,
-        date_from: dateFrom,
-        date_to: dateTo,
-      },
-    });
-    setRows(res.data);
-  }, [categoryId, supplierId, search, dateFrom, dateTo]);
+    const current = ++request.current;
+    setError("");
+    setRows([]);
+    if (period === "custom" && !dateFrom && !dateTo) return;
+    try {
+      const res = await api.get<ExpiredRow[]>("/products/stock/perimes", {
+        params: {
+          category_id: categoryId || 0,
+          supplier_id: supplierId || 0,
+          search,
+          ...expiryParams(period, dateFrom, dateTo),
+        },
+      });
+      if (current === request.current) setRows(res.data);
+    } catch (err) {
+      if (current === request.current) throw err;
+    }
+  }, [categoryId, supplierId, search, dateFrom, dateTo, period]);
 
   useEffect(() => {
-    load().catch(() => setError("Chargement impossible"));
+    load().catch((err) => setError(axios.isAxiosError(err) ? apiErrorMessage(err.response?.data?.detail, "Chargement impossible") : "Chargement impossible"));
     api.get<Category[]>("/categories").then((r) => setCategories(r.data)).catch(() => undefined);
     api.get<Supplier[]>("/suppliers").then((r) => setSuppliers(r.data)).catch(() => undefined);
     api
@@ -97,7 +110,7 @@ export default function Perimes({ onClose }: { onClose: () => void }) {
       await load();
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Sortie impossible");
+        setError(apiErrorMessage(err.response?.data?.detail, "Sortie impossible"));
       }
     } finally {
       setSaving(false);
@@ -107,10 +120,10 @@ export default function Perimes({ onClose }: { onClose: () => void }) {
   function exportExcel() {
     exportCsv(
       stampedName("perimes"),
-      ["Article", "Référence", "Code-barres", "Catégorie", "Lot", "Péremption", "Quantité", "Coût unitaire", "Perte"],
+      ["Article", "Référence", "Code-barres", "Catégorie", "Lot", "Péremption", "Jours restants", "Mois restants (approx.)", "Quantité", "Coût unitaire du lot", "Valeur"],
       rows.map((r) => [
         r.name, r.sku, r.barcode, r.category, r.lot_number, r.expiry_date,
-        r.quantity, r.unit_cost, r.loss_value,
+        r.days_left, r.months_left, r.quantity, r.unit_cost, r.loss_value,
       ])
     );
   }
@@ -118,7 +131,7 @@ export default function Perimes({ onClose }: { onClose: () => void }) {
   const total = rows.reduce((sum, r) => sum + r.loss_value, 0);
 
   return (
-    <Modal open title="Articles périmés" onClose={onClose} wide>
+    <Modal open title="Péremptions — stock par lot" onClose={onClose} wide>
       <div className="space-y-4">
         {error && (
           <div className="rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-600">
@@ -127,6 +140,9 @@ export default function Perimes({ onClose }: { onClose: () => void }) {
         )}
 
         <div className="flex flex-wrap items-end gap-2">
+          <select className="input sm:w-56" aria-label="Échéance de péremption" value={period} onChange={(event) => setPeriod(event.target.value)}>
+            {EXPIRY_PERIODS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
           <input
             className="input sm:w-56"
             placeholder="Article, référence, lot..."
@@ -145,8 +161,10 @@ export default function Perimes({ onClose }: { onClose: () => void }) {
               <option key={s.id} value={s.id}>{s.name}</option>
             ))}
           </select>
-          <input type="date" className="input" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-          <input type="date" className="input" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+          {period === "custom" && <>
+            <label className="text-xs">Du<input aria-label="Début de période" type="date" className="input" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} /></label>
+            <label className="text-xs">Au<input aria-label="Fin de période" type="date" className="input" value={dateTo} onChange={(e) => setDateTo(e.target.value)} /></label>
+          </>}
           <button className="btn-ghost" onClick={exportExcel}>
             <FileSpreadsheet size={16} /> Excel
           </button>
@@ -176,7 +194,7 @@ export default function Perimes({ onClose }: { onClose: () => void }) {
         </div>
 
         <p className="text-sm font-semibold text-red-600">
-          Perte totale : {formatXOF(total)} ({rows.length} lot(s))
+          Valeur des lots : {formatXOF(total)} ({rows.length} lot(s))
         </p>
 
         <div className="max-h-96 overflow-y-auto rounded-xl border border-slate-100">
@@ -188,7 +206,7 @@ export default function Perimes({ onClose }: { onClose: () => void }) {
                 <th className="px-3 py-2">Péremption</th>
                 <th className="px-3 py-2 text-right">Qté</th>
                 <th className="px-3 py-2 text-right">Coût</th>
-                <th className="px-3 py-2 text-right">Perte</th>
+                <th className="px-3 py-2 text-right">Valeur</th>
                 <th className="px-3 py-2"></th>
               </tr>
             </thead>
@@ -204,7 +222,7 @@ export default function Perimes({ onClose }: { onClose: () => void }) {
                   <td className="px-3 py-2 text-xs">{r.lot_number || "—"}</td>
                   <td className="px-3 py-2">
                     <span className="block">{r.expiry_date}</span>
-                    <span className="text-xs text-red-500">+{r.expired_since} j</span>
+                    <span className={`text-xs ${r.days_left < 0 ? "text-red-500" : "text-slate-500"}`}>{remainingExpiry(r.days_left, r.months_left)}</span>
                   </td>
                   <td className="px-3 py-2 text-right">{r.quantity}</td>
                   <td className="px-3 py-2 text-right">{formatXOF(r.unit_cost)}</td>
@@ -226,7 +244,7 @@ export default function Perimes({ onClose }: { onClose: () => void }) {
               {!rows.length && (
                 <tr>
                   <td colSpan={7} className="px-3 py-8 text-center text-slate-400">
-                    Aucun lot périmé en stock.
+                    Aucun lot dans cette période.{period === "custom" && !dateFrom && !dateTo ? " Choisissez au moins une date." : ""}
                   </td>
                 </tr>
               )}

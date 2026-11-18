@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "../lib/apiErrors";
 import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import {
@@ -8,11 +9,14 @@ import {
   RefreshCw,
   Tags,
 } from "lucide-react";
-import { applyPostePrinters, writePostePrinters } from "../context/CompanyContext";
+import { useAuth } from "../context/AuthContext";
 import api, { localApi } from "../api/client";
 import Modal from "../components/Modal";
 import Receipt from "../components/Receipt";
-import { printDocument, printLabels, printReceipt } from "../lib/print";
+import { documentHeader as documentLetterhead, labelPrintStyle, printDocument, printLabels, printReceipt } from "../lib/print";
+import { DEFAULT_PRINTING } from "../types";
+import { commercialMarkup, receiptPreset, rememberPrinterCapabilities, ticketCapabilities, TICKET_FONTS } from "../lib/printStyle";
+import { DocumentStyleFields, LabelStyleFields, TicketStyleFields } from "./PrintStyleFields";
 import { priceLabelHtml } from "../lib/labels";
 import { useCompany } from "../context/CompanyContext";
 import { useLicense } from "../context/LicenseContext";
@@ -209,8 +213,6 @@ function sampleSale(): Sale {
   };
 }
 
-const FONTS = ["Arial", "Helvetica", "Tahoma", "Verdana", "Courier New"];
-
 /** Ticket elements the shop can switch on or off, in printing order. */
 const RECEIPT_SWITCHES: { key: keyof ReceiptPrinterConfig; label: string }[] = [
   { key: "show_logo", label: "Logo" },
@@ -276,7 +278,8 @@ export default function PrintingSettings({
   update,
   saveCompany,
 }: Props) {
-  const { printing, setPrinting, company: branding } = useCompany();
+  const { sharedPrinting: printing, setPrinting, company: branding } = useCompany();
+  const { can } = useAuth();
   const { hasFeature } = useLicense();
   const thermal = hasFeature("impression_thermique");
   const [form, setForm] = useState<PrintingConfig>(printing);
@@ -291,6 +294,22 @@ export default function PrintingSettings({
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
   const [preview, setPreview] = useState(false);
+  const [stylePreview, setStylePreview] = useState<'label' | 'documents' | null>(null);
+  const capabilities = ticketCapabilities(form.receipt, devices);
+  const sampleCompany = { ...branding, ...company, id: branding?.id ?? 0 };
+  const documentHeader = (settings: CompanySettings) => documentLetterhead(settings, undefined, undefined, form.documents);
+  const labelSample = Array.from({ length: Math.max(1, Math.min(12, form.label.columns * 2)) }, () => priceLabelHtml({ name: 'Article de démonstration', code: 'TEST-0001', barcode: 'TEST-0001', sale_price: 1500, wholesale_price: 1200 }, sampleCompany, form.label)).join('');
+  const documentSample = commercialMarkup(documentHeader(sampleCompany) + '<h1>Document commercial</h1><p class="number">N° TEST-0001</p><p class="dates">Date : 01/01/2026</p><p class="customer-info">Client de démonstration</p><table><tr><th>Article</th><th data-field="qty">Qté</th><th data-field="price">P.U.</th><th data-field="total">Total</th></tr><tr><td>Article de démonstration</td><td data-field="qty">2</td><td data-field="price">1 500 FCFA</td><td data-field="total">3 000 FCFA</td></tr></table>', form.documents);
+  function restoreStyle(section: keyof PrintingConfig) {
+    setForm((current) => {
+      const defaults = section === 'receipt' && (current.receipt.width === '58mm' || current.receipt.width === '80mm') ? receiptPreset(current.receipt.width) : DEFAULT_PRINTING[section];
+      const restored = { ...defaults } as Record<string, unknown>;
+      for (const [key,value] of Object.entries(current[section])) if (key.endsWith('printer_name')) restored[key] = value;
+      if (section === 'receipt') { restored.width = current.receipt.width; restored.paper_width_mm = current.receipt.paper_width_mm; }
+      return { ...current, [section]: restored };
+    });
+    setSaved(false);
+  }
   // A drawer wired straight into a COM/LPT port is typed, not picked.
   const drawerPort = isPortPath(company.drawer_port);
   const [drawerTesting, setDrawerTesting] = useState(false);
@@ -298,7 +317,7 @@ export default function PrintingSettings({
   const [actionMessage, setActionMessage] = useState("");
 
   useEffect(() => {
-    setForm(applyPostePrinters(printing));
+    setForm(printing);
   }, [printing]);
 
   const loadPrinters = useCallback(() => {
@@ -309,13 +328,13 @@ export default function PrintingSettings({
     // les files du serveur et jamais les siennes (Canon USB003, ...).
     localApi
       .get<{ devices: PrinterDevice[] }>("/settings/printers")
-      .then((res) => setDevices(res.data.devices))
+      .then((res) => { rememberPrinterCapabilities(res.data.devices); setDevices(res.data.devices); })
       .catch((err) => {
         setDevices([]);
         setPrintersError(
           axios.isAxiosError(err)
             ? `Détection impossible : ${
-                err.response?.data?.detail ?? err.message
+                apiErrorMessage(err.response?.data?.detail, err.message)
               }`
             : "Détection impossible sur ce poste."
         );
@@ -349,26 +368,15 @@ export default function PrintingSettings({
     setSaving(true);
     setError("");
     try {
+      await saveCompany();
       const res = await api.put<PrintingConfig>("/settings/printing", form);
       setPrinting(res.data);
-      setForm(applyPostePrinters(res.data));
-      // The three printer names are also remembered for this workstation
-      // only, so several tills sharing the database keep their own choices.
-      writePostePrinters({
-        receipt: form.receipt.printer_name,
-        label: form.label.printer_name,
-        documents: form.documents.printer_name,
-        delivery: form.documents.delivery_printer_name,
-        quote: form.documents.quote_printer_name,
-        reports: form.documents.reports_printer_name,
-        settlement: form.documents.settlement_printer_name,
-      });
-      await saveCompany();
+      setForm(res.data);
       setSaved(true);
     } catch (err) {
       setError(
         axios.isAxiosError(err)
-          ? err.response?.data?.detail ?? "Enregistrement impossible"
+          ? apiErrorMessage(err.response?.data?.detail, "Enregistrement impossible")
           : "Enregistrement impossible"
       );
     } finally {
@@ -405,7 +413,7 @@ export default function PrintingSettings({
         );
         setActionMessage(data.sent ? `Ticket de test ${width} spoulé sur ${data.printer}.` : "Ticket non envoyé.");
       } catch (err) {
-        setActionMessage(axios.isAxiosError(err) ? err.response?.data?.detail ?? err.message : "Ticket non envoyé.");
+        setActionMessage(axios.isAxiosError(err) ? apiErrorMessage(err.response?.data?.detail, err.message) : "Ticket non envoyé.");
       }
       return;
     }
@@ -461,7 +469,7 @@ export default function PrintingSettings({
     } catch (err) {
       setActionMessage(
         axios.isAxiosError(err)
-          ? err.response?.data?.detail ?? "Changement impossible"
+          ? apiErrorMessage(err.response?.data?.detail, "Changement impossible")
           : "Changement impossible"
       );
     }
@@ -477,7 +485,7 @@ export default function PrintingSettings({
     } catch (err) {
       setActionMessage(
         axios.isAxiosError(err)
-          ? err.response?.data?.detail ?? "Ouverture impossible"
+          ? apiErrorMessage(err.response?.data?.detail, "Ouverture impossible")
           : "Ouverture impossible"
       );
     }
@@ -520,7 +528,7 @@ export default function PrintingSettings({
     } catch (err) {
       setDrawerMessage(
         axios.isAxiosError(err)
-          ? err.response?.data?.detail ?? "Ouverture impossible"
+          ? apiErrorMessage(err.response?.data?.detail, "Ouverture impossible")
           : "Ouverture impossible"
       );
     } finally {
@@ -676,7 +684,7 @@ export default function PrintingSettings({
         <div className="mb-4 flex items-center gap-2">
           <ReceiptIcon size={18} className="text-brand-600" />
           <h3 className="text-base font-bold text-slate-900">
-            Imprimante de reçus
+            Tickets
           </h3>
         </div>
 
@@ -702,6 +710,7 @@ export default function PrintingSettings({
             >
               {thermal && <option value="80mm">Ticket 80 mm (par défaut)</option>}
               {thermal && <option value="58mm">Ticket 58 mm</option>}
+              {thermal && <option value="custom">Autre largeur (pilote Windows)</option>}
               <option value="A4">Feuille A4</option>
             </select>
           </div>
@@ -722,6 +731,7 @@ export default function PrintingSettings({
             <label className="label">Impression après une vente</label>
             <select
               className="input"
+              disabled={!can("caisse_modifier")}
               value={form.receipt.auto_print ? "auto" : "manuel"}
               onChange={(e) =>
                 patchReceipt({ auto_print: e.target.value === "auto" })
@@ -734,6 +744,8 @@ export default function PrintingSettings({
         </div>
 
         {/* Layout */}
+        <TicketStyleFields config={form.receipt} onChange={patchReceipt} color={capabilities.color && form.receipt.width !== 'A4'} raw={capabilities.raw} />
+        {form.receipt.width === 'A4' && <p className="text-sm text-slate-500">Le reçu A4 utilise le style partagé de la section Documents commerciaux ci-dessous.</p>}
         <p className="mb-3 mt-6 text-sm font-bold text-slate-700">
           Mise en page
         </p>
@@ -743,25 +755,27 @@ export default function PrintingSettings({
             <select
               className="input"
               value={form.receipt.font_family}
-              onChange={(e) => patchReceipt({ font_family: e.target.value })}
+              disabled={form.receipt.width === 'A4'}
+              onChange={(e) => patchReceipt({ font_family: e.target.value, use_system_font: true })}
             >
-              {FONTS.map((f) => (
+              {TICKET_FONTS.map((f) => (
                 <option key={f}>{f}</option>
               ))}
             </select>
           </div>
           <div>
             <label className="label">Taille (px)</label>
-            <input
+            {capabilities.raw && !form.receipt.use_system_font ? <select className="input" value={form.receipt.font_size >= 14 ? 16 : 11} onChange={(e) => patchReceipt({ font_size: Number(e.target.value) })}><option value={11}>Normale</option><option value={16}>Agrandie (2×)</option></select> : <input
               className="input"
               type="number"
               min={8}
               max={18}
+              disabled={form.receipt.width === 'A4'}
               value={form.receipt.font_size}
               onChange={(e) =>
                 patchReceipt({ font_size: Number(e.target.value) || 11 })
               }
-            />
+            />}
           </div>
           <div>
             <label className="label">Interligne</label>
@@ -900,7 +914,7 @@ export default function PrintingSettings({
         </div>
 
         {/* Cash drawer */}
-        <div className="mt-6 rounded-xl border border-slate-200 p-4">
+        <fieldset disabled={!can("peripheriques_modifier")} className="mt-6 rounded-xl border border-slate-200 p-4">
           <p className="mb-3 text-sm font-bold text-slate-700">
             Tiroir-caisse
           </p>
@@ -968,6 +982,7 @@ export default function PrintingSettings({
                 <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
                   <input
                     type="checkbox"
+                    disabled={!can("caisse_modifier")}
                     checked={form.receipt.open_drawer}
                     onChange={(e) => {
                       patchReceipt({ open_drawer: e.target.checked });
@@ -1000,7 +1015,7 @@ export default function PrintingSettings({
               </div>
             </div>
           )}
-        </div>
+        </fieldset>
 
         <div className="mt-6 flex flex-wrap items-center gap-3">
           <button className="btn-primary" onClick={save} disabled={saving}>
@@ -1009,6 +1024,7 @@ export default function PrintingSettings({
           <button className="btn-ghost" onClick={() => setPreview(true)}>
             Aperçu
           </button>
+          <button className="btn-ghost" onClick={() => restoreStyle('receipt')}>Restaurer les paramètres par défaut</button>
           <button
             className="btn-ghost"
             onClick={testTicket}
@@ -1030,7 +1046,7 @@ export default function PrintingSettings({
         <div className="mb-4 flex items-center gap-2">
           <Tags size={18} className="text-brand-600" />
           <h3 className="text-base font-bold text-slate-900">
-            Imprimante d'étiquettes
+            Étiquettes
           </h3>
         </div>
         <div className="grid gap-4 sm:grid-cols-3">
@@ -1099,6 +1115,7 @@ export default function PrintingSettings({
             </label>
           ))}
         </div>
+        <LabelStyleFields config={form.label} onChange={patchLabel} />
         <div className="mt-6 flex flex-wrap items-center gap-3">
           <button className="btn-primary" onClick={save} disabled={saving}>
             {saving ? "Enregistrement..." : "Enregistrer la configuration"}
@@ -1106,6 +1123,8 @@ export default function PrintingSettings({
           <button className="btn-ghost" onClick={() => testLabels(1)}>
             <Printer size={16} /> Une étiquette test
           </button>
+          <button className="btn-ghost" onClick={() => setStylePreview('label')}>Aperçu</button>
+          <button className="btn-ghost" onClick={() => restoreStyle('label')}>Restaurer les paramètres par défaut</button>
           <button className="btn-ghost" onClick={() => testLabels(6)}>
             <Printer size={16} /> Six étiquettes test
           </button>
@@ -1270,15 +1289,23 @@ export default function PrintingSettings({
             </label>
           ))}
         </div>
+        <DocumentStyleFields config={form.documents} onChange={patchDocuments} />
         <div className="mt-6 flex flex-wrap items-center gap-3">
           <button className="btn-primary" onClick={save} disabled={saving}>
             {saving ? "Enregistrement..." : "Enregistrer la configuration"}
           </button>
+          <button className="btn-ghost" onClick={() => setStylePreview('documents')}>Aperçu</button>
+          <button className="btn-ghost" onClick={() => restoreStyle('documents')}>Restaurer les paramètres par défaut</button>
+          <button className="btn-ghost" onClick={() => printDocument('Document commercial de test', '@page{size:A4;margin:0}body{padding:12mm}table{border-collapse:collapse;width:100%}td,th{padding:8px;border:1px solid #ddd}', documentSample, { printerName: form.documents.printer_name, direct: form.documents.direct_print })}>Tester l'impression</button>
         </div>
       </div>
 
+      <Modal open={stylePreview !== null} size="compact" onClose={() => setStylePreview(null)} title={stylePreview === 'label' ? 'Aperçu des étiquettes' : 'Aperçu du style commercial'}>
+        <iframe title="Aperçu d'impression" sandbox="" className="h-[65vh] w-full border-0" srcDoc={stylePreview === 'label' ? `<style>${labelPrintStyle(form.label)}</style><div class="grid">${labelSample}</div>` : `<style>body{padding:12mm}table{width:100%;border-collapse:collapse}td,th{padding:8px;border:1px solid #ddd}</style>${documentSample}`} />
+      </Modal>
       <Modal
         open={preview}
+        size="compact"
         onClose={() => setPreview(false)}
         title="Aperçu du reçu"
         footer={
@@ -1297,7 +1324,7 @@ export default function PrintingSettings({
       >
         <Receipt
           sale={sampleSale()}
-          company={branding}
+          company={sampleCompany}
           format={form.receipt.width}
           config={form.receipt}
         />

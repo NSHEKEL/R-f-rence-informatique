@@ -118,7 +118,8 @@ localApi.interceptors.request.use((config) => {
   return config;
 });
 
-export function formatMoney(value: number, currency = "FCFA"): string {
+export function formatMoney(value: number | null | undefined, currency = "FCFA"): string {
+  if (value == null) return "—";
   return (
     new Intl.NumberFormat("fr-FR", {
       style: "decimal",
@@ -129,7 +130,7 @@ export function formatMoney(value: number, currency = "FCFA"): string {
   );
 }
 
-export function formatXOF(value: number): string {
+export function formatXOF(value: number | null | undefined): string {
   return formatMoney(value);
 }
 

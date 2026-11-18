@@ -23,7 +23,9 @@ from ..schemas import (
 )
 from .cash import current_session
 
-router = APIRouter(prefix="/api/bank", tags=["bank"])
+router = APIRouter(prefix="/api/bank", tags=["bank"], dependencies=[
+    Depends(require_permission("tresorerie_consulter")),
+])
 
 
 def require_versements_reader(
@@ -57,9 +59,9 @@ def _account_balance(db: Session, account_id: int) -> float:
     return sum(row.amount or 0 for row in rows)
 
 
-def _account_out(db: Session, account: BankAccount) -> BankAccountOut:
+def _account_out(db: Session, account: BankAccount, user: User) -> BankAccountOut:
     out = BankAccountOut.model_validate(account)
-    out.balance = _account_balance(db, account.id)
+    out.balance = _account_balance(db, account.id) if has_permission(db, user, "soldes_consulter") else None
     return out
 
 
@@ -82,12 +84,12 @@ def _deposit_out(row: BankDeposit) -> BankDepositOut:
 @router.get("/accounts", response_model=list[BankAccountOut])
 def list_accounts(
     db: Session = Depends(get_db),
-    _: User = Depends(require_versements_reader),
+    current_user: User = Depends(require_versements_reader),
 ):
     accounts = (
         db.query(BankAccount).order_by(BankAccount.bank_name).all()
     )
-    return [_account_out(db, account) for account in accounts]
+    return [_account_out(db, account, current_user) for account in accounts]
 
 
 @router.post("/accounts", response_model=BankAccountOut, status_code=201)
@@ -102,7 +104,7 @@ def create_account(
     db.add(account)
     db.commit()
     db.refresh(account)
-    return _account_out(db, account)
+    return _account_out(db, account, current_user)
 
 
 @router.put("/accounts/{account_id}", response_model=BankAccountOut)
@@ -110,7 +112,7 @@ def update_account(
     account_id: int,
     payload: BankAccountIn,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_admin),
 ):
     account = (
         db.query(BankAccount).filter(BankAccount.id == account_id).first()
@@ -121,7 +123,7 @@ def update_account(
         setattr(account, field, value)
     db.commit()
     db.refresh(account)
-    return _account_out(db, account)
+    return _account_out(db, account, current_user)
 
 
 # ------------------------------------------------------------- deposits

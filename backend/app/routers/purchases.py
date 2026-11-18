@@ -11,6 +11,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..catalogue import require_active
+from ..purchase_prices import apply_changes, review
+from .. import stock
 from ..models import (
     Notification,
     Product,
@@ -20,16 +23,18 @@ from ..models import (
     Supplier,
     User,
 )
-from ..permissions import require_permission
+from ..permissions import has_permission, require_permission
 from ..receivables import open_purchase_payable
 from ..schemas import (
     PurchaseCreate,
+    CataloguePriceChange,
     PurchaseOut,
     PurchaseReceive,
     PurchaseSummary,
     PurchaseUpdate,
 )
 from ..sequences import next_reference
+from ..units import base_quantity, snapshot, selected_packaging
 
 router = APIRouter(prefix="/api/purchases", tags=["purchases"])
 
@@ -60,20 +65,31 @@ def _fill_items(db: Session, purchase: Purchase, payload) -> None:
             raise HTTPException(
                 status_code=404, detail=f"Produit {item.product_id} introuvable"
             )
-        if item.quantity <= 0:
+        require_active(product)
+        spec = selected_packaging(db, product, item.packaging_id)
+        quantity = base_quantity(item, spec)
+        if quantity <= 0:
             raise HTTPException(status_code=400, detail="Quantité invalide")
         cost = (
             item.unit_cost
             if item.unit_cost is not None and item.unit_cost > 0
             else (product.purchase_price or 0)
         )
-        subtotal = cost * item.quantity
+        if item.packaging_unit_cost is not None:
+            if not spec.packaging_unit:
+                raise HTTPException(status_code=400, detail="Conditionnement absent")
+            cost = item.packaging_unit_cost / spec.units_per_packaging
+        elif item.unit_cost is None and getattr(spec, "packaging_purchase_price", None) is not None:
+            cost = spec.packaging_purchase_price / spec.units_per_packaging
+        subtotal = cost * quantity
         total += subtotal
         purchase.items.append(
             PurchaseItem(
+                packaging_id=item.packaging_id,
+                **snapshot(spec),
                 product_id=product.id,
                 product_name=product.name,
-                quantity=item.quantity,
+                quantity=quantity,
                 unit_cost=cost,
                 subtotal=subtotal,
             )
@@ -137,6 +153,8 @@ def create_purchase(
         raise HTTPException(status_code=400, detail="Indiquez le fournisseur")
 
     purchase = Purchase(
+        payment_method=payload.payment_method,
+        bank_account_id=payload.bank_account_id,
         reference=_reference(db),
         supplier_id=payload.supplier_id,
         supplier_name=supplier_name,
@@ -231,11 +249,18 @@ def receive_purchase(
             detail=f"Approvisionnement « {purchase.status} » : réception impossible",
         )
 
-    wanted = {entry.item_id: entry.quantity for entry in payload.items}
+    wanted = {entry.item_id: entry for entry in payload.items}
+    if len(wanted) != len(payload.items) or set(wanted) - {item.id for item in purchase.items}:
+        raise HTTPException(400, "Ligne de réception inconnue ou dupliquée")
+    changes = list(payload.price_changes)
+    legacy_costs = {}
+    update_cost = payload.update_cost and has_permission(db, current_user, "tarifs_modifier")
+    received_ids = set()
     moved = 0
     for item in purchase.items:
         remaining = (item.quantity or 0) - (item.received_quantity or 0)
-        quantity = wanted.get(item.id, remaining) if wanted else remaining
+        entry = wanted.get(item.id)
+        quantity = base_quantity(entry, item) if entry else (0 if wanted else remaining)
         if quantity <= 0:
             continue
         if quantity > remaining:
@@ -252,20 +277,23 @@ def receive_purchase(
                 status_code=400,
                 detail=f"L'article « {item.product_name} » n'existe plus",
             )
-        before = product.quantity or 0
-        product.quantity = before + quantity
-        if payload.update_cost and (item.unit_cost or 0) > 0:
-            product.purchase_price = item.unit_cost
+        depot_id = stock.resolve(db)
+        before, after = stock.adjust(db, product, quantity, depot_id)
+        received_ids.add(product.id)
+        if update_cost and (item.unit_cost or 0) > 0 and not any(change.product_id == product.id and change.packaging_id is None and change.field == "purchase_price" for change in changes):
+            legacy_costs[product.id] = CataloguePriceChange(product_id=product.id, field="purchase_price", old_value=product.purchase_price, new_value=item.unit_cost)
         item.received_quantity = (item.received_quantity or 0) + quantity
         moved += quantity
         db.add(
             StockMovement(
+                depot_id=depot_id,
+                **snapshot(item),
                 product_id=product.id,
                 product_name=product.name,
                 kind="approvisionnement",
                 quantity=quantity,
                 stock_before=before,
-                stock_after=product.quantity,
+                stock_after=after,
                 reason=f"Approvisionnement {purchase.reference}",
                 created_by_id=current_user.id,
             )
@@ -273,6 +301,7 @@ def receive_purchase(
 
     if moved == 0:
         raise HTTPException(status_code=400, detail="Aucune quantité à réceptionner")
+    apply_changes(db, purchase, changes + list(legacy_costs.values()), received_ids, current_user)
 
     complete = all(
         (item.received_quantity or 0) >= (item.quantity or 0)
@@ -295,6 +324,12 @@ def receive_purchase(
     db.commit()
     db.refresh(purchase)
     return purchase
+
+
+@router.get("/{purchase_id}/price-review")
+def price_review(purchase_id: int, db: Session = Depends(get_db),
+    _: User = Depends(require_permission("approvisionnements_gerer"))):
+    return review(db, _get(db, purchase_id))
 
 
 @router.post("/{purchase_id}/cancel", response_model=PurchaseOut)

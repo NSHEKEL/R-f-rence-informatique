@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "../lib/apiErrors";
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import {
@@ -34,7 +35,7 @@ const empty = {
 };
 
 export default function Users() {
-  const { user: current, refreshUser } = useAuth();
+  const { user: current, refreshUser, can } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -125,7 +126,7 @@ export default function Users() {
       if (editing && editing.id === current?.id) await refreshUser();
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Erreur lors de l'enregistrement");
+        setError(apiErrorMessage(err.response?.data?.detail, "Erreur lors de l'enregistrement"));
       }
     } finally {
       setSaving(false);
@@ -151,7 +152,7 @@ export default function Users() {
       );
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        alert(err.response?.data?.detail ?? "Action impossible");
+        alert(apiErrorMessage(err.response?.data?.detail, "Action impossible"));
       }
     }
   }
@@ -162,7 +163,7 @@ export default function Users() {
       await load();
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        alert(err.response?.data?.detail ?? "Action impossible");
+        alert(apiErrorMessage(err.response?.data?.detail, "Action impossible"));
       }
     }
   }
@@ -182,7 +183,7 @@ export default function Users() {
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
-        <button className="btn-primary" onClick={openCreate}>
+        <button className="btn-primary" disabled={!can("utilisateurs_modifier")} onClick={openCreate}>
           <Plus size={18} /> Nouvel utilisateur
         </button>
       </div>
@@ -255,7 +256,7 @@ export default function Users() {
                     </span>
                   </td>
                   <td className="px-5 py-3.5">
-                    <div className="flex justify-end gap-1">
+                    <fieldset disabled={!can("utilisateurs_modifier")} className="flex justify-end gap-1">
                       <button
                         onClick={() => resetPassword(u)}
                         title="Réinitialiser le mot de passe" aria-label="Réinitialiser le mot de passe"
@@ -283,7 +284,7 @@ export default function Users() {
                           )}
                         </button>
                       )}
-                    </div>
+                    </fieldset>
                   </td>
                 </tr>
               ))}
@@ -308,7 +309,7 @@ export default function Users() {
             <button className="btn-ghost" onClick={() => setOpen(false)}>
               Annuler
             </button>
-            <button className="btn-primary" onClick={save} disabled={saving}>
+            <button className="btn-primary" onClick={save} disabled={saving || !can("utilisateurs_modifier")}>
               {saving ? "Enregistrement..." : "Enregistrer"}
             </button>
           </>
@@ -319,7 +320,7 @@ export default function Users() {
             {error}
           </div>
         )}
-        <div className="space-y-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           <div>
             <label className="label">Nom complet</label>
             <input
@@ -381,7 +382,7 @@ export default function Users() {
             onError={setError}
           />
           {form.role !== "admin" && Object.keys(kinds).length > 0 && (
-            <div>
+            <div className="col-span-full">
               <label className="label">Notifications reçues</label>
               <div className="grid grid-cols-2 gap-x-4 gap-y-1 rounded-xl border border-slate-200 p-3">
                 {Object.entries(kinds).map(([kind, label]) => (

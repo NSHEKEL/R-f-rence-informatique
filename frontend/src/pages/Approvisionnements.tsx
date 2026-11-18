@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "../lib/apiErrors";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import {
@@ -13,14 +14,21 @@ import {
 import api, { formatDate, formatDateTime, formatXOF } from "../api/client";
 import type { Product, Purchase, PurchaseSummary, Supplier } from "../types";
 import Modal from "../components/Modal";
+import AccountingPayment from "../components/AccountingPayment";
 import BulkDelete, { SelectBox } from "../components/BulkDelete";
+import PurchasePriceReview from "../components/PurchasePriceReview";
+import type { CataloguePriceChange } from "../lib/purchasePrices";
 import { useSelection } from "../lib/selection";
 import { documentBarcode, documentHeader, printSheet } from "../lib/print";
 import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSyncVersion } from "../context/SyncContext";
+import PackagingQuantity from "../components/PackagingQuantity";
+import ProductSearch from "../components/ProductSearch";
+import { formatQuantity, quantityHtml, withPackaging } from "../lib/units";
 
 interface DraftLine {
+  packaging_id?: number | null;
   product_id: number | null;
   quantity: number;
   unit_cost: number;
@@ -54,6 +62,8 @@ export default function Approvisionnements() {
   const [expected, setExpected] = useState("");
   const [invoice, setInvoice] = useState("");
   const [paidAmount, setPaidAmount] = useState(0);
+  const [paymentMethod, setPaymentMethod] = useState("");
+  const [bankAccount, setBankAccount] = useState("");
   const [note, setNote] = useState("");
   const [lines, setLines] = useState<DraftLine[]>([]);
   const [saving, setSaving] = useState(false);
@@ -61,7 +71,8 @@ export default function Approvisionnements() {
 
   const [receiving, setReceiving] = useState<Purchase | null>(null);
   const [received, setReceived] = useState<Record<number, number>>({});
-  const [updateCost, setUpdateCost] = useState(true);
+  const [priceChanges, setPriceChanges] = useState<CataloguePriceChange[]>([]);
+  const [reviewReady, setReviewReady] = useState(false);
 
   const selection = useSelection(purchases);
 
@@ -81,7 +92,7 @@ export default function Approvisionnements() {
       setSuppliers(sup.data);
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Erreur de chargement");
+        setError(apiErrorMessage(err.response?.data?.detail, "Erreur de chargement"));
       }
     }
   }, [statusFilter]);
@@ -104,6 +115,7 @@ export default function Approvisionnements() {
     updateLine(index, {
       product_id: product?.id ?? null,
       unit_cost: product?.purchase_price ?? 0,
+      packaging_id: undefined,
     });
   }
 
@@ -115,6 +127,8 @@ export default function Approvisionnements() {
     setExpected("");
     setInvoice("");
     setPaidAmount(0);
+    setPaymentMethod("");
+    setBankAccount("");
     setNote("");
   }
 
@@ -132,6 +146,7 @@ export default function Approvisionnements() {
     setLines(
       purchase.items.map((item) => ({
         product_id: item.product_id,
+        packaging_id: item.packaging_id,
         quantity: item.quantity,
         unit_cost: item.unit_cost,
       }))
@@ -152,6 +167,7 @@ export default function Approvisionnements() {
     setError("");
     try {
       const body = {
+        ...(!editing ? { payment_method: paymentMethod || null, bank_account_id: bankAccount ? Number(bankAccount) : null } : {}),
         supplier_id: supplierId ? Number(supplierId) : null,
         supplier_name: supplierName,
         expected_date: expected ? new Date(expected).toISOString() : null,
@@ -160,6 +176,7 @@ export default function Approvisionnements() {
         note,
         items: lines.map((l) => ({
           product_id: l.product_id,
+          packaging_id: l.packaging_id,
           quantity: l.quantity,
           unit_cost: l.unit_cost,
         })),
@@ -174,7 +191,7 @@ export default function Approvisionnements() {
       await load();
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Erreur lors de l'enregistrement");
+        setError(apiErrorMessage(err.response?.data?.detail, "Erreur lors de l'enregistrement"));
       }
     } finally {
       setSaving(false);
@@ -182,6 +199,9 @@ export default function Approvisionnements() {
   }
 
   function startReceive(purchase: Purchase) {
+    setPriceChanges([]);
+    setReviewReady(false);
+    setError("");
     setReceiving(purchase);
     setReceived(
       Object.fromEntries(
@@ -194,7 +214,7 @@ export default function Approvisionnements() {
   }
 
   async function confirmReceive() {
-    if (!receiving) return;
+    if (!receiving || !reviewReady) return;
     setSaving(true);
     setError("");
     try {
@@ -203,13 +223,14 @@ export default function Approvisionnements() {
           item_id: Number(id),
           quantity,
         })),
-        update_cost: updateCost,
+        update_cost: false,
+        price_changes: can("tarifs_modifier") ? priceChanges : [],
       });
       setReceiving(null);
       await load();
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Réception impossible");
+        setError(apiErrorMessage(err.response?.data?.detail, "Réception impossible"));
       }
     } finally {
       setSaving(false);
@@ -224,7 +245,7 @@ export default function Approvisionnements() {
       await load();
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Annulation impossible");
+        setError(apiErrorMessage(err.response?.data?.detail, "Annulation impossible"));
       }
     }
   }
@@ -237,7 +258,7 @@ export default function Approvisionnements() {
       await load();
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Suppression impossible");
+        setError(apiErrorMessage(err.response?.data?.detail, "Suppression impossible"));
       }
     }
   }
@@ -247,8 +268,8 @@ export default function Approvisionnements() {
       .map(
         (it) =>
           `<tr><td>${it.product_name}</td>` +
-          `<td class="num">${it.quantity}</td>` +
-          `<td class="num">${it.received_quantity}</td>` +
+          `<td class="num">${quantityHtml(it, it.quantity)}</td>` +
+          `<td class="num">${quantityHtml(it, it.received_quantity)}</td>` +
           `<td class="num">${formatXOF(it.unit_cost)}</td>` +
           `<td class="num">${formatXOF(it.subtotal)}</td></tr>`
       )
@@ -512,7 +533,7 @@ export default function Approvisionnements() {
         }
       >
         <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             <div>
               <label className="label">Fournisseur enregistré</label>
               <select
@@ -549,6 +570,10 @@ export default function Approvisionnements() {
           </div>
 
           <div className="space-y-2">
+            <ProductSearch products={products} placeholder="Scanner un code article, variante ou conditionnement" onPick={(product) => {
+              const packaging = product.packagings?.find((item) => item.id === product.packaging_id);
+              setLines((previous) => [...previous, { product_id: product.id, packaging_id: packaging?.id, quantity: packaging?.factor || 1, unit_cost: packaging?.purchase_price != null ? packaging.purchase_price / packaging.factor : product.purchase_price }]);
+            }} />
             {lines.map((l, index) => (
               <div key={index} className="flex flex-wrap items-end gap-2">
                 <div className="min-w-[220px] flex-1">
@@ -561,13 +586,19 @@ export default function Approvisionnements() {
                     <option value="">— Choisir —</option>
                     {products.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.name} ({p.quantity} en stock)
+                        {p.name} ({formatQuantity(p, p.quantity)} en stock)
                       </option>
                     ))}
                   </select>
                 </div>
                 <div className="w-24">
                   <label className="label">Qté</label>
+                  {products.find((p) => p.id === l.product_id)?.packagings?.some((p) => p.active) && <select className="input mb-1" aria-label="Conditionnement acheté" value={l.packaging_id ?? ""} onChange={(e) => {
+                    const product = products.find((p) => p.id === l.product_id)!;
+                    const packaging = product.packagings?.find((p) => p.id === Number(e.target.value));
+                    updateLine(index, { packaging_id: packaging?.id, quantity: packaging?.factor || 1, unit_cost: packaging?.purchase_price != null ? packaging.purchase_price / packaging.factor : product.purchase_price });
+                  }}><option value="">Principal</option>{products.find((p) => p.id === l.product_id)?.packagings?.filter((p) => p.active).map((p) => <option key={p.id} value={p.id}>{p.name} (×{p.factor})</option>)}</select>}
+                  {products.find((p) => p.id === l.product_id) && withPackaging(products.find((p) => p.id === l.product_id)!, l.packaging_id).packaging_unit ? <PackagingQuantity product={withPackaging(products.find((p) => p.id === l.product_id)!, l.packaging_id)} value={l.quantity} onChange={(quantity) => updateLine(index, { quantity })} /> :
                   <input
                     type="number"
                     min={1}
@@ -577,9 +608,10 @@ export default function Approvisionnements() {
                       updateLine(index, { quantity: Number(e.target.value) })
                     }
                   />
+                  }
                 </div>
                 <div className="w-36">
-                  <label className="label">Coût d'achat</label>
+                  <label className="label">Coût d'achat par unité de base</label>
                   <input
                     type="number"
                     className="input"
@@ -613,8 +645,9 @@ export default function Approvisionnements() {
             </button>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             <div>
+              {!editing && <AccountingPayment method={paymentMethod} bank={bankAccount} onChange={(method, bank) => { setPaymentMethod(method); setBankAccount(bank); }} />}
               <label className="label">Facture fournisseur</label>
               <input
                 className="input"
@@ -668,7 +701,7 @@ export default function Approvisionnements() {
             <button
               className="btn-primary"
               onClick={confirmReceive}
-              disabled={saving}
+              disabled={saving || !reviewReady}
             >
               {saving ? "Réception..." : "Valider la réception"}
             </button>
@@ -696,9 +729,10 @@ export default function Approvisionnements() {
                   <tr key={it.id}>
                     <td className="py-2">{it.product_name}</td>
                     <td className="py-2 text-right text-slate-500">
-                      {remaining}
+                      {formatQuantity(it, remaining)}
                     </td>
                     <td className="py-2 text-right">
+                      {it.packaging_unit ? <PackagingQuantity product={it} value={received[it.id] ?? 0} max={remaining} onChange={(quantity) => setReceived((prev) => ({ ...prev, [it.id]: quantity }))} /> :
                       <input
                         type="number"
                         min={0}
@@ -712,20 +746,15 @@ export default function Approvisionnements() {
                           }))
                         }
                       />
+                      }
                     </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
-          <label className="flex items-center gap-2 text-sm text-slate-600">
-            <input
-              type="checkbox"
-              checked={updateCost}
-              onChange={(e) => setUpdateCost(e.target.checked)}
-            />
-            Mettre à jour le prix d'achat des articles reçus
-          </label>
+          {receiving && <PurchasePriceReview purchaseId={receiving.id} editable={can("tarifs_modifier")} onChange={setPriceChanges} onReady={setReviewReady} />}
+          {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
       </Modal>
     </div>

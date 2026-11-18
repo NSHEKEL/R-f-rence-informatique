@@ -1,4 +1,5 @@
 import axios from "axios";
+import { apiErrorMessage } from "../lib/apiErrors";
 
 /**
  * Calls of the Global Administrator console.
@@ -217,9 +218,8 @@ export const STATUS_STYLES: Record<string, string> = {
 
 export function centralError(error: unknown, fallback: string): string {
   if (axios.isAxiosError(error)) {
-    const detail = error.response?.data?.detail;
-    if (typeof detail === "string" && detail) return detail;
     if (!error.response) return "Serveur central injoignable";
+    return apiErrorMessage(error.response.data?.detail, fallback);
   }
   return fallback;
 }

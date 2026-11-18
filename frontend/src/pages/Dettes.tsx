@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
+import { apiErrorMessage } from "../lib/apiErrors";
 import {
   AlertTriangle,
   Ban,
@@ -25,6 +26,7 @@ import {
 } from "recharts";
 import api, { formatMoney } from "../api/client";
 import { useAuth } from "../context/AuthContext";
+import AccountingPayment from "../components/AccountingPayment";
 import { useCompany } from "../context/CompanyContext";
 import { exportCsv, stampedName } from "../lib/exportCsv";
 import { printPaymentReceipt } from "../lib/paymentReceipt";
@@ -115,7 +117,7 @@ const EMPTY = {
   due_date: "",
   note: "",
 };
-const NO_PAYMENT = { amount: "", method: METHODS[0], reference: "", note: "" };
+const NO_PAYMENT = { amount: "", method: "", bank: "", reference: "", note: "" };
 
 type Tab = "tableau" | "creance" | "dette" | "reglements" | "etats";
 
@@ -209,8 +211,8 @@ export default function Dettes() {
 
   function fail(error: unknown, fallback: string) {
     setMessage(
-      axios.isAxiosError(error) && typeof error.response?.data?.detail === "string"
-        ? error.response.data.detail
+      axios.isAxiosError(error)
+        ? apiErrorMessage(error.response?.data?.detail, fallback)
         : fallback
     );
   }
@@ -240,7 +242,8 @@ export default function Dettes() {
     try {
       const res = await api.post<Debt>(`/debts/${debt.id}/paiements`, {
         amount: Number(payment.amount),
-        method: payment.method,
+        method: payment.method || (debt.kind === "creance" ? METHODS[0] : ""),
+        bank_account_id: payment.bank ? Number(payment.bank) : null,
         reference: payment.reference,
         note: payment.note,
       });
@@ -790,20 +793,7 @@ export default function Dettes() {
                                   }
                                   required
                                 />
-                                <select
-                                  className="input w-44"
-                                  value={payment.method}
-                                  onChange={(e) =>
-                                    setPayment({
-                                      ...payment,
-                                      method: e.target.value,
-                                    })
-                                  }
-                                >
-                                  {METHODS.map((item) => (
-                                    <option key={item}>{item}</option>
-                                  ))}
-                                </select>
+                                <AccountingPayment methods={METHODS} method={payment.method || (debt.kind === "creance" ? METHODS[0] : "")} bank={payment.bank} onChange={(method, bank) => setPayment({ ...payment, method, bank })} />
                                 <input
                                   className="input w-44"
                                   placeholder="Référence du paiement"

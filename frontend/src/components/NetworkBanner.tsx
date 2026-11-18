@@ -5,6 +5,8 @@ import { useNetwork } from "../context/NetworkContext";
 export default function NetworkBanner() {
   const {
     online,
+    serverReachable,
+    workstationStatus,
     pendingCount,
     justReconnected,
     syncErrors,
@@ -12,17 +14,17 @@ export default function NetworkBanner() {
     dismissRejectedSale,
   } = useNetwork();
 
-  if (
-    online &&
-    !justReconnected &&
-    syncErrors.length === 0 &&
-    rejected.length === 0
-  )
-    return null;
-
   return (
     <div className="no-print space-y-2 px-5 pt-4 lg:px-7">
-      {!online && (
+      <div className={`flex items-center gap-2 text-xs font-medium ${online ? "text-emerald-700" : "text-amber-800"}`}>
+        {online ? <Wifi size={13} /> : <CloudOff size={13} />}
+        {online ? "Serveur connecté" : serverReachable ? "Serveur joignable — poste non autorisé" : "Serveur déconnecté"}
+        {online && !justReconnected && pendingCount > 0 && <span>— {pendingCount} élément(s) en attente de synchronisation</span>}
+      </div>
+      {serverReachable && workstationStatus && workstationStatus !== "approved" && <div className="rounded-xl bg-amber-100 px-4 py-3 text-sm text-amber-900">
+        <strong>{workstationStatus === "blocked" ? "Ce poste est bloqué." : "Ce poste est en attente d'autorisation."}</strong> Sur l'ordinateur principal, demandez à un administrateur d'ouvrir Configuration → Réseau et d'autoriser l'adresse IP de ce poste. Les tickets en attente restent conservés localement.
+      </div>}
+      {!online && !serverReachable && (
         <div className="flex items-center gap-3 rounded-xl bg-amber-100 px-4 py-3 text-sm font-semibold text-amber-900">
           <CloudOff size={18} />
           <span>
@@ -31,7 +33,7 @@ export default function NetworkBanner() {
           </span>
           {pendingCount > 0 && (
             <span className="ml-auto flex items-center gap-1.5 rounded-lg bg-amber-200 px-2.5 py-1 text-xs">
-              <RefreshCw size={13} /> {pendingCount} ticket(s) en attente
+              <RefreshCw size={13} /> {pendingCount} élément(s) en attente
             </span>
           )}
         </div>
@@ -42,7 +44,7 @@ export default function NetworkBanner() {
           <span>Vous êtes connecté au réseau</span>
           {pendingCount > 0 && (
             <span className="ml-auto text-xs">
-              Synchronisation de {pendingCount} ticket(s)...
+              Synchronisation de {pendingCount} élément(s)...
             </span>
           )}
         </div>
@@ -50,7 +52,7 @@ export default function NetworkBanner() {
       {(rejected.length > 0 || syncErrors.length > 0) && (
         <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
           <p className="font-semibold">
-            Tickets refusés par le serveur — à resaisir :
+            Synchronisations refusées par le serveur :
           </p>
           <ul className="mt-1 space-y-1">
             {rejected.map((entry) => (
@@ -74,8 +76,7 @@ export default function NetworkBanner() {
                 </button>
               </li>
             ))}
-            {rejected.length === 0 &&
-              syncErrors.map((message) => <li key={message}>{message}</li>)}
+            {syncErrors.map((message) => <li key={message}>{message}</li>)}
           </ul>
         </div>
       )}

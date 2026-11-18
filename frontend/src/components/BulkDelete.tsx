@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "../lib/apiErrors";
 import { useState } from "react";
 import axios from "axios";
 import { Trash2, X } from "lucide-react";
@@ -65,7 +66,7 @@ export default function BulkDelete({
         done += 1;
       } catch (err) {
         const detail = axios.isAxiosError(err)
-          ? err.response?.data?.detail ?? err.message
+          ? apiErrorMessage(err.response?.data?.detail, err.message)
           : "erreur inconnue";
         failures.push(`#${id} : ${detail}`);
       }

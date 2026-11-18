@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ShieldCheck } from "lucide-react";
 import api from "../api/client";
+import { useAuth } from "../context/AuthContext";
 
 interface Definition {
   key: string;
@@ -20,6 +21,8 @@ const roleLabels: Record<string, string> = {
 };
 
 export default function Droits() {
+  const { can } = useAuth();
+  const modify = can("utilisateurs_modifier");
   const [data, setData] = useState<Matrix | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -67,8 +70,8 @@ export default function Droits() {
         <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-brand-600" />
         <p className="text-sm text-slate-600">
           Cochez ce que chaque rôle peut ouvrir et faire. L'administrateur garde
-          tous les droits ; Utilisateurs, Paramètres et cette page lui restent
-          réservés. Les droits s'appliquent immédiatement côté serveur et au
+          tous les droits. Utilisateurs et Paramètres dépendent des droits par catégorie.
+          Les droits s'appliquent immédiatement côté serveur et au
           plus tard en une minute sur les postes déjà connectés.
         </p>
       </div>
@@ -99,6 +102,7 @@ export default function Droits() {
                       <td key={role} className="px-4 py-2.5 text-center">
                         <input
                           type="checkbox"
+                          disabled={!modify}
                           className="h-4 w-4 accent-brand-600"
                           checked={data.matrix[role][def.key] ?? false}
                           onChange={() => toggle(role, def.key)}
@@ -116,7 +120,7 @@ export default function Droits() {
         <button
           className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
           onClick={save}
-          disabled={saving}
+          disabled={saving || !modify}
         >
           {saving ? "Enregistrement..." : "Enregistrer les droits"}
         </button>

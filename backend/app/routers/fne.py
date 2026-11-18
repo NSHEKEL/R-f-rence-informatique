@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from .. import fne
-from ..auth import require_admin
+from ..permissions import require_permission
 from ..database import get_db
 from ..models import FneInvoice, Sale, User
 from .settings import _get_or_create
@@ -18,7 +18,7 @@ router = APIRouter(prefix="/api/fne", tags=["fne"])
 
 
 @router.get("/settings", response_model=FneSettingsOut)
-def get_settings(db: Session = Depends(get_db), _: User = Depends(require_admin)):
+def get_settings(db: Session = Depends(get_db), _: User = Depends(require_permission("fiscaux_consulter"))):
     s = _get_or_create(db)
     return FneSettingsOut(
         enabled=s.fne_enabled,
@@ -35,7 +35,7 @@ def get_settings(db: Session = Depends(get_db), _: User = Depends(require_admin)
 def put_settings(
     payload: FneSettingsUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_permission("fiscaux_modifier")),
 ):
     s = _get_or_create(db)
     for field in (
@@ -57,7 +57,7 @@ def put_settings(
 @router.get("/invoices", response_model=list[FneInvoiceOut])
 def list_invoices(
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_permission("fiscaux_consulter")),
 ):
     return (
         db.query(FneInvoice).order_by(FneInvoice.updated_at.desc()).limit(200).all()
@@ -68,7 +68,7 @@ def list_invoices(
 def certify_sale(
     sale_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_permission("fiscaux_modifier")),
 ):
     sale = db.query(Sale).filter(Sale.id == sale_id).first()
     if not sale:

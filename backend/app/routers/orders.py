@@ -12,6 +12,8 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..catalogue import require_active
+from .. import stock
 from ..documents import (
     delivery_reference,
     fill_order_items,
@@ -191,6 +193,7 @@ def duplicate_order(
         created_by_id=current_user.id,
     )
     for item in source.items:
+        require_active(db.get(Product, item.product_id) if item.product_id else None)
         order.items.append(
             OrderItem(
                 product_id=item.product_id,
@@ -300,29 +303,17 @@ def deliver_order(
                 status_code=400,
                 detail=f"L'article « {item.product_name} » n'existe plus",
             )
-        result = db.execute(
-            update(Product)
-            .where(Product.id == product.id, Product.quantity >= quantity)
-            .values(quantity=Product.quantity - quantity)
-        )
-        if result.rowcount == 0:
-            db.rollback()
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Stock insuffisant pour {product.name} "
-                    f"(disponible : {product.quantity})"
-                ),
-            )
-        db.refresh(product)
+        require_active(product)
+        before, after = stock.adjust(db, product, -quantity, check_total=True)
         db.add(
             StockMovement(
+                depot_id=stock.resolve(db),
                 product_id=product.id,
                 product_name=product.name,
                 kind="vente",
                 quantity=-quantity,
-                stock_before=product.quantity + quantity,
-                stock_after=product.quantity,
+                stock_before=before,
+                stock_after=after,
                 reason=f"Livraison {order.reference}",
                 created_by_id=current_user.id,
             )

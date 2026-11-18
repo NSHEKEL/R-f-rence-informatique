@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "../lib/apiErrors";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import {
@@ -5,7 +6,6 @@ import {
   ArrowLeftRight,
   ClipboardCheck,
   Download,
-  History,
   Plus,
   Printer,
   RotateCcw,
@@ -13,12 +13,22 @@ import {
   Trash2,
 } from "lucide-react";
 import api, { formatDate, formatXOF } from "../api/client";
-import type { Product, StockLot, StockMovement } from "../types";
+import type { Product, StockLot } from "../types";
+import StockMovements from "../components/StockMovements";
+import { StockColumnChooser, StockExtraCells, StockExtraHeaders } from "../components/StockColumns";
+import { useStockColumns } from "../lib/useStockColumns";
 import { documentHeader, printSheet } from "../lib/print";
 import { exportCsv, stampedName } from "../lib/exportCsv";
 import { useCompany } from "../context/CompanyContext";
 import { useLicense } from "../context/LicenseContext";
 import { useSyncVersion } from "../context/SyncContext";
+import PackagingQuantity from "../components/PackagingQuantity";
+import InventorySessions from "../components/InventorySessions";
+import { formatQuantity, quantityHtml } from "../lib/units";
+import { scanCodes } from "../lib/scan";
+import { readOffline } from "../lib/offlineInventory";
+import { useOnline } from "../lib/useOnline";
+import OfflineBanner from "../components/OfflineBanner";
 
 type Counted = Record<number, { rayon: string; stock: string }>;
 
@@ -27,13 +37,6 @@ function countedTotal(entry?: { rayon: string; stock: string }): number | null {
   if (!entry || (entry.rayon === "" && entry.stock === "")) return null;
   return Number(entry.rayon || 0) + Number(entry.stock || 0);
 }
-
-const kindLabels: Record<string, string> = {
-  vente: "Vente",
-  inventaire: "Inventaire",
-  ajustement: "Ajustement",
-  transfert: "Transfert",
-};
 
 /** One line of an inter-store transfer being composed. */
 interface TransferLine {
@@ -56,7 +59,6 @@ export default function Inventaire() {
   const { company, printing } = useCompany();
   const { hasFeature } = useLicense();
   const [products, setProducts] = useState<Product[]>([]);
-  const [movements, setMovements] = useState<StockMovement[]>([]);
   const [counted, setCounted] = useState<Counted>({});
   const [blind, setBlind] = useState(false);
   const [query, setQuery] = useState("");
@@ -74,38 +76,36 @@ export default function Inventaire() {
   const [pending, setPending] = useState<PendingTransfer[]>([]);
   const [expiring, setExpiring] = useState<StockLot[]>([]);
   const [expiryDays, setExpiryDays] = useState(90);
+  const online = useOnline();
+  const [cached, setCached] = useState(false);
+  const [savedAt, setSavedAt] = useState("");
+  const readOnly = !online || cached;
 
   const load = useCallback(async () => {
-    const [p, m, r] = await Promise.all([
-      api.get<Product[]>("/products"),
-      api.get<StockMovement[]>("/inventory/movements", {
-        params: { limit: 50 },
-      }),
-      api.get<PendingTransfer[]>("/transfers/entrantes").catch(() => ({
+    const [p, r] = await Promise.all([
+      readOffline<Product[]>("/products", "products:all:active"),
+      readOffline<PendingTransfer[]>("/transfers/entrantes", "stock-pending-transfers").catch(() => ({
         data: [] as PendingTransfer[],
       })),
     ]);
     setProducts(p.data);
-    setMovements(m.data);
+    setCached(p.fromCache); setSavedAt(p.savedAt);
     setPending(r.data);
-    const lots = await api
-      .get<StockLot[]>("/products/lots/alertes", {
-        params: { days: expiryDays },
-      })
+    const lots = await readOffline<StockLot[]>(`/products/lots/alertes?days=${expiryDays}`, `stock-expiry:${expiryDays}`)
       .catch(() => ({ data: [] as StockLot[] }));
     setExpiring(lots.data);
   }, [expiryDays]);
 
   useEffect(() => {
-    load();
-  }, [load, version]);
+    void load().catch(() => setError("Stocks indisponibles : chargez-les en ligne avant de partir hors réseau."));
+  }, [load, version, online]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return products;
     return products.filter(
       (p) =>
-        p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)
+        p.name.toLowerCase().includes(q) || scanCodes(p).some((code) => code.includes(q))
     );
   }, [products, query]);
 
@@ -121,6 +121,8 @@ export default function Inventaire() {
         .filter((d): d is { product: Product; delta: number } => d !== null),
     [products, counted]
   );
+
+  const stockColumns = useStockColumns(filtered, "inventory", blind);
 
   const impact = useMemo(
     () =>
@@ -153,7 +155,7 @@ export default function Inventaire() {
       await load();
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Erreur lors de l'inventaire");
+        setError(apiErrorMessage(err.response?.data?.detail, "Erreur lors de l'inventaire"));
       }
     } finally {
       setSaving(false);
@@ -183,40 +185,37 @@ export default function Inventaire() {
     try {
       items = JSON.parse(t.items || "[]");
     } catch {
-      items = [];
+      setError("Envoi illisible : réception annulée, envoi conservé en attente.");
+      return;
     }
-    const matched = items
-      .map((i) => {
-        const product = products.find(
-          (p) => p.name.trim().toLowerCase() === i.product_name.trim().toLowerCase()
-        );
-        return product ? { product_id: product.id, quantity: i.quantity } : null;
-      })
-      .filter((i): i is TransferLine => i !== null);
-    if (matched.length === 0) {
-      setError(
-        "Aucun article de cet envoi n'existe dans votre catalogue : créez-les d'abord."
-      );
+    if (!Array.isArray(items) || items.length === 0) {
+      setError("Envoi vide : réception annulée, envoi conservé en attente.");
       return;
     }
     setSaving(true);
     try {
+      const { data: catalogue } = await api.get<Product[]>("/products", { params: { state: "all" } });
+      const matched = items.map((i) => {
+        const candidates = catalogue.filter(
+          (p) => p.name.trim().toLowerCase() === i.product_name.trim().toLowerCase()
+        );
+        const product = candidates.find((p) => p.active !== false) ?? candidates[0];
+        return product ? { product_id: product.id, quantity: i.quantity } : null;
+      });
+      if (matched.some((i) => i === null)) {
+        setError("Certains articles sont introuvables : créez-les avant de recevoir cet envoi. Aucun stock modifié, envoi conservé en attente.");
+        return;
+      }
       await api.post("/transfers/recevoir", {
         central_id: t.id,
         from_shop: t.from_shop,
         note: t.note,
         items: matched,
       });
-      const skipped = items.length - matched.length;
-      setMessage(
-        `Réception ${t.reference} enregistrée.` +
-          (skipped > 0 ? ` ${skipped} article(s) ignoré(s) (non trouvés).` : "")
-      );
+      setMessage(`Réception ${t.reference} enregistrée.`);
       await load();
     } catch (err) {
-      if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Réception impossible");
-      }
+      setError(axios.isAxiosError(err) ? apiErrorMessage(err.response?.data?.detail, "Réception impossible") : "Réception impossible : envoi conservé en attente.");
     } finally {
       setSaving(false);
     }
@@ -248,7 +247,7 @@ export default function Inventaire() {
       await load();
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Transfert impossible");
+        setError(apiErrorMessage(err.response?.data?.detail, "Transfert impossible"));
       }
     } finally {
       setSaving(false);
@@ -308,7 +307,7 @@ export default function Inventaire() {
           `<td>${p.barcode || ""}</td>` +
           (blind
             ? `<td class="blank"></td><td class="blank"></td><td class="blank"></td>`
-            : `<td class="num">${p.quantity}</td>` +
+            : `<td class="num">${quantityHtml(p, p.quantity)}</td>` +
               `<td class="blank"></td><td class="blank"></td><td class="blank"></td>`) +
           `</tr>`
       )
@@ -336,8 +335,8 @@ export default function Inventaire() {
       .map(
         (d) =>
           `<tr><td>${d.product.name}</td><td>${d.product.sku}</td>` +
-          `<td class="num">${d.product.quantity}</td>` +
-          `<td class="num">${d.product.quantity + d.delta}</td>` +
+          `<td class="num">${quantityHtml(d.product, d.product.quantity)}</td>` +
+          `<td class="num">${quantityHtml(d.product, d.product.quantity + d.delta)}</td>` +
           `<td class="num">${d.delta > 0 ? `+${d.delta}` : d.delta}</td>` +
           `<td class="num">${formatXOF(d.delta * d.product.purchase_price)}</td></tr>`
       )
@@ -362,6 +361,9 @@ export default function Inventaire() {
 
   return (
     <div className="space-y-5">
+      <InventorySessions />
+      <OfflineBanner visible={readOnly} since={savedAt} />
+      <fieldset disabled={readOnly} className="contents">
       {/* Suivi des péremptions */}
       <div className="card p-5">
         <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -445,7 +447,7 @@ export default function Inventaire() {
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <ClipboardCheck size={18} className="text-brand-600" />
           <h3 className="text-base font-bold text-slate-900">
-            Inventaire physique
+            Inventaire rapide (quantité totale)
           </h3>
           <p className="text-sm text-slate-500">
             Saisissez la quantité réellement comptée ; seuls les écarts sont
@@ -483,13 +485,14 @@ export default function Inventaire() {
         )}
 
         <div className="max-h-[24rem] overflow-y-auto">
+          <StockColumnChooser config={stockColumns} />
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-white">
               <tr className="border-b border-slate-100 text-left text-xs font-semibold uppercase text-slate-500">
-                <th className="py-2">Produit</th>
-                <th className="py-2">Code</th>
-                {!blind && (
-                  <th className="py-2 text-center">Stock théorique</th>
+                {stockColumns.show("article") && <th className="py-2">Article</th>}
+                <StockExtraHeaders columns={stockColumns.visible} />
+                {stockColumns.show("quantity") && (
+                  <th className="py-2 text-center">Qté pièces (base)</th>
                 )}
                 <th className="py-2 text-center">Qté en rayon</th>
                 <th className="py-2 text-center">Qté en stock</th>
@@ -503,16 +506,17 @@ export default function Inventaire() {
                 const delta = total === null ? null : total - p.quantity;
                 return (
                   <tr key={p.id}>
-                    <td className="py-2 font-medium text-slate-800">
+                    {stockColumns.show("article") && <td className="py-2 font-medium text-slate-800">
                       {p.name}
-                    </td>
-                    <td className="py-2 text-slate-500">{p.sku}</td>
-                    {!blind && (
+                    </td>}
+                    <StockExtraCells product={p} columns={stockColumns.visible} />
+                    {stockColumns.show("quantity") && (
                       <td className="py-2 text-center text-slate-700">
-                        {p.quantity}
+                        {p.quantity} {p.base_unit || "pcs"}
                       </td>
                     )}
                     <td className="py-2 text-center">
+                      {p.packaging_unit ? <PackagingQuantity product={p} value={Number(entry.rayon) || 0} onChange={(quantity) => setCounted((prev) => ({ ...prev, [p.id]: { ...entry, rayon: String(quantity) } }))} /> :
                       <input
                         className="w-20 rounded-lg border border-slate-200 py-1 text-center"
                         type="number"
@@ -526,8 +530,10 @@ export default function Inventaire() {
                           })
                         }
                       />
+                      }
                     </td>
                     <td className="py-2 text-center">
+                      {p.packaging_unit ? <PackagingQuantity product={p} value={Number(entry.stock) || 0} onChange={(quantity) => setCounted((prev) => ({ ...prev, [p.id]: { ...entry, stock: String(quantity) } }))} /> :
                       <input
                         className="w-20 rounded-lg border border-slate-200 py-1 text-center"
                         type="number"
@@ -541,6 +547,7 @@ export default function Inventaire() {
                           })
                         }
                       />
+                      }
                     </td>
                     {!blind && (
                       <td
@@ -675,10 +682,11 @@ export default function Inventaire() {
             <option value="">— Produit —</option>
             {products.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.name} (stock {p.quantity})
+                {p.name} (stock {formatQuantity(p, p.quantity)})
               </option>
             ))}
           </select>
+          {products.find((p) => p.id === Number(lineDraft.product_id))?.packaging_unit && <PackagingQuantity product={products.find((p) => p.id === Number(lineDraft.product_id))!} value={Number(lineDraft.quantity)} onChange={(quantity) => setLineDraft((prev) => ({ ...prev, quantity: String(quantity) }))} />}
           <input
             className="input w-24"
             type="number"
@@ -704,7 +712,7 @@ export default function Inventaire() {
                       {p?.name ?? `#${l.product_id}`}
                     </td>
                     <td className="py-2 text-center font-semibold">
-                      {l.quantity}
+                      {formatQuantity(products.find((p) => p.id === l.product_id) || {}, l.quantity)}
                     </td>
                     <td className="py-2 text-right">
                       <button
@@ -779,61 +787,8 @@ export default function Inventaire() {
         )}
       </div>
 
-      <div className="card p-5">
-        <div className="mb-4 flex items-center gap-2">
-          <History size={18} className="text-brand-600" />
-          <h3 className="text-base font-bold text-slate-900">
-            Mouvements de stock
-          </h3>
-        </div>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-slate-100 text-left text-xs font-semibold uppercase text-slate-500">
-              <th className="py-2">Date</th>
-              <th className="py-2">Produit</th>
-              <th className="py-2">Type</th>
-              <th className="py-2 text-center">Mouvement</th>
-              <th className="py-2 text-center">Stock</th>
-              <th className="py-2">Motif</th>
-              <th className="py-2">Par</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {movements.map((m) => (
-              <tr key={m.id}>
-                <td className="py-2 text-slate-500">{formatDate(m.date)}</td>
-                <td className="py-2 font-medium text-slate-800">
-                  {m.product_name}
-                </td>
-                <td className="py-2 text-slate-600">
-                  {kindLabels[m.kind] ?? m.kind}
-                </td>
-                <td
-                  className={`py-2 text-center font-semibold ${
-                    m.quantity < 0 ? "text-red-600" : "text-emerald-600"
-                  }`}
-                >
-                  {m.quantity > 0 ? `+${m.quantity}` : m.quantity}
-                </td>
-                <td className="py-2 text-center text-slate-500">
-                  {m.stock_before} → {m.stock_after}
-                </td>
-                <td className="py-2 text-slate-500">{m.reason}</td>
-                <td className="py-2 text-slate-500">
-                  {m.created_by?.name ?? "—"}
-                </td>
-              </tr>
-            ))}
-            {movements.length === 0 && (
-              <tr>
-                <td colSpan={7} className="py-8 text-center text-slate-400">
-                  Aucun mouvement enregistré.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <StockMovements products={products} version={version} />
+      </fieldset>
     </div>
   );
 }

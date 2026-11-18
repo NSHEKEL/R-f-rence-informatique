@@ -10,9 +10,10 @@ from ..accounts import (
     normalize_identifier,
     password_error,
 )
-from ..auth import get_current_user, hash_password, require_admin
+from ..auth import get_current_user, hash_password
+from ..permissions import require_permission
 from ..database import get_db
-from ..licensing import has_feature
+from ..licensing import has_feature, require_feature
 from ..models import User
 from ..schemas import UserCreate, UserOut, UserPhoto, UserUpdate
 
@@ -21,19 +22,21 @@ router = APIRouter(prefix="/api/users", tags=["users"])
 ROLES = {"admin", "vendeur", "gestionnaire"}
 
 
-@router.get("", response_model=list[UserOut])
-def list_users(db: Session = Depends(get_db), _: User = Depends(require_admin)):
+@router.get("", response_model=list[UserOut], dependencies=[Depends(require_feature("droits_acces"))])
+def list_users(db: Session = Depends(get_db), _: User = Depends(require_permission("utilisateurs_consulter"))):
     return db.query(User).order_by(User.name).all()
 
 
-@router.post("", response_model=UserOut, status_code=201)
+@router.post("", response_model=UserOut, status_code=201, dependencies=[Depends(require_feature("droits_acces"))])
 def create_user(
     payload: UserCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_permission("utilisateurs_modifier")),
 ):
     if payload.role not in ROLES:
         raise HTTPException(status_code=400, detail="Rôle invalide")
+    if payload.role == "admin" and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Seul un administrateur peut créer un administrateur")
     if not has_feature(db, "multi_utilisateurs"):
         others = db.query(User).filter(User.is_active.is_(True)).count()
         if others >= 1:
@@ -82,12 +85,12 @@ def update_my_photo(
     return current_user
 
 
-@router.put("/{user_id}", response_model=UserOut)
+@router.put("/{user_id}", response_model=UserOut, dependencies=[Depends(require_feature("droits_acces"))])
 def update_user(
     user_id: int,
     payload: UserUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_permission("utilisateurs_modifier")),
 ):
     user = db.query(User).get(user_id)
     if not user:
@@ -95,6 +98,8 @@ def update_user(
 
     if payload.role is not None and payload.role not in ROLES:
         raise HTTPException(status_code=400, detail="Rôle invalide")
+    if current_user.role != "admin" and (user.role == "admin" or payload.role == "admin"):
+        raise HTTPException(status_code=403, detail="Seul un administrateur peut modifier un administrateur")
 
     # Protect the last active admin from losing admin/being disabled.
     def _demoting_last_admin() -> bool:
@@ -166,16 +171,18 @@ def update_user(
     return user
 
 
-@router.post("/{user_id}/reset-password")
+@router.post("/{user_id}/reset-password", dependencies=[Depends(require_feature("droits_acces"))])
 def reset_user_password(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_permission("utilisateurs_modifier")),
 ):
     """Give a user a temporary password, shown once to the administrator."""
     user = db.query(User).get(user_id)
     if not user:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    if user.role == "admin" and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Seul un administrateur peut réinitialiser un administrateur")
     temporary = secrets.token_urlsafe(6)
     user.hashed_password = hash_password(temporary)
     db.commit()
@@ -189,15 +196,17 @@ def reset_user_password(
     return {"password": temporary}
 
 
-@router.delete("/{user_id}", status_code=204)
+@router.delete("/{user_id}", status_code=204, dependencies=[Depends(require_feature("droits_acces"))])
 def delete_user(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_permission("utilisateurs_modifier")),
 ):
     user = db.query(User).get(user_id)
     if not user:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    if user.role == "admin" and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Seul un administrateur peut supprimer un administrateur")
     if user.id == current_user.id:
         raise HTTPException(
             status_code=400, detail="Vous ne pouvez pas supprimer votre propre compte"

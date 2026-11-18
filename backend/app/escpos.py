@@ -103,10 +103,12 @@ def _raster(line: Line) -> bytes:
     )
 
 
-def build(lines: list[Line], cut: bool, kick: bytes = b"") -> bytes:
+def build(lines: list[Line], cut: bool, kick: bytes = b"", line_spacing: int | None = None) -> bytes:
     """Turn the ticket into the byte stream the printer expects."""
     out = bytearray(ESC + b"@")  # reset: the previous ticket may have left
     out += ESC + b"t\x13"  # select cp858
+    if line_spacing is not None:
+        out += ESC + b"3" + bytes([max(0, min(255, line_spacing))])
     for line in lines:
         if line.image:
             out += _raster(line)

@@ -8,11 +8,13 @@ import {
   type ReactNode,
 } from "react";
 import axios from "axios";
-import { API_BASE } from "../api/client";
+import { getServerUrl } from "../api/client";
 import {
   dismissRejected,
   flushPendingSales,
   pendingSales,
+  pendingProducts,
+  flushPendingProducts,
   rejectedSales,
   type RejectedSale,
 } from "../lib/offline";
@@ -22,6 +24,9 @@ const RECONNECT_BANNER_MS = 6000;
 
 interface NetworkContextValue {
   online: boolean;
+  serverReachable: boolean;
+  workstationStatus: string;
+  lastContact: string | null;
   /** Tickets recorded locally and waiting to reach the server. */
   pendingCount: number;
   justReconnected: boolean;
@@ -38,18 +43,22 @@ const NetworkContext = createContext<NetworkContextValue | undefined>(
 
 export function NetworkProvider({ children }: { children: ReactNode }) {
   const [online, setOnline] = useState(true);
-  const [pendingCount, setPendingCount] = useState(pendingSales().length);
+  const [serverReachable, setServerReachable] = useState(false);
+  const [workstationStatus, setWorkstationStatus] = useState("");
+  const [lastContact, setLastContact] = useState<string | null>(null);
+  const [pendingCount, setPendingCount] = useState(pendingSales().length + pendingProducts().length);
   const [justReconnected, setJustReconnected] = useState(false);
   const [syncErrors, setSyncErrors] = useState<string[]>([]);
   const [rejected, setRejected] = useState<RejectedSale[]>(rejectedSales());
-  const wasOnline = useRef(true);
+  const wasOnline = useRef(false);
 
   const sync = useCallback(async () => {
     const result = await flushPendingSales();
-    setPendingCount(pendingSales().length);
+    const products = await flushPendingProducts();
+    setPendingCount(pendingSales().length + pendingProducts().length);
     setRejected(rejectedSales());
-    if (result.rejected.length > 0) setSyncErrors(result.rejected);
-    if (result.synced > 0) {
+    setSyncErrors(pendingProducts().filter((entry) => entry.reason).map((entry) => `${entry.payload.sku} : ${entry.reason}`));
+    if (result.synced > 0 || products.synced > 0) {
       window.dispatchEvent(new Event("ri:synced"));
     }
   }, []);
@@ -57,10 +66,15 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     let reachable = false;
     try {
-      await axios.get(`${API_BASE}/api/health`, { timeout: 5000 });
-      reachable = true;
+      const { data } = await axios.get(`${getServerUrl()}/api/health`, { timeout: 5000 });
+      const authorized = !data.workstation_status || data.workstation_status === "approved";
+      reachable = data.status === "ok" && data.app === "EasyGest" && authorized;
+      setServerReachable(data.status === "ok" && data.app === "EasyGest");
+      setWorkstationStatus(data.workstation_status || "");
+      if (data.status === "ok" && data.app === "EasyGest") setLastContact(new Date().toISOString());
     } catch {
       reachable = false;
+      setServerReachable(false);
     }
     setOnline(reachable);
     if (reachable && !wasOnline.current) {
@@ -76,8 +90,9 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
     refresh();
     const timer = window.setInterval(refresh, PING_INTERVAL_MS);
     const onQueueChange = () => {
-      setPendingCount(pendingSales().length);
+      setPendingCount(pendingSales().length + pendingProducts().length);
       setRejected(rejectedSales());
+      setSyncErrors(pendingProducts().filter((entry) => entry.reason).map((entry) => `${entry.payload.sku} : ${entry.reason}`));
     };
     window.addEventListener("online", refresh);
     window.addEventListener("offline", refresh);
@@ -94,6 +109,9 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
     <NetworkContext.Provider
       value={{
         online,
+        serverReachable,
+        workstationStatus,
+        lastContact,
         pendingCount,
         justReconnected,
         syncErrors,

@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { formatXOF } from "../api/client";
 import type { Product } from "../types";
+import { scanCodes } from "../lib/scan";
 
 interface Props {
   products: Product[];
@@ -19,13 +20,19 @@ export default function ProductSearch({ products, onPick, placeholder }: Props) 
     if (!needle) return [];
     return products
       .filter((p) =>
-        [p.name, p.sku, p.barcode, p.qr_code, p.category?.name ?? ""]
+        [p.name, ...scanCodes(p), p.category?.name ?? ""]
           .join(" ")
           .toLowerCase()
           .includes(needle)
       )
       .slice(0, 8);
   }, [products, query]);
+
+  function pick(product: Product) {
+    const packaging = product.packagings?.find((item) => item.active && item.barcode?.trim().toLowerCase() === query.trim().toLowerCase());
+    onPick({ ...product, packaging_id: packaging?.id ?? null });
+    setQuery("");
+  }
 
   return (
     <div className="space-y-2">
@@ -38,6 +45,12 @@ export default function ProductSearch({ products, onPick, placeholder }: Props) 
           className="input pl-9"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.nativeEvent.isComposing && results.length) {
+              e.preventDefault();
+              pick(results.find((p) => scanCodes(p).includes(query.trim().toLowerCase())) || results[0]);
+            }
+          }}
           placeholder={placeholder ?? "Nom, référence, code-barres, catégorie"}
           title="Rechercher un article"
         />
@@ -49,8 +62,7 @@ export default function ProductSearch({ products, onPick, placeholder }: Props) 
               key={p.id}
               className="flex w-full items-center justify-between gap-3 border-b border-slate-100 px-3 py-2 text-left text-sm last:border-0 hover:bg-brand-50"
               onClick={() => {
-                onPick(p);
-                setQuery("");
+                pick(p);
               }}
               title="Ajouter cet article au document"
             >

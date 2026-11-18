@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import api, { formatXOF } from "../api/client";
+import { formatXOF } from "../api/client";
+import { readOffline } from "../lib/offlineInventory";
 import { useSyncVersion } from "../context/SyncContext";
 
 interface Expiring {
@@ -33,8 +34,7 @@ export default function StockDashboard({
   const [stats, setStats] = useState<StockStats | null>(null);
 
   useEffect(() => {
-    api
-      .get<StockStats>("/products/stock/dashboard")
+    readOffline<StockStats>("/products/stock/dashboard", "stock-dashboard")
       .then((res) => setStats(res.data))
       .catch(() => setStats(null));
   }, [version]);

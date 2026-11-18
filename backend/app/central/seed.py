@@ -147,6 +147,7 @@ ADDED_COLUMNS: dict[str, dict[str, str]] = {
         "sector": "VARCHAR DEFAULT ''",
     },
     "installations": {
+        "cash_balances": "TEXT DEFAULT '{}'",
         "shop_name": "VARCHAR DEFAULT ''",
         "city": "VARCHAR DEFAULT ''",
         "address": "VARCHAR DEFAULT ''",
@@ -155,6 +156,7 @@ ADDED_COLUMNS: dict[str, dict[str, str]] = {
     },
     "mirror_sales": {"installation_uid": "VARCHAR DEFAULT ''"},
     "mirror_returns": {"installation_uid": "VARCHAR DEFAULT ''"},
+    "mirror_users": {"cash_permissions": "TEXT DEFAULT '[]'"},
 }
 
 

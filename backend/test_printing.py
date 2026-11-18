@@ -15,6 +15,26 @@ class PrintingTests(unittest.TestCase):
         self.assertEqual(ctypes.sizeof(escpos._DocInfo), 24)
         self.assertEqual(escpos._DocInfo.pDatatype.offset, 16)
 
+    def test_queue_status_windows_flags(self):
+        for flags, problem in [(0, "Prête"), (1, "En pause"), (2, "En erreur"), (8, "Bourrage papier"), (128, "Hors ligne")]:
+            with self.subTest(flags=flags):
+                dll = MagicMock()
+                info = printing._PrinterInfo2()
+                info.pPrinterName = "Test queue"
+                info.Status = flags
+                def get_printer(handle, level, buffer, size, needed):
+                    needed._obj.value = ctypes.sizeof(info)
+                    if buffer is None:
+                        return False
+                    ctypes.memmove(buffer, ctypes.byref(info), ctypes.sizeof(info))
+                    return True
+                dll.GetPrinterW.side_effect = get_printer
+                with patch.object(printing, "_spooler", return_value=dll), patch.object(printing, "default_printer", return_value="Test queue"):
+                    device = printing.queue_status("Test queue")
+                self.assertEqual(device.status, problem)
+                self.assertEqual(device.available, flags == 0)
+                dll.ClosePrinter.assert_called_once()
+
     def test_kinds(self):
         for port, expected in {
             "USB001": "USB", "LPT1:": "Parallèle", "COM2:": "Série",

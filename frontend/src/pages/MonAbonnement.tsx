@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { CheckCircle2, Lock, RefreshCw } from "lucide-react";
 import api from "../api/client";
+import { apiErrorMessage } from "../lib/apiErrors";
 import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
 import { useLicense } from "../context/LicenseContext";
@@ -28,12 +29,9 @@ function errorText(error: unknown, fallback: string): string {
   if (
     typeof error === "object" &&
     error !== null &&
-    "response" in error &&
-    typeof (error as { response?: { data?: { detail?: unknown } } }).response
-      ?.data?.detail === "string"
+    "response" in error
   ) {
-    return (error as { response: { data: { detail: string } } }).response.data
-      .detail;
+    return apiErrorMessage((error as { response?: { data?: { detail?: unknown } } }).response?.data?.detail, fallback);
   }
   return fallback;
 }

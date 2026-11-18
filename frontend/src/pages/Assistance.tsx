@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "../lib/apiErrors";
 import { useEffect, useState } from "react";
 import { LifeBuoy, Mail, MessageCircle, Send } from "lucide-react";
 import api from "../api/client";
@@ -84,9 +85,8 @@ export default function Assistance() {
           ? "Le serveur configuré n'est pas le serveur de la boutique " +
             "(« method not allowed »). Corrigez l'adresse du serveur dans " +
             "Paramètres → Réseau & postes, ou utilisez WhatsApp ci-contre."
-          : (err as { response?: { data?: { detail?: string } } })?.response
-              ?.data?.detail ||
-            "L'envoi a échoué. Réessayez ou utilisez WhatsApp.";
+          : apiErrorMessage((err as { response?: { data?: { detail?: string } } })?.response
+              ?.data?.detail, "L'envoi a échoué. Réessayez ou utilisez WhatsApp.");
       setFeedback({ kind: "error", text: detail });
     } finally {
       setSending(false);

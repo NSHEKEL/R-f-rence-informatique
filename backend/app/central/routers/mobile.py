@@ -146,6 +146,13 @@ def _visible_expenses(db: Session, user: MirrorUser, client: Client):
     return query
 
 
+def _visible_returns(db: Session, user: MirrorUser, client: Client):
+    query = db.query(MirrorReturn).filter(MirrorReturn.client_id == client.id)
+    if (user.role or "").lower() not in FULL_VIEW_ROLES:
+        query = query.filter(MirrorReturn.seller_email == user.email)
+    return query
+
+
 @router.get("/sales")
 def sales(
     search: str = "",
@@ -177,6 +184,40 @@ def sales(
     ]
 
 
+def _expected_cash(db: Session, user: MirrorUser, client: Client, today, required_uids):
+    try:
+        permissions = json.loads(user.cash_permissions or "[]")
+    except (ValueError, TypeError):
+        return None
+    if "soldes_consulter" not in permissions:
+        return None
+    full_view = (user.role or "").lower() in FULL_VIEW_ROLES
+    available, sessions = set(), {}
+    for installation in db.query(Installation).filter(Installation.client_id == client.id).all():
+        try:
+            snapshot = json.loads(installation.cash_balances or "{}")
+            if snapshot.get("day") != today.isoformat():
+                continue
+            available.add(installation.uid)
+            for row in snapshot.get("sessions", []):
+                own = row["seller_email"].lower() == user.email.lower()
+                if not full_view and not own:
+                    continue
+                if not own and "clotures_consulter" not in permissions:
+                    return None
+                if row.get("closed") and not ("clotures_consulter" in permissions or (own and "caisse_z" in permissions)):
+                    return None
+                previous = sessions.get(row["key"])
+                timestamp = snapshot["generated_at"]
+                if previous is None or timestamp > previous[0]:
+                    sessions[row["key"]] = (timestamp, row.get("expected_cash"))
+        except (ValueError, TypeError, AttributeError, KeyError):
+            return None
+    if not required_uids.issubset(available) or not sessions or any(row[1] is None for row in sessions.values()):
+        return None
+    return sum(row[1] for row in sessions.values())
+
+
 @router.get("/returns")
 def returns(
     limit: int = 100,
@@ -185,9 +226,7 @@ def returns(
 ):
     """Credit notes of the shop, with the same visibility rules as sales."""
     user, client = session
-    query = db.query(MirrorReturn).filter(MirrorReturn.client_id == client.id)
-    if (user.role or "").lower() not in FULL_VIEW_ROLES:
-        query = query.filter(MirrorReturn.seller_email == user.email)
+    query = _visible_returns(db, user, client)
     rows = query.order_by(MirrorReturn.date.desc()).limit(max(1, min(limit, 500))).all()
     return [
         {
@@ -354,6 +393,7 @@ def summary(
 ):
     user, client = session
     rows = _visible(db, user, client).all()
+    refunds = _visible_returns(db, user, client).all()
     now = utcnow()
     today = now.date()
     def _day(row):
@@ -365,6 +405,13 @@ def summary(
         for row in rows
         if row.date and row.date.year == now.year and row.date.month == now.month
     ]
+    day_refunds = [row for row in refunds if _day(row) == today]
+    month_refunds = [row for row in refunds
+                     if row.date and row.date.year == now.year and row.date.month == now.month]
+    day_gross = sum(row.total or 0 for row in day_rows)
+    month_gross = sum(row.total or 0 for row in month_rows)
+    day_returns = sum(row.total or 0 for row in day_refunds)
+    month_returns = sum(row.total or 0 for row in month_refunds)
     installation = (
         db.query(Installation)
         .filter(Installation.client_id == client.id)
@@ -373,9 +420,17 @@ def summary(
     )
     return {
         "company": client.company,
-        "today_total": sum(row.total or 0 for row in day_rows),
+        "today_total": day_gross - day_returns,
+        "today_gross_total": day_gross,
+        "today_returns_total": day_returns,
+        "today_returns_count": len(day_refunds),
         "today_count": len(day_rows),
-        "month_total": sum(row.total or 0 for row in month_rows),
+        "today_expected_cash": _expected_cash(db, user, client, today,
+            {row.installation_uid for row in day_rows + day_refunds if row.installation_uid}),
+        "month_total": month_gross - month_returns,
+        "month_gross_total": month_gross,
+        "month_returns_total": month_returns,
+        "month_returns_count": len(month_refunds),
         "month_count": len(month_rows),
         "sales_count": len(rows),
         "last_sync": installation.last_sync.isoformat()

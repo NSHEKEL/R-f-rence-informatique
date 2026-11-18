@@ -89,6 +89,7 @@ def open_purchase_payable(
         return
     db.add(
         Debt(
+            purchase_id=purchase.id,
             kind="dette",
             party=purchase.supplier_name or "Fournisseur",
             supplier_id=purchase.supplier_id,

@@ -320,6 +320,7 @@ class MirrorUserIn(BaseModel):
     role: str = ""
     hashed_password: str = ""
     is_active: bool = True
+    cash_permissions: list[str] = []
 
 
 class MirrorSaleIn(BaseModel):
@@ -366,6 +367,19 @@ class MirrorExpenseIn(BaseModel):
     seller_email: str = ""
 
 
+class MirrorCashSessionIn(BaseModel):
+    key: str
+    seller_email: str
+    expected_cash: Optional[float] = None
+    closed: bool = False
+
+
+class MirrorCashBalancesIn(BaseModel):
+    day: str
+    generated_at: datetime
+    sessions: list[MirrorCashSessionIn] = []
+
+
 class MirrorRequest(BaseModel):
     """Copy a shop pushes so its sales can be read from a phone."""
 
@@ -376,6 +390,7 @@ class MirrorRequest(BaseModel):
     returns: list[MirrorReturnIn] = []
     expenses: list[MirrorExpenseIn] = []
     support_requests: list[MirrorSupportRequestIn] = []
+    cash_balances: Optional[MirrorCashBalancesIn] = None
     # Magasin identity self-declared by the shop (its own company settings).
     shop_name: str = ""
     city: str = ""

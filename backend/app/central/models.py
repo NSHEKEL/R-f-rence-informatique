@@ -203,6 +203,7 @@ class Installation(Base):
     users_count = Column(Integer, default=0)
     last_seen = Column(DateTime, nullable=True)
     last_sync = Column(DateTime, nullable=True)
+    cash_balances = Column(Text, default="{}")
     last_ip = Column(String, default="")
     is_revoked = Column(Boolean, default=False, nullable=False)
     # Magasin identity: several installations of one client are the owner's
@@ -236,6 +237,7 @@ class MirrorUser(Base):
     name = Column(String, default="")
     role = Column(String, default="")
     hashed_password = Column(String, default="")
+    cash_permissions = Column(Text, default="[]")
     is_active = Column(Boolean, default=True, nullable=False)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 

@@ -1,4 +1,5 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { allowedLandingPath, canOpenTreasury } from "./lib/treasury";
 import { useAuth } from "./context/AuthContext";
 import { useLicense } from "./context/LicenseContext";
 import { TILL_GATED, useTill } from "./context/TillContext";
@@ -16,6 +17,7 @@ import Caisse from "./pages/Caisse";
 import Banque from "./pages/Banque";
 import Inventaire from "./pages/Inventaire";
 import Comptabilite from "./pages/Comptabilite";
+import AccountingDocuments from "./pages/AccountingDocuments";
 import Paie from "./pages/Paie";
 import Dettes from "./pages/Dettes";
 import Rapports from "./pages/Rapports";
@@ -42,6 +44,7 @@ import ConsoleJournal from "./pages/console/ConsoleJournal";
 import ConsoleSettings from "./pages/console/ConsoleSettings";
 import ConsoleSuggestions from "./pages/console/ConsoleSuggestions";
 import Mobile from "./pages/Mobile";
+import { canOpenSettings } from "./lib/settingsAccess";
 
 /** Home screens, in the order a user falls back to them. */
 const HOME_PAGES: [string, string][] = [
@@ -68,7 +71,17 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 /** Where a user without access lands: the first page they may open. */
 function useFallbackPath(): string {
   const { can } = useAuth();
-  return HOME_PAGES.find(([right]) => can(right))?.[1] ?? "/a-propos";
+  return allowedLandingPath(HOME_PAGES, can);
+}
+
+function SettingsRoute({ children, category, feature }: { children: React.ReactNode; category?: string; feature?: string }) {
+  const { can } = useAuth();
+  const { hasFeature } = useLicense();
+  const fallback = useFallbackPath();
+  if (!(category ? can(`${category}_consulter`) : canOpenSettings(can))) return <Navigate to={fallback} replace />;
+  if (category === "utilisateurs" && !hasFeature("droits_acces")) return <p>La gestion des droits n'est pas incluse dans votre formule.</p>;
+  if (feature && !hasFeature(feature)) return <p>Cette page n'est pas incluse dans votre formule.</p>;
+  return <>{children}</>;
 }
 
 function AdminRoute({
@@ -108,7 +121,8 @@ function PermRoute({
   const { selling, loading } = useTill();
   const fallback = useFallbackPath();
   const feature = PLAN_FEATURE[right];
-  if (!can(right)) return <Navigate to={fallback} replace />;
+  const { pathname } = useLocation();
+  if (!can(right) || !canOpenTreasury(pathname, can)) return <Navigate to={fallback} replace />;
   if (feature && !hasFeature(feature)) {
     // Only the client administrator manages the subscription; the others are
     // simply told the page is out of their plan.
@@ -169,7 +183,7 @@ export default function App() {
         <Route
           path="/banque"
           element={
-            <PermRoute right="caisse">
+            <PermRoute right="tresorerie_consulter">
               <Banque />
             </PermRoute>
           }
@@ -263,6 +277,10 @@ export default function App() {
           }
         />
         <Route
+          path="/comptabilite/documents"
+          element={<PermRoute right="comptabilite_journaux_consulter"><AccountingDocuments /></PermRoute>}
+        />
+        <Route
           path="/comptabilite"
           element={
             <PermRoute right="comptabilite">
@@ -305,25 +323,25 @@ export default function App() {
         <Route
           path="/utilisateurs"
           element={
-            <AdminRoute feature={ADMIN_FEATURE["/utilisateurs"]}>
+            <SettingsRoute category="utilisateurs" feature={ADMIN_FEATURE["/utilisateurs"]}>
               <Users />
-            </AdminRoute>
+            </SettingsRoute>
           }
         />
         <Route
           path="/parametres"
           element={
-            <AdminRoute feature={ADMIN_FEATURE["/parametres"]}>
+            <SettingsRoute feature={ADMIN_FEATURE["/parametres"]}>
               <Settings />
-            </AdminRoute>
+            </SettingsRoute>
           }
         />
         <Route
           path="/droits"
           element={
-            <AdminRoute feature={ADMIN_FEATURE["/droits"]}>
+            <SettingsRoute category="utilisateurs" feature={ADMIN_FEATURE["/droits"]}>
               <Droits />
-            </AdminRoute>
+            </SettingsRoute>
           }
         />
         <Route

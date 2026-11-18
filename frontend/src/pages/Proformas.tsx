@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "../lib/apiErrors";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import {
@@ -20,6 +21,7 @@ import { vatBreakdown } from "../lib/vat";
 import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSyncVersion } from "../context/SyncContext";
+import { quantityHtml } from "../lib/units";
 
 interface DraftLine {
   product_id: number | null;
@@ -78,7 +80,7 @@ export default function Proformas() {
       setCustomers(c.data);
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Erreur de chargement");
+        setError(apiErrorMessage(err.response?.data?.detail, "Erreur de chargement"));
       }
     }
   }, []);
@@ -190,7 +192,7 @@ export default function Proformas() {
       await load();
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Erreur lors de l'enregistrement");
+        setError(apiErrorMessage(err.response?.data?.detail, "Erreur lors de l'enregistrement"));
       }
     } finally {
       setSaving(false);
@@ -204,7 +206,7 @@ export default function Proformas() {
       await load();
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail ?? "Opération impossible");
+        setError(apiErrorMessage(err.response?.data?.detail, "Opération impossible"));
       }
     }
   }
@@ -239,36 +241,38 @@ export default function Proformas() {
       .map(
         (it) =>
           `<tr><td>${it.product_name}</td>` +
-          `<td class="num">${it.quantity}</td>` +
-          `<td class="num">${formatXOF(it.unit_price)}</td>` +
-          `<td class="num">${formatXOF(it.subtotal)}</td></tr>`
+          `<td class="num" data-field="qty">${it.packaging_unit ? quantityHtml(it, it.quantity) : it.quantity}</td>` +
+          `<td class="num" data-field="price">${formatXOF(it.unit_price)}</td>` +
+          `<td class="num" data-field="total">${formatXOF(it.subtotal)}</td></tr>`
       )
       .join("");
     const vat = vatBreakdown(document.total, company);
+    const totalColumns = 1 + Number(printing.documents.show_qty) + Number(printing.documents.show_unit_price);
     const vatRows = vat
-      ? `<tr><th colspan="3">Total HT</th>` +
+      ? `<tr data-field="total"><th colspan="${totalColumns}">Total HT</th>` +
         `<th class="num">${formatXOF(vat.excluded)}</th></tr>` +
-        `<tr><th colspan="3">TVA (${vat.rate} %)</th>` +
+        `<tr data-field="total"><th colspan="${totalColumns}">TVA (${vat.rate} %)</th>` +
         `<th class="num">${formatXOF(vat.vat)}</th></tr>`
       : "";
     printSheet(
       `${title} ${document.reference}`,
-      documentHeader(company, undefined, "devis") +
-        `<h2>${title} ${document.reference}</h2>` +
-        `<p class="meta">Date : ${formatDateTime(document.date)}` +
+      documentHeader(company, undefined, "devis", printing.documents) +
+        `<h2>${title} <span class="document-reference">${document.reference}</span></h2>` +
+        `<p class="meta"><span class="document-date">Date : ${formatDateTime(document.date)}` +
         (document.valid_until
           ? ` · Valable jusqu'au ${formatDate(document.valid_until)}`
           : "") +
-        `<br/>Client : ${client}</p>` +
-        `<table><thead><tr><th>Désignation</th><th class="num">Qté</th>` +
-        `<th class="num">P.U.</th><th class="num">Total</th></tr></thead>` +
+        `</span><br/><span class="customer-info">Client : ${client}</span></p>` +
+        `<table><thead><tr><th>Désignation</th><th class="num" data-field="qty">Qté</th>` +
+        `<th class="num" data-field="price">P.U.</th><th class="num" data-field="total">Total</th></tr></thead>` +
         `<tbody>${rows}${vatRows}` +
-        `<tr><th colspan="3">${vat ? "Total TTC" : "Total"}</th>` +
+        `<tr data-field="total"><th colspan="${totalColumns}">${vat ? "Total TTC" : "Total"}</th>` +
         `<th class="num">${formatXOF(document.total)}</th></tr></tbody></table>` +
         `<p class="meta">Document non contractuel : ce ${
           kind ? "devis" : "document"
         } ne vaut pas facture et n'engage aucun mouvement de stock.</p>`,
       {
+        documentConfig: printing.documents,
         printerName:
           printing.documents.quote_printer_name ||
           printing.documents.printer_name,
@@ -504,7 +508,7 @@ export default function Proformas() {
         }
       >
         <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             <div>
               <label className="label">Client enregistré</label>
               <select

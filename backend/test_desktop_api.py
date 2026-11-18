@@ -39,6 +39,22 @@ class DesktopApiTests(unittest.TestCase):
         self.assertFalse(any("window" in name for name in names))
         window.events._pywebviewready.set.assert_called_once()
 
+    def test_unavailable_queue_blocks_raw_and_html_dispatch(self):
+        api = DesktopApi()
+        api._window = SimpleNamespace(uid="blocked")
+        form = SimpleNamespace(InvokeRequired=True, BeginInvoke=MagicMock())
+        modules = {
+            "System": SimpleNamespace(Action=lambda action: action),
+            "webview.platforms.winforms": SimpleNamespace(BrowserView=SimpleNamespace(instances={"blocked": form})),
+        }
+        for problem in ("En pause", "Hors ligne", "En erreur"):
+            with self.subTest(problem=problem), patch.dict(sys.modules, modules), patch("run.printing.queue_status", return_value=SimpleNamespace(available=False, status=problem)), patch("run.escpos.send") as send:
+                self.assertEqual(api.printer_problem("Test queue"), problem)
+                self.assertIn(problem, api.print_ticket(json.dumps({"printer": "Test queue", "lines": []})))
+                self.assertFalse(api.print_to(210, 297, 0, "Test queue"))
+                send.assert_not_called()
+                form.BeginInvoke.assert_not_called()
+
     def test_no_window(self):
         api = DesktopApi()
         self.assertEqual(api.choose_folder(), "")
