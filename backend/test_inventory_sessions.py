@@ -45,6 +45,19 @@ class InventorySessionTests(unittest.TestCase):
         with self.sessions() as db:
             return db.get(Product, product.id).quantity
 
+    def test_counted_legacy_draft_validates_without_resetting_reference(self):
+        session = self.session()
+        self.count(session, self.product, 15)
+        row = self.db.get(InventorySession, session["id"])
+        row.status = "draft"
+        self.product.quantity = 3
+        self.db.commit()
+        report = self.call(f"/api/inventory/sessions/{session['id']}/validate", "POST", {})
+        self.assertEqual(report["status"], "validated")
+        self.assertEqual(self.quantity(self.product), 18)
+        self.assertEqual(self.quantity(self.third), 7)
+        self.assertEqual(self.db.query(StockMovement).filter_by(kind="inventaire").count(), 1)
+
     def test_purchase_240_missing_excess_sale_during_count_and_report(self):
         purchase = self.call("/api/purchases", "POST", {"supplier_name": "Grossiste", "items": [{"product_id": self.product.id, "packaging_quantity": 10, "packaging_unit_cost": 960}]}, 201)
         self.call(f"/api/purchases/{purchase['id']}/receive", "POST", {})

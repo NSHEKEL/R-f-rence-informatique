@@ -108,11 +108,14 @@ body {
   .btn-ghost {
     @apply btn bg-slate-100 text-slate-700 hover:bg-slate-200;
   }
+  .btn-secondary {
+    @apply btn border border-brand-600 bg-brand-50 text-brand-700 hover:bg-brand-100;
+  }
   .btn-danger {
     @apply btn bg-red-50 text-red-600 hover:bg-red-100;
   }
   .input {
-    @apply w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100 placeholder:text-slate-400;
+    @apply w-full rounded-xl border-2 border-slate-400 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-brand-600 focus:ring-2 focus:ring-brand-100 placeholder:text-slate-500 disabled:bg-slate-100 disabled:text-slate-500;
   }
   .label {
     @apply mb-1.5 block text-sm font-medium text-slate-700;
@@ -398,12 +401,15 @@ html.dark .input,
 html.dark select,
 html.dark textarea {
   background-color: #0f1a30 !important;
-  border-color: #26344f !important;
+  border-color: #64748b !important;
   color: #e2e8f0 !important;
 }
 html.dark .input::placeholder {
-  color: #64748b;
+  color: #94a3b8;
 }
+html.dark .btn-secondary { background-color: #172d4c; border-color: #60a5fa; color: #bfdbfe; }
+html.dark .input:focus { border-color: #60a5fa !important; }
+html.dark .input:disabled, html.dark .input[readonly] { background-color: #1b2740 !important; color: #94a3b8 !important; }
 html.dark .btn-ghost {
   background-color: #1b2740 !important;
   color: #e2e8f0 !important;

@@ -175,7 +175,10 @@ def _save_packagings(db, product, rows, user):
         if packaging is None:
             packaging = ProductPackaging(product_id=product.id)
             db.add(packaging)
-        for key, value in row.model_dump(exclude={"id"}).items():
+        values = row.model_dump(exclude={"id"})
+        if row.price_gros is not None and row.price_gros > 0:
+            values["price_detail"] = row.price_gros
+        for key, value in values.items():
             if key in {"price_detail", "price_semi_gros", "price_gros", "purchase_price"} and packaging.id and getattr(packaging, key) != value:
                 db.add(PriceHistory(product_id=product.id, field=f"packaging:{packaging.id}:{key}",
                                     old_value=getattr(packaging, key), new_value=value, changed_by_id=user.id))

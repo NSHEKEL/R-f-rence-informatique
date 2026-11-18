@@ -1,5 +1,6 @@
 import api from "../api/client";
 import { readAuthCache } from "./authCache";
+import { apiErrorMessage } from "./apiErrors";
 import { cacheRead, fetchCached, newClientId } from "./offline";
 import { inventoryTotal, type InventoryReport, type InventoryRow } from "./inventoryReport";
 
@@ -127,8 +128,9 @@ export function syncCounts(sessionId: number) {
             return next;
           });
           await mutate<Snapshot<InventoryReport> | undefined>(snapshotKey, (snapshot) => snapshot ? { ...snapshot, data: { ...snapshot.data, rows: snapshot.data.rows.map((row) => row.product_id === entry.product_id ? data.rows[0] : row) } } : undefined);
-        } catch {
-          error = "Synchronisation indisponible ou session clôturée : les comptages restent conservés sur ce poste."; break;
+        } catch (cause) {
+          const detail = (cause as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+          error = `${apiErrorMessage(detail || cause, "Synchronisation indisponible ou session clôturée.")} Les comptages restent conservés sur ce poste.`; break;
         }
       }
     }

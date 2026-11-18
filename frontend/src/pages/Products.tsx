@@ -1,5 +1,5 @@
 import { apiErrorMessage } from "../lib/apiErrors";
-import { productBarcodes, productTextError } from "../lib/productForm";
+import { followPurchasePrice, piecePurchasePrice, purchaseFactor, productBarcodes, productTextError } from "../lib/productForm";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import axios from "axios";
@@ -140,6 +140,17 @@ export default function Products() {
   const [viewProductId, setViewProductId] = useState<number | null>(null);
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState({ ...empty });
+  const manualPurchase = useRef(false);
+  const previousPurchase = useRef<number | null>(null);
+  const calculatedPurchase = piecePurchasePrice(form.supplier_purchase_price, purchaseFactor(form));
+  useEffect(() => {
+    if (previousPurchase.current === calculatedPurchase) return;
+    previousPurchase.current = calculatedPurchase;
+    setForm((current) => {
+      const price = followPurchasePrice(current.purchase_price, calculatedPurchase, manualPurchase.current);
+      return price === current.purchase_price ? current : { ...current, purchase_price: price };
+    });
+  }, [calculatedPurchase]);
   const autoSku = useRef("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -282,6 +293,8 @@ export default function Products() {
   const selection = useSelection(paged);
 
   function openCreate() {
+    manualPurchase.current = false;
+    previousPurchase.current = null;
     setPendingUuid(null);
     autoSku.current = "";
     setEditing(null);
@@ -292,6 +305,8 @@ export default function Products() {
 
   function openEdit(p: Product, entry?: PendingProduct) {
     if (readOnly && !entry) return;
+    manualPurchase.current = false;
+    previousPurchase.current = piecePurchasePrice(p.supplier_purchase_price ?? "", purchaseFactor({ packaging_unit: p.packaging_unit || "", units_per_packaging: p.units_per_packaging || 1, packagings: p.packagings || [] }));
     setPendingUuid(entry?.payload.client_uuid ?? null);
     setEditing(entry ? null : p);
     setForm({
@@ -961,13 +976,22 @@ export default function Products() {
             />
           </div>
 <div>
-            <label className="label">Prix d'achat usine (coût pour le bénéfice, FCFA)</label>
+            <label className="label">Prix d'achat usine du conditionnement (FCFA)
+              <input className="input" type="number" min="0" placeholder="Ex. 6000 pour un carton de 6" value={form.supplier_purchase_price} onChange={(e) => setForm({ ...form, supplier_purchase_price: e.target.value === "" ? "" : Number(e.target.value) })} />
+            </label>
+            <p className="text-xs text-slate-500">Référence : {purchaseFactor(form) ? `${purchaseFactor(form)} ${form.base_unit || "pièce"}` : "renseignez un conditionnement et son facteur"}.</p>
+          </div>
+<div>
+            <label className="label">Prix d'achat pièce (coût pour le bénéfice, FCFA)</label>
             <input
               type="number"
               className="input"
               value={form.purchase_price || ""}
-              onChange={(e) => setForm({ ...form, purchase_price: Number(e.target.value) })}
+              placeholder="Calculé depuis le prix usine, ou saisie libre"
+              onChange={(e) => { manualPurchase.current = true; setForm({ ...form, purchase_price: Number(e.target.value) }); }}
             />
+            <button type="button" className="btn-ghost mt-2" disabled={calculatedPurchase === null} onClick={() => { manualPurchase.current = false; setForm((current) => ({ ...current, purchase_price: followPurchasePrice(current.purchase_price, calculatedPurchase, false) })); }}>Recalculer</button>
+            <p className="mt-1 text-xs text-slate-500">{manualPurchase.current ? "Saisie manuelle conservée jusqu'au recalcul." : "Calcul automatique, arrondi au FCFA. La saisie reste libre."}</p>
           </div>
 <div>
             <label className="label">Prix détail pièce (FCFA)</label>
@@ -1037,11 +1061,11 @@ export default function Products() {
 <div className="col-span-full space-y-2">
             <h3 className="font-semibold">Codes supplémentaires / variantes</h3>
             {form.barcodes.map((barcode, index) => <div className="flex flex-wrap gap-2" key={barcode.id || `new-${index}`}>
-              <input aria-label="Code variante" className="input flex-1" disabled={!!barcode.id} value={barcode.code} onChange={(e) => setForm({ ...form, barcodes: form.barcodes.map((b, i) => i === index ? { ...b, code: e.target.value } : b) })} />
-              <input aria-label="Libellé variante" className="input flex-1" value={barcode.label} onChange={(e) => setForm({ ...form, barcodes: form.barcodes.map((b, i) => i === index ? { ...b, label: e.target.value } : b) })} />
-              <button type="button" className="btn-ghost" onClick={() => setForm({ ...form, barcodes: barcode.id ? form.barcodes.map((b, i) => i === index ? { ...b, active: !b.active } : b) : form.barcodes.filter((_, i) => i !== index) })}>{barcode.active ? "Retirer" : "Réactiver"}</button>
+              <label className="label flex-1">Code variante<input aria-label="Code variante" placeholder="Scanner ou saisir le code supplémentaire" className="input" disabled={!!barcode.id} value={barcode.code} onChange={(e) => setForm({ ...form, barcodes: form.barcodes.map((b, i) => i === index ? { ...b, code: e.target.value } : b) })} /></label>
+              <label className="label flex-1">Libellé variante<input aria-label="Libellé variante" placeholder="Ex. parfum, taille ou fournisseur" className="input" value={barcode.label} onChange={(e) => setForm({ ...form, barcodes: form.barcodes.map((b, i) => i === index ? { ...b, label: e.target.value } : b) })} /></label>
+              <button type="button" className={barcode.active ? "btn-danger" : "btn-secondary"} onClick={() => setForm({ ...form, barcodes: barcode.id ? form.barcodes.map((b, i) => i === index ? { ...b, active: !b.active } : b) : form.barcodes.filter((_, i) => i !== index) })}>{barcode.active ? <Trash2 size={16} /> : <Plus size={16} />}{barcode.active ? "Retirer" : "Réactiver"}</button>
             </div>)}
-            <button type="button" className="btn-ghost" onClick={() => setForm({ ...form, barcodes: [...form.barcodes, { code: "", label: "", active: true }] })}>Ajouter un code</button>
+            <button type="button" className="btn-secondary" onClick={() => setForm({ ...form, barcodes: [...form.barcodes, { code: "", label: "", active: true }] })}><Plus size={18} />Ajouter un code</button>
           </div>
 {!editing && (
             <div>
@@ -1091,7 +1115,6 @@ export default function Products() {
             />
           </div>
 {([
-            ["supplier_purchase_price", "Prix fournisseur pièce"],
             ["semi_wholesale_price", "Prix semi-gros pièce"],
             ["semi_wholesale_min_qty", "Seuil semi-gros (unités de base)"],
             ["wholesale_min_qty", "Seuil gros (unités de base)"],
