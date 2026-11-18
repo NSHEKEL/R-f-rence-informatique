@@ -36,6 +36,25 @@ test('existing edits overlay the cached catalogue, coalesce and discard without 
   assert.equal(lib.pendingCatalogue('/products/pos', [original])[0].sale_price, 100);
 });
 
+test('offline edits with form-only expiry_date sync and legacy queued form fields are stripped', async () => {
+  const { lib, api, localStorage } = setup(); const requests = [];
+  api.post = async (_url, body) => {
+    assert.equal('expiry_date' in body.changes, false); assert.equal('expiry_date' in body.originals, false);
+    assert.equal('id' in body.changes, false); assert.equal('client_uuid' in body.changes, false);
+    requests.push(body); return { data: {} };
+  };
+  const original = { ...payload, id: 12 };
+  lib.queueProductEdit(original, { ...payload, id: 12, name: 'Riz corrigé', expiry_date: '' });
+  assert.equal('expiry_date' in lib.pendingProducts()[0].changes, false);
+  await lib.flushPendingProducts(); assert.equal(requests.length, 1); assert.equal(lib.pendingProducts().length, 0);
+  lib.queueProductEdit(original, { ...payload, name: 'Riz corrigé encore', expiry_date: '' });
+  const legacy = lib.pendingProducts()[0]; legacy.changes.expiry_date = ''; legacy.originals.expiry_date = null;
+  localStorage.setItem('ri_pending_products:local:local', JSON.stringify([legacy]));
+  await lib.flushPendingProducts(); assert.equal(requests.length, 2); assert.equal(lib.pendingProducts().length, 0);
+  localStorage.setItem('ri_pending_products:local:local', JSON.stringify([{ ...legacy, changes: { expiry_date: '' }, originals: { expiry_date: null } }]));
+  await lib.flushPendingProducts(); assert.equal(requests.length, 2); assert.equal(lib.pendingProducts().length, 0);
+});
+
 test('edit conflicts remain readable, retry keeps its id, explicit force gets a fresh id', async () => {
   const { lib, api } = setup(); const requests = [];
   api.post = async (url, body) => { requests.push({ url, body }); if (!body.force) throw { response: { status: 409, data: { detail: 'Conflit : prix modifié sur le serveur' } } }; return { data: {} }; };

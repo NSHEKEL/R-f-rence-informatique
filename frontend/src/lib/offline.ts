@@ -172,13 +172,25 @@ function canonical(value: unknown): string {
     ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
 }
 
+const productUpdateFields = new Set([
+  "barcodes", "rayon", "emplacement", "semi_wholesale_price", "supplier_purchase_price",
+  "semi_wholesale_min_qty", "wholesale_min_qty", "packagings", "base_unit", "packaging_unit",
+  "units_per_packaging", "packaging_sale_price", "wholesale_packaging_price", "name", "sku",
+  "description", "category_id", "supplier_id", "purchase_price", "sale_price", "wholesale_price",
+  "quantity", "min_stock", "qr_code", "barcode", "image",
+]);
+
+function updateFields(values: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(values).filter(([field]) => productUpdateFields.has(field)));
+}
+
 export function queueProductEdit(product: Product, payload: ProductPayload): void {
   const previous = pendingProducts().find((entry) => entry.product_id === product.id);
   if (previous?.attempted && !previous.reason) throw new Error("Envoi déjà tenté : réessayez sans modifier pour confirmer la modification sur le serveur.");
   const base = previous?.base || product;
   const changes: Record<string, unknown> = {}, originals: Record<string, unknown> = {};
   for (const [field, value] of Object.entries(payload)) {
-    if (["client_uuid", "initial_expiry_date"].includes(field)) continue;
+    if (!productUpdateFields.has(field)) continue;
     const original = base[field as keyof Product];
     if (canonical(value) !== canonical(original)) { changes[field] = value; originals[field] = original ?? null; }
   }
@@ -267,7 +279,8 @@ export function flushPendingProducts(): Promise<SyncResult> {
       writeProducts(key, readProducts(key).map((current) => current.payload.client_uuid === entry.payload.client_uuid ? { ...current, attempted: true } : current));
       try {
         if (entry.product_id != null) {
-          await api.post<Product>(`/products/${entry.product_id}/offline-update`, { operation_id: entry.payload.client_uuid, changes: entry.changes, originals: entry.originals, force: entry.force || false });
+          const changes = updateFields(entry.changes || {});
+          if (Object.keys(changes).length) await api.post<Product>(`/products/${entry.product_id}/offline-update`, { operation_id: entry.payload.client_uuid, changes, originals: updateFields(entry.originals || {}), force: entry.force || false });
         } else {
           await api.post<Product>("/products", entry.payload);
         }
