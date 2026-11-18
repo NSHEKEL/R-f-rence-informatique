@@ -140,9 +140,10 @@ export default function Products() {
   const [viewProductId, setViewProductId] = useState<number | null>(null);
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState({ ...empty });
+  const [factoryPurchaseTotal, setFactoryPurchaseTotal] = useState<number | "">("");
   const manualPurchase = useRef(false);
   const previousPurchase = useRef<number | null>(null);
-  const calculatedPurchase = piecePurchasePrice(form.supplier_purchase_price, purchaseFactor(form));
+  const calculatedPurchase = piecePurchasePrice(factoryPurchaseTotal, purchaseFactor(form));
   useEffect(() => {
     if (previousPurchase.current === calculatedPurchase) return;
     previousPurchase.current = calculatedPurchase;
@@ -151,6 +152,10 @@ export default function Products() {
       return price === current.purchase_price ? current : { ...current, purchase_price: price };
     });
   }, [calculatedPurchase]);
+  const packagingCalculator = <label className="label">Prix usine du conditionnement (FCFA)
+    <input className="input" type="number" min="0" placeholder="Ex. 6000 pour 6 pièces" value={factoryPurchaseTotal} onChange={(e) => setFactoryPurchaseTotal(e.target.value === "" ? "" : Number(e.target.value))} />
+    <span className="mt-1 block text-xs text-slate-500">Calculateur non enregistré · {purchaseFactor(form) ? `facteur ${purchaseFactor(form)} : total ÷ facteur → prix d'achat pièce` : "renseignez un conditionnement actif et son facteur"}.</span>
+  </label>;
   const autoSku = useRef("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -293,6 +298,7 @@ export default function Products() {
   const selection = useSelection(paged);
 
   function openCreate() {
+    setFactoryPurchaseTotal("");
     manualPurchase.current = false;
     previousPurchase.current = null;
     setPendingUuid(null);
@@ -305,8 +311,9 @@ export default function Products() {
 
   function openEdit(p: Product, entry?: PendingProduct) {
     if (readOnly && !entry) return;
+    setFactoryPurchaseTotal("");
     manualPurchase.current = false;
-    previousPurchase.current = piecePurchasePrice(p.supplier_purchase_price ?? "", purchaseFactor({ packaging_unit: p.packaging_unit || "", units_per_packaging: p.units_per_packaging || 1, packagings: p.packagings || [] }));
+    previousPurchase.current = null;
     setPendingUuid(entry?.payload.client_uuid ?? null);
     setEditing(entry ? null : p);
     setForm({
@@ -976,13 +983,7 @@ export default function Products() {
             />
           </div>
 <div>
-            <label className="label">Prix d'achat usine du conditionnement (FCFA)
-              <input className="input" type="number" min="0" placeholder="Ex. 6000 pour un carton de 6" value={form.supplier_purchase_price} onChange={(e) => setForm({ ...form, supplier_purchase_price: e.target.value === "" ? "" : Number(e.target.value) })} />
-            </label>
-            <p className="text-xs text-slate-500">Référence : {purchaseFactor(form) ? `${purchaseFactor(form)} ${form.base_unit || "pièce"}` : "renseignez un conditionnement et son facteur"}.</p>
-          </div>
-<div>
-            <label className="label">Prix d'achat pièce (coût pour le bénéfice, FCFA)</label>
+            <label className="label">Prix d'achat usine pièce (coût pour le bénéfice, FCFA)</label>
             <input
               type="number"
               className="input"
@@ -1088,15 +1089,16 @@ export default function Products() {
           )}
 <div><label className="label">Unité de base</label><input className="input" value={form.base_unit} placeholder="pièce, kg, litre…" onChange={(e) => setForm({ ...form, base_unit: e.target.value })} /></div>
 <div><label className="label">Conditionnement (facultatif)</label><input className="input" value={form.packaging_unit} placeholder="carton, paquet, boîte, sac…" onChange={(e) => setForm({ ...form, packaging_unit: e.target.value })} /></div>
-{form.packaging_unit && <>
+{form.packaging_unit.trim() && <>
             <div><label className="label">Pièces par carton</label><input className="input" type="number" min="1" step="1" value={form.units_per_packaging} onChange={(e) => setForm({ ...form, units_per_packaging: Number(e.target.value) })} /></div>
+            {packagingCalculator}
             <div><label className="label">Prix détail carton (vide = pièces × prix détail pièce)</label><input className="input" type="number" min="0" value={form.packaging_sale_price} onChange={(e) => setForm({ ...form, packaging_sale_price: e.target.value === "" ? "" : Number(e.target.value) })} /></div>
           </>}
 <div>
             <label className="label">Prix gros carton (FCFA, vide = calcul automatique)</label>
             <input type="number" min={0} className="input" value={form.wholesale_packaging_price} onChange={(e) => setForm({ ...form, wholesale_packaging_price: e.target.value === "" ? "" : Number(e.target.value) })} />
           </div>
-<ProductPackagings value={form.packagings} stock={form.quantity} baseUnit={form.base_unit} onChange={(packagings) => setForm({ ...form, packagings })} />
+<ProductPackagings value={form.packagings} stock={form.quantity} baseUnit={form.base_unit} factorCalculator={!form.packaging_unit.trim() ? packagingCalculator : undefined} onChange={(packagings) => setForm({ ...form, packagings })} />
 {form.packaging_unit && form.units_per_packaging > 0 && <p className="col-span-full text-xs text-slate-500">Disponible : {Math.floor(form.quantity / form.units_per_packaging)} {form.packaging_unit} + {form.quantity - Math.floor(form.quantity / form.units_per_packaging) * form.units_per_packaging} {form.base_unit || "pièce"}</p>}
 </section>
 <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -1115,6 +1117,7 @@ export default function Products() {
             />
           </div>
 {([
+            ["supplier_purchase_price", "Prix fournisseur pièce"],
             ["semi_wholesale_price", "Prix semi-gros pièce"],
             ["semi_wholesale_min_qty", "Seuil semi-gros (unités de base)"],
             ["wholesale_min_qty", "Seuil gros (unités de base)"],

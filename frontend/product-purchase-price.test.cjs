@@ -18,3 +18,15 @@ test('factory purchase follows reference packaging and FCFA rounding; manual edi
   assert.equal(calc(price,size),null);assert.equal(follow(777,calc(price,size),false),777);
  }
 });
+
+test('opening and saving an existing per-piece price never divides stored prices',()=>{
+ const {piecePurchasePrice:calc,followPurchasePrice:follow,purchaseFactor:factor}=helpers;
+ const stored={purchase_price:60,supplier_purchase_price:60,packaging_unit:'Carton',units_per_packaging:24,packagings:[]};
+ const calculatorTotal='';
+ const opened={...stored,purchase_price:follow(stored.purchase_price,calc(calculatorTotal,factor(stored)),false)};
+ const saved={...opened};
+ assert.deepEqual(saved,stored);
+ const calculated={...opened,purchase_price:follow(opened.purchase_price,calc(6000,6),false)};
+ assert.equal(calculated.purchase_price,1000);
+ assert.equal(calculated.supplier_purchase_price,60);
+});

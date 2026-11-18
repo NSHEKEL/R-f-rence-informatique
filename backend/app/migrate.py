@@ -337,8 +337,12 @@ def _packaging_retail_from_wholesale() -> None:
             return
         count = conn.execute(text("SELECT COUNT(*) FROM product_packagings WHERE price_gros > 0 AND (price_detail IS NULL OR price_detail <> price_gros)")).scalar_one()
     if count:
-        with Session(engine) as db:
-            backup.create(db, reason="migration-packaging-retail-v1", drive_background=False)
+        try:
+            with Session(engine) as db:
+                backup.create(db, reason="migration-packaging-retail-v1", drive_background=False, mirror_required=False)
+        except Exception:
+            logging.getLogger(__name__).exception("%s: sauvegarde locale impossible, migration différée", marker)
+            return
     with engine.begin() as conn:
         if conn.execute(select(AppMigration.name).where(AppMigration.name == marker)).first():
             return

@@ -5,9 +5,9 @@ export function purchaseFactor(form: { packaging_unit: string; units_per_packagi
   return [...form.packagings].filter((row) => row.active).sort((a, b) => a.sort_order - b.sort_order)[0]?.factor || null;
 }
 
-export function piecePurchasePrice(factory: number | "", factor: number | null): number | null {
-  return factory !== "" && Number.isFinite(factory) && factory > 0 && factor !== null && Number.isFinite(factor) && factor > 0
-    ? Math.round(factory / factor) : null;
+export function piecePurchasePrice(packagingTotal: number | "", factor: number | null): number | null {
+  return packagingTotal !== "" && Number.isFinite(packagingTotal) && packagingTotal > 0 && factor !== null && Number.isFinite(factor) && factor > 0
+    ? Math.round(packagingTotal / factor) : null;
 }
 
 export function followPurchasePrice(current: number, calculated: number | null, manual: boolean): number {

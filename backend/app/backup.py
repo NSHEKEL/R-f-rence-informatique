@@ -68,15 +68,15 @@ def _export_json(destination: Path) -> None:
     )
 
 
-def create(db: Session, *, reason: str = "manuelle", drive_background: bool = True) -> Path:
+def create(db: Session, *, reason: str = "manuelle", drive_background: bool = True, mirror_required: bool = True) -> Path:
     with BACKUP_LOCK:
-        target = _create(db, reason=reason)
+        target = _create(db, reason=reason, mirror_required=mirror_required)
         if IS_SQLITE and drive_background and reason in ("manuelle", "planifiee", "auto"):
             gdrive.enqueue(db, target)
         return target
 
 
-def _create(db: Session, *, reason: str) -> Path:
+def _create(db: Session, *, reason: str, mirror_required: bool = True) -> Path:
     """Write a new backup and return its path in the data directory."""
     target = backups_dir() / f"easygest-{_stamp()}-{reason}{SUFFIX}"
     if IS_SQLITE:
@@ -84,7 +84,7 @@ def _create(db: Session, *, reason: str) -> Path:
         try:
             target = _create_archive(reason)
             if settings is not None:
-                _mirror(target, settings.backup_dir or "")
+                _mirror(target, settings.backup_dir or "", required=mirror_required)
                 settings.last_backup_at = datetime.now(timezone.utc)
                 settings.last_backup_status = "ok"
                 settings.last_backup_error = ""
@@ -104,7 +104,7 @@ def _create(db: Session, *, reason: str) -> Path:
 
     settings = db.query(CompanySettings).first()
     if settings is not None:
-        _mirror(target, settings.backup_dir or "")
+        _mirror(target, settings.backup_dir or "", required=mirror_required)
         settings.last_backup_at = datetime.now(timezone.utc)
         db.commit()
         prune(settings.backup_keep or 30)
@@ -211,7 +211,7 @@ def inspect_backup(content: bytes) -> dict:
     return _read_backup(content)[0]
 
 
-def _mirror(source: Path, folder: str) -> None:
+def _mirror(source: Path, folder: str, *, required: bool = True) -> None:
     """Copy the backup onto the USB key / cloud folder chosen by the user."""
     if not folder.strip():
         return
@@ -220,10 +220,13 @@ def _mirror(source: Path, folder: str) -> None:
         destination.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, destination / source.name)
     except OSError as exc:
-        raise BackupError(
+        message = (
             f"Sauvegarde locale créée, mais copie vers « {folder} » "
             f"impossible : {exc}"
         )
+        if required:
+            raise BackupError(message) from exc
+        logging.getLogger(__name__).warning(message)
 
 
 def default_export_dir() -> Path:

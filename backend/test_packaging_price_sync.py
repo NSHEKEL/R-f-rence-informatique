@@ -6,7 +6,7 @@ from unittest.mock import patch
 from sqlalchemy import select
 
 from app import backup, migrate
-from app.models import AppMigration, ProductPackaging, Sale, SaleItem
+from app.models import AppMigration, CompanySettings, ProductPackaging, Sale, SaleItem
 import test_product_packagings as packs
 
 
@@ -70,8 +70,30 @@ class PackagingPriceSyncTests(unittest.TestCase):
     def test_failed_backup_leaves_prices_and_marker_untouched(self):
         self.db.add(ProductPackaging(product_id=self.product.id, name="Carton", factor=6, price_detail=9000, price_gros=6000)); self.db.commit()
         with patch.object(migrate, "engine", self.db.get_bind()), patch.object(backup, "create", side_effect=OSError("Backup indisponible")):
-            with self.assertRaises(OSError):
+            with self.assertLogs("app.migrate", level="ERROR"):
                 migrate._packaging_retail_from_wholesale()
         self.db.expire_all()
         self.assertEqual(self.db.query(ProductPackaging).one().price_detail, 9000)
         self.assertIsNone(self.db.get(AppMigration, "packaging_retail_from_wholesale_v1"))
+
+    def test_unavailable_mirror_does_not_block_verified_local_backup_or_migration(self):
+        self.db.add(ProductPackaging(product_id=self.product.id, name="Carton", factor=6, price_detail=9000, price_gros=6000))
+        settings = self.db.query(CompanySettings).first()
+        if settings is None:
+            settings = CompanySettings(name="Boutique")
+            self.db.add(settings)
+        settings.backup_dir = str(Path(self.temp.name) / "miroir")
+        self.db.commit()
+        binding = self.db.get_bind()
+        directory = Path(self.temp.name) / "backups"
+        directory.mkdir()
+        with patch.object(migrate, "engine", binding), patch.object(backup, "engine", binding), patch.object(backup, "IS_SQLITE", True), patch.object(backup, "backups_dir", return_value=directory), patch.object(backup.shutil, "copy2", side_effect=OSError("Miroir déconnecté")):
+            with self.assertLogs("app.backup", level="WARNING") as logged:
+                migrate._packaging_retail_from_wholesale()
+            self.assertIn("Miroir déconnecté", " ".join(logged.output))
+            archives = list(directory.glob("*"))
+            self.assertEqual(len(archives), 1)
+            backup.inspect_backup(archives[0].read_bytes())
+        self.db.expire_all()
+        self.assertEqual(self.db.query(ProductPackaging).one().price_detail, 6000)
+        self.assertIsNotNone(self.db.get(AppMigration, "packaging_retail_from_wholesale_v1"))
