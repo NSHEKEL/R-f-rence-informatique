@@ -110,6 +110,7 @@ def _detail(db: Session, session: CashSession, user: User) -> CashSessionDetail:
         **session_amounts(db, session).model_dump(include={
             "cash_sales", "other_sales", "sales_count", "deposits_total", "expected_cash",
             "sales", "entries_total", "exits_total", "cash_refunds", "cash_settlements",
+            "total_sales", "refunds_total", "net_sales", "expenses_total", "cash_expenses", "expenses",
         }),
     )
 
@@ -275,6 +276,7 @@ def session_amounts(db: Session, session: CashSession) -> CashSessionZ:
             payments = stored.get("payments", {})
             stored.setdefault("cash_sales", payments.get(CASH_PAYMENT, 0))
             stored.setdefault("other_sales", sum(v for k, v in payments.items() if k != CASH_PAYMENT))
+            stored.setdefault("net_sales", stored.get("total_sales", 0) - stored.get("refunds_total", 0))
             return CashSessionZ(**stored)
         except (ValueError, TypeError, AttributeError):
             raise HTTPException(status_code=409, detail="Clôture historique illisible : restauration nécessaire")
@@ -378,12 +380,14 @@ def session_amounts(db: Session, session: CashSession) -> CashSessionZ:
     entries = sum(m.amount for m in movements if m.type == "in")
     exits = sum(m.amount for m in movements if m.type == "out")
     cash_refunds = sum(r.total or 0 for r in returns if r.refund_method == CASH_PAYMENT)
+    refunds_total = sum(r.total or 0 for r in returns)
+    cash_expenses = sum(e.amount or 0 for e in expenses if e.payment_method == CASH_PAYMENT and not e.bank_account_id)
     expected = (
         session.opening_balance
         + payments.get(CASH_PAYMENT, 0.0)
         + cash_settlements
         - validated_deposits
-        + entries - exits - cash_refunds
+        + entries - exits - cash_refunds - cash_expenses
     )
     if session.closed_at is not None and session.expected_balance is not None:
         expected = session.expected_balance
@@ -392,6 +396,7 @@ def session_amounts(db: Session, session: CashSession) -> CashSessionZ:
         other_sales=sum(value for method, value in payments.items() if method != CASH_PAYMENT),
         entries_total=entries, exits_total=exits,
         cash_refunds=cash_refunds, cash_settlements=cash_settlements,
+        net_sales=total_sales - refunds_total, cash_expenses=cash_expenses,
         sales=[{
             "id": s.id, "reference": s.reference, "total": s.total or 0,
             "paid_amount": s.paid_amount or 0, "payment_method": s.payment_method or "",
@@ -413,7 +418,7 @@ def session_amounts(db: Session, session: CashSession) -> CashSessionZ:
         cancelled_count=cancelled_count,
         gift_total=gift_total,
         payments=payments,
-        refunds_total=sum(r.total or 0 for r in returns),
+        refunds_total=refunds_total,
         refunds=[
             {
                 "reference": r.reference,
@@ -431,7 +436,9 @@ def session_amounts(db: Session, session: CashSession) -> CashSessionZ:
         settlements=settlement_payments,
         expenses_total=sum(e.amount or 0 for e in expenses),
         expenses=[
-            {"label": e.label, "category": e.category, "amount": e.amount}
+            {"id": e.id, "label": e.label, "category": e.category, "amount": e.amount,
+             "date": e.date, "note": e.note or "", "user": e.created_by.name if e.created_by else "",
+             "payment_method": e.payment_method, "bank_account_id": e.bank_account_id}
             for e in expenses
         ],
         deposits_total=validated_deposits,

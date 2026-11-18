@@ -729,6 +729,12 @@ export interface CashSessionSaleLine {
 }
 
 export interface CashSessionDetail extends CashSession {
+  total_sales?: number | null;
+  refunds_total?: number | null;
+  net_sales?: number | null;
+  expenses_total?: number | null;
+  cash_expenses?: number | null;
+  expenses?: CashSessionExpense[];
   entries_total: number | null;
   exits_total: number | null;
   cash_refunds: number | null;
@@ -738,6 +744,17 @@ export interface CashSessionDetail extends CashSession {
   sales_count: number | null;
   expected_cash: number | null;
   sales?: CashSessionSaleLine[];
+}
+
+export interface CashSessionExpense {
+  id?: number;
+  label: string;
+  category?: string;
+  amount: number;
+  date?: string | null;
+  note?: string;
+  user?: string;
+  payment_method?: string | null;
 }
 
 export interface CashMovement {

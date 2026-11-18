@@ -938,6 +938,12 @@ class CashSessionDetail(CashSessionOut):
     cash_refunds: Optional[float] = None
     cash_settlements: Optional[float] = None
     sales: list[CashSessionSaleLine] = []
+    total_sales: Optional[float] = None
+    refunds_total: Optional[float] = None
+    net_sales: Optional[float] = None
+    expenses_total: Optional[float] = None
+    cash_expenses: Optional[float] = None
+    expenses: list[dict] = []
 
 
 class CashMovementCreate(BaseModel):
@@ -1889,6 +1895,8 @@ class CashSessionZ(BaseModel):
     business_day: str = ""
     opening_balance: float = 0
     total_sales: float = 0
+    net_sales: float = 0
+    cash_expenses: float = 0
     sales_count: int = 0
     cancelled_total: float = 0
     cancelled_count: int = 0

@@ -936,6 +936,8 @@ export default function Mobile() {
                       {row.label}
                       <span className="ml-1 text-[11px] text-slate-400">
                         {row.category}
+                        {row.date && ` · ${when(row.date)}`}
+                        {row.seller && ` · ${row.seller}`}
                       </span>
                     </span>
                     <span className="font-medium">{money(row.amount)}</span>

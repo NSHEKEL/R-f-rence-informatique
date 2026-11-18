@@ -14,6 +14,8 @@ export interface ZReportData {
   business_day: string;
   opening_balance: number;
   total_sales: number;
+  net_sales?: number;
+  cash_expenses?: number;
   sales_count: number;
   cancelled_total: number;
   cancelled_count: number;
@@ -106,6 +108,8 @@ export default function ZReport({
         label={`Total des ventes (${report.sales_count})`}
         value={formatXOF(report.total_sales)}
       />
+      <Row label="Ventes nettes après retours" value={formatXOF(report.net_sales ?? report.total_sales - (report.refunds_total ?? 0))} />
+      <Row label="Dépenses espèces" value={formatXOF(report.cash_expenses)} />
       <Row
         label={`Retours / annulations (${report.cancelled_count})`}
         value={formatXOF(report.cancelled_total)}

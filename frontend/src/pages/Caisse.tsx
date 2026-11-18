@@ -9,6 +9,7 @@ import CashTicket, { type CashTicketKind } from "../components/CashTicket";
 import ZReport, { type ZReportData } from "../components/ZReport";
 import Modal from "../components/Modal";
 import PrinterHint from "../components/PrinterHint";
+import CashExpenses from "../components/CashExpenses";
 import { enterFullscreen, leaveFullscreen } from "../lib/fullscreen";
 import { printReceipt } from "../lib/print";
 import { useAuth } from "../context/AuthContext";
@@ -290,6 +291,10 @@ export default function Caisse() {
               ["Fonds d'ouverture", formatXOF(today.opening_balance)],
               ["Ventes espèces", formatXOF(today.cash_sales)],
               ["Autres paiements", formatXOF(today.other_sales)],
+              ["Ventes brutes", formatXOF(today.total_sales ?? (today.cash_sales ?? 0) + (today.other_sales ?? 0))],
+              ["Retours / remboursements (tous modes)", formatXOF(today.refunds_total ?? today.cash_refunds)],
+              ["Ventes nettes après retours", formatXOF(today.net_sales ?? (today.cash_sales ?? 0) + (today.other_sales ?? 0) - (today.cash_refunds ?? 0))],
+              ["Dépenses espèces", formatXOF(today.cash_expenses)],
               ["Recettes de caisse", formatXOF(today.entries_total)],
               ["Sorties de caisse", formatXOF(today.exits_total)],
               ["Règlements espèces nets", formatXOF(today.cash_settlements)],
@@ -360,6 +365,7 @@ export default function Caisse() {
           </div>}
 
           {!canBalances && <p className="mt-4 text-sm text-slate-500">Les soldes ne sont pas accessibles avec vos droits.</p>}
+          {canBalances && <section className="space-y-2"><h3 className="text-sm font-bold text-slate-900">Dépenses de la session</h3><CashExpenses items={today.expenses ?? []} /><p className="text-xs text-slate-500">Les ventes nettes déduisent tous les retours. Le solde attendu correspond aux espèces : fonds, ventes et règlements espèces, recettes, moins remboursements espèces, dépenses espèces, sorties et versements validés. Les dépenses sans mode de paiement restent à qualifier.</p></section>}
           {closed && today.difference != null && (
             <p
               className={`rounded-xl px-4 py-3 text-sm font-semibold ${
