@@ -207,6 +207,7 @@ def mirror(payload: MirrorRequest, db: Session = Depends(get_db)):
         row.role = user.role
         row.hashed_password = user.hashed_password
         row.is_active = user.is_active
+        row.cash_permissions = json.dumps(user.cash_permissions)
     for row in known.values():
         # An account removed at the counter loses its phone access, but its
         # sales stay readable by the shop.
@@ -307,6 +308,8 @@ def mirror(payload: MirrorRequest, db: Session = Depends(get_db)):
         new_requests.append(req)
 
     installation.last_seen = utcnow()
+    if payload.cash_balances is not None:
+        installation.cash_balances = payload.cash_balances.model_dump_json()
     db.commit()
 
     # Real-time fan-out: consoles watching right now are told within a second.

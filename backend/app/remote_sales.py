@@ -11,11 +11,13 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from . import licensing
 from .database import SessionLocal
 from .models import CompanySettings, Expense, Sale, SaleReturn, SupportRequest, User
+from .permissions import has_permission
 
 # Window of sales kept on the central server for the phone.
 MIRROR_DAYS = 120
@@ -139,9 +141,32 @@ def _users(db: Session) -> list[dict]:
             "role": user.role or "",
             "hashed_password": user.hashed_password,
             "is_active": bool(user.is_active),
+            "cash_permissions": [key for key in ("soldes_consulter", "clotures_consulter", "caisse_z")
+                                 if has_permission(db, user, key)],
         }
         for user in db.query(User).all()
     ]
+
+
+def _cash_balances(db: Session) -> dict:
+    from .routers import cash
+
+    now = datetime.now(timezone.utc)
+    sessions = []
+    for user in db.query(User).all():
+        session = cash.current_session(db, user) or cash.day_session(db, user)
+        if session is None:
+            continue
+        try:
+            expected = cash.session_amounts(db, session).expected_cash
+        except (HTTPException, ValueError, TypeError):
+            expected = None
+        sessions.append({
+            "key": f"{user.email.lower()}:{session.id}:{session.opened_at.isoformat()}",
+            "seller_email": user.email.lower(), "closed": session.closed_at is not None,
+            "expected_cash": expected,
+        })
+    return {"day": now.date().isoformat(), "generated_at": now.isoformat(), "sessions": sessions}
 
 
 def _support_requests(db: Session) -> list[dict]:
@@ -189,6 +214,7 @@ def push(db: Session) -> dict:
             "returns": _returns(db),
             "expenses": _expenses(db),
             "support_requests": _support_requests(db),
+            "cash_balances": _cash_balances(db),
             # Magasin identity, so the console can name each installation.
             "shop_name": (company.name if company else "") or "",
             "city": (company.city if company else "") or "",

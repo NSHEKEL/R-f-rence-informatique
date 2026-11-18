@@ -10,6 +10,7 @@ import ZReport, { type ZReportData } from "../components/ZReport";
 import Modal from "../components/Modal";
 import PrinterHint from "../components/PrinterHint";
 import CashExpenses from "../components/CashExpenses";
+import CashProductMovements from "../components/CashProductMovements";
 import { enterFullscreen, leaveFullscreen } from "../lib/fullscreen";
 import { printReceipt } from "../lib/print";
 import { useAuth } from "../context/AuthContext";
@@ -406,6 +407,8 @@ export default function Caisse() {
           </tr>)}</tbody>
         </table>{movements.length === 0 && <p className="py-3 text-sm text-slate-500">Aucun mouvement de caisse.</p>}</div>
       </div>}
+
+      {today && <CashProductMovements session={today} history={history} version={version} />}
 
       {canClosures && <div className="card p-5">
         <h2 className="mb-3 text-sm font-bold text-slate-900">

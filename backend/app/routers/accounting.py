@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from .. import remote_sales
 from ..models import Expense, Product, Sale, SaleReturn, User
 from ..permissions import require_permission
 from ..profits import unit_cost
@@ -159,6 +160,7 @@ def create_expense(
     db.add(expense)
     db.commit()
     db.refresh(expense)
+    remote_sales.schedule()
     return expense
 
 
@@ -173,3 +175,4 @@ def delete_expense(
         raise HTTPException(status_code=404, detail="Dépense introuvable")
     db.delete(expense)
     db.commit()
+    remote_sales.schedule()

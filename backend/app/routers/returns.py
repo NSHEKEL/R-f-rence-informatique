@@ -145,10 +145,9 @@ def create_return(
     db.add(
         Notification(
             kind="retour",
-            title=f"Avoir {credit.reference} — ticket {sale.reference}",
+            title=f"Retour {credit.reference}",
             message=(
-                f"{current_user.name} a enregistré un retour de "
-                f"{total:,.0f} FCFA".replace(",", " ")
+                f"−{total:,.0f} FCFA · Ticket {sale.reference} · {current_user.name}".replace(",", " ")
             ),
             link="/retours",
             sale_id=sale.id,

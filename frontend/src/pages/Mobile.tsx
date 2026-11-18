@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "../context/ThemeContext";
 import { PUBLISHER } from "../lib/publisher";
+import { mobileNotifications } from "../lib/mobileNotifications";
 
 /**
  * Consultation of the shop from a phone, wherever it is.
@@ -74,8 +75,13 @@ interface Summary {
   company: string;
   today_total: number;
   today_count: number;
+  today_returns_total?: number;
+  today_returns_count?: number;
+  today_expected_cash?: number | null;
   month_total: number;
   month_count: number;
+  month_returns_total?: number;
+  month_returns_count?: number;
   sales_count: number;
   last_sync: string;
 }
@@ -206,6 +212,7 @@ export default function Mobile() {
   const [fresh, setFresh] = useState("");
   const [showNotifs, setShowNotifs] = useState(false);
   const known = useRef<string>("");
+  const knownReturn = useRef<string | null>(null);
 
   const signOut = useCallback(() => {
     localStorage.removeItem(SESSION_KEY);
@@ -213,6 +220,8 @@ export default function Mobile() {
     setSession(null);
     setSales([]);
     setCredits([]);
+    known.current = "";
+    knownReturn.current = null;
     setSummary(null);
     setTeam([]);
     setAccounting(null);
@@ -225,16 +234,24 @@ export default function Mobile() {
       if (!silent) setBusy(true);
       try {
         const headers = { Authorization: `Bearer ${session.token}` };
-        const [list, totals] = await Promise.all([
+        const [list, totals, refunds] = await Promise.all([
           api.get<MobileSale[]>("/sales", { headers, params: { search } }),
           api.get<Summary>("/summary", { headers }),
+          api.get<MobileReturn[]>("/returns", { headers }),
         ]);
         const latest = list.data[0]?.reference ?? "";
         if (known.current && latest && latest !== known.current) {
-          setFresh(latest);
+          setFresh(`Nouvelle vente : ${latest}`);
           window.setTimeout(() => setFresh(""), 6000);
         }
         known.current = latest;
+        const latestReturn = refunds.data[0];
+        if (knownReturn.current !== null && latestReturn && latestReturn.reference !== knownReturn.current) {
+          setFresh(`Retour ${latestReturn.reference} : −${money(Math.abs(latestReturn.total))} · Ticket ${latestReturn.sale_reference}`);
+          window.setTimeout(() => setFresh(""), 6000);
+        }
+        knownReturn.current = latestReturn?.reference ?? "";
+        setCredits(refunds.data);
         setSales(list.data);
         setSummary(totals.data);
         setError("");
@@ -293,12 +310,6 @@ export default function Mobile() {
         })
         .then((res) => setExpenses(res.data))
         .catch(() => setExpenses(null));
-    }
-    if (tab === "ventes") {
-      api
-        .get<MobileReturn[]>("/returns", { headers })
-        .then((res) => setCredits(res.data))
-        .catch(() => setCredits([]));
     }
     if (tab === "apropos") {
       api
@@ -431,7 +442,7 @@ export default function Mobile() {
 
       {fresh && (
         <p className="bg-emerald-600 px-4 py-2 text-center text-sm font-medium text-white">
-          Nouvelle vente : {fresh}
+          {fresh}
         </p>
       )}
 
@@ -513,30 +524,32 @@ export default function Mobile() {
             {showNotifs && (
               <div className="rounded-xl bg-white p-3 shadow-sm dark:bg-slate-900">
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                  Dernières ventes
+                  Dernières ventes et retours
                 </p>
-                {sales.length === 0 && (
+                {sales.length === 0 && credits.length === 0 && (
                   <p className="py-2 text-sm text-slate-400">
                     Aucune notification récente.
                   </p>
                 )}
-                {sales.slice(0, 5).map((s) => (
+                {mobileNotifications(sales, credits).slice(0, 5).map((s) => (
                   <button
-                    key={s.reference}
+                    key={s.key}
                     onClick={() => {
                       setShowNotifs(false);
                       setTab("ventes");
+                      setShowReturns(s.isReturn);
                     }}
                     className="flex w-full items-center justify-between border-t border-slate-100 py-2 text-left first:border-0 dark:border-slate-800"
                   >
                     <span className="text-sm font-medium">
-                      {s.reference}
+                      {s.title}
                       <span className="ml-2 text-xs font-normal text-slate-400">
                         {when(s.date)}
                       </span>
+                      {s.secondary && <span className="block text-xs font-normal text-slate-500">{s.secondary}</span>}
                     </span>
-                    <span className="text-sm font-semibold text-brand-600 dark:text-brand-300">
-                      {money(s.total)}
+                    <span className={`text-sm font-semibold ${s.isReturn ? "text-red-700 dark:text-red-300" : "text-brand-600 dark:text-brand-300"}`}>
+                      {money(s.amount)}
                     </span>
                   </button>
                 ))}
@@ -641,8 +654,10 @@ export default function Mobile() {
                     {money(summary.today_total)}
                   </p>
                   <p className="text-xs text-slate-400">
-                    {summary.today_count} vente(s)
+                    {summary.today_count} vente(s) · Net après retours
                   </p>
+                  <p className="text-xs text-red-700 dark:text-red-300">Retours : −{money(summary.today_returns_total ?? 0)} ({summary.today_returns_count ?? 0})</p>
+                  <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">Solde attendu : {summary.today_expected_cash == null ? "non disponible (synchronisation / droits)" : money(summary.today_expected_cash)} · dernière synchronisation</p>
                 </div>
                 <div className="rounded-xl bg-white p-3 shadow-sm dark:bg-slate-900">
                   <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -652,8 +667,9 @@ export default function Mobile() {
                     {money(summary.month_total)}
                   </p>
                   <p className="text-xs text-slate-400">
-                    {summary.month_count} vente(s)
+                    {summary.month_count} vente(s) · Net après retours
                   </p>
+                  <p className="text-xs text-red-700 dark:text-red-300">Retours : −{money(summary.month_returns_total ?? 0)} ({summary.month_returns_count ?? 0})</p>
                 </div>
               </div>
             )}
@@ -672,8 +688,10 @@ export default function Mobile() {
                     {money(summary.today_total)}
                   </p>
                   <p className="text-xs text-slate-400">
-                    {summary.today_count} vente(s)
+                    {summary.today_count} vente(s) · Net après retours
                   </p>
+                  <p className="text-xs text-red-700 dark:text-red-300">Retours : −{money(summary.today_returns_total ?? 0)} ({summary.today_returns_count ?? 0})</p>
+                  <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">Solde attendu : {summary.today_expected_cash == null ? "non disponible (synchronisation / droits)" : money(summary.today_expected_cash)} · dernière synchronisation</p>
                 </div>
                 <div className="rounded-xl bg-white p-3 shadow-sm dark:bg-slate-900">
                   <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -683,8 +701,9 @@ export default function Mobile() {
                     {money(summary.month_total)}
                   </p>
                   <p className="text-xs text-slate-400">
-                    {summary.month_count} vente(s)
+                    {summary.month_count} vente(s) · Net après retours
                   </p>
+                  <p className="text-xs text-red-700 dark:text-red-300">Retours : −{money(summary.month_returns_total ?? 0)} ({summary.month_returns_count ?? 0})</p>
                 </div>
               </div>
             )}

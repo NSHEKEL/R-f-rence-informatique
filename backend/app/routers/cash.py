@@ -1,12 +1,14 @@
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import and_, or_, update
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from ..auth import get_current_user, require_admin
+from .. import remote_sales
 from ..database import get_db
 from ..models import (
     BankDeposit,
@@ -14,11 +16,13 @@ from ..models import (
     CashMovement,
     CompanySettings,
     DebtPayment,
+    Depot,
     Expense,
     Notification,
     Order,
     Sale,
     SaleReturn,
+    StockMovement,
     User,
 )
 from ..permissions import has_permission, require_permission
@@ -158,6 +162,69 @@ def list_movements(session_id: int, db: Session = Depends(get_db), user: User = 
     return result
 
 
+@router.get("/{session_id}/product-movements")
+def product_movements(
+    session_id: int,
+    period: Literal["session", "today", "custom"] = "session",
+    date_from: date | None = None,
+    date_to: date | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not (has_permission(db, user, "caisse") or has_permission(db, user, "inventaire")):
+        raise HTTPException(403, "Accès refusé : mouvements de produits")
+    session = _session_or_404(db, session_id)
+    if session.opened_by_id != user.id and not has_permission(db, user, "clotures_consulter"):
+        raise HTTPException(403, "Session d'un autre caissier")
+    now = datetime.now(timezone.utc)
+    if period == "today":
+        date_from = date_to = now.date()
+    if period == "custom" and not (date_from or date_to):
+        raise HTTPException(400, "Choisissez au moins une date")
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(400, "Période inversée")
+    start = session.opened_at.replace(tzinfo=None)
+    end = (session.closed_at or now).replace(tzinfo=None)
+    if date_from:
+        start = max(start, datetime.combine(date_from, time.min))
+    if date_to:
+        end = min(end, datetime.combine(date_to, time.max))
+    depot = db.query(Depot).filter(Depot.is_default.is_(True)).first()
+    query = db.query(StockMovement).options(
+        joinedload(StockMovement.product), joinedload(StockMovement.created_by),
+    ).filter(StockMovement.date >= start, StockMovement.date <= end)
+    if depot:
+        query = query.filter(or_(StockMovement.depot_id == depot.id, StockMovement.depot_id.is_(None)))
+    else:
+        query = query.filter(StockMovement.depot_id.is_(None))
+    items, products = [], {}
+    for movement in query.order_by(StockMovement.date.desc(), StockMovement.id.desc()).all():
+        product = movement.product
+        name = movement.product_name or (product.name if product else "")
+        sku = product.sku if product else ""
+        unit = movement.base_unit or (product.base_unit if product else "") or "pièce"
+        quantity = movement.quantity or 0
+        items.append({
+            "id": movement.id, "type": movement.kind, "product_id": movement.product_id,
+            "product_name": name, "sku": sku, "quantity": quantity, "base_unit": unit,
+            "direction": "entree" if quantity > 0 else "sortie" if quantity < 0 else "neutre",
+            "date": movement.date, "user": movement.created_by.name if movement.created_by else "",
+            "reason": movement.reason or "",
+        })
+        key = movement.product_id if movement.product_id is not None else (None, name)
+        total = products.setdefault(key, {"product_id": movement.product_id, "product_name": name,
+                                          "sku": sku, "base_unit": unit, "entries": 0, "exits": 0, "net": 0})
+        total["entries"] += max(quantity, 0)
+        total["exits"] += max(-quantity, 0)
+        total["net"] += quantity
+    totals = {key: sum(product[key] for product in products.values()) for key in ("entries", "exits", "net")}
+    return {"session_id": session.id, "depot_id": depot.id if depot else None,
+            "depot_name": depot.name if depot else "Principal (historique)",
+            "date_from": start, "date_to": end, "items": items,
+            "products": sorted(products.values(), key=lambda product: product["product_name"].casefold()),
+            "totals": totals}
+
+
 @router.post("/movements", response_model=CashMovementOut)
 def create_movement(payload: CashMovementCreate, request: Request,
                     db: Session = Depends(get_db), user: User = Depends(get_current_user)):
@@ -177,6 +244,7 @@ def create_movement(payload: CashMovementCreate, request: Request,
     db.add(row)
     db.commit()
     db.refresh(row)
+    remote_sales.schedule()
     out = CashMovementOut.model_validate(row)
     if not has_permission(db, user, "soldes_consulter"):
         out.amount = None
@@ -214,6 +282,7 @@ def open_session(
     )
     db.commit()
     db.refresh(session)
+    remote_sales.schedule()
     return _detail(db, session, current_user)
 
 
@@ -258,6 +327,7 @@ def close_session(
     )
     db.commit()
     db.refresh(session)
+    remote_sales.schedule()
     return _detail(db, session, current_user)
 
 
@@ -516,4 +586,5 @@ def reopen_session(
     )
     db.commit()
     db.refresh(session)
+    remote_sales.schedule()
     return _detail(db, session, current_user)
