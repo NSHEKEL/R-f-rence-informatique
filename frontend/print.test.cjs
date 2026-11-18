@@ -63,6 +63,28 @@ function setup(api = {}) {
 
 const receipt = { printer_name: "Ticket Fichier Test", copies: 2, margin_mm: 3 };
 
+test("automatic cash documents use the browser dialog without native bridges and clean copies", async () => {
+  for (const format of ['A4', '80mm', '58mm']) {
+    for (const printer_name of ['', receipt.printer_name]) {
+      const ctx = setup();
+      assert.equal(await ctx.printAutomaticDocument(format, { ...receipt, printer_name }), false);
+      assert.equal(ctx.calls.dialogs, 1); assert.equal(ctx.calls.alerts.length, 0);
+      assert.equal(ctx.calls.removed, 1);
+    }
+  }
+});
+
+test("automatic cash documents keep native success and failure controlled without browser fallback", async () => {
+  let sent = 0;
+  const ctx = setup({ print_to: async () => { sent++; return true; } });
+  await ctx.printAutomaticDocument('A4', receipt);
+  assert.equal(sent, 1); assert.equal(ctx.calls.dialogs, 0); assert.equal(ctx.calls.removed, 1);
+  const failed = setup({ print_to: async () => false });
+  await assert.rejects(failed.printAutomaticDocument('A4', receipt), /Ticket non envoyé/);
+  assert.equal(failed.calls.dialogs, 0); assert.equal(failed.calls.alerts.length, 0);
+  assert.equal(failed.calls.removed, 1);
+});
+
 test("selected system ticket font uses the Windows page printer, not fixed-font RAW", async () => {
   let printed = 0;
   const ctx = setup({ print_to: async () => { printed++; return true; }, print_ticket: () => assert.fail('system fonts cannot use RAW') });

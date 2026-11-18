@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useSyncExternalStore, type ReactNode } from "react";
 import type { ReceiptPrinterConfig } from "../types";
-import { printReceipt } from "../lib/print";
+import { printAutomaticDocument } from "../lib/print";
 import { receiptPrintRunner } from "../lib/printJob";
 
 export default function AutomaticDocumentPrint({ children, config, onDone }: {
@@ -26,7 +26,7 @@ export default function AutomaticDocumentPrint({ children, config, onDone }: {
       document.body.appendChild(root);
       try {
         await Promise.allSettled(Array.from(root.querySelectorAll("img")).map((image) => image.decode()));
-        await printReceipt(config.width, config, [], { controlled: true });
+        await printAutomaticDocument(config.width, config);
       } finally { root.remove(); }
     }, (status) => { if (status.state === "error") { error = status.message; finish(); } }, jobId).then(finish);
     // eslint-disable-next-line react-hooks/exhaustive-deps

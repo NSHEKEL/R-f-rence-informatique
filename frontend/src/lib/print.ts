@@ -432,6 +432,13 @@ export function labelPrintStyle(config: LabelPrinterConfig): string {
  * single dialog produces the whole set. Resolves to true when the drawer kick
  * travelled with the ticket, so the caller knows the till is already open.
  */
+export async function printAutomaticDocument(format: ReceiptFormat, config: ReceiptPrinterConfig): Promise<boolean> {
+  if (desktopTicket() || desktopPrint() || desktopPrintTo()) {
+    return printReceipt(format, config, [], { controlled: true });
+  }
+  return printReceipt(format, { ...config, printer_name: "" });
+}
+
 export async function printReceipt(
   format: ReceiptFormat,
   config: ReceiptPrinterConfig = DEFAULT_PRINTING.receipt,
