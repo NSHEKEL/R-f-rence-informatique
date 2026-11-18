@@ -970,6 +970,15 @@ export default function Products() {
             />
           </div>
 <div>
+            <label className="label">Prix détail pièce (FCFA)</label>
+            <input
+              type="number"
+              className="input"
+              value={form.sale_price || ""}
+              onChange={(e) => setForm({ ...form, sale_price: Number(e.target.value) })}
+            />
+          </div>
+<div>
             <label className="label">Stock en unités de base (stock initial à la création)</label>
             <input
               type="number"
@@ -1070,15 +1079,6 @@ export default function Products() {
 <h4 className="col-span-full font-semibold">Autres informations et tarifs</h4>
 <label className="label">Rayon<input className="input" maxLength={200} value={form.rayon} onChange={(e) => setForm({ ...form, rayon: e.target.value })} /></label>
 <label className="label">Emplacement<input className="input" maxLength={200} value={form.emplacement} onChange={(e) => setForm({ ...form, emplacement: e.target.value })} /></label>
-<div>
-            <label className="label">Prix détail pièce (FCFA)</label>
-            <input
-              type="number"
-              className="input"
-              value={form.sale_price || ""}
-              onChange={(e) => setForm({ ...form, sale_price: Number(e.target.value) })}
-            />
-          </div>
 <div>
             <label className="label">Prix gros pièce (FCFA, 0 = détail)</label>
             <input
