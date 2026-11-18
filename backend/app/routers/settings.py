@@ -196,7 +196,7 @@ class _PrinterName(BaseModel):
 
 
 @router.get("/printers/status", response_model=PrinterDevice)
-def printer_status(name: str, _: User = Depends(local_peripheral_permission("poste_consulter", "imprimantes_consulter", "vente_nouvelle"))):
+def printer_status(name: str, _: User = Depends(require_any_permission("poste_consulter", "imprimantes_consulter", "vente_nouvelle"))):
     """Live state of one queue: jobs waiting, paused, offline, no paper."""
     device = printing.queue_status(name)
     if device is None:
@@ -208,7 +208,7 @@ def printer_status(name: str, _: User = Depends(local_peripheral_permission("pos
 
 @router.post("/printers/default")
 def set_default_printer(
-    payload: _PrinterName, _: User = Depends(local_peripheral_permission("imprimantes_modifier"))
+    payload: _PrinterName, _: User = Depends(require_permission("imprimantes_modifier"))
 ):
     """Make a queue the Windows default printer of this computer."""
     if not printing.set_default_printer(payload.name):
@@ -221,7 +221,7 @@ def set_default_printer(
 
 @router.post("/printers/preferences")
 def printer_preferences(
-    payload: _PrinterName, _: User = Depends(local_peripheral_permission("poste_modifier", "imprimantes_modifier", "vente_nouvelle"))
+    payload: _PrinterName, _: User = Depends(require_any_permission("poste_modifier", "imprimantes_modifier", "vente_nouvelle"))
 ):
     """Open the driver's own preferences dialog for a queue."""
     if printing.queue_status(payload.name) is None:
@@ -243,7 +243,7 @@ class _PrintTest(BaseModel):
 
 @router.post("/printers/test")
 def test_printer(
-    payload: _PrintTest, _: User = Depends(local_peripheral_permission("poste_modifier", "imprimantes_modifier", "vente_nouvelle"))
+    payload: _PrintTest, _: User = Depends(require_any_permission("poste_modifier", "imprimantes_modifier", "vente_nouvelle"))
 ):
     """Really send a small document through the spooler, then report the
     queue's state — « envoyé » alone does not mean « imprimé »."""
@@ -286,7 +286,7 @@ def test_printer(
 @router.post("/company/open-drawer")
 def open_cash_drawer(
     payload: dict[str, str] | None = None,
-    db: Session = Depends(get_db), _: User = Depends(local_peripheral_permission("caisse_operations", "peripheriques_modifier"))
+    db: Session = Depends(get_db), _: User = Depends(require_any_permission("caisse_operations", "peripheriques_modifier"))
 ):
     """Open the electronic cash drawer wired to this counter."""
     settings = _get_or_create(db)

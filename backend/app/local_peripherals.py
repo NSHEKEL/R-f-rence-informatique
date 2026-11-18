@@ -32,7 +32,7 @@ def _local_source(request: Request) -> bool:
 
 
 def local_peripheral_permission(*keys: str):
-    """Local device access, with normal rights whenever the identity is known."""
+    """Read-only printer discovery, with normal rights for known identities."""
     def guard(request: Request, token: str | None = Depends(optional_token), db: Session = Depends(get_db)):
         if token:
             try:
@@ -50,7 +50,7 @@ def local_peripheral_permission(*keys: str):
                 if not any(has_permission(db, user, key) for key in keys):
                     raise HTTPException(status_code=403, detail="Accès refusé")
                 return user
-        if _local_source(request):
+        if request.method == "GET" and request.url.path in {"/api/settings/printers", "/api/settings/printers/diagnose"} and _local_source(request):
             return None
         raise HTTPException(status_code=401, detail="Service périphérique local : authentification locale requise ou accès depuis la fenêtre EasyGest de ce poste.")
     return guard

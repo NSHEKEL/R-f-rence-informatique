@@ -39,7 +39,7 @@ class LocalPeripheralTests(unittest.TestCase):
         self.local = create_access_token(self.user)
 
     def call(self, path, method="GET", payload=None, host="127.0.0.1", token=None, **headers):
-        headers = {"Authorization": f"Bearer {token or self.foreign}", **headers}
+        headers = {**({"Authorization": f"Bearer {self.foreign if token is None else token}"} if token != "" else {}), **headers}
 
         async def request():
             transport = httpx.ASGITransport(app=self.app, client=(host, 12345))
@@ -60,6 +60,13 @@ class LocalPeripheralTests(unittest.TestCase):
                 self.assertEqual(response.json()["devices"], [])
             self.assertEqual(self.call("/api/settings/printers/diagnose").json(), {"stage": "OK"})
 
+    def test_anonymous_loopback_discovery_allowed_but_remote_refused(self):
+        with patch.object(settings.printing, "printer_devices", return_value=[]), patch.object(settings.printing, "default_printer", return_value=""), patch.object(settings.printing, "diagnose", return_value={"stage": "OK"}):
+            for path in ("/api/settings/printers", "/api/settings/printers/diagnose"):
+                for host in ("127.0.0.1", "::1"):
+                    self.assertEqual(self.call(path, token="", host=host).status_code, 200)
+                self.assertEqual(self.call(path, token="", host="192.168.1.50").status_code, 401)
+
     def test_remote_and_untrusted_browser_sources_cannot_use_local_fallback(self):
         with patch.object(settings.printing, "diagnose") as diagnose:
             for headers in ({"Origin": "http://127.0.0.1:8000"}, {"X-Forwarded-For": "127.0.0.1"}):
@@ -69,16 +76,23 @@ class LocalPeripheralTests(unittest.TestCase):
                 self.assertEqual(self.call("/api/settings/printers/diagnose", **headers).status_code, 401, headers)
             diagnose.assert_not_called()
 
-    def test_printer_test_preferences_default_status_and_drawer_are_local_only(self):
+    def test_actions_require_local_authentication_even_on_loopback(self):
         cases = [("/api/settings/printers/test", "POST", {"printer_name": "Test"}), ("/api/settings/printers/default", "POST", {"name": "Test"}), ("/api/settings/printers/preferences", "POST", {"name": "Test"}), ("/api/settings/printers/status?name=Test", "GET", None), ("/api/settings/company/open-drawer", "POST", {"drawer_port": "COM1"})]
         with patch("app.escpos.send") as send, patch.object(settings.printing, "queue_status", return_value=None), patch.object(settings.printing, "set_default_printer", return_value=True), patch.object(settings.printing, "open_preferences"), patch.object(settings.drawer, "open_drawer", return_value="COM1") as drawer:
             for path, method, payload in cases:
                 with self.subTest(path=path):
                     self.assertEqual(self.call(path, method, payload, host="192.168.1.50").status_code, 401)
-                    response = self.call(path, method, payload, Origin="http://127.0.0.1:8000", **{"sec-fetch-site": "same-origin"})
+                    for token in ("", self.foreign):
+                        self.assertEqual(self.call(path, method, payload, token=token).status_code, 401)
+                        self.assertEqual(self.call(path, method, payload, token=token, Origin="http://127.0.0.1:8000", **{"sec-fetch-site": "same-origin"}).status_code, 401)
+                    response = self.call(path, method, payload, token=self.local)
                     self.assertEqual(response.status_code, 404 if method == "GET" or path.endswith("preferences") else 200, response.text)
             send.assert_called_once()
             drawer.assert_called_once()
+            self.user.role = "gestionnaire"
+            self.db.commit()
+            for path, method, payload in cases:
+                self.assertEqual(self.call(path, method, payload, token=self.local).status_code, 403)
 
     def test_verified_local_permissions_and_revocations_are_not_bypassed(self):
         with patch.object(settings.printing, "diagnose", return_value={"ok": True}):
