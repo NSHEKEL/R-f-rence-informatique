@@ -559,7 +559,7 @@ export default function PrintingSettings({
         <button type="button" className="btn-ghost" onClick={() => {
           localApi.get<Record<string, unknown>>("/settings/printers/diagnose")
             .then((res) => setDiagnostics(res.data))
-            .catch(() => setActionMessage("Diagnostic indisponible."));
+            .catch((err) => setActionMessage(`Diagnostic indisponible : ${axios.isAxiosError(err) ? apiErrorMessage(err.response?.data?.detail, err.message) : String(err)}`));
         }}>Diagnostic</button>
         {diagnostics && <DiagnosePanel data={diagnostics} received={devices.length} />}
         {devices.length === 0 ? (
