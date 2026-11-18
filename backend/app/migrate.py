@@ -56,6 +56,7 @@ COLUMNS: dict[str, dict[str, str]] = {
         "is_gift": f"BOOLEAN DEFAULT {FALSE_LITERAL}",
     },
     "products": {
+        "client_uuid": "VARCHAR(64)",
         "rayon": "VARCHAR",
         "emplacement": "VARCHAR",
         "qr_code": "VARCHAR DEFAULT ''",
@@ -219,6 +220,7 @@ COLUMNS["sale_items"].update({
 })
 
 INDEXES = [
+    "CREATE UNIQUE INDEX IF NOT EXISTS ix_products_client_uuid ON products (client_uuid)",
     "CREATE UNIQUE INDEX IF NOT EXISTS ix_sales_client_id ON sales (client_id)",
 ]
 

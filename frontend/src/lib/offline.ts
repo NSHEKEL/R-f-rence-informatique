@@ -1,6 +1,6 @@
 import api from "../api/client";
 import { apiErrorMessage } from "./apiErrors";
-import type { Sale } from "../types";
+import type { Product, Sale } from "../types";
 
 const CACHE_PREFIX = "ri_cache_";
 const QUEUE_KEY = "ri_pending_sales";
@@ -146,6 +146,98 @@ export function newClientId(): string {
 export interface SyncResult {
   synced: number;
   rejected: string[];
+}
+
+export type ProductPayload = Omit<Product, "id" | "created_at" | "category" | "supplier" | "sold_quantity" | "last_sold_at"> & {
+  client_uuid: string;
+  initial_expiry_date?: string | null;
+};
+
+export interface PendingProduct {
+  payload: ProductPayload;
+  updated_at: string;
+  reason: string;
+  attempted?: boolean;
+}
+
+function productQueueKey(): string {
+  let user = "local";
+  try { user = String(JSON.parse(localStorage.getItem("ri_auth_cache") || "{}").user?.id || user); } catch { /* no cached login */ }
+  return `ri_pending_products:${localStorage.getItem("ri_server_url") || "local"}:${user}`;
+}
+
+function readProducts(key: string): PendingProduct[] {
+  const raw = localStorage.getItem(key);
+  return raw ? JSON.parse(raw) as PendingProduct[] : [];
+}
+
+function writeProducts(key: string, entries: PendingProduct[]): void {
+  try { localStorage.setItem(key, JSON.stringify(entries)); }
+  catch { throw new Error("Stockage local plein ou indisponible : libérez de l'espace avant d'enregistrer."); }
+  window.dispatchEvent(new Event("ri:queue"));
+}
+
+export function pendingProducts(): PendingProduct[] {
+  try { return readProducts(productQueueKey()); } catch { return []; }
+}
+
+export function pendingProductMatches(entry: PendingProduct, query: string): boolean {
+  const product = entry.payload, text = query.trim().toLowerCase();
+  return [product.name, product.sku, product.barcode, product.qr_code,
+    ...(product.barcodes || []).filter((code) => code.active).map((code) => code.code),
+    ...(product.packagings || []).filter((pack) => pack.active).map((pack) => pack.barcode || ""),
+  ].some((value) => value.toLowerCase().includes(text));
+}
+
+export function newProductUuid(): string {
+  return globalThis.crypto?.randomUUID?.() || "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const value = Math.floor(Math.random() * 16);
+    return (c === "x" ? value : (value & 3) | 8).toString(16);
+  });
+}
+
+export function queueProduct(payload: ProductPayload): void {
+  const key = productQueueKey();
+  const entries = readProducts(key), previous = entries.find((entry) => entry.payload.client_uuid === payload.client_uuid);
+  if (previous?.attempted && !previous.reason && JSON.stringify(previous.payload) !== JSON.stringify(payload)) {
+    throw new Error("Envoi déjà tenté : réessayez sans modifier pour confirmer la création sur le serveur.");
+  }
+  writeProducts(key, [...entries.filter((entry) => entry.payload.client_uuid !== payload.client_uuid), {
+    payload, updated_at: new Date().toISOString(), reason: "", attempted: previous?.attempted && !previous.reason,
+  }]);
+}
+
+export function discardPendingProduct(uuid: string): void {
+  const key = productQueueKey();
+  writeProducts(key, readProducts(key).filter((entry) => entry.payload.client_uuid !== uuid));
+}
+
+const productSyncs = new Map<string, Promise<SyncResult>>();
+
+export function flushPendingProducts(): Promise<SyncResult> {
+  const key = productQueueKey(), running = productSyncs.get(key);
+  if (running) return running;
+  const operation = (async () => {
+    const result: SyncResult = { synced: 0, rejected: [] };
+    for (const entry of readProducts(key)) {
+      if (entry.reason) continue;
+      let reason = "";
+      writeProducts(key, readProducts(key).map((current) => current.payload.client_uuid === entry.payload.client_uuid ? { ...current, attempted: true } : current));
+      try { await api.post<Product>("/products", entry.payload); result.synced++; }
+      catch (error) {
+        const response = (error as { response?: { status?: number; data?: { detail?: unknown } } }).response;
+        if (!response?.status || response.status >= 500) break;
+        reason = apiErrorMessage(response.data?.detail, "Produit refusé par le serveur");
+        result.rejected.push(`${entry.payload.sku} : ${reason}`);
+      }
+      const same = (current: PendingProduct) => current.payload.client_uuid === entry.payload.client_uuid && current.updated_at === entry.updated_at && JSON.stringify(current.payload) === JSON.stringify(entry.payload);
+      writeProducts(key, readProducts(key).flatMap((current) => same(current) ? reason ? [{ ...current, reason }] : [] : [current]));
+    }
+    return result;
+  })();
+  productSyncs.set(key, operation);
+  void operation.finally(() => productSyncs.delete(key)).catch(() => {});
+  return operation;
 }
 
 /**

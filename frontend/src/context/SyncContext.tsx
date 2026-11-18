@@ -38,10 +38,12 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     };
 
     poll();
+    window.addEventListener("ri:synced", poll);
     const timer = window.setInterval(poll, POLL_INTERVAL_MS);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
+      window.removeEventListener("ri:synced", poll);
     };
   }, [user, online]);
 

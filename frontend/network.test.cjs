@@ -61,7 +61,7 @@ test("health probe uses latest server URL and waits for approval before replay",
     react: { createContext: () => ({ Provider: {} }), useState: (value) => [value, () => {}], useRef: (current) => ({ current }), useCallback: (fn) => fn, useEffect() {} },
     axios: { default: { get: async (url) => { urls.push(url); return { data: { status: "ok", app: "EasyGest", workstation_status: status } }; } } },
     "../api/client": { getServerUrl: () => base },
-    "../lib/offline": { pendingSales: () => [], rejectedSales: () => [], flushPendingSales: async () => { replayed += 1; return { synced: 0, rejected: [] }; } },
+    "../lib/offline": { pendingSales: () => [], pendingProducts: () => [], flushPendingProducts: async () => ({ synced: 0, rejected: [] }), rejectedSales: () => [], flushPendingSales: async () => { replayed += 1; return { synced: 0, rejected: [] }; } },
   }, { window: { setTimeout() {}, dispatchEvent() {} }, Event: class {} });
   const provider = code.NetworkProvider({ children: null });
   assert.equal(await provider.value.refresh(), false);
@@ -71,4 +71,21 @@ test("health probe uses latest server URL and waits for approval before replay",
   assert.equal(await provider.value.refresh(), true);
   assert.equal(replayed, 1);
   assert.deepEqual(urls, ["http://first:8000/api/health", "http://second:8000/api/health"]);
+});
+
+test("product conflict errors and counts follow the queue and clear after correction", async () => {
+  const states = [], effects = [], listeners = {}; let cursor = 0;
+  let products = [{ payload: { sku: "CONFLICT" }, reason: "Cette référence existe déjà" }];
+  const code = load("context/NetworkContext.tsx", {
+    "react/jsx-runtime": { jsx: (_, props) => props },
+    react: { createContext: () => ({ Provider: {} }), useState: (value) => { const index = cursor++; states[index] = value; return [value, (next) => { states[index] = next; }]; }, useRef: (current) => ({ current }), useCallback: (fn) => fn, useEffect: (fn) => effects.push(fn) },
+    axios: { default: { get: async () => ({ data: { status: "ok", app: "EasyGest" } }) } },
+    "../api/client": { getServerUrl: () => "http://test" },
+    "../lib/offline": { pendingSales: () => [], pendingProducts: () => products, rejectedSales: () => [], flushPendingProducts: async () => ({ synced: 0, rejected: [] }), flushPendingSales: async () => ({ synced: 0, rejected: [] }) },
+  }, { window: { setTimeout() {}, setInterval() {}, clearInterval() {}, addEventListener: (name, fn) => { listeners[name] = fn; }, removeEventListener() {}, dispatchEvent() {} }, Event: class {} });
+  const provider = code.NetworkProvider({ children: null }); effects.forEach((fn) => fn());
+  await provider.value.refresh();
+  assert.match(states[6][0], /CONFLICT.*existe déjà/); assert.equal(states[4], 1);
+  products = []; listeners["ri:queue"]();
+  assert.equal(states[6].length, 0); assert.equal(states[4], 0);
 });

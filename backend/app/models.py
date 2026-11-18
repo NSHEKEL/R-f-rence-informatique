@@ -251,6 +251,7 @@ class Product(UnitSnapshot, Base):
     __tablename__ = "products"
 
     id = Column(Integer, primary_key=True, index=True)
+    client_uuid = Column(String(64), unique=True, index=True, nullable=True)
     name = Column(String, nullable=False)
     active = Column(Boolean, nullable=False, default=True, server_default=true())
     sku = Column(String, unique=True, index=True, nullable=False)

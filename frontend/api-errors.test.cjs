@@ -78,7 +78,7 @@ test("Products save strips barcode drafts, handles a 422 as text and keeps inval
       packaging_sale_price: "", wholesale_packaging_price: "", barcodes: [{ code: "", label: "", active: true }],
       ...(mode === "long" ? { base_unit: "x".repeat(41) } : {}) };
     const exports = {};
-    vm.runInNewContext(code, { exports, form, editing: null, productBarcodes, productTextError, apiErrorMessage,
+    vm.runInNewContext(code, { exports, form, editing: null, readOnly: false, pendingUuid: null, permitted: () => true, productBarcodes, productTextError, apiErrorMessage,
       axios: { isAxiosError: () => true }, setError: (value) => { error = value; }, setSaving: (value) => { saving = value; },
       setModalOpen: (value) => { closed = !value; }, load: async () => {},
       api: { post: async (_, body) => { payload = body; if (mode === "422") throw { response: { data: { detail: [requiredCode] } } }; return { data: { id: 1 } }; } },

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -468,7 +468,8 @@ class ProductBase(BaseModel):
 
 
 class ProductCreate(ProductBase):
-    pass
+    client_uuid: Optional[str] = Field(default=None, min_length=1, max_length=64)
+    initial_expiry_date: Optional[date] = None
 
 
 class ProductUpdate(ProductBase):
@@ -476,6 +477,7 @@ class ProductUpdate(ProductBase):
 
 
 class ProductOut(ProductBase):
+    client_uuid: Optional[str] = None
     stock_purchase_price: Optional[float] = None
     stock_value: Optional[float] = None
     nearest_expiry: Optional[datetime] = None

@@ -49,6 +49,8 @@ import type { ProductBarcode } from "../types";
 import { readOffline } from "../lib/offlineInventory";
 import { useOnline } from "../lib/useOnline";
 import OfflineBanner from "../components/OfflineBanner";
+import { discardPendingProduct, flushPendingProducts, newProductUuid, pendingProducts, pendingProductMatches, queueProduct, type PendingProduct } from "../lib/offline";
+import { useNetwork } from "../context/NetworkContext";
 
 const empty = {
   barcodes: [] as ProductBarcode[],
@@ -111,7 +113,10 @@ type SoldFilter = "" | "jamais" | "top";
 
 export default function Products() {
   const { can: permitted } = useAuth();
-  const online = useOnline();
+  const { online: serverOnline } = useNetwork();
+  const online = useOnline() && serverOnline;
+  const [pending, setPending] = useState(pendingProducts);
+  const [pendingUuid, setPendingUuid] = useState<string | null>(null);
   const [cached, setCached] = useState(false);
   const [savedAt, setSavedAt] = useState("");
   const readOnly = !online || cached;
@@ -170,6 +175,12 @@ export default function Products() {
   useEffect(() => {
     void load().catch(() => setError("Catalogue indisponible : ouvrez cette page en ligne pour préparer le cache."));
   }, [load, version, online]);
+
+  useEffect(() => {
+    const update = () => setPending(pendingProducts());
+    window.addEventListener("ri:queue", update);
+    return () => window.removeEventListener("ri:queue", update);
+  }, []);
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
@@ -271,6 +282,7 @@ export default function Products() {
   const selection = useSelection(paged);
 
   function openCreate() {
+    setPendingUuid(null);
     autoSku.current = "";
     setEditing(null);
     setForm({ ...empty });
@@ -278,9 +290,10 @@ export default function Products() {
     setModalOpen(true);
   }
 
-  function openEdit(p: Product) {
-    if (readOnly) return;
-    setEditing(p);
+  function openEdit(p: Product, entry?: PendingProduct) {
+    if (readOnly && !entry) return;
+    setPendingUuid(entry?.payload.client_uuid ?? null);
+    setEditing(entry ? null : p);
     setForm({
       packagings: p.packagings || [],
       barcodes: p.barcodes || [],
@@ -308,14 +321,14 @@ export default function Products() {
       qr_code: p.qr_code ?? "",
       barcode: p.barcode ?? "",
       image: p.image ?? "",
-      expiry_date: "",
+      expiry_date: entry?.payload.initial_expiry_date || "",
     });
     setError("");
     setModalOpen(true);
   }
 
   async function save() {
-    if (readOnly) return;
+    if (!permitted("produits_gerer") || (readOnly && editing)) return;
     setError("");
     const barcodes = productBarcodes(form.barcodes);
     const textError = productTextError({ ...form, barcodes });
@@ -355,6 +368,13 @@ export default function Products() {
       min_stock: form.min_stock === "" ? 5 : Number(form.min_stock),
     };
     try {
+      if (pendingUuid || readOnly) {
+        queueProduct({ ...payload, client_uuid: pendingUuid || newProductUuid(), initial_expiry_date: form.expiry_date || null });
+        setModalOpen(false);
+        setNotice("Produit enregistré sur ce poste — en attente de synchronisation.");
+        if (online) { await flushPendingProducts(); window.dispatchEvent(new Event("ri:synced")); await load(); }
+        return;
+      }
       if (editing) {
         await api.put(`/products/${editing.id}`, payload);
       } else {
@@ -378,9 +398,7 @@ export default function Products() {
       setModalOpen(false);
       await load();
     } catch (err) {
-      if (axios.isAxiosError(err)) {
-        setError(apiErrorMessage(err.response?.data?.detail, "Erreur lors de l'enregistrement"));
-      }
+      setError(apiErrorMessage(axios.isAxiosError(err) ? err.response?.data?.detail : err instanceof Error ? err.message : err, "Erreur lors de l'enregistrement"));
     } finally {
       setSaving(false);
     }
@@ -544,7 +562,8 @@ export default function Products() {
 
   return (
     <div className="space-y-5">
-      <OfflineBanner visible={readOnly} since={savedAt} />
+      <OfflineBanner visible={readOnly} since={savedAt} allowCreate={permitted("produits_gerer")} />
+      {readOnly && permitted("produits_gerer") && <p className="text-sm text-amber-800">La création reste disponible hors ligne. Les produits existants restent en lecture seule ; les nouveaux produits seront synchronisés au retour du réseau.</p>}
       <StockDashboard onShowExpired={() => setPerimesOpen(true)} />
       {perimesOpen && <Perimes onClose={() => setPerimesOpen(false)} />}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -624,13 +643,29 @@ export default function Products() {
               </button>
             </>
           )}
-          {can("produits_gerer") && (
+          {permitted("produits_gerer") && (
             <button className="btn-primary" onClick={openCreate}>
               <Plus size={18} /> Nouveau produit
             </button>
           )}
         </div>
       </div>
+
+      {permitted("produits_gerer") && pending.length > 0 && <section className="card space-y-3 p-4" aria-label="Produits en attente">
+        <h3 className="font-semibold">Produits en attente de synchronisation ({pending.length})</h3>
+        {pending.filter((entry) => pendingProductMatches(entry, query)).map((entry) => <div key={entry.payload.client_uuid} className="rounded-xl border border-amber-300 p-3">
+          <p className="font-semibold">{entry.payload.name} — {entry.payload.sku}</p>
+          <p className="text-sm">Stock initial : {entry.payload.quantity} {entry.payload.base_unit || "pièce"}</p>
+          <p className="text-sm text-amber-700">En attente de synchronisation{entry.reason ? " — erreur" : ""}</p>
+          {entry.reason && <p role="alert" className="text-sm text-red-700">{entry.reason}</p>}
+          {entry.attempted && !entry.reason && <p className="text-sm">Envoi tenté : réessayez sans modifier pour confirmer la création.</p>}
+          <div className="mt-2 flex gap-2">
+            <button className="btn-ghost" disabled={entry.attempted && !entry.reason} onClick={() => openEdit({ ...entry.payload, id: -1, created_at: entry.updated_at, sold_quantity: 0, last_sold_at: null }, entry)}>Modifier le produit en attente</button>
+            <button className="btn-ghost" disabled={!online} onClick={async () => { try { queueProduct(entry.payload); await flushPendingProducts(); window.dispatchEvent(new Event("ri:synced")); await load(); } catch (err) { setError(apiErrorMessage(err instanceof Error ? err.message : err)); } }}>Réessayer</button>
+            <button className="btn-ghost" onClick={() => { if (entry.attempted && !entry.reason && !confirm("Cette demande a pu atteindre le serveur. Supprimer la copie locale n'annule pas un produit déjà créé. Continuer ?")) return; try { discardPendingProduct(entry.payload.client_uuid); } catch (err) { setError(apiErrorMessage(err instanceof Error ? err.message : err)); } }}>Supprimer le produit en attente</button>
+          </div>
+        </div>)}
+      </section>}
 
       {notice && (
         <div className="rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
@@ -860,7 +895,7 @@ export default function Products() {
             <button className="btn-ghost" onClick={() => setModalOpen(false)}>
               Annuler
             </button>
-            <button className="btn-primary" onClick={save} disabled={saving || readOnly}>
+            <button className="btn-primary" onClick={save} disabled={saving || (readOnly && !!editing) || !permitted("produits_gerer")}>
               {saving ? "Enregistrement..." : "Enregistrer"}
             </button>
           </>

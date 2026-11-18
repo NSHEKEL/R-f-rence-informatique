@@ -8,6 +8,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, defer
 
 from ..database import get_db
@@ -618,14 +619,40 @@ def create_product(
     current_user: User = Depends(require_permission("produits_gerer")),
 ):
     """The catalogue is the administrator's: the stock manager only reads it."""
+    if payload.client_uuid:
+        existing = db.query(Product).filter_by(client_uuid=payload.client_uuid).first()
+        if existing:
+            return existing
+        if not 0 <= payload.quantity <= 2147483647:
+            raise HTTPException(400, "Stock initial invalide")
     if db.query(Product).filter(Product.sku == payload.sku).first():
         raise HTTPException(status_code=400, detail="Cette référence (SKU) existe déjà")
     _check_barcode(db, payload, None)
-    product = stock.create_product(db, **payload.model_dump(exclude={"packagings", "barcodes"}))
-    db.flush()
-    _save_packagings(db, product, payload.packagings, current_user)
-    _save_barcodes(db, product, payload.barcodes, current_user)
-    db.commit()
+    values = payload.model_dump(exclude={"packagings", "barcodes", "initial_expiry_date"})
+    if payload.client_uuid:
+        values["quantity"] = 0
+    try:
+        product = stock.create_product(db, **values)
+        db.flush()
+        _save_packagings(db, product, payload.packagings, current_user)
+        _save_barcodes(db, product, payload.barcodes, current_user)
+        if payload.client_uuid and payload.quantity:
+            depot_id = stock.resolve(db)
+            before, after = stock.adjust(db, product, payload.quantity, depot_id)
+            db.add(StockMovement(product_id=product.id, product_name=product.name, depot_id=depot_id,
+                                 kind="entree", quantity=payload.quantity, stock_before=before, stock_after=after,
+                                 reason="Stock initial", created_by_id=current_user.id, **snapshot(product)))
+            if payload.initial_expiry_date:
+                db.add(StockLot(product_id=product.id, depot_id=depot_id, quantity=payload.quantity,
+                                expiry_date=datetime.combine(payload.initial_expiry_date, time.min),
+                                unit_cost=product.purchase_price or 0, created_by_id=current_user.id))
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        existing = db.query(Product).filter_by(client_uuid=payload.client_uuid).first() if payload.client_uuid else None
+        if existing:
+            return existing
+        raise HTTPException(409, "Référence ou code déjà utilisé : vérifiez le catalogue.") from exc
     db.refresh(product)
     return product
 

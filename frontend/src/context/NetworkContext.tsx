@@ -13,6 +13,8 @@ import {
   dismissRejected,
   flushPendingSales,
   pendingSales,
+  pendingProducts,
+  flushPendingProducts,
   rejectedSales,
   type RejectedSale,
 } from "../lib/offline";
@@ -44,18 +46,19 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
   const [serverReachable, setServerReachable] = useState(false);
   const [workstationStatus, setWorkstationStatus] = useState("");
   const [lastContact, setLastContact] = useState<string | null>(null);
-  const [pendingCount, setPendingCount] = useState(pendingSales().length);
+  const [pendingCount, setPendingCount] = useState(pendingSales().length + pendingProducts().length);
   const [justReconnected, setJustReconnected] = useState(false);
   const [syncErrors, setSyncErrors] = useState<string[]>([]);
   const [rejected, setRejected] = useState<RejectedSale[]>(rejectedSales());
-  const wasOnline = useRef(true);
+  const wasOnline = useRef(false);
 
   const sync = useCallback(async () => {
     const result = await flushPendingSales();
-    setPendingCount(pendingSales().length);
+    const products = await flushPendingProducts();
+    setPendingCount(pendingSales().length + pendingProducts().length);
     setRejected(rejectedSales());
-    if (result.rejected.length > 0) setSyncErrors(result.rejected);
-    if (result.synced > 0) {
+    setSyncErrors(pendingProducts().filter((entry) => entry.reason).map((entry) => `${entry.payload.sku} : ${entry.reason}`));
+    if (result.synced > 0 || products.synced > 0) {
       window.dispatchEvent(new Event("ri:synced"));
     }
   }, []);
@@ -87,8 +90,9 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
     refresh();
     const timer = window.setInterval(refresh, PING_INTERVAL_MS);
     const onQueueChange = () => {
-      setPendingCount(pendingSales().length);
+      setPendingCount(pendingSales().length + pendingProducts().length);
       setRejected(rejectedSales());
+      setSyncErrors(pendingProducts().filter((entry) => entry.reason).map((entry) => `${entry.payload.sku} : ${entry.reason}`));
     };
     window.addEventListener("online", refresh);
     window.addEventListener("offline", refresh);
