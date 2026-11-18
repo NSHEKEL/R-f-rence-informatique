@@ -1,4 +1,5 @@
 import { apiErrorMessage } from "../lib/apiErrors";
+import { localPrinterError } from "../lib/localPrinters";
 import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import {
@@ -332,11 +333,7 @@ export default function PrintingSettings({
       .catch((err) => {
         setDevices([]);
         setPrintersError(
-          axios.isAxiosError(err)
-            ? `Détection impossible : ${
-                apiErrorMessage(err.response?.data?.detail, err.message)
-              }`
-            : "Détection impossible sur ce poste."
+          `Détection impossible : ${localPrinterError(err)}`
         );
         // Rapport technique étape par étape : aide à situer la panne.
         localApi
@@ -559,7 +556,7 @@ export default function PrintingSettings({
         <button type="button" className="btn-ghost" onClick={() => {
           localApi.get<Record<string, unknown>>("/settings/printers/diagnose")
             .then((res) => setDiagnostics(res.data))
-            .catch((err) => setActionMessage(`Diagnostic indisponible : ${axios.isAxiosError(err) ? apiErrorMessage(err.response?.data?.detail, err.message) : String(err)}`));
+            .catch((err) => setActionMessage(`Diagnostic indisponible : ${localPrinterError(err)}`));
         }}>Diagnostic</button>
         {diagnostics && <DiagnosePanel data={diagnostics} received={devices.length} />}
         {devices.length === 0 ? (

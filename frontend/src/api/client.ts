@@ -107,12 +107,13 @@ export const localApi = axios.create();
  */
 export function localBaseUrl(): string {
   const { hostname, origin, port } = window.location;
-  if (["127.0.0.1", "::1", "localhost"].includes(hostname)) return `${origin}/api`;
+  if (["127.0.0.1", "::1", "[::1]", "localhost"].includes(hostname)) return `${origin}/api`;
   return `http://127.0.0.1:${port || DEFAULT_PORT}/api`;
 }
 
 localApi.interceptors.request.use((config) => {
   config.baseURL = localBaseUrl();
+  if (["/settings/printers", "/settings/printers/diagnose"].includes(config.url || "")) config.timeout = 5000;
   const token = localStorage.getItem("ri_token");
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;

@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import httpx
 from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from jose import jwt
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -13,6 +14,7 @@ from sqlalchemy.pool import StaticPool
 from app.auth import ALGORITHM, SECRET_KEY, create_access_token
 from app.database import Base, get_db
 from app.models import User
+from app.local_peripherals import private_network_discovery
 from app.permissions import require_any_permission
 from app.routers import settings
 
@@ -93,6 +95,33 @@ class LocalPeripheralTests(unittest.TestCase):
             self.db.commit()
             for path, method, payload in cases:
                 self.assertEqual(self.call(path, method, payload, token=self.local).status_code, 403)
+
+    def test_server_origin_discovery_and_private_network_preflight(self):
+        origin = "http://192.168.1.20:8000"
+        self.app.add_middleware(CORSMiddleware, allow_origins=[origin], allow_methods=["*"], allow_headers=["*"])
+        self.app.middleware("http")(private_network_discovery)
+        headers = {"Origin": origin, "sec-fetch-site": "cross-site"}
+        preflight = {"Origin": origin, "Access-Control-Request-Method": "GET", "Access-Control-Request-Headers": "authorization", "Access-Control-Request-Private-Network": "true"}
+        with patch.object(settings.printing, "printer_devices", return_value=[]), patch.object(settings.printing, "default_printer", return_value=""), patch.object(settings.printing, "diagnose", return_value={"ok": True}):
+            for path in ("/api/settings/printers", "/api/settings/printers/diagnose"):
+                response = self.call(path, "OPTIONS", **preflight)
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(response.headers["access-control-allow-origin"], origin)
+                self.assertEqual(response.headers["access-control-allow-private-network"], "true")
+                for token in ("", self.foreign):
+                    response = self.call(path, token=token, **headers)
+                    self.assertEqual(response.status_code, 200, response.text)
+                    self.assertEqual(response.headers["access-control-allow-origin"], origin)
+                response = self.call(path, "OPTIONS", host="192.168.1.50", **preflight)
+                self.assertNotIn("access-control-allow-private-network", response.headers)
+                self.assertEqual(self.call(path, host="192.168.1.50", **headers).status_code, 401)
+                response = self.call(path, "OPTIONS", **{**preflight, "Origin": "https://evil.example"})
+                self.assertEqual(response.status_code, 400)
+                self.assertNotIn("access-control-allow-private-network", response.headers)
+                self.assertEqual(self.call(path, **{**headers, "Origin": "https://evil.example"}).status_code, 401)
+            response = self.call("/api/settings/company/open-drawer", "OPTIONS", **{**preflight, "Access-Control-Request-Method": "POST"})
+            self.assertNotIn("access-control-allow-private-network", response.headers)
+            self.assertEqual(self.call("/api/settings/company/open-drawer", "POST", {}, **headers).status_code, 401)
 
     def test_verified_local_permissions_and_revocations_are_not_bypassed(self):
         with patch.object(settings.printing, "diagnose", return_value={"ok": True}):

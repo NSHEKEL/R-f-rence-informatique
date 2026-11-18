@@ -18,6 +18,7 @@ from . import backup, clients, history, licensing, network as shop_network, remo
 from .auth import ALGORITHM, SECRET_KEY, get_current_user, require_admin
 from . import lifetime
 from .database import Base, SessionLocal, engine, get_db
+from .local_peripherals import private_network_discovery
 from .migrate import migrate
 from .models import User
 from .routers import (
@@ -229,6 +230,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.middleware("http")(private_network_discovery)
 
 
 def _license_loop() -> None:

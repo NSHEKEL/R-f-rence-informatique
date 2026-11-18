@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { localApi } from "../api/client";
+import { localPrinterError } from "../lib/localPrinters";
 import { useAuth } from "../context/AuthContext";
 import { readPostePrinters, writePostePrinters, useCompany } from "../context/CompanyContext";
 import { readPosteSettings, writePosteSettings } from "../lib/poste";
@@ -17,7 +18,7 @@ export default function WorkstationSettings() {
   const [printers, setPrinters] = useState(readPostePrinters);
   const [available, setAvailable] = useState<string[]>([]);
   const [message, setMessage] = useState("");
-  useEffect(() => { localApi.get("/settings/printers").then(({ data }) => setAvailable(data.printers)).catch(() => setMessage("Détection locale indisponible ; saisie manuelle possible.")); }, []);
+  useEffect(() => { localApi.get("/settings/printers").then(({ data }) => setAvailable(data.printers)).catch((error) => setMessage(`Détection locale indisponible : ${localPrinterError(error)}`)); }, []);
   function save() {
     if (!Number.isInteger(form.scanner_min_length) || form.scanner_min_length < 1 || form.scanner_min_length > 200 || !Number.isInteger(form.display_scale) || form.display_scale < 70 || form.display_scale > 130 || form.drawer_code !== undefined && (!/^\d+(\s*,\s*\d+)*$/.test(form.drawer_code) || form.drawer_code.split(",").some((v) => Number(v) > 255))) {
       setMessage("Longueur, échelle ou code du tiroir invalide."); return;
