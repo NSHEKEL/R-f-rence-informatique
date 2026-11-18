@@ -519,8 +519,9 @@ class SaleItemCreate(PackagingQuantities):
     product_id: int
     quantity: int = 0
     # Price agreed at the counter; ignored unless the seller holds the right
-    # to change a price, and never written back to the product sheet.
+    # to change a price.
     unit_price: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    price_edited: bool = False
     # Discount granted on this line only, in currency units (not %).
     discount: float = Field(default=0, ge=0, allow_inf_nan=False)
 

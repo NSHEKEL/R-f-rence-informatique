@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import update
+from sqlalchemy import null, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -13,6 +13,8 @@ from ..models import (
     Debt,
     Notification,
     Product,
+    ProductPackaging,
+    PriceHistory,
     Sale,
     SaleItem,
     SalePayment,
@@ -156,6 +158,33 @@ def _consume_lots_fefo(db: Session, product: Product, quantity: int, depot_id=No
         remaining -= take
 
 
+def _save_typed_price(db, product_id, packaging_id, packs, pieces, tier, price, factor, user):
+    product = db.query(Product).filter_by(id=product_id).populate_existing().with_for_update().one()
+    changes = []
+    if pieces:
+        field = {"detail": "sale_price", "semi_gros": "semi_wholesale_price", "gros": "wholesale_price"}[tier]
+        changes.append((product, field, price))
+    if packs:
+        if packaging_id is not None:
+            packaging = db.query(ProductPackaging).filter_by(id=packaging_id).populate_existing().with_for_update().one()
+            field = {"detail": "price_detail", "semi_gros": "price_semi_gros", "gros": "price_gros"}[tier]
+            changes.append((packaging, field, price * factor))
+            if tier == "gros" and price > 0:
+                changes.append((packaging, "price_detail", price * factor))
+        else:
+            field = {"detail": "packaging_sale_price", "semi_gros": "semi_wholesale_price", "gros": "wholesale_packaging_price"}[tier]
+            changes.append((product, field, price if tier == "semi_gros" else price * factor))
+    for target, field, value in changes:
+        old = getattr(target, field)
+        if old == value:
+            continue
+        history_field = field if target is product else f"packaging:{target.id}:{field}"
+        db.add(PriceHistory(product_id=product_id, field=history_field,
+                            old_value=old if old is not None else null(), new_value=value, changed_by_id=user.id))
+        setattr(target, field, value)
+    db.flush()
+
+
 def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
     depot_id = stock.resolve(db)
     settings = db.query(CompanySettings).first()
@@ -195,6 +224,7 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
     )
     total = 0.0
     low_stock: list[Product] = []
+    price_edits = []
     for item in payload.items:
         product = db.query(Product).get(item.product_id)
         if not product:
@@ -221,6 +251,13 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
         pieces = item.piece_quantity if item.piece_quantity is not None else (0 if item.packaging_quantity is not None else item.quantity)
         unit_price = (packs * pack_price + pieces * base_price) / quantity
         catalog_unit_price = unit_price
+        if item.price_edited:
+            if not has_permission(db, current_user, "prix_modifier"):
+                raise HTTPException(403, "Vous n'avez pas le droit de modifier le prix de vente")
+            if item.unit_price is None:
+                raise HTTPException(400, "Renseignez le prix saisi")
+            if payload.status not in {"Annulée", "Brouillon"}:
+                price_edits.append((product.id, item.packaging_id, packs, pieces, tier, float(item.unit_price), spec.units_per_packaging or 1))
         if item.unit_price is not None and abs(item.unit_price - unit_price) > 0.000001:
             if not has_permission(db, current_user, "prix_modifier"):
                 raise HTTPException(
@@ -345,6 +382,8 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
             )
         )
 
+    for edit in price_edits:
+        _save_typed_price(db, *edit, current_user)
     db.commit()
     db.refresh(sale)
     _backup_after_sale(db)

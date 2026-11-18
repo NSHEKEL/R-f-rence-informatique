@@ -26,6 +26,7 @@ export interface SalePayload {
     piece_quantity?: number;
     expected_units_per_packaging?: number;
     unit_price?: number;
+    price_edited?: boolean;
     discount?: number;
   }[];
   /** Tender legs for a « Mixte » payment; must add up to the total. */

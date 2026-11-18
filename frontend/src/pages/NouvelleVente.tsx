@@ -143,6 +143,10 @@ function linePrice(line: CartLine, _mode: PriceMode): number {
   return line.price ?? catalogUnitPrice(line.product, line.quantity, line.price_tier || "detail", cartParts(line));
 }
 
+function priceWillBeSaved(line: CartLine): boolean {
+  return line.price !== undefined && Number.isFinite(line.price);
+}
+
 function cartParts(line: CartLine) {
   return line.packagingQuantity === undefined ? splitQuantity(line.product, line.quantity, line.unitMode || "base") : { packaging_quantity: line.packagingQuantity, piece_quantity: line.pieceQuantity || 0 };
 }
@@ -738,6 +742,7 @@ export default function NouvelleVente() {
         quantity: l.quantity,
         ...(l.product.packaging_unit ? { ...cartParts(l), expected_units_per_packaging: l.product.units_per_packaging || 1 } : {}),
         unit_price: linePrice(l, priceMode),
+        price_edited: priceWillBeSaved(l),
         discount: l.discount ?? 0,
       })),
       payments:
@@ -1276,6 +1281,7 @@ export default function NouvelleVente() {
                             {formatXOF(linePrice(l, priceMode) * (l.unitMode === "packaging" ? l.product.units_per_packaging || 1 : 1))}
                           </span>
                         )}
+                        {canChangePrice && priceWillBeSaved(l) && <p className="mt-1 text-[10px] text-blue-700">Prix enregistré à la validation</p>}
                       </td>
                       <td className="px-1 py-1 text-right">
                         {canChangePrice ? <input
