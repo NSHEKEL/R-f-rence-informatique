@@ -105,18 +105,19 @@ function catalogueData<T>(path: string, data: T): T {
 /** Fetches from the API, falling back to the last cached payload offline. */
 export async function fetchCached<T>(
   path: string,
-  key: string
+  key: string,
+  overlay = true
 ): Promise<{ data: T; fromCache: boolean }> {
   try {
     const res = await api.get<T>(path, { timeout: 8000 });
     const data = catalogueData(path, res.data);
     cacheWrite(key, data);
-    return { data, fromCache: false };
+    return { data: overlay ? pendingCatalogue(path, data) : data, fromCache: false };
   } catch (err) {
     const status = (err as { response?: { status?: number } }).response?.status;
     if (status === 401 || status === 403) throw err;
     const cached = cacheRead<T>(key);
-    if (cached !== null) return { data: catalogueData(path, cached), fromCache: true };
+    if (cached !== null) return { data: overlay ? pendingCatalogue(path, catalogueData(path, cached)) : catalogueData(path, cached), fromCache: true };
     throw err;
   }
 }
@@ -159,6 +160,46 @@ export interface PendingProduct {
   updated_at: string;
   reason: string;
   attempted?: boolean;
+  product_id?: number;
+  base?: Product;
+  changes?: Record<string, unknown>;
+  originals?: Record<string, unknown>;
+  force?: boolean;
+}
+
+function canonical(value: unknown): string {
+  return JSON.stringify(value, (_key, item) => item && typeof item === "object" && !Array.isArray(item)
+    ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
+}
+
+export function queueProductEdit(product: Product, payload: ProductPayload): void {
+  const previous = pendingProducts().find((entry) => entry.product_id === product.id);
+  if (previous?.attempted && !previous.reason) throw new Error("Envoi déjà tenté : réessayez sans modifier pour confirmer la modification sur le serveur.");
+  const base = previous?.base || product;
+  const changes: Record<string, unknown> = {}, originals: Record<string, unknown> = {};
+  for (const [field, value] of Object.entries(payload)) {
+    if (["client_uuid", "initial_expiry_date"].includes(field)) continue;
+    const original = base[field as keyof Product];
+    if (canonical(value) !== canonical(original)) { changes[field] = value; originals[field] = original ?? null; }
+  }
+  const queue = pendingProducts().filter((entry) => entry.product_id !== product.id);
+  if (Object.keys(changes).length) queue.push({ payload: { ...payload, client_uuid: newProductUuid() }, product_id: product.id, base, changes, originals, updated_at: new Date().toISOString(), reason: "" });
+  writeProducts(productQueueKey(), queue);
+}
+
+export function pendingCatalogue<T>(path: string, data: T, queue = pendingProducts()): T {
+  if (!["/products", "/products/pos"].includes(path.split("?")[0]) || !Array.isArray(data)) return data;
+  const updates = queue.filter((entry) => entry.product_id != null);
+  return data.map((product: Product) => {
+    const entry = updates.find((item) => item.product_id === product.id);
+    return entry ? { ...product, ...entry.changes } : product;
+  }) as T;
+}
+
+export function retryPendingProduct(clientUuid: string, force = false): void {
+  writeProducts(productQueueKey(), pendingProducts().map((entry) => entry.payload.client_uuid !== clientUuid ? entry : {
+    ...entry, reason: "", ...(force && entry.product_id != null ? { force: true, attempted: false, payload: { ...entry.payload, client_uuid: newProductUuid() } } : {}),
+  }));
 }
 
 function productQueueKey(): string {
@@ -224,7 +265,14 @@ export function flushPendingProducts(): Promise<SyncResult> {
       if (entry.reason) continue;
       let reason = "";
       writeProducts(key, readProducts(key).map((current) => current.payload.client_uuid === entry.payload.client_uuid ? { ...current, attempted: true } : current));
-      try { await api.post<Product>("/products", entry.payload); result.synced++; }
+      try {
+        if (entry.product_id != null) {
+          await api.post<Product>(`/products/${entry.product_id}/offline-update`, { operation_id: entry.payload.client_uuid, changes: entry.changes, originals: entry.originals, force: entry.force || false });
+        } else {
+          await api.post<Product>("/products", entry.payload);
+        }
+        result.synced++;
+      }
       catch (error) {
         const response = (error as { response?: { status?: number; data?: { detail?: unknown } } }).response;
         if (!response?.status || response.status >= 500) break;

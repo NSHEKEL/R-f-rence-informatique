@@ -2,7 +2,7 @@ import unittest
 
 import test_wholesale as wholesale
 from app import stock
-from app.models import Product, StockLot, StockMovement
+from app.models import PriceHistory, Product, ProductUpdateOperation, StockLot, StockMovement
 
 
 class OfflineProductTests(unittest.TestCase):
@@ -10,6 +10,38 @@ class OfflineProductTests(unittest.TestCase):
     call = wholesale.WholesaleTests.call
     open = wholesale.WholesaleTests.open
     grant = wholesale.WholesaleTests.grant
+
+    def test_offline_update_is_partial_atomic_and_idempotent(self):
+        payload = {"operation_id": "10a370fd-b127-4dc0-899f-fc065b211001", "changes": {"sale_price": 120}, "originals": {"sale_price": 100}}
+        path = f"/api/products/{self.product.id}/offline-update"
+        result = self.call(path, "POST", payload)
+        self.assertEqual((result["sale_price"], result["quantity"]), (120, 200))
+        with self.sessions() as db:
+            db.query(Product).filter_by(id=self.product.id).update({"sale_price": 140, "name": "Autre poste"})
+            db.commit()
+        replay = self.call(path, "POST", payload)
+        self.assertEqual((replay["sale_price"], replay["name"]), (140, "Autre poste"))
+        with self.sessions() as db:
+            self.assertEqual(db.query(ProductUpdateOperation).count(), 1)
+            history = db.query(PriceHistory).filter_by(product_id=self.product.id, field="sale_price").all()
+            self.assertEqual([(row.old_value, row.new_value) for row in history], [(100, 120)])
+            self.assertEqual(db.query(StockMovement).filter_by(product_id=self.product.id).count(), 0)
+        self.call(path, "POST", {**payload, "changes": {"sale_price": 999}}, 409)
+
+    def test_offline_update_conflict_force_invalid_and_permissions(self):
+        path = f"/api/products/{self.product.id}/offline-update"
+        payload = {"operation_id": "10a370fd-b127-4dc0-899f-fc065b211002", "changes": {"sale_price": 120}, "originals": {"sale_price": 80}}
+        refused = self.call(path, "POST", payload, 409)
+        self.assertIn("sale_price", refused["detail"])
+        with self.sessions() as db:
+            self.assertEqual(db.get(Product, self.product.id).sale_price, 100)
+            self.assertEqual(db.query(ProductUpdateOperation).count(), 0)
+        for invalid in ({"changes": {}}, {"originals": {}}, {"changes": {"active": False}, "originals": {"active": True}}, {"changes": {"semi_wholesale_price": -1}, "originals": {"semi_wholesale_price": None}}):
+            self.call(path, "POST", {**payload, **invalid}, 422)
+        result = self.call(path, "POST", {**payload, "force": True})
+        self.assertEqual(result["sale_price"], 120)
+        self.user.role = "vendeur"
+        self.call(path, "POST", {**payload, "force": True}, 403)
 
     def test_same_uuid_creates_one_product_one_initial_movement_and_lot(self):
         payload = {"name": "Article hors ligne", "sku": "OFFLINE-ONE", "client_uuid": "10a370fd-b127-4dc0-899f-fc065b211000",

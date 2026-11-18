@@ -23,6 +23,13 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const { online } = useNetwork();
   const [version, setVersion] = useState(0);
+  const [localVersion, setLocalVersion] = useState(0);
+
+  useEffect(() => {
+    const updated = () => setLocalVersion((value) => value + 1);
+    window.addEventListener("ri:queue", updated);
+    return () => window.removeEventListener("ri:queue", updated);
+  }, []);
 
   useEffect(() => {
     if (!user || !online) return;
@@ -48,7 +55,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   }, [user, online]);
 
   return (
-    <SyncContext.Provider value={{ version }}>{children}</SyncContext.Provider>
+    <SyncContext.Provider value={{ version: version + localVersion }}>{children}</SyncContext.Provider>
   );
 }
 

@@ -9,6 +9,7 @@ interface CashTicketProps {
   company: CompanySettings | null;
   format: ReceiptFormat;
   kind: CashTicketKind;
+  inline?: boolean;
 }
 
 function dateTime(value: string): string {
@@ -131,8 +132,10 @@ export default function CashTicket({
   company,
   format,
   kind,
+  inline = false,
 }: CashTicketProps) {
   const body = <TicketBody session={session} company={company} kind={kind} />;
+  if (inline) return <div className={`receipt receipt-${format}`}>{body}</div>;
   return (
     <>
       <div className={`receipt receipt-preview receipt-${format}`}>{body}</div>

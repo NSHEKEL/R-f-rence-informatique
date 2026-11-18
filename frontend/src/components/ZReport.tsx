@@ -67,10 +67,12 @@ export default function ZReport({
   report,
   company,
   format,
+  inline = false,
 }: {
   report: ZReportData;
   company: CompanySettings | null;
   format: ReceiptFormat;
+  inline?: boolean;
 }) {
   const methods = Object.entries(report.payments ?? {});
   const body = (
@@ -229,6 +231,7 @@ export default function ZReport({
       </p>
     </div>
   );
+  if (inline) return body;
   // Same double render as Receipt: a preview inside the modal, and a
   // print-only copy portaled to <body> — the print stylesheet only keeps
   // #receipt-print-root among body's children, so a copy left inside the

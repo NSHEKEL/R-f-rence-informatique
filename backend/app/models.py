@@ -290,6 +290,16 @@ class Product(UnitSnapshot, Base):
                               packaging.factor if packaging else self.units_per_packaging)
 
 
+class ProductUpdateOperation(Base):
+    __tablename__ = "product_update_operations"
+
+    id = Column(String(36), primary_key=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    payload = Column(Text, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+
+
 class ProductBarcode(Base):
     __tablename__ = "product_barcodes"
 

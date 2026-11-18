@@ -1,12 +1,15 @@
 import math
+import json
 import random
 import re
 import unicodedata
 from calendar import monthrange
 from datetime import date, datetime, time, timedelta
 from typing import Literal
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, defer
@@ -24,6 +27,7 @@ from ..models import (
     Product,
     ProductBarcode,
     ProductPackaging,
+    ProductUpdateOperation,
     Sale,
     SaleItem,
     StockLot,
@@ -663,12 +667,13 @@ def create_product(
 _PRICE_FIELDS = ("sale_price", "purchase_price", "wholesale_price", "wholesale_packaging_price", "packaging_sale_price", "semi_wholesale_price", "supplier_purchase_price")
 
 
-@router.put("/{product_id}", response_model=ProductOut)
-def update_product(
+def _update_product(
     product_id: int,
     payload: ProductUpdate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_permission("produits_gerer")),
+    db: Session,
+    current_user: User,
+    fields: set[str] | None = None,
+    commit: bool = True,
 ):
     product = db.query(Product).get(product_id)
     if not product:
@@ -678,6 +683,8 @@ def update_product(
         raise HTTPException(status_code=400, detail="Cette référence (SKU) existe déjà")
     _check_barcode(db, payload, product_id)
     for key, value in payload.model_dump(exclude={"packagings", "barcodes"}).items():
+        if fields is not None and key not in fields:
+            continue
         if key in {"rayon", "emplacement", "semi_wholesale_price", "supplier_purchase_price", "semi_wholesale_min_qty", "wholesale_min_qty"} and key not in payload.model_fields_set:
             continue
         if key in {"base_unit", "packaging_unit", "units_per_packaging", "packaging_sale_price", "wholesale_packaging_price"} and key not in payload.model_fields_set:
@@ -697,10 +704,58 @@ def update_product(
         else:
             setattr(product, key, value)
     db.flush()
-    _save_packagings(db, product, payload.packagings, current_user)
-    _save_barcodes(db, product, payload.barcodes, current_user)
-    db.commit()
+    if fields is None or "packagings" in fields:
+        _save_packagings(db, product, payload.packagings, current_user)
+    if fields is None or "barcodes" in fields:
+        _save_barcodes(db, product, payload.barcodes, current_user)
+    if commit:
+        db.commit()
     db.refresh(product)
+    return product
+
+
+@router.put("/{product_id}", response_model=ProductOut)
+def update_product(product_id: int, payload: ProductUpdate, db: Session = Depends(get_db), current_user: User = Depends(require_permission("produits_gerer"))):
+    return _update_product(product_id, payload, db, current_user)
+
+
+class OfflineProductUpdate(BaseModel):
+    operation_id: UUID
+    changes: dict = Field(min_length=1)
+    originals: dict
+    force: bool = False
+
+
+@router.post("/{product_id}/offline-update", response_model=ProductOut)
+def offline_update_product(product_id: int, payload: OfflineProductUpdate, db: Session = Depends(get_db), current_user: User = Depends(require_permission("produits_gerer"))):
+    fields = set(payload.changes)
+    if not fields <= set(ProductUpdate.model_fields) or set(payload.originals) != fields:
+        raise HTTPException(status_code=422, detail="Champs modifiés ou valeurs d'origine invalides")
+    if not db.query(Product).filter(Product.id == product_id).update({Product.name: Product.name}, synchronize_session=False):
+        raise HTTPException(status_code=404, detail="Produit introuvable")
+    product = db.query(Product).filter_by(id=product_id).populate_existing().one()
+    operation_id = str(payload.operation_id)
+    fingerprint = json.dumps(payload.model_dump(mode="json"), sort_keys=True)
+    previous = db.get(ProductUpdateOperation, operation_id)
+    if previous:
+        if previous.product_id != product_id or previous.user_id != current_user.id or previous.payload != fingerprint:
+            raise HTTPException(status_code=409, detail="Identifiant d'opération déjà utilisé pour une autre modification")
+        return product
+    current = ProductUpdate.model_validate(product, from_attributes=True).model_dump(mode="json")
+    conflicts = [field for field in fields if current[field] != payload.originals[field]]
+    if conflicts and not payload.force:
+        raise HTTPException(status_code=409, detail="Conflit : le produit a changé sur le serveur (" + ", ".join(sorted(conflicts)) + "). Réessayez après vérification, forcez explicitement ou abandonnez la modification locale.")
+    try:
+        merged = ProductUpdate.model_validate({**current, **payload.changes})
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors(include_context=False))
+    db.add(ProductUpdateOperation(id=operation_id, product_id=product_id, user_id=current_user.id, payload=fingerprint))
+    try:
+        product = _update_product(product_id, merged, db, current_user, fields=fields, commit=False)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Modification concurrente ou référence déjà utilisée ; vérifiez le produit puis réessayez.")
     return product
 
 

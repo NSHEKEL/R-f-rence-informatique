@@ -49,7 +49,7 @@ import type { ProductBarcode } from "../types";
 import { readOffline } from "../lib/offlineInventory";
 import { useOnline } from "../lib/useOnline";
 import OfflineBanner from "../components/OfflineBanner";
-import { discardPendingProduct, flushPendingProducts, newProductUuid, pendingProducts, pendingProductMatches, queueProduct, type PendingProduct } from "../lib/offline";
+import { discardPendingProduct, flushPendingProducts, newProductUuid, pendingCatalogue, pendingProducts, pendingProductMatches, queueProduct, queueProductEdit, retryPendingProduct, type PendingProduct } from "../lib/offline";
 import { useNetwork } from "../context/NetworkContext";
 
 const empty = {
@@ -200,7 +200,7 @@ export default function Products() {
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
-    return sortProducts(products.filter(
+    return sortProducts(pendingCatalogue("/products", products, pending).filter(
       (p) =>
         p.name.toLowerCase().includes(q) ||
         p.sku.toLowerCase().includes(q) ||
@@ -209,7 +209,7 @@ export default function Products() {
         (p.barcodes || []).some((code) => code.active && code.code.toLowerCase().includes(q)) ||
         (p.packagings || []).some((packaging) => packaging.active && packaging.barcode?.toLowerCase().includes(q))
     ), sort);
-  }, [products, query, sort]);
+  }, [products, query, sort, pending]);
 
   function exportExcel() {
     exportCsv(
@@ -310,12 +310,12 @@ export default function Products() {
   }
 
   function openEdit(p: Product, entry?: PendingProduct) {
-    if (readOnly && !entry) return;
+    entry = entry || pending.find((item) => item.product_id === p.id);
     setFactoryPurchaseTotal("");
     manualPurchase.current = false;
     previousPurchase.current = null;
     setPendingUuid(entry?.payload.client_uuid ?? null);
-    setEditing(entry ? null : p);
+    setEditing(entry && entry.product_id == null ? null : p);
     setForm({
       packagings: p.packagings || [],
       barcodes: p.barcodes || [],
@@ -350,7 +350,7 @@ export default function Products() {
   }
 
   async function save() {
-    if (!permitted("produits_gerer") || (readOnly && editing)) return;
+    if (!permitted("produits_gerer")) return;
     setError("");
     const barcodes = productBarcodes(form.barcodes);
     const textError = productTextError({ ...form, barcodes });
@@ -391,7 +391,8 @@ export default function Products() {
     };
     try {
       if (pendingUuid || readOnly) {
-        queueProduct({ ...payload, client_uuid: pendingUuid || newProductUuid(), initial_expiry_date: form.expiry_date || null });
+        if (editing) queueProductEdit(editing, { ...payload, client_uuid: pendingUuid || newProductUuid() });
+        else queueProduct({ ...payload, client_uuid: pendingUuid || newProductUuid(), initial_expiry_date: form.expiry_date || null });
         setModalOpen(false);
         setNotice("Produit enregistré sur ce poste — en attente de synchronisation.");
         if (online) { await flushPendingProducts(); window.dispatchEvent(new Event("ri:synced")); await load(); }
@@ -585,7 +586,7 @@ export default function Products() {
   return (
     <div className="space-y-5">
       <OfflineBanner visible={readOnly} since={savedAt} allowCreate={permitted("produits_gerer")} />
-      {readOnly && permitted("produits_gerer") && <p className="text-sm text-amber-800">La création reste disponible hors ligne. Les produits existants restent en lecture seule ; les nouveaux produits seront synchronisés au retour du réseau.</p>}
+      {readOnly && permitted("produits_gerer") && <p className="text-sm text-amber-800">Création et modification disponibles hors ligne. Les changements restent en attente sur ce poste jusqu'au retour du réseau ; les conflits nécessitent votre décision. Suppression et stock indisponibles hors ligne.</p>}
       <StockDashboard onShowExpired={() => setPerimesOpen(true)} />
       {perimesOpen && <Perimes onClose={() => setPerimesOpen(false)} />}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -677,14 +678,15 @@ export default function Products() {
         <h3 className="font-semibold">Produits en attente de synchronisation ({pending.length})</h3>
         {pending.filter((entry) => pendingProductMatches(entry, query)).map((entry) => <div key={entry.payload.client_uuid} className="rounded-xl border border-amber-300 p-3">
           <p className="font-semibold">{entry.payload.name} — {entry.payload.sku}</p>
-          <p className="text-sm">Stock initial : {entry.payload.quantity} {entry.payload.base_unit || "pièce"}</p>
+          <p className="text-sm">{entry.product_id != null ? "Modification du produit existant" : `Stock initial : ${entry.payload.quantity} ${entry.payload.base_unit || "pièce"}`}</p>
           <p className="text-sm text-amber-700">En attente de synchronisation{entry.reason ? " — erreur" : ""}</p>
           {entry.reason && <p role="alert" className="text-sm text-red-700">{entry.reason}</p>}
-          {entry.attempted && !entry.reason && <p className="text-sm">Envoi tenté : réessayez sans modifier pour confirmer la création.</p>}
+          {entry.attempted && !entry.reason && <p className="text-sm">Envoi tenté : réessayez sans modifier pour confirmer l'enregistrement.</p>}
           <div className="mt-2 flex gap-2">
-            <button className="btn-ghost" disabled={entry.attempted && !entry.reason} onClick={() => openEdit({ ...entry.payload, id: -1, created_at: entry.updated_at, sold_quantity: 0, last_sold_at: null }, entry)}>Modifier le produit en attente</button>
-            <button className="btn-ghost" disabled={!online} onClick={async () => { try { queueProduct(entry.payload); await flushPendingProducts(); window.dispatchEvent(new Event("ri:synced")); await load(); } catch (err) { setError(apiErrorMessage(err instanceof Error ? err.message : err)); } }}>Réessayer</button>
-            <button className="btn-ghost" onClick={() => { if (entry.attempted && !entry.reason && !confirm("Cette demande a pu atteindre le serveur. Supprimer la copie locale n'annule pas un produit déjà créé. Continuer ?")) return; try { discardPendingProduct(entry.payload.client_uuid); } catch (err) { setError(apiErrorMessage(err instanceof Error ? err.message : err)); } }}>Supprimer le produit en attente</button>
+            <button className="btn-ghost" disabled={entry.attempted && !entry.reason} onClick={() => openEdit({ ...entry.payload, id: entry.product_id ?? -1, created_at: entry.updated_at, sold_quantity: 0, last_sold_at: null }, entry)}>Modifier le produit en attente</button>
+            <button className="btn-ghost" disabled={!online} onClick={async () => { try { retryPendingProduct(entry.payload.client_uuid); await flushPendingProducts(); window.dispatchEvent(new Event("ri:synced")); await load(); } catch (err) { setError(apiErrorMessage(err instanceof Error ? err.message : err)); } }}>Réessayer</button>
+            {entry.product_id != null && entry.reason && <button className="btn-secondary" disabled={!online} onClick={async () => { if (!confirm("Remplacer les champs modifiés sur le serveur par votre modification locale ?")) return; try { retryPendingProduct(entry.payload.client_uuid, true); await flushPendingProducts(); window.dispatchEvent(new Event("ri:synced")); await load(); } catch (err) { setError(apiErrorMessage(err instanceof Error ? err.message : err)); } }}>Forcer</button>}
+            <button className="btn-ghost" onClick={() => { if (entry.attempted && !entry.reason && !confirm("Cette demande a pu atteindre le serveur. Abandonner la copie locale n'annule pas un enregistrement déjà effectué. Continuer ?")) return; try { discardPendingProduct(entry.payload.client_uuid); void load(); } catch (err) { setError(apiErrorMessage(err instanceof Error ? err.message : err)); } }}>Abandonner</button>
           </div>
         </div>)}
       </section>}
@@ -770,7 +772,7 @@ export default function Products() {
                         </span>
                       )}
                       <div>
-                        <p className="font-semibold text-slate-800">{p.name} {p.active === false && <span className="text-xs font-normal text-amber-700">Désactivé</span>}</p>
+                        <p className="font-semibold text-slate-800">{p.name} {pending.some((entry) => entry.product_id === p.id) && <span className="badge bg-amber-100 text-amber-800">en attente</span>} {p.active === false && <span className="text-xs font-normal text-amber-700">Désactivé</span>}</p>
                       </div>
                     </div>
                   </td>}
@@ -838,7 +840,7 @@ export default function Products() {
                           <Boxes size={16} />
                         </button>
                       )}
-                      {can("produits_gerer") && (
+                      {permitted("produits_gerer") && (
                         <>
                           <button
                             onClick={() => openEdit(p)}
@@ -849,6 +851,7 @@ export default function Products() {
                           </button>
                           <button
                             onClick={() => remove(p)}
+                            disabled={readOnly}
                             title={p.active === false ? "Réactiver l'article" : "Désactiver l'article"} aria-label={p.active === false ? "Réactiver l'article" : "Désactiver l'article"}
                             className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
                           >
@@ -899,7 +902,7 @@ export default function Products() {
         </div>
       </div>
 
-      {viewProductId != null && <ProductDetails readOnly={readOnly} key={viewProductId} products={filtered} productId={viewProductId} onNavigate={setViewProductId} onClose={() => setViewProductId(null)} onEdit={(product) => { setViewProductId(null); openEdit(product); }} />}
+      {viewProductId != null && <ProductDetails key={viewProductId} products={filtered} productId={viewProductId} onNavigate={setViewProductId} onClose={() => setViewProductId(null)} onEdit={(product) => { setViewProductId(null); openEdit(product); }} />}
       {stockEntryOpen && editing && <ProductStockEntry disabled={readOnly} product={editing} onClose={() => { setStockEntryOpen(false); setModalOpen(true); }} onSaved={async (product) => {
         setEditing(product); setForm((previous) => ({ ...previous, quantity: product.quantity }));
         await load().catch(() => setError("Entrée enregistrée. Actualisez la liste des produits."));
@@ -917,7 +920,7 @@ export default function Products() {
             <button className="btn-ghost" onClick={() => setModalOpen(false)}>
               Annuler
             </button>
-            <button className="btn-primary" onClick={save} disabled={saving || (readOnly && !!editing) || !permitted("produits_gerer")}>
+            <button className="btn-primary" onClick={save} disabled={saving || !permitted("produits_gerer")}>
               {saving ? "Enregistrement..." : "Enregistrer"}
             </button>
           </>
@@ -1003,7 +1006,7 @@ export default function Products() {
               onChange={(e) => setForm({ ...form, sale_price: Number(e.target.value) })}
             />
           </div>
-<div>
+<fieldset disabled={!!editing && readOnly}>
             <label className="label">Stock en unités de base (stock initial à la création)</label>
             <input
               type="number"
@@ -1013,7 +1016,7 @@ export default function Products() {
             />
             <p className="text-xs text-slate-500">{formatQuantity(form, form.quantity)}</p>
             {form.packaging_unit && <PackagingQuantity blankZero product={form} value={form.quantity} onChange={(quantity) => setForm({ ...form, quantity })} />}
-          </div>
+          </fieldset>
 <div className="col-span-full">
             <label className="label">
               Code-barres de l'article (chiffres imprimés sur l'emballage)
