@@ -129,3 +129,28 @@ class CashGlobalTests(unittest.TestCase):
     def test_payment_classification_empty_known_and_unknown(self):
         self.assertEqual(sum(group_payments({}).values()), 0)
         self.assertEqual(group_payments({"Espèces": 1, "Orange Money": 2, "MTN Money": 3, "Moov": 4, "Wave": 5, "Carte bancaire": 6, "Chèque": 7, "Virement": 8, "Crédit": 9, "Autre": 10}), {"cash": 1, "mobile_money": 14, "bank": 21, "credit": 9, "other": 10})
+
+    def test_global_closure_ownership_follows_viewer_without_rewriting_snapshot(self):
+        self.prepare()
+        creator = self.user
+        self.sell("creator-cash")
+        self.close(600)
+        self.other.role = "admin"
+        self.db.commit()
+        self.user = self.other
+        self.assertEqual(self.call("/api/cash-sessions/global/closures"), [])
+        self.open()
+        self.sell("viewer-mobile", "Mobile Money")
+        self.close(500)
+        self.user = creator
+        preview = self.call("/api/cash-sessions/global")
+        closed = self.global_close(preview, preview["expected_cash"])
+        stored = self.db.get(CashClosure, closed["id"]).report
+        for viewer in (creator, self.other):
+            self.user = viewer
+            report = self.call("/api/cash-sessions/global/closures")[0]
+            self.assertEqual([c["user_id"] for c in report["cashiers"] if c["own"]], [viewer.id])
+            self.assertEqual(report["payment_groups"], closed["payment_groups"])
+            self.assertEqual(report["total_sales"], 200)
+            self.db.expire_all()
+            self.assertEqual(self.db.get(CashClosure, closed["id"]).report, stored)

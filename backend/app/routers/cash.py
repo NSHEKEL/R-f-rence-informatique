@@ -214,9 +214,14 @@ def global_cash(date_from: date | None = None, date_to: date | None = None,
 
 
 @router.get("/global/closures")
-def global_closures(db: Session = Depends(get_db), _: User = Depends(require_admin)):
-    return [{"id": row.id, "closed_at": row.closed_at.isoformat(), "closed_by_id": row.closed_by_id,
-             **json.loads(row.report)} for row in db.query(CashClosure).order_by(CashClosure.id.desc()).limit(100)]
+def global_closures(db: Session = Depends(get_db), user: User = Depends(require_admin)):
+    reports = []
+    for row in db.query(CashClosure).order_by(CashClosure.id.desc()).limit(100):
+        report = json.loads(row.report)
+        for cashier in report.get("cashiers", []):
+            cashier["own"] = cashier["user_id"] == user.id
+        reports.append({"id": row.id, "closed_at": row.closed_at.isoformat(), "closed_by_id": row.closed_by_id, **report})
+    return reports
 
 
 @router.post("/global/close", status_code=201)
