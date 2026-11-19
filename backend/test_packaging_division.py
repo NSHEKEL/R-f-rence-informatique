@@ -3,6 +3,7 @@ import unittest
 import test_product_packagings as packaging
 from app import stock
 from app.models import PriceHistory, Product, ProductPackaging, Sale, StockMovement
+from app.routers import returns
 
 
 class PackagingDivisionTests(unittest.TestCase):
@@ -12,6 +13,27 @@ class PackagingDivisionTests(unittest.TestCase):
     sell = packaging.ProductPackagingsTests.sell
     grant = packaging.ProductPackagingsTests.grant
     open = packaging.ProductPackagingsTests.open
+
+    def test_rounded_divided_carton_refunds_match_pieces(self):
+        self.app.include_router(returns.router)
+        self.update(units_per_packaging=12, packaging_sale_price=2002)
+        for price in (None, 180):
+            line = {"packaging_divisor": 4, "piece_quantity": 24}
+            if price is not None:
+                line.update(unit_price=price, price_edited=True)
+            refunds = []
+            for parts in ({"packaging_quantity": 1}, {"piece_quantity": 12}):
+                sold = self.sell([line])
+                item = sold["items"][0]
+                expected = 2004 if price is None else 2160
+                self.assertEqual(item["packaging_sale_price"], expected)
+                self.assertAlmostEqual(item["base_unit_price"] * 12, expected)
+                returned = self.call("/api/returns", "POST", {
+                    "sale_reference": sold["reference"], "refund_method": "Espèces",
+                    "lines": [{"product_id": self.product.id, "sale_item_id": item["id"], **parts}],
+                }, 201)
+                refunds.append(returned["total"])
+            self.assertEqual(refunds, [expected, expected])
 
     def test_half_carton_stock_money_snapshot_and_idempotent_sync(self):
         self.update(units_per_packaging=12, packaging_sale_price=2000)

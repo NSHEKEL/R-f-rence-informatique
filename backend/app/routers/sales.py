@@ -261,6 +261,7 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
             part_total = float((Decimal(str(pack_price)) / divisor).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
             unit_price = part_total / (factor // divisor)
             base_price = unit_price
+            pack_price = unit_price * factor
         catalog_unit_price = unit_price
         if item.price_edited:
             if not has_permission(db, current_user, "prix_modifier"):
