@@ -501,6 +501,7 @@ class CashSession(Base):
     opened_at = Column(DateTime, default=utcnow)
     # Business day (YYYY-MM-DD): one session per cashier and per day.
     business_day = Column(String, default="", index=True)
+    workstation = Column(String, nullable=True)
     opened_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     opening_balance = Column(Float, default=0)
     closed_at = Column(DateTime, nullable=True)

@@ -206,6 +206,8 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
             detail="Votre caisse est fermée. Veuillez ouvrir une session de "
             "caisse avant d'effectuer une vente.",
         )
+    if payload.cash_session_id is not None and payload.cash_session_id != session.id:
+        raise HTTPException(status_code=409, detail="La caisse d'origine du ticket est fermée ou appartient à un autre caissier. Ticket conservé : vérifiez sa session avant de le ressaisir.")
     sale = Sale(
         reference=reference,
         client_id=payload.client_id,

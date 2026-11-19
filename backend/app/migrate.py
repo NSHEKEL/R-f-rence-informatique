@@ -175,6 +175,7 @@ COLUMNS: dict[str, dict[str, str]] = {
     },
     "cash_sessions": {
         "business_day": "VARCHAR DEFAULT ''",
+        "workstation": "VARCHAR",
         "z_report": "TEXT DEFAULT ''",
     },
     "license_state": {

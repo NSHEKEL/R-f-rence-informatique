@@ -256,6 +256,7 @@ def open_session(
     payload: CashSessionOpen,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("caisse")),
+    request: Request = None,
 ):
     existing = current_session(db, current_user)
     if existing:
@@ -268,6 +269,7 @@ def open_session(
         note=payload.note,
         opened_by_id=current_user.id,
         business_day=business_day(),
+        workstation=(request.headers.get("x-workstation-name") or (request.client.host if request.client else ""))[:255] if request else None,
     )
     db.add(session)
     db.add(

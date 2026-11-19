@@ -526,6 +526,7 @@ export default function Layout() {
   if (location.pathname === "/ventes/nouvelle") return (
     <div className="flex h-screen flex-col overflow-hidden bg-slate-100" style={{ zoom: uiScale }}>
       <TillGate />
+      <NetworkBanner />
       <div className="flex shrink-0 items-center justify-end border-b border-slate-200 bg-white px-3 py-1">
         <button className="btn-secondary" aria-label="Quitter le point de vente" onClick={async () => { await leaveFullscreen(); navigate(can("caisse") ? "/caisse" : "/"); }}><X size={20} /> Quitter la vente</button>
       </div>

@@ -72,6 +72,12 @@ const api = axios.create();
 // Resolved per request so a new server address applies without a reload.
 api.interceptors.request.use((config) => {
   config.baseURL = `${getServerUrl()}/api`;
+  let workstation = localStorage.getItem("ri_workstation_id");
+  if (!workstation) {
+    workstation = `poste-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    localStorage.setItem("ri_workstation_id", workstation);
+  }
+  config.headers["X-Workstation-Name"] = workstation;
   const token = localStorage.getItem("ri_token");
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;

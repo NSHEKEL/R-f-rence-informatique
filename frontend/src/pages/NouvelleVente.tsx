@@ -726,6 +726,7 @@ export default function NouvelleVente() {
     setError("");
     const payload: SalePayload = {
       client_id: newClientId(),
+      cash_session_id: session?.id,
       customer_id: customer?.id ?? null,
       payment_method: gift ? "Cadeau" : payment,
       status: "Payée",
@@ -753,7 +754,7 @@ export default function NouvelleVente() {
           : undefined,
     };
     try {
-      const res = await api.post<Sale>("/sales", payload);
+      const res = await api.post<Sale>("/sales", payload, { timeout: 15000 });
       finishSale(res.data);
       resetCart();
       void Promise.allSettled([loadProducts(), loadSession()]);

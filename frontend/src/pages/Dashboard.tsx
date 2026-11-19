@@ -29,10 +29,11 @@ import { useLicense } from "../context/LicenseContext";
 import { useSyncVersion } from "../context/SyncContext";
 
 function isoDay(date: Date): string {
-  return date.toISOString().slice(0, 10);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
 const RANGES: { label: string; days: number | "year" }[] = [
+  { label: "Aujourd'hui", days: 1 },
   { label: "7 jours", days: 7 },
   { label: "30 jours", days: 30 },
   { label: "90 jours", days: 90 },
@@ -83,6 +84,7 @@ export default function Dashboard() {
   const { hasFeature } = useLicense();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [start, setStart] = useState(() =>
     isoDay(new Date(new Date().getFullYear(), 0, 1))
   );
@@ -93,11 +95,12 @@ export default function Dashboard() {
       params: { start, end },
     });
     setStats(res.data);
+    setError("");
     setLoading(false);
   }, [start, end]);
 
   useEffect(() => {
-    load().catch(() => setLoading(false));
+    load().catch(() => { setError("Tableau de bord indisponible : vérifiez la connexion au serveur du magasin."); setLoading(false); });
   }, [load, version]);
 
   /** Same three gates as the side menu: right, plan, open till. */
@@ -114,11 +117,12 @@ export default function Dashboard() {
   }
 
   if (loading || !stats) {
-    return <div className="text-slate-500">Chargement du tableau de bord...</div>;
+    return <div className="text-slate-500">{error || "Chargement du tableau de bord..."}</div>;
   }
 
   return (
     <div className="space-y-6">
+      {error && <div role="alert" className="rounded-lg bg-red-50 p-3 text-red-700">{error}</div>}
       <div className="card flex flex-col gap-3 p-4 sm:flex-row sm:items-end">
         <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
           <CalendarRange size={18} className="text-brand-600" /> Période
@@ -199,6 +203,12 @@ export default function Dashboard() {
               : "bg-red-50 text-red-600"
           }
         />
+      </div>
+
+      <div className="card p-5">
+        <h2 className="font-bold text-slate-900">Encaissements des ventes — tous les postes : {formatXOF(stats.total_collected)}</h2>
+        <p className="mt-1 text-xs text-slate-500">Hors crédit, sans compter deux fois les paiements mixtes. Les remboursements et règlements ultérieurs figurent dans les rapports de caisse.</p>
+        <div className="mt-3 flex flex-wrap gap-4">{Object.entries(stats.payments || {}).map(([method, amount]) => <span key={method} className="text-sm text-slate-700">{method} : <strong>{formatXOF(amount)}</strong></span>)}</div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
@@ -307,7 +317,7 @@ export default function Dashboard() {
             <div className="mb-4 flex items-center gap-2">
               <Award size={18} className="text-amber-500" />
               <h2 className="text-lg font-bold text-slate-900">
-                Meilleures vendeuses
+                Ventes par caissier — tous les postes
               </h2>
             </div>
             {stats.top_sellers.length === 0 ? (
@@ -317,7 +327,7 @@ export default function Dashboard() {
             ) : (
               <ul className="space-y-3">
                 {stats.top_sellers.map((s, i) => (
-                  <li key={s.name} className="flex items-center gap-3">
+                  <li key={s.user_id ?? "unassigned"} className="flex items-center gap-3">
                     <span
                       className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-bold ${
                         i === 0
@@ -334,6 +344,8 @@ export default function Dashboard() {
                       <p className="text-xs text-slate-400">
                         {s.sales_count} vente(s)
                       </p>
+                      <p className="text-xs text-slate-500">Encaissé : {formatXOF(s.collected)}</p>
+                      {Object.entries(s.payments || {}).map(([method, amount]) => <p key={method} className="text-xs text-slate-500">{method} : {formatXOF(amount)}</p>)}
                     </div>
                     <span className="shrink-0 text-sm font-semibold text-slate-700">
                       {formatXOF(s.revenue)}

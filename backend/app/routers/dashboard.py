@@ -123,23 +123,34 @@ def get_stats(
     )[:5]
 
     # Ranking of the sellers/cashiers over the same period.
-    sellers = defaultdict(lambda: {"count": 0, "revenue": 0.0})
+    sellers = {}
+    payments = defaultdict(float)
     for s in sales:
         name = s.created_by.name if s.created_by else "Non attribué"
-        sellers[name]["count"] += 1
-        sellers[name]["revenue"] += s.total
+        seller = sellers.setdefault(s.created_by_id, {"name": name, "count": 0, "revenue": 0.0, "collected": 0.0, "payments": defaultdict(float)})
+        seller["count"] += 1
+        seller["revenue"] += s.total
+        legs = [(leg.method, leg.amount) for leg in s.payments] if s.payments else [(s.payment_method or "Espèces", s.total)]
+        for method, amount in legs:
+            payments[method] += amount
+            seller["payments"][method] += amount
+            if "crédit" not in method.lower():
+                seller["collected"] += amount
     top_sellers = sorted(
         (
             TopSeller(
-                name=name,
+                user_id=user_id,
+                name=v["name"],
                 sales_count=v["count"],
                 revenue=round(v["revenue"], 2),
+                collected=round(v["collected"], 2),
+                payments={method: round(amount, 2) for method, amount in v["payments"].items()},
             )
-            for name, v in sellers.items()
+            for user_id, v in sellers.items()
         ),
         key=lambda t: t.revenue,
         reverse=True,
-    )[:5]
+    )
 
     recent_sales = sorted(sales, key=lambda s: s.date, reverse=True)[:5]
 
@@ -152,6 +163,8 @@ def get_stats(
     gaps = [report for report in gaps if abs(report.difference or 0) > 0.009]
 
     return DashboardStats(
+        total_collected=round(sum(v["collected"] for v in sellers.values()), 2),
+        payments={method: round(amount, 2) for method, amount in payments.items()},
         total_products=total_products,
         total_stock_value=round(total_stock_value, 2),
         low_stock_count=len(low_stock_products),

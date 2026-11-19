@@ -7,6 +7,7 @@ const QUEUE_KEY = "ri_pending_sales";
 
 export interface SalePayload {
   client_id: string;
+  cash_session_id?: number;
   customer_id: number | null;
   payment_method: string;
   status: string;
@@ -36,6 +37,8 @@ export interface SalePayload {
 }
 
 export interface PendingSale {
+  scope?: string;
+  reason?: string;
   payload: SalePayload;
   /** Receipt built locally so the cashier can print before the sync. */
   snapshot: Sale;
@@ -138,7 +141,17 @@ function writeQueue(queue: PendingSale[]): void {
 
 export function queueSale(entry: PendingSale): void {
   if (!entry.payload.client_id) entry.payload.client_id = newClientId();
-  writeQueue([...pendingSales(), entry]);
+  writeQueue([...pendingSales(), { ...entry, scope: saleScope() }]);
+}
+
+function saleScope(): string {
+  let user = "local";
+  try { user = String(JSON.parse(localStorage.getItem("ri_auth_cache") || "{}").user?.id || user); } catch { /* no cached login */ }
+  try {
+    const token = localStorage.getItem("ri_token");
+    if (token) user = String(JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))).sub || user);
+  } catch { /* cached identity remains available offline */ }
+  return `${localStorage.getItem("ri_server_url") || "local"}:${user}`;
 }
 
 export function newClientId(): string {
@@ -308,30 +321,43 @@ export function flushPendingProducts(): Promise<SyncResult> {
  * duplicated. Tickets refused by the server (e.g. stock sold meanwhile) are
  * dropped from the queue and reported.
  */
-export async function flushPendingSales(): Promise<SyncResult> {
+let saleSync: Promise<SyncResult> | null = null;
+
+export function flushPendingSales(): Promise<SyncResult> {
+  if (saleSync) return saleSync;
+  saleSync = syncPendingSales().finally(() => { saleSync = null; });
+  return saleSync;
+}
+
+async function syncPendingSales(): Promise<SyncResult> {
   const queue = pendingSales();
   if (queue.length === 0) return { synced: 0, rejected: [] };
+  const scope = saleScope();
 
   const remaining: PendingSale[] = [];
   const rejected: string[] = [];
   let synced = 0;
 
   for (const entry of queue) {
+    if (saleScope() !== scope || (entry.scope !== scope && (entry.scope || scope !== "local:local"))) {
+      remaining.push({ ...entry, reason: entry.scope ? "Reconnectez le caissier au serveur d'origine pour synchroniser ce ticket." : "Ancien ticket hors ligne : faites vérifier son caissier et son serveur avant de le ressaisir." });
+      continue;
+    }
     if (!entry.payload.client_id) {
       entry.payload.client_id = newClientId();
       writeQueue(queue);
     }
     try {
-      await api.post<Sale>("/sales", entry.payload);
+      await api.post<Sale>("/sales", entry.payload, { timeout: 15000 });
       synced += 1;
     } catch (err) {
       if ((err as { response?: { data?: { code?: string } } }).response?.data?.code === "workstation_not_authorized") {
-        remaining.push(entry);
+        remaining.push({ ...entry, reason: "Poste non autorisé : demandez l'autorisation à l'administrateur." });
         continue;
       }
       const status = (err as { response?: { status?: number } }).response
         ?.status;
-      if (status && status >= 400 && status < 500) {
+      if (status && status >= 400 && status < 500 && ![401, 408, 425, 429].includes(status)) {
         const detail = (
           err as { response?: { data?: { detail?: unknown } } }
         ).response?.data?.detail;
@@ -342,11 +368,12 @@ export async function flushPendingSales(): Promise<SyncResult> {
           { ...entry, reason, rejected_at: new Date().toISOString() },
         ]);
       } else {
-        remaining.push(entry);
+        remaining.push({ ...entry, reason: status === 401 ? "Reconnectez le caissier pour synchroniser ce ticket." : "Serveur indisponible : ticket conservé, nouvel essai automatique." });
       }
     }
   }
 
-  writeQueue(remaining);
+  const attempted = new Set(queue.map((entry) => entry.payload.client_id));
+  writeQueue([...remaining, ...pendingSales().filter((entry) => !attempted.has(entry.payload.client_id))]);
   return { synced, rejected };
 }

@@ -527,6 +527,7 @@ class SaleItemCreate(PackagingQuantities):
 
 
 class SaleCreate(BaseModel):
+    cash_session_id: Optional[int] = Field(default=None, ge=1)
     customer_id: Optional[int] = None
     payment_method: str = "Espèces"
     status: str = "Payée"
@@ -843,12 +844,17 @@ class TopProduct(BaseModel):
 
 
 class TopSeller(BaseModel):
+    user_id: Optional[int] = None
     name: str
     sales_count: int
     revenue: float
+    collected: float = 0
+    payments: dict[str, float] = {}
 
 
 class DashboardStats(BaseModel):
+    total_collected: float = 0
+    payments: dict[str, float] = {}
     total_products: int
     total_stock_value: float
     low_stock_count: int
@@ -900,6 +906,7 @@ class CashSessionClose(BaseModel):
 
 
 class CashSessionOut(BaseModel):
+    workstation: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
     id: int
     opened_at: datetime

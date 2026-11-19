@@ -57,7 +57,7 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
     const products = await flushPendingProducts();
     setPendingCount(pendingSales().length + pendingProducts().length);
     setRejected(rejectedSales());
-    setSyncErrors(pendingProducts().filter((entry) => entry.reason).map((entry) => `${entry.payload.sku} : ${entry.reason}`));
+    setSyncErrors([...pendingSales().filter((entry) => entry.reason).map((entry) => `${entry.snapshot.reference} : ${entry.reason}`), ...pendingProducts().filter((entry) => entry.reason).map((entry) => `${entry.payload.sku} : ${entry.reason}`)]);
     if (result.synced > 0 || products.synced > 0) {
       window.dispatchEvent(new Event("ri:synced"));
     }
@@ -80,8 +80,10 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
     if (reachable && !wasOnline.current) {
       setJustReconnected(true);
       window.setTimeout(() => setJustReconnected(false), RECONNECT_BANNER_MS);
-      await sync();
     }
+    let authenticated = false;
+    try { authenticated = Boolean(localStorage.getItem("ri_token") && JSON.parse(localStorage.getItem("ri_auth_cache") || "{}").token === localStorage.getItem("ri_token")); } catch { /* no cached login */ }
+    if (reachable && authenticated) await sync();
     wasOnline.current = reachable;
     return reachable;
   }, [sync]);
@@ -92,7 +94,7 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
     const onQueueChange = () => {
       setPendingCount(pendingSales().length + pendingProducts().length);
       setRejected(rejectedSales());
-      setSyncErrors(pendingProducts().filter((entry) => entry.reason).map((entry) => `${entry.payload.sku} : ${entry.reason}`));
+      setSyncErrors([...pendingSales().filter((entry) => entry.reason).map((entry) => `${entry.snapshot.reference} : ${entry.reason}`), ...pendingProducts().filter((entry) => entry.reason).map((entry) => `${entry.payload.sku} : ${entry.reason}`)]);
     };
     window.addEventListener("online", refresh);
     window.addEventListener("offline", refresh);

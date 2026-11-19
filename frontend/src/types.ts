@@ -655,12 +655,17 @@ export interface TopProduct {
 }
 
 export interface TopSeller {
+  user_id?: number | null;
+  collected: number;
+  payments: Record<string, number>;
   name: string;
   sales_count: number;
   revenue: number;
 }
 
 export interface DashboardStats {
+  total_collected: number;
+  payments: Record<string, number>;
   total_products: number;
   total_stock_value: number;
   low_stock_count: number;
