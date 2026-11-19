@@ -474,7 +474,7 @@ export default function NouvelleVente() {
       let target: Product;
       try {
         target = (await api.get<Product>(`/products/by-code/${encodeURIComponent(code)}`)).data;
-        setProducts((rows) => rows.map((p) => p.id === target.id ? target : p));
+        setProducts((rows) => rows.map((p) => p.id === target.id ? { ...target, scanned_code: undefined, scanned_label: undefined, packaging_id: undefined } : p));
       } catch (error) {
         if (axios.isAxiosError(error) && error.response?.status === 404) continue;
         if (!cached || !axios.isAxiosError(error) || error.response) throw error;
@@ -517,7 +517,7 @@ export default function NouvelleVente() {
     let target = exact ?? filtered[0];
     try {
       target = (await api.get<Product>(`/products/by-code/${encodeURIComponent(q)}`)).data;
-      setProducts((rows) => rows.map((p) => p.id === target.id ? target : p));
+      setProducts((rows) => rows.map((p) => p.id === target.id ? { ...target, scanned_code: undefined, scanned_label: undefined, packaging_id: undefined } : p));
     } catch (error) {
       if (!axios.isAxiosError(error) || (error.response && error.response.status !== 404)) {
         setError("Lecture impossible, vérifiez la connexion"); return;
