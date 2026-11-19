@@ -734,6 +734,8 @@ export interface CashSessionSaleLine {
 }
 
 export interface CashSessionDetail extends CashSession {
+  payments?: Record<string, number>;
+  payment_groups?: Record<string, number>;
   total_sales?: number | null;
   refunds_total?: number | null;
   net_sales?: number | null;

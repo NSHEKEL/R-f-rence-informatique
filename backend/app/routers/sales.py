@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import null, update
@@ -252,13 +253,21 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
         packs = item.packaging_quantity or 0
         pieces = item.piece_quantity if item.piece_quantity is not None else (0 if item.packaging_quantity is not None else item.quantity)
         unit_price = (packs * pack_price + pieces * base_price) / quantity
+        if item.packaging_divisor is not None:
+            factor = spec.units_per_packaging or 1
+            divisor = item.packaging_divisor
+            if not spec.packaging_unit or factor % divisor or packs or quantity % (factor // divisor):
+                raise HTTPException(400, "Division impossible : les parts doivent contenir un nombre entier d'unités de base, sans carton entier sur la même ligne")
+            part_total = float((Decimal(str(pack_price)) / divisor).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+            unit_price = part_total / (factor // divisor)
+            base_price = unit_price
         catalog_unit_price = unit_price
         if item.price_edited:
             if not has_permission(db, current_user, "prix_modifier"):
                 raise HTTPException(403, "Vous n'avez pas le droit de modifier le prix de vente")
             if item.unit_price is None:
                 raise HTTPException(400, "Renseignez le prix saisi")
-            if payload.status not in {"Annulée", "Brouillon"}:
+            if payload.status not in {"Annulée", "Brouillon"} and item.packaging_divisor is None:
                 price_edits.append((product.id, item.packaging_id, packs, pieces, tier, float(item.unit_price), spec.units_per_packaging or 1))
         if item.unit_price is not None and abs(item.unit_price - unit_price) > 0.000001:
             if not has_permission(db, current_user, "prix_modifier"):
@@ -295,6 +304,7 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
                 packaging_id=item.packaging_id,
                 price_tier=tier,
                 catalog_unit_price=catalog_unit_price,
+                packaging_divisor=item.packaging_divisor,
                 unit_cost=product.purchase_price or 0,
                 **snapshot(spec),
                 sold_unit="mixte" if packs and pieces else (spec.packaging_unit if packs else spec.base_unit),

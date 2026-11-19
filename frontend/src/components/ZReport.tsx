@@ -21,6 +21,7 @@ export interface ZReportData {
   cancelled_count: number;
   gift_total: number;
   payments: Record<string, number>;
+  payment_groups?: Record<string, number>;
   refunds_total?: number;
   refunds?: { reference: string; sale_reference: string; total: number }[];
   advances_total?: number;
@@ -121,6 +122,7 @@ export default function ZReport({
       )}
       <hr className="my-2 border-dashed" />
       <p className="text-[10px] font-bold uppercase">Encaissements par mode</p>
+      {report.payment_groups && ([['cash', 'Espèces'], ['mobile_money', 'Mobile Money'], ['bank', 'Bancaire'], ['credit', 'Crédit (non encaissé)'], ['other', 'Autres moyens']] as const).map(([key, label]) => <Row key={key} label={label} value={formatXOF(report.payment_groups?.[key] || 0)} />)}
       {methods.map(([method, amount]) => (
         <Row key={method} label={method} value={formatXOF(amount)} />
       ))}

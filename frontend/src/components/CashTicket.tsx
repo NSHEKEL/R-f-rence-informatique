@@ -81,10 +81,9 @@ function TicketBody({
                 <td>Ventes espèces</td>
                 <td className="num strong">{money(session.cash_sales)}</td>
               </tr>
-              <tr>
-                <td>Autres paiements</td>
-                <td className="num strong">{money(session.other_sales)}</td>
-              </tr>
+              {([['mobile_money', 'Ventes Mobile Money'], ['bank', 'Ventes bancaires'], ['credit', 'Crédit (non encaissé)'], ['other', 'Autres moyens']] as const).map(([key, label]) => <tr key={key}><td>{label}</td><td className="num strong">{money(session.payment_groups?.[key] ?? 0)}</td></tr>)}
+              {!session.payment_groups && <tr><td>Autres paiements</td><td className="num strong">{money(session.other_sales)}</td></tr>}
+              <tr><td>Total général des ventes</td><td className="num strong">{money(session.total_sales ?? 0)}</td></tr>
               <tr>
                 <td>Tickets encaissés</td>
                 <td className="num strong">{session.sales_count}</td>

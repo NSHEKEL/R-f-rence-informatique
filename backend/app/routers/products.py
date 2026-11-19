@@ -146,14 +146,17 @@ def _save_barcodes(db, product, rows, user):
         record = db.get(ProductBarcode, row.id) if row.id else None
         if row.id and (not record or record.product_id != product.id):
             raise HTTPException(400, "Code invalide")
-        if record and record.code.lower() != code.lower():
-            raise HTTPException(400, "Désactivez l'ancien code et ajoutez le nouveau")
+        collision = db.query(ProductBarcode).filter(func.lower(ProductBarcode.code) == code.lower())
+        if record:
+            collision = collision.filter(ProductBarcode.id != record.id)
+        if record and collision.first():
+            raise HTTPException(400, "Code déjà utilisé par une autre variante")
         if record is None:
             record = db.query(ProductBarcode).filter(ProductBarcode.product_id == product.id, func.lower(ProductBarcode.code) == code.lower()).first()
         if record is None:
             record = ProductBarcode(product_id=product.id, code=code, created_by_id=user.id)
             db.add(record)
-        record.label, record.active = row.label.strip(), row.active
+        record.code, record.label, record.active = code, row.label.strip(), row.active
         db.flush()
     for record in db.query(ProductBarcode).filter_by(product_id=product.id):
         if record.code.lower() not in seen:

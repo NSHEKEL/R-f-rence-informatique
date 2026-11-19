@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from .accounting_ledger import seed_accounts
 
 from .database import engine
-from .models import AppMigration, CashMovement, Delivery, Depot, DepotStock, DepotTransfer, DepotTransferItem, Product, RolePermission, User, Workstation
+from .models import AppMigration, CashClosure, CashMovement, Delivery, Depot, DepotStock, DepotTransfer, DepotTransferItem, Product, RolePermission, User, Workstation
 from .stock import default_id, reconcile
 from .permissions import CONFIGURABLE_ROLES, DEFAULTS, PERMISSIONS
 
@@ -159,6 +159,7 @@ COLUMNS: dict[str, dict[str, str]] = {
         "validated_at": "TIMESTAMP",
     },
     "sale_items": {
+        "packaging_divisor": "INTEGER",
         "scanned_code": "VARCHAR", "scanned_label": "VARCHAR",
         # Per-line discount at the register (proforma/order lines had it).
         "discount": "FLOAT DEFAULT 0",
@@ -174,6 +175,7 @@ COLUMNS: dict[str, dict[str, str]] = {
         "cancelled_by_id": "INTEGER",
     },
     "cash_sessions": {
+        "global_closure_id": "INTEGER",
         "business_day": "VARCHAR DEFAULT ''",
         "workstation": "VARCHAR",
         "z_report": "TEXT DEFAULT ''",
@@ -361,6 +363,7 @@ def migrate() -> None:
         Depot.__table__.create(bind=conn, checkfirst=True)
         Workstation.__table__.create(bind=conn, checkfirst=True)
         if "cash_sessions" in tables:
+            CashClosure.__table__.create(bind=conn, checkfirst=True)
             CashMovement.__table__.create(bind=conn, checkfirst=True)
         for table, columns in COLUMNS.items():
             if table not in tables:

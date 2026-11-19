@@ -33,8 +33,8 @@ import { stockBadge } from "../components/badges";
 import DepotStock from "../components/DepotStock";
 import ProductDetails from "../components/ProductDetails";
 import ProductStockEntry from "../components/ProductStockEntry";
-import { readProductSort, saveProductSort, sortProducts } from "../lib/productSort";
-import type { ProductSort } from "../lib/productSort";
+import { matchesStock, readProductSort, saveProductSort, sortProducts } from "../lib/productSort";
+import type { ProductSort, ProductStockFilter } from "../lib/productSort";
 import { StockColumnChooser, StockExtraCells, StockExtraHeaders } from "../components/StockColumns";
 import { useStockColumns } from "../lib/useStockColumns";
 import { useAuth } from "../context/AuthContext";
@@ -129,6 +129,7 @@ export default function Products() {
   const csvInputRef = useRef<HTMLInputElement>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [sort, setSort] = useState<ProductSort>(readProductSort);
+  const [stockFilter, setStockFilter] = useState<ProductStockFilter>("all");
   const stockColumns = useStockColumns(products, "products");
   const [categories, setCategories] = useState<Category[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -200,7 +201,7 @@ export default function Products() {
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
-    return sortProducts(pendingCatalogue("/products", products, pending).filter(
+    return sortProducts(pendingCatalogue("/products", products, pending).filter((p) => matchesStock(p, stockFilter)).filter(
       (p) =>
         p.name.toLowerCase().includes(q) ||
         p.sku.toLowerCase().includes(q) ||
@@ -209,7 +210,7 @@ export default function Products() {
         (p.barcodes || []).some((code) => code.active && code.code.toLowerCase().includes(q)) ||
         (p.packagings || []).some((packaging) => packaging.active && packaging.barcode?.toLowerCase().includes(q))
     ), sort);
-  }, [products, query, sort, pending]);
+  }, [products, query, sort, pending, stockFilter]);
 
   function exportExcel() {
     exportCsv(
@@ -618,6 +619,10 @@ export default function Products() {
             <option value="created_desc">Date de création — décroissant</option>
             <option value="name_asc">Nom — croissant</option>
             <option value="name_desc">Nom — décroissant</option>
+            {([['code', 'Référence / code-barres'], ['quantity', 'Quantité en stock'], ['purchase', "Prix d'achat"], ['sale', 'Prix de vente'], ['expiry', 'Péremption']] as const).map(([key, label]) => <optgroup key={key} label={label}><option value={`${key}_asc`}>{label} — croissant</option><option value={`${key}_desc`}>{label} — décroissant</option></optgroup>)}
+          </select>
+          <select className="input sm:w-52" aria-label="Filtrer le stock" value={stockFilter} onChange={(e) => { setStockFilter(e.target.value as ProductStockFilter); setPage(1); selection.clear(); }}>
+            <option value="all">Tous les stocks</option><option value="available">Disponibles en stock</option><option value="empty">En rupture</option><option value="low">Stock faible (hors rupture)</option><option value="sufficient">Stock suffisant</option><option value="soon">Périment sous 30 jours</option><option value="expired">Déjà périmés</option>
           </select>
           <select className="input sm:w-44" aria-label="État des articles" value={state} onChange={(e) => { setState(e.target.value); setPage(1); selection.clear(); }}>
             <option value="active">Actifs</option>
@@ -1065,7 +1070,7 @@ export default function Products() {
 <div className="col-span-full space-y-2">
             <h3 className="font-semibold">Codes supplémentaires / variantes</h3>
             {form.barcodes.map((barcode, index) => <div className="flex flex-wrap gap-2" key={barcode.id || `new-${index}`}>
-              <label className="label flex-1">Code variante<input aria-label="Code variante" placeholder="Scanner ou saisir le code supplémentaire" className="input" disabled={!!barcode.id} value={barcode.code} onChange={(e) => setForm({ ...form, barcodes: form.barcodes.map((b, i) => i === index ? { ...b, code: e.target.value } : b) })} /></label>
+              <label className="label flex-1">Code variante<input aria-label="Code variante" placeholder="Scanner ou saisir le code supplémentaire" className="input" value={barcode.code} onChange={(e) => setForm({ ...form, barcodes: form.barcodes.map((b, i) => i === index ? { ...b, code: e.target.value } : b) })} /></label>
               <label className="label flex-1">Libellé variante<input aria-label="Libellé variante" placeholder="Ex. parfum, taille ou fournisseur" className="input" value={barcode.label} onChange={(e) => setForm({ ...form, barcodes: form.barcodes.map((b, i) => i === index ? { ...b, label: e.target.value } : b) })} /></label>
               <button type="button" className={barcode.active ? "btn-danger" : "btn-secondary"} onClick={() => setForm({ ...form, barcodes: barcode.id ? form.barcodes.map((b, i) => i === index ? { ...b, active: !b.active } : b) : form.barcodes.filter((_, i) => i !== index) })}>{barcode.active ? <Trash2 size={16} /> : <Plus size={16} />}{barcode.active ? "Retirer" : "Réactiver"}</button>
             </div>)}

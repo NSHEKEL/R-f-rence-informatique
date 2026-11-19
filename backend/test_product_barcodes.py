@@ -89,3 +89,26 @@ class ProductBarcodeTests(unittest.TestCase):
         self.assertEqual(response.json()["created"], 0)
         self.assertEqual(len(response.json()["errors"]), 1)
         self.call("/api/products/by-code/CSV-COLLISION", status=404)
+
+    def test_replace_variant_in_place_delete_and_preserve_sale_history(self):
+        original = self.update(barcodes=[{"code": "OLD-QR", "label": "Variante"}])["barcodes"][0]
+        sold = self.sell([{"quantity": 1, "scanned_code": "OLD-QR"}])
+        changed = self.update(barcodes=[{**original, "code": "NEW-QR"}])["barcodes"][0]
+        self.assertEqual(changed["id"], original["id"])
+        self.call("/api/products/by-code/OLD-QR", status=404)
+        self.assertEqual(self.call("/api/products/by-code/new-qr")["scanned_label"], "Variante")
+        self.sell([{"quantity": 1, "scanned_code": "NEW-QR"}])
+        self.assertEqual(self.call(f"/api/sales/{sold['id']}")["items"][0]["scanned_code"], "OLD-QR")
+        self.call("/api/products", "POST", {"name": "Autre", "sku": "NEW-QR"}, 400)
+        self.update(barcodes=[])
+        self.call("/api/products/by-code/NEW-QR", status=404)
+        self.assertFalse(self.call(f"/api/products/{self.product.id}")["barcodes"][0]["active"])
+
+    def test_variant_replacement_collision_and_empty_leave_original_untouched(self):
+        rows = self.update(barcodes=[{"code": "KEEP-ONE"}, {"code": "KEEP-TWO"}])["barcodes"]
+        product = self.call(f"/api/products/{self.product.id}")
+        for code in ("keep-two", " "):
+            self.call(f"/api/products/{self.product.id}", "PUT", {**product, "barcodes": [{**rows[0], "code": code}]}, 400)
+        self.call("/api/products", "POST", {"name": "Autre", "sku": "OTHER-QR", "qr_code": "FOREIGN-QR"}, 201)
+        self.call(f"/api/products/{self.product.id}", "PUT", {**product, "barcodes": [{**rows[0], "code": "foreign-qr"}]}, 400)
+        self.assertEqual(self.call("/api/products/by-code/KEEP-ONE")["id"], self.product.id)

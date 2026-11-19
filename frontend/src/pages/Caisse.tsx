@@ -11,6 +11,7 @@ import Modal from "../components/Modal";
 import AutomaticDocumentPrint from "../components/AutomaticDocumentPrint";
 import CashExpenses from "../components/CashExpenses";
 import CashProductMovements from "../components/CashProductMovements";
+import GlobalCash from "../components/GlobalCash";
 import { enterFullscreen, leaveFullscreen } from "../lib/fullscreen";
 import { useAuth } from "../context/AuthContext";
 import { useTill } from "../context/TillContext";
@@ -175,6 +176,8 @@ export default function Caisse() {
         </div>
       )}
 
+      {isAdmin && <GlobalCash />}
+
       {!today && (
         <div className="card space-y-4 p-6">
           <div className="flex items-center gap-3">
@@ -290,7 +293,10 @@ export default function Caisse() {
             {[
               ["Fonds d'ouverture", formatXOF(today.opening_balance)],
               ["Ventes espèces", formatXOF(today.cash_sales)],
-              ["Autres paiements", formatXOF(today.other_sales)],
+              ["Ventes Mobile Money", formatXOF(today.payment_groups?.mobile_money ?? 0)],
+              ["Ventes bancaires", formatXOF(today.payment_groups?.bank ?? 0)],
+              ["Crédit (non encaissé)", formatXOF(today.payment_groups?.credit ?? 0)],
+              ["Autres moyens", formatXOF(today.payment_groups?.other ?? 0)],
               ["Ventes brutes", formatXOF(today.total_sales ?? (today.cash_sales ?? 0) + (today.other_sales ?? 0))],
               ["Retours / remboursements (tous modes)", formatXOF(today.refunds_total ?? today.cash_refunds)],
               ["Ventes nettes après retours", formatXOF(today.net_sales ?? (today.cash_sales ?? 0) + (today.other_sales ?? 0) - (today.cash_refunds ?? 0))],
@@ -517,6 +523,11 @@ export default function Caisse() {
             {[
               ["Fonds d'ouverture", formatXOF(today?.opening_balance)],
               ["Ventes espèces", formatXOF(today?.cash_sales)],
+              ["Ventes Mobile Money", formatXOF(today?.payment_groups?.mobile_money ?? 0)],
+              ["Ventes bancaires", formatXOF(today?.payment_groups?.bank ?? 0)],
+              ["Total général des ventes", formatXOF(today?.total_sales)],
+              ["Crédit (non encaissé)", formatXOF(today?.payment_groups?.credit ?? 0)],
+              ["Autres moyens", formatXOF(today?.payment_groups?.other ?? 0)],
               ["Solde attendu", formatXOF(today?.expected_cash)],
             ].map(([label, value]) => (
               <div key={label} className="rounded-xl bg-slate-50 p-3">
@@ -526,6 +537,7 @@ export default function Caisse() {
             ))}
           </div>
           <div>
+            <p className="text-xs">Le solde attendu et le montant compté concernent uniquement les espèces physiques ; les paiements électroniques sont séparés.</p>
             <label className="label">Montant compté en caisse (FCFA)</label>
             <input
               autoFocus

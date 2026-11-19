@@ -408,6 +408,7 @@ class SalePayment(Base):
 
 
 class SaleItem(UnitSnapshot, Base):
+    packaging_divisor = Column(Integer, nullable=True)
     __tablename__ = "sale_items"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -502,6 +503,7 @@ class CashSession(Base):
     # Business day (YYYY-MM-DD): one session per cashier and per day.
     business_day = Column(String, default="", index=True)
     workstation = Column(String, nullable=True)
+    global_closure_id = Column(Integer, ForeignKey("cash_closures.id"), nullable=True, index=True)
     opened_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     opening_balance = Column(Float, default=0)
     closed_at = Column(DateTime, nullable=True)
@@ -516,6 +518,17 @@ class CashSession(Base):
     opened_by = relationship("User", foreign_keys=[opened_by_id])
     closed_by = relationship("User", foreign_keys=[closed_by_id])
     sales = relationship("Sale", backref="cash_session")
+
+
+class CashClosure(Base):
+    __tablename__ = "cash_closures"
+
+    id = Column(Integer, primary_key=True)
+    closed_at = Column(DateTime, nullable=False, default=utcnow)
+    closed_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    date_from = Column(String, nullable=False)
+    date_to = Column(String, nullable=False)
+    report = Column(Text, nullable=False)
 
 
 class BankAccount(Base):

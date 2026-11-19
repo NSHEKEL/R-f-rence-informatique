@@ -512,6 +512,7 @@ class PriceHistoryOut(BaseModel):
 
 # ---------- Sales ----------
 class SaleItemCreate(PackagingQuantities):
+    packaging_divisor: Optional[int] = Field(default=None, ge=2, le=2147483647)
     scanned_code: Optional[str] = Field(default=None, max_length=200)
     packaging_id: Optional[int] = Field(default=None, ge=1)
     price_tier: Optional[Literal["detail", "semi_gros", "gros", "auto"]] = None
@@ -568,6 +569,7 @@ class SalePaymentOut(BaseModel):
 
 
 class SaleItemOut(UnitSnapshotOut):
+    packaging_divisor: Optional[int] = None
     scanned_code: Optional[str] = None
     scanned_label: Optional[str] = None
     packaging_id: Optional[int] = None
@@ -905,7 +907,16 @@ class CashSessionClose(BaseModel):
     note: str = ""
 
 
+class CashGlobalClose(BaseModel):
+    date_from: date
+    date_to: date
+    session_ids: list[int] = Field(min_length=1)
+    closing_balance: float = Field(ge=0, allow_inf_nan=False)
+    note: str = Field(default="", max_length=5000)
+
+
 class CashSessionOut(BaseModel):
+    global_closure_id: Optional[int] = None
     workstation: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -937,6 +948,8 @@ class CashSessionDetail(CashSessionOut):
     """Open session enriched with live totals."""
 
     cash_sales: Optional[float] = None
+    payments: dict[str, float] = {}
+    payment_groups: dict[str, float] = {}
     other_sales: Optional[float] = None
     sales_count: Optional[int] = None
     deposits_total: Optional[float] = None
@@ -1910,6 +1923,7 @@ class CashSessionZ(BaseModel):
     cancelled_count: int = 0
     gift_total: float = 0
     payments: dict[str, float] = {}  # per payment method
+    payment_groups: dict[str, float] = {}
     refunds_total: float = 0
     refunds: list[dict] = []
     advances_total: float = 0  # acomptes de commandes encaissés

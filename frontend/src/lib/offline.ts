@@ -20,6 +20,7 @@ export interface SalePayload {
   items: {
     scanned_code?: string | null;
     packaging_id?: number;
+    packaging_divisor?: number;
     price_tier?: "detail" | "semi_gros" | "gros" | "auto";
     product_id: number;
     quantity: number;
