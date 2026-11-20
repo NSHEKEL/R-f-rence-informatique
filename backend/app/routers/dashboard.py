@@ -55,7 +55,7 @@ def get_stats(
 
     products = db.query(Product).all()
     total_products = len(products)
-    total_stock_value = sum(p.sale_price * p.quantity for p in products)
+    total_stock_value = sum((p.purchase_price or 0) * p.quantity for p in products)
     low_stock_products = [p for p in products if p.quantity <= p.min_stock]
     total_customers = db.query(Customer).count()
 

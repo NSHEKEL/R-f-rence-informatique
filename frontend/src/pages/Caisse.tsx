@@ -47,9 +47,10 @@ export default function Caisse() {
   const [closeOpen, setCloseOpen] = useState(false);
   const [countedBalance, setCountedBalance] = useState("0");
   const [closeNote, setCloseNote] = useState("");
+  const [closedChoice, setClosedChoice] = useState(false);
 
   const [printJob, setPrintJob] = useState<
-    { session: CashSessionDetail; kind: CashTicketKind; logout?: boolean } | { report: ZReportData }
+    { session: CashSessionDetail; kind: CashTicketKind } | { report: ZReportData }
   | null>(null);
   const format: ReceiptFormat = printing.receipt.width;
 
@@ -68,9 +69,9 @@ export default function Caisse() {
   }, [load, version]);
 
   const showTicket = useCallback(
-    (session: CashSessionDetail, kind: CashTicketKind, auto: boolean, signOut = false) => {
+    (session: CashSessionDetail, kind: CashTicketKind, auto: boolean) => {
       if (!canBalances || (kind === "close" && !canZ) || (auto && company?.auto_print_cash === false)) return false;
-      setPrintJob({ session, kind, logout: signOut });
+      setPrintJob({ session, kind });
       return true;
     },
     [company?.auto_print_cash, canBalances, canZ]
@@ -105,6 +106,7 @@ export default function Caisse() {
       });
       setNote("");
       setOpeningBalance("0");
+      sessionStorage.removeItem("ri_till_closed");
       await load();
       await refreshTill();
       // The counter works better without the desktop around it; the header
@@ -133,8 +135,10 @@ export default function Caisse() {
       setCloseNote("");
       setToday(res.data);
       sessionStorage.setItem("ri_till_closed", "1");
+      await refreshTill();
       await leaveFullscreen();
-      if (!showTicket(res.data, "close", true, true)) logout();
+      setClosedChoice(true);
+      showTicket(res.data, "close", true);
     } catch (err) {
       if (axios.isAxiosError(err)) {
         setError(apiErrorMessage(err.response?.data?.detail, "Impossible de fermer la caisse"));
@@ -573,12 +577,17 @@ export default function Caisse() {
         </div>
       </Modal>
 
+      <Modal open={closedChoice} onClose={() => { if (!printJob) setClosedChoice(false); }} title="Caisse clôturée" footer={<>
+        <button className="btn-secondary" disabled={Boolean(printJob)} onClick={() => setClosedChoice(false)}>Rester connecté</button>
+        <button className="btn-primary" disabled={Boolean(printJob)} onClick={logout}>Se déconnecter</button>
+      </>}>
+        <p>Votre caisse est fermée. Ouvrez une nouvelle caisse avant toute vente.</p>
+        {printJob && <p>Impression du ticket en cours…</p>}
+        {error && <p role="alert" className="text-red-600">{error}</p>}
+      </Modal>
       {printJob && <AutomaticDocumentPrint config={printing.receipt} onDone={(message) => {
         setPrintJob(null);
-        if ("session" in printJob && printJob.logout) {
-          if (message) sessionStorage.setItem("ri_cash_print_error", message);
-          logout();
-        } else if (message) setError(message);
+        if (message) setError(message);
       }}>
         {"report" in printJob
           ? <ZReport inline report={printJob.report} company={company} format={format} />

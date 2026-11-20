@@ -17,6 +17,21 @@ class NetworkSalesDashboardTests(unittest.TestCase):
     sale = register.CashRegisterTests.sale
     run_migration = register.CashRegisterTests.run_migration
 
+    def test_stock_value_empty_zero_cost_and_unrelated_sale_price(self):
+        self.user.role = "admin"
+        self.product.quantity = 24
+        self.product.purchase_price = 500
+        self.product.supplier_purchase_price = 400
+        self.product.sale_price = 6000
+        self.db.commit()
+        self.assertEqual(self.call("/api/dashboard")["total_stock_value"], 12000)
+        self.product.purchase_price = 0
+        self.db.commit()
+        self.assertEqual(self.call("/api/dashboard")["total_stock_value"], 0)
+        self.db.delete(self.product)
+        self.db.commit()
+        self.assertEqual(self.call("/api/dashboard")["total_stock_value"], 0)
+
     def test_global_cashiers_homonyms_and_payment_legs_without_double_count(self):
         self.user.role = "admin"
         self.db.commit()
