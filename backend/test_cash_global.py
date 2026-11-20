@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 import test_cash_register as register
 import test_wholesale as wholesale
-from app.models import CashClosure, CashSession, Sale
+from app.models import BankAccount, BankDeposit, CashClosure, CashSession, Debt, DebtPayment, Sale
 from app.payment_totals import group_payments
 
 
@@ -67,12 +67,15 @@ class CashGlobalTests(unittest.TestCase):
         self.assertEqual(preview["total_sales"], 800)
         self.assertEqual(preview["payment_groups"], {"cash": 250, "mobile_money": 200, "bank": 250, "credit": 100, "other": 0})
         self.assertEqual((preview["expected_cash"], preview["refunds_total"], preview["entries_total"], preview["exits_total"], preview["cash_expenses"]), (1155, 100, 20, 10, 5))
+        self.assertEqual(preview["inflow_groups"], {"cash": 270, "mobile_money": 200, "bank": 250, "credit": 0, "other": 0})
+        self.assertEqual(preview["outflow_groups"], {"cash": 115, "mobile_money": 0, "bank": 0, "credit": 0, "other": 0})
         self.assertEqual(len(preview["cashiers"]), 2)
         self.assertEqual(sum(r["total_sales"] for r in preview["cashiers"]), 800)
         frozen = self.global_close(preview, 1155)
         self.assertEqual(len(frozen["sessions"]), 2)
         self.assertEqual(frozen["difference"], 0)
         self.assertEqual(self.call("/api/cash-sessions/global")["total_sales"], 0)
+        self.assertEqual(sum(self.call("/api/cash-sessions/global")["inflow_groups"].values()), 0)
         self.global_close(preview, 1155, 409)
         self.db.expire_all()
         self.assertEqual(self.db.query(CashClosure).count(), 1)
@@ -88,6 +91,8 @@ class CashGlobalTests(unittest.TestCase):
         self.call("/api/cash-sessions/global/close", "POST", {"date_from": str(date.today()), "date_to": str(date.today()), "session_ids": [1], "closing_balance": 0}, 403)
         self.prepare()
         preview = self.call("/api/cash-sessions/global")
+        self.assertEqual(preview["sessions"][0]["user_id"], self.user.id)
+        self.assertEqual(preview["open_sessions"], 1)
         self.global_close(preview, 500, 409)
         self.close(500)
         preview = self.call("/api/cash-sessions/global")
@@ -129,6 +134,66 @@ class CashGlobalTests(unittest.TestCase):
     def test_payment_classification_empty_known_and_unknown(self):
         self.assertEqual(sum(group_payments({}).values()), 0)
         self.assertEqual(group_payments({"Espèces": 1, "Orange Money": 2, "MTN Money": 3, "Moov": 4, "Wave": 5, "Carte bancaire": 6, "Chèque": 7, "Virement": 8, "Crédit": 9, "Autre": 10}), {"cash": 1, "mobile_money": 14, "bank": 21, "credit": 9, "other": 10})
+
+    def test_global_flows_separate_receipts_disbursements_transfers_and_legacy_z(self):
+        self.prepare()
+        admin = self.user
+        self.sell("admin-inflow")
+        self.call("/api/accounting/expenses", "POST", {"label": "Admin", "amount": 5, "payment_method": "Espèces"}, 201)
+        self.close(595)
+        self.grant("caisse", "caisse_fermer", "vente_nouvelle", "soldes_consulter", "clotures_consulter", "caisse_operations", "retours", "depenses_gerer", "tresorerie_consulter")
+        self.user = self.other
+        seller = self.open()
+        self.sell("cash-inflow")
+        mobile = self.sell("mobile-inflow", "Wave")
+        bank = self.sell("bank-inflow", "Virement")
+        self.sell("credit-not-collected", "Crédit (à régler plus tard)")
+        for sale, method in ((mobile, "Avoir"), (bank, "Avoir")):
+            self.call("/api/returns", "POST", {"sale_reference": sale["reference"], "refund_method": method, "lines": [{"product_id": self.product.id, "quantity": 1}]}, 201)
+        account = BankAccount(bank_name="Banque")
+        self.db.add(account)
+        self.db.flush()
+        for method, amount, kind in (("Espèces", 40, "creance"), ("Espèces", 15, "dette"), ("Wave", 20, "creance"), ("Wave", 8, "dette"), ("Virement", 30, "creance"), ("Virement", 10, "dette")):
+            debt = Debt(kind=kind, party="Tiers", amount=100)
+            self.db.add(debt)
+            self.db.flush()
+            self.db.add(DebtPayment(debt_id=debt.id, cash_session_id=seller["id"], amount=amount, method=method, created_by_id=self.user.id))
+        self.db.add(DebtPayment(debt_id=debt.id, cash_session_id=seller["id"], amount=1000, method="Espèces", cancelled=True))
+        for method, status, amount in (("Espèces", "validé", 25), ("Espèces", "en attente", 500), ("Espèces", "annulé", 900), ("Virement", "validé", 1000)):
+            self.db.add(BankDeposit(account_id=account.id, cash_session_id=seller["id"], method=method, status=status, amount=amount))
+        self.db.commit()
+        for method, amount, bank_id in (("Espèces", 7, None), ("Wave", 11, None), ("Virement", 13, None), ("Espèces", 17, account.id)):
+            self.call("/api/accounting/expenses", "POST", {"label": "Vendeur", "amount": amount, "payment_method": method, "bank_account_id": bank_id}, 201)
+        for kind, amount in (("in", 20), ("out", 10)):
+            self.call("/api/cash-sessions/movements", "POST", {"type": kind, "amount": amount, "reason": "Flux"})
+        self.user = admin
+        preview = self.call("/api/cash-sessions/global")
+        self.assertEqual(preview["inflow_groups"], {"cash": 260, "mobile_money": 120, "bank": 130, "credit": 0, "other": 0})
+        self.assertEqual(preview["outflow_groups"], {"cash": 62, "mobile_money": 19, "bank": 40, "credit": 0, "other": 200})
+        self.assertEqual(preview["expected_cash"], 1198)
+        self.assertEqual(preview["opening_balance"] + preview["inflow_groups"]["cash"] - preview["outflow_groups"]["cash"], preview["expected_cash"])
+        self.user = self.other
+        self.close(603)
+        self.user = admin
+        frozen = self.call("/api/cash-sessions/global")
+        for key in ("inflow_groups", "outflow_groups", "expected_cash"):
+            self.assertEqual(frozen[key], preview[key])
+        seller_row = next(row for row in frozen["sessions"] if row["session_id"] == seller["id"])
+        self.assertEqual((seller_row["counted_cash"], seller_row["difference"]), (603, 0))
+        row = self.db.get(CashSession, seller["id"])
+        legacy = json.loads(row.z_report)
+        legacy.pop("inflow_groups")
+        legacy.pop("outflow_groups")
+        for refund in legacy["refunds"]:
+            refund.pop("refund_method")
+        row.z_report = json.dumps(legacy)
+        self.db.commit()
+        stored = row.z_report
+        legacy_global = self.call("/api/cash-sessions/global")
+        self.assertEqual(legacy_global["outflow_groups"]["other"], 200)
+        self.assertEqual(legacy_global["expected_cash"], 1198)
+        self.assertEqual(legacy_global["opening_balance"] + legacy_global["inflow_groups"]["cash"] - legacy_global["outflow_groups"]["cash"], 1198)
+        self.assertEqual(self.db.get(CashSession, row.id).z_report, stored)
 
     def test_global_closure_ownership_follows_viewer_without_rewriting_snapshot(self):
         self.prepare()

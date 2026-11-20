@@ -1924,6 +1924,8 @@ class CashSessionZ(BaseModel):
     gift_total: float = 0
     payments: dict[str, float] = {}  # per payment method
     payment_groups: dict[str, float] = {}
+    inflow_groups: dict[str, float] = {}
+    outflow_groups: dict[str, float] = {}
     refunds_total: float = 0
     refunds: list[dict] = []
     advances_total: float = 0  # acomptes de commandes encaissés

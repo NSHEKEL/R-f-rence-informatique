@@ -167,14 +167,53 @@ def _global_sessions(db, date_from, date_to):
     ).order_by(CashSession.opened_at, CashSession.id).all()
 
 
+def _flow_groups(report, settlements=None):
+    if report.inflow_groups and report.outflow_groups:
+        return report.inflow_groups, report.outflow_groups
+    inflows = group_payments(report.payments)
+    inflows["cash"] = report.cash_sales
+    inflows["credit"] = 0
+    inflows["cash"] += report.entries_total
+    outflows = group_payments({})
+    outflows["cash"] = report.exits_total + report.deposits_total + report.cash_expenses + report.cash_refunds
+    legs = report.settlements.items() if settlements is None else (
+        (p.method or CASH_PAYMENT, (p.amount or 0) * (-1 if p.debt.kind == "dette" else 1)) for p in settlements
+    )
+    for method, amount in legs:
+        target = inflows if amount >= 0 else outflows
+        for key, value in group_payments({method: abs(amount)}).items():
+            target[key] += value
+    for records, total, cash, amount_key, method_key in (
+        (report.expenses, report.expenses_total, report.cash_expenses, "amount", "payment_method"),
+        (report.refunds, report.refunds_total, report.cash_refunds, "total", "refund_method"),
+    ):
+        known = 0
+        for row in records:
+            method = "Banque" if row.get("bank_account_id") else row.get(method_key)
+            if not method:
+                continue
+            groups = group_payments({method: row.get(amount_key) or 0})
+            for key, value in groups.items():
+                if key != "cash":
+                    outflows[key] += value
+                    known += value
+        outflows["other"] += max(0, total - cash - known)
+    return inflows, outflows
+
+
 def _global_totals(db, sessions, user):
     fields = ("total_sales", "net_sales", "sales_count", "opening_balance", "entries_total", "exits_total",
               "refunds_total", "cash_refunds", "cash_expenses", "expenses_total", "cash_settlements",
               "settlements_total", "deposits_total", "expected_cash", "advances_total")
     totals = {field: 0 for field in fields}
     payments, rows = {}, []
+    inflows, outflows = group_payments({}), group_payments({})
     for session in sessions:
         report = session_amounts(db, session)
+        session_in, session_out = _flow_groups(report)
+        for key in inflows:
+            inflows[key] += session_in[key]
+            outflows[key] += session_out[key]
         for field in fields:
             totals[field] += getattr(report, field) or 0
         for method, amount in report.payments.items():
@@ -187,6 +226,7 @@ def _global_totals(db, sessions, user):
             "total_sales": report.total_sales, "sales_count": report.sales_count,
             "payments": report.payments, "payment_groups": group_payments(report.payments),
             "expected_cash": report.expected_cash, "counted_cash": report.counted_cash,
+            "difference": report.difference,
         })
     by_cashier = {}
     for row in rows:
@@ -200,6 +240,7 @@ def _global_totals(db, sessions, user):
         cashier["payment_groups"] = group_payments(cashier["payments"])
     counted = sum(row["counted_cash"] or 0 for row in rows) if all(row["closed_at"] for row in rows) else None
     return {**totals, "payments": payments, "payment_groups": group_payments(payments),
+            "inflow_groups": inflows, "outflow_groups": outflows,
             "sessions": rows, "cashiers": list(by_cashier.values()), "counted_cash": counted,
             "difference": counted - totals["expected_cash"] if counted is not None else None,
             "open_sessions": sum(row["closed_at"] is None for row in rows)}
@@ -571,7 +612,7 @@ def session_amounts(db: Session, session: CashSession) -> CashSessionZ:
     )
     if session.closed_at is not None and session.expected_balance is not None:
         expected = session.expected_balance
-    return CashSessionZ(
+    report = CashSessionZ(
         cash_sales=payments.get(CASH_PAYMENT, 0.0),
         other_sales=sum(value for method, value in payments.items() if method != CASH_PAYMENT),
         entries_total=entries, exits_total=exits,
@@ -605,6 +646,7 @@ def session_amounts(db: Session, session: CashSession) -> CashSessionZ:
                 "reference": r.reference,
                 "sale_reference": r.sale_reference,
                 "total": r.total,
+                "refund_method": r.refund_method,
             }
             for r in returns
         ],
@@ -639,6 +681,8 @@ def session_amounts(db: Session, session: CashSession) -> CashSessionZ:
         note=session.note or "",
         generated_at=datetime.now(timezone.utc),
     )
+    report.inflow_groups, report.outflow_groups = _flow_groups(report, settlements)
+    return report
 
 
 @router.get("/{session_id}/z", response_model=CashSessionZ)
