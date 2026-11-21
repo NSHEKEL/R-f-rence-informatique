@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -10,6 +11,7 @@ from .. import backup, remote_sales
 from ..database import get_db
 from ..catalogue import require_active
 from ..models import (
+    CashMovement,
     CompanySettings,
     Debt,
     Notification,
@@ -19,6 +21,7 @@ from ..models import (
     Sale,
     SaleItem,
     SalePayment,
+    SecurityLog,
     StockLot,
     StockMovement,
     User,
@@ -556,6 +559,17 @@ def delete_sale(
                             created_by_id=current_user.id,
                         )
                     )
+    refunds = {credit.id: credit for credit in sale.returns}
+    movements = db.query(CashMovement).filter(CashMovement.return_id.in_(refunds)).all() if refunds else []
+    if movements:
+        detached = [{"id": row.id, "return_id": row.return_id, "return_reference": refunds[row.return_id].reference,
+            "amount": row.amount, "session_id": row.session_id, "reason": row.reason} for row in movements]
+        for movement in movements:
+            movement.return_id = None
+        db.add(SecurityLog(event="suppression_vente", user_id=current_user.id, identifier=current_user.email,
+            success=True, detail=json.dumps({"id": sale.id, "reference": sale.reference,
+                "detached_refund_movements": detached}, ensure_ascii=False)))
+        db.flush()
     db.query(Notification).filter(Notification.sale_id == sale.id).delete()
     db.delete(sale)
     db.commit()

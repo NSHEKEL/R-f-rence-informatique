@@ -1,8 +1,11 @@
 import json
 import unittest
 
+from sqlalchemy import event, text
+from sqlalchemy.exc import IntegrityError
+
 import test_wholesale as wholesale
-from app.models import PriceHistory, Product, ProductPackaging, SecurityLog
+from app.models import CashMovement, CashSession, Notification, PriceHistory, Product, ProductPackaging, Sale, SaleReturn, SecurityLog
 
 
 class Review21835Tests(unittest.TestCase):
@@ -64,6 +67,53 @@ class Review21835Tests(unittest.TestCase):
         self.call(f"/api/purchases/{third['id']}", "DELETE", status=204)
         self.db.expire_all()
         self.assertEqual(self.db.get(Product, self.product.id).purchase_price, 375)
+
+    def test_sale_delete_detaches_refund_movement_before_fk_cascade_once_and_preserves_z(self):
+        def enforce_foreign_keys(connection, _record):
+            connection.execute("PRAGMA foreign_keys=ON")
+        event.listen(self.engine, "connect", enforce_foreign_keys)
+        self.db.close()
+        self.engine.dispose()
+        self.assertEqual(self.db.execute(text("PRAGMA foreign_keys")).scalar(), 1)
+        self.db.rollback()
+        baseline = self.stock()
+        for frozen in (False, True):
+            sale = self.call("/api/sales", "POST", {"items": [{"product_id": self.product.id, "quantity": 2}]}, 201)
+            refund = self.call("/api/returns", "POST", {"sale_reference": sale["reference"], "refund_method": "Espèces",
+                "lines": [{"product_id": self.product.id, "quantity": 1}]}, 201)
+            movement = self.call("/api/cash-sessions/movements", "POST", {"type": "out", "amount": 100,
+                "reason": "Remboursement documenté", "return_id": refund["id"]})
+            if not frozen:
+                self.db.query(Notification).filter_by(sale_id=sale["id"]).delete()
+                with self.assertRaises(IntegrityError) as blocked:
+                    self.db.delete(self.db.get(Sale, sale["id"]))
+                    self.db.flush()
+                self.assertIn("DELETE FROM sale_returns", blocked.exception.statement)
+                self.db.rollback()
+            before = self.call("/api/cash-sessions/current")
+            snapshot = None
+            if frozen:
+                self.call("/api/cash-sessions/close", "POST", {"closing_balance": before["expected_cash"]})
+                self.db.expire_all()
+                snapshot = self.db.get(CashSession, before["id"]).z_report
+            self.call(f"/api/sales/{sale['id']}", "DELETE", status=204)
+            self.db.expire_all()
+            kept = self.db.get(CashMovement, movement["id"])
+            self.assertIsNone(kept.return_id)
+            self.assertEqual((kept.amount, kept.reason, kept.session_id, kept.user_id),
+                (100, "Remboursement documenté", before["id"], self.user.id))
+            self.assertIsNone(self.db.get(SaleReturn, refund["id"]))
+            self.assertEqual(self.stock(), baseline)
+            self.assertEqual(self.db.execute(text("PRAGMA foreign_key_check")).all(), [])
+            if frozen:
+                self.assertEqual(self.db.get(CashSession, before["id"]).z_report, snapshot)
+                self.assertEqual(self.call(f"/api/cash-sessions/{before['id']}/z")["expected_cash"], before["expected_cash"])
+            else:
+                self.assertEqual(self.call("/api/cash-sessions/current")["expected_cash"], before["expected_cash"] - sale["total"])
+            self.call(f"/api/sales/{sale['id']}", "DELETE", status=404)
+        logs = self.db.query(SecurityLog).filter_by(event="suppression_vente").all()
+        self.assertEqual(len(logs), 2)
+        self.assertTrue(all(json.loads(row.detail)["detached_refund_movements"][0]["amount"] == 100 for row in logs))
 
 
 if __name__ == "__main__":
