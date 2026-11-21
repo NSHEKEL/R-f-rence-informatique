@@ -1,0 +1,99 @@
+import json
+import unittest
+
+from sqlalchemy import event, text
+from sqlalchemy.exc import IntegrityError
+
+import test_purchase_links as links
+from app import purchase_links
+from app.models import Debt, DebtPayment, Product, Purchase, SecurityLog, Supplier, utcnow
+from app.routers import suppliers
+
+
+class SupplierOriginsTests(unittest.TestCase):
+    call = links.PurchaseLinksTests.call
+    open = links.PurchaseLinksTests.open
+    stock = links.PurchaseLinksTests.stock
+    received = links.PurchaseLinksTests.received
+    orphan = links.PurchaseLinksTests.orphan
+
+    def setUp(self):
+        links.PurchaseLinksTests.setUp(self)
+        self.app.include_router(suppliers.router)
+        self.product.supplier_id = self.supplier.id
+        self.db.commit()
+
+    def test_supplier_delete_strict_fk_preserves_purchase_orphan_debt_and_payments(self):
+        event.listen(self.engine, "connect", lambda conn, _: conn.execute("PRAGMA foreign_keys=ON"))
+        self.db.close()
+        self.engine.dispose()
+        self.assertEqual(self.db.execute(text("PRAGMA foreign_keys")).scalar(), 1)
+        self.db.rollback()
+        purchase, debt = self.received()
+        self.orphan(debt)
+        active = DebtPayment(debt_id=debt.id, amount=100, method="Espèces", receipt_reference="RP-ACTIVE", created_by_id=self.user.id)
+        cancelled = DebtPayment(debt_id=debt.id, amount=50, method="Espèces", receipt_reference="RP-CANCELLED",
+            created_by_id=self.user.id, cancelled=True, cancel_reason="Erreur documentée", cancelled_by_id=self.user.id, cancelled_at=utcnow())
+        self.db.add_all([active, cancelled])
+        self.db.commit()
+        with self.assertRaises(IntegrityError) as blocked:
+            self.db.delete(self.db.get(Supplier, self.supplier.id))
+            self.db.flush()
+        self.assertIn("DELETE FROM suppliers", blocked.exception.statement)
+        self.db.rollback()
+        supplier_id = self.supplier.id
+        self.call(f"/api/suppliers/{supplier_id}", "DELETE", status=204)
+        self.db.expire_all()
+        self.assertIsNone(self.db.get(Supplier, supplier_id))
+        self.assertIsNone(self.db.get(Product, self.product.id).supplier_id)
+        saved = self.call(f"/api/purchases/{purchase.id}")
+        self.assertEqual((saved["supplier_id"], saved["supplier_name"], saved["total"], saved["status"]), (None, "FVFD", 1000000, "Reçu"))
+        listed = self.call("/api/debts?kind=dette&orphan=true")
+        self.assertEqual((listed[0]["id"], listed[0]["supplier_id"], listed[0]["party"]), (debt.id, None, "FVFD"))
+        self.assertEqual([row["receipt_reference"] for row in listed[0]["payments"]], ["RP-ACTIVE", "RP-CANCELLED"])
+        self.assertEqual(purchase_links.repair(self.db)["linked"], [debt.id])
+        self.call(f"/api/purchases/{purchase.id}", "DELETE", status=409)
+        self.call(f"/api/debts/{debt.id}", "DELETE", status=400)
+        self.db.expire_all()
+        self.assertEqual(self.db.get(DebtPayment, cancelled.id).cancel_reason, "Erreur documentée")
+        self.assertEqual(self.db.get(DebtPayment, active.id).amount, 100)
+        self.assertEqual(self.db.execute(text("PRAGMA foreign_key_check")).all(), [])
+        audit = json.loads(self.db.query(SecurityLog).filter_by(event="suppression_fournisseur").one().detail)
+        self.assertEqual((audit["supplier"]["name"], audit["purchases"], audit["debts"], len(audit["payments"])), ("FVFD", [purchase.id], [debt.id], 2))
+        self.call(f"/api/suppliers/{supplier_id}", "DELETE", status=404)
+        empty = self.call("/api/suppliers", "POST", {"name": "Sans document"}, 201)
+        self.call(f"/api/suppliers/{empty['id']}", "DELETE", status=204)
+        self.user.role = "vendeur"
+        self.db.commit()
+        self.call(f"/api/suppliers/{supplier_id}", "DELETE", status=403)
+
+    def test_legacy_deleted_supplier_dangling_ids_are_visible_repairable_and_unpaid_deletable(self):
+        purchase, debt = self.received()
+        purchase_id, debt_id = purchase.id, debt.id
+        self.orphan(debt)
+        loose = Debt(kind="dette", supplier_id=self.supplier.id, party="FVFD", reference="Engagement libre", amount=50)
+        self.db.add(loose)
+        self.db.get(Product, self.product.id).supplier_id = None
+        self.db.commit()
+        supplier_id = self.supplier.id
+        self.assertEqual(self.db.execute(text("PRAGMA foreign_keys")).scalar(), 0)
+        self.db.execute(text("DELETE FROM suppliers WHERE id=:id"), {"id": supplier_id})
+        self.db.commit()
+        self.db.expire_all()
+        listed = self.call("/api/debts?kind=dette&orphan=true")
+        original = next(row for row in listed if row["id"] == debt.id)
+        self.assertEqual((original["supplier"], original["supplier_id"], original["party"]), (None, supplier_id, "FVFD"))
+        self.assertTrue(self.call(f"/api/debts/{debt.id}/purchase-candidates"))
+        result = purchase_links.repair(self.db)
+        self.assertEqual(result, {"linked": [debt.id], "orphans": [loose.id]})
+        self.call(f"/api/debts/{loose.id}", "DELETE", status=204)
+        self.call(f"/api/purchases/{purchase.id}", "DELETE", status=204)
+        self.db.expire_all()
+        self.assertIsNone(self.db.get(Purchase, purchase_id))
+        self.assertIsNone(self.db.get(Debt, debt_id))
+        self.assertEqual(self.db.query(DebtPayment).count(), 0)
+        self.assertEqual(self.stock(), 200)
+
+
+if __name__ == "__main__":
+    unittest.main()
