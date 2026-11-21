@@ -189,6 +189,12 @@ def update_purchase(
 ):
     purchase = _get(db, purchase_id)
     data = payload.model_dump(exclude_unset=True)
+    financial_change = payload.items is not None or any(
+        field in data and data[field] is not None and data[field] != getattr(purchase, field)
+        for field in ("supplier_id", "supplier_name", "paid", "status")
+    )
+    if financial_change and db.query(Debt.id).filter_by(purchase_id=purchase.id).first():
+        raise HTTPException(409, "Achat lié à une dette : fournisseur, montant et origine conservés ; utilisez la réception pour recevoir le stock")
     if (
         purchase.status == "Reçu"
         and data.get("paid") is not None

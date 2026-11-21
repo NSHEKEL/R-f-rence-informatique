@@ -89,6 +89,8 @@ interface PurchaseCandidate {
   reference: string;
   supplier: string;
   balance: number;
+  date: string;
+  status: string;
   received_at: string | null;
   reliable: boolean;
 }
@@ -1094,10 +1096,10 @@ export default function Dettes() {
       <Modal open={matchingDebt !== null} onClose={() => { if (!linking) setMatchingDebt(null); }} title="Rapprocher une dette fournisseur" size="compact"
         footer={<button className="btn-primary" disabled={!purchaseId || linking} onClick={() => void reconcilePurchase()}>{linking ? "Sauvegarde et rapprochement…" : "Confirmer le rapprochement"}</button>}>
         <p className="mb-3 text-sm">{matchingDebt?.party} — {matchingDebt?.reference} — {formatMoney(matchingDebt?.amount || 0)}</p>
-        <p className="mb-3 text-sm">Achats reçus du même fournisseur, de même montant initial restant dû, sans autre dette liée. Vérifiez la référence et la date : aucun montant ni paiement ne sera modifié. Le lien est définitif, sauvegardé et audité.</p>
+        <p className="mb-3 text-sm">Achats reçus ou à recevoir du même fournisseur, de même montant initial restant dû, sans autre dette liée. Vérifiez la référence, le statut et la date : aucun montant ni paiement ne sera modifié. Ce lien définitif est sauvegardé et audité ; un achat en attente devra ensuite être réceptionné dans Approvisionnements.</p>
         <select className="input w-full" aria-label="Achat d'origine" value={purchaseId} onChange={(event) => setPurchaseId(event.target.value)} disabled={linking}>
           <option value="">Choisir explicitement un achat</option>
-          {candidates.map((purchase) => <option key={purchase.id} value={purchase.id}>{purchase.reference} — {purchase.supplier} — {formatMoney(purchase.balance)} — reçu le {day(purchase.received_at)}</option>)}
+          {candidates.map((purchase) => <option key={purchase.id} value={purchase.id}>{purchase.reference} — {purchase.supplier} — {formatMoney(purchase.balance)} — {purchase.status} — {day(purchase.received_at || purchase.date)}</option>)}
         </select>
         {!candidates.length && <p className="mt-3 text-sm text-amber-700">Aucun achat compatible. Vérifiez fournisseur et montant avec un administrateur ; les cas ambigus ne sont jamais liés automatiquement.</p>}
         {message && <p className="mt-3 text-sm text-red-600">{message}</p>}

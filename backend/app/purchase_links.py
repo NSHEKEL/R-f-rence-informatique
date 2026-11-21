@@ -19,7 +19,8 @@ def same_supplier(debt, purchase, allow_name=False):
 
 
 def compatible(debt, purchase, manual=False):
-    return (debt.kind == "dette" and purchase.status == "Reçu"
+    statuses = ("En attente", "Reçu partiellement", "Reçu") if manual else ("Reçu",)
+    return (debt.kind == "dette" and purchase.status in statuses
             and same_supplier(debt, purchase, allow_name=manual)
             and abs(debt.amount - purchase.balance) <= 0.009)
 
@@ -40,7 +41,7 @@ def mentions_purchase(debt, purchase):
 
 def candidates(db, debt):
     occupied = db.query(Debt.purchase_id).filter(Debt.purchase_id.is_not(None))
-    return [p for p in db.query(Purchase).filter(Purchase.status == "Reçu", ~Purchase.id.in_(occupied)).all()
+    return [p for p in db.query(Purchase).filter(Purchase.status.in_(("En attente", "Reçu partiellement", "Reçu")), ~Purchase.id.in_(occupied)).all()
             if compatible(debt, p, manual=True)]
 
 
@@ -52,7 +53,7 @@ def assign_new_origin(db, debt, purchase_id=None):
         purchase_id = matches[0].id
     purchase = db.query(Purchase).filter_by(id=purchase_id).with_for_update().first()
     if not purchase or not compatible(debt, purchase, manual=True):
-        raise HTTPException(400, "Achat reçu, fournisseur et montant initial identiques requis")
+        raise HTTPException(400, "Achat non annulé, fournisseur et montant initial identiques requis")
     if db.query(Debt.id).filter_by(purchase_id=purchase.id).first():
         raise HTTPException(409, "Cet achat possède déjà une dette liée")
     if any(reliable(row, purchase) for row in db.query(Debt).filter_by(kind="dette", purchase_id=None)):
@@ -82,7 +83,7 @@ def _lock_pair(db, debt_id, purchase_id):
     if debt.purchase_id or db.query(Debt.id).filter_by(purchase_id=purchase_id).first():
         raise HTTPException(409, "Liaison existante conservée")
     if not compatible(debt, purchase, manual=True):
-        raise HTTPException(400, "Rapprochement refusé : achat reçu, fournisseur identique et montant initial restant dû identique requis")
+        raise HTTPException(400, "Rapprochement refusé : achat non annulé, fournisseur identique et montant initial restant dû identique requis")
     return debt, purchase
 
 

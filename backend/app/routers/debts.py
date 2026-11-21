@@ -112,7 +112,8 @@ def purchase_candidates(debt_id: int, db: Session = Depends(get_db),
     if debt.purchase_id or debt.kind != "dette":
         raise HTTPException(409, "Cette écriture n'est pas une dette fournisseur sans origine")
     return [{"id": p.id, "reference": p.reference, "supplier": p.supplier_name,
-             "balance": p.balance, "received_at": p.received_at, "reliable": reliable(debt, p)}
+             "balance": p.balance, "date": p.date, "status": p.status,
+             "received_at": p.received_at, "reliable": reliable(debt, p)}
             for p in candidates(db, debt)]
 
 

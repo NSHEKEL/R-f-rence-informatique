@@ -183,6 +183,27 @@ class PurchaseLinksTests(unittest.TestCase):
         self.assertEqual(self.call(f"/api/debts/{debt.id}/purchase-candidates"), [])
         self.assertEqual(self.db.query(SecurityLog).filter_by(event="comptabilite_liaison").count(), 0)
 
+    def test_manual_reconciliation_before_receipt_unlocks_receipt_without_duplicate(self):
+        purchase = self.call("/api/purchases", "POST", {"supplier_id": self.supplier.id,
+            "items": [{"product_id": self.product.id, "quantity": 2, "unit_cost": 100}]}, 201)
+        debt = self.call("/api/debts", "POST", {"kind": "dette", "supplier_id": self.supplier.id,
+            "reference": purchase["reference"], "amount": 200}, 201)
+        self.assertIsNone(debt["purchase_id"])
+        before = self.stock()
+        self.call(f"/api/purchases/{purchase['id']}/receive", "POST", {}, 409)
+        self.assertEqual(self.stock(), before)
+        choices = self.call(f"/api/debts/{debt['id']}/purchase-candidates")
+        self.assertEqual((choices[0]["id"], choices[0]["status"]), (purchase["id"], "En attente"))
+        self.assertFalse(purchase_links.automatic_pairs(self.db))
+        self.call(f"/api/debts/{debt['id']}/purchase", "PUT", {"purchase_id": purchase["id"], "confirm": True})
+        self.call(f"/api/purchases/{purchase['id']}", "PUT", {"paid": 0, "note": "Origine confirmée"})
+        self.call(f"/api/purchases/{purchase['id']}", "PUT", {"paid": 1}, 409)
+        received = self.call(f"/api/purchases/{purchase['id']}/receive", "POST", {})
+        self.assertEqual(received["status"], "Reçu")
+        self.assertEqual(self.stock(), before + 2)
+        self.db.expire_all()
+        self.assertEqual(self.db.query(Debt).filter_by(purchase_id=purchase["id"]).one().id, debt["id"])
+
     def test_linked_deletion_archives_sources_other_supplier_and_all_payments_preserved(self):
         purchase, debt = self.received()
         foreign = Debt(kind="dette", party="Autre fournisseur", reference=purchase.reference, amount=1000000)
