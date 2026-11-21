@@ -170,6 +170,10 @@ export default function Approvisionnements() {
     setSaving(true);
     setError("");
     try {
+      const items = lines.map((l) => ({ product_id: l.product_id, packaging_id: l.packaging_id,
+        quantity: l.quantity, unit_cost: l.unit_cost }));
+      const originals = editing?.items.map((l) => ({ product_id: l.product_id, packaging_id: l.packaging_id,
+        quantity: l.quantity, unit_cost: l.unit_cost }));
       const body = {
         ...(!editing ? { payment_method: paymentMethod || null, bank_account_id: bankAccount ? Number(bankAccount) : null } : {}),
         supplier_id: supplierId ? Number(supplierId) : null,
@@ -178,12 +182,7 @@ export default function Approvisionnements() {
         paid: paidAmount,
         invoice_number: invoice,
         note,
-        items: lines.map((l) => ({
-          product_id: l.product_id,
-          packaging_id: l.packaging_id,
-          quantity: l.quantity,
-          unit_cost: l.unit_cost,
-        })),
+        ...(JSON.stringify(items) !== JSON.stringify(originals) ? { items } : {}),
       };
       if (editing) {
         await api.put(`/purchases/${editing.id}`, body);

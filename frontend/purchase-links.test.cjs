@@ -28,6 +28,27 @@ test('origin link filters purchases by id, including empty result, without selec
   assert.ok(source.includes('useSelection(visiblePurchases)'));
 });
 
+test('purchase metadata saves omit unchanged lines, but creation and actual line edits send them', async () => {
+  for (const mode of ['create', 'metadata', 'changed']) {
+    const original = { product_id: 1, packaging_id: null, quantity: 1, unit_cost: 100 };
+    const state = {};
+    const save = expression('Approvisionnements', 'save', {
+      lines: [{ ...original, quantity: mode === 'changed' ? 2 : 1 }],
+      editing: mode === 'create' ? null : { id: 3, items: [original] },
+      paymentMethod: '', bankAccount: '', supplierId: '', supplierName: 'FVFD', expected: '',
+      paidAmount: 0, invoice: 'FACT-1', note: 'Note corrigée',
+      setSaving: () => {}, setError: error => { state.error = error; }, setOpen: () => {},
+      resetForm: () => {}, load: async () => {},
+      api: { post: async (_url, body) => { state.body = body; }, put: async (_url, body) => { state.body = body; } }
+    });
+    await save();
+    assert.equal(state.error, '');
+    assert.equal(Object.hasOwn(state.body, 'items'), mode !== 'metadata');
+    assert.equal(state.body.invoice_number, 'FACT-1');
+    assert.equal(state.body.note, 'Note corrigée');
+  }
+});
+
 test('manual purchase choices are explicit even for empty candidates; request errors retain debt state', async () => {
   for (const result of [[], [{ id: 2, reference: 'APP-2026-0001' }], null]) {
     const state = { purchaseId: 'old', debt: null };
