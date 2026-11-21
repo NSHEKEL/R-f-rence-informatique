@@ -18,6 +18,7 @@ from . import backup, clients, history, licensing, network as shop_network, remo
 from .auth import ALGORITHM, SECRET_KEY, get_current_user, require_admin
 from . import lifetime
 from .database import Base, SessionLocal, engine, get_db
+from .purchase_links import repair
 from .local_peripherals import private_network_discovery
 from .migrate import migrate
 from .models import User
@@ -268,6 +269,12 @@ def _housekeeping() -> None:
 @app.on_event("startup")
 def on_startup():
     seed()
+    with SessionLocal() as db:
+        try:
+            repair(db)
+        except Exception as exc:
+            db.rollback()
+            print(f"Rapprochement des dettes impossible (aucune réparation validée) : {exc}")
     threading.Thread(target=_license_loop, daemon=True).start()
     threading.Thread(target=_housekeeping, daemon=True).start()
     if backup.IS_SQLITE:

@@ -1155,10 +1155,15 @@ class Debt(Base):
     customer = relationship("Customer")
     supplier = relationship("Supplier")
     sale = relationship("Sale")
+    purchase = relationship("Purchase")
     created_by = relationship("User")
     payments = relationship(
         "DebtPayment", back_populates="debt", cascade="all, delete-orphan"
     )
+
+    @property
+    def purchase_reference(self) -> str | None:
+        return self.purchase.reference if self.purchase else None
 
     @property
     def paid(self) -> float:

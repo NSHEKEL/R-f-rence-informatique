@@ -8,11 +8,13 @@ history stays readable and nothing is overwritten.
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from .cash import lock_current_session
 from ..database import get_db
 from ..models import Customer, Debt, DebtPayment, Supplier, User, utcnow
+from ..purchase_links import assign_new_origin, candidates, reconcile, reliable
 from ..permissions import require_permission
 from ..receivables import receipt_reference
 from ..schemas import (
@@ -33,6 +35,11 @@ router = APIRouter(prefix="/api/debts", tags=["debts"], dependencies=[
 ])
 
 KINDS = ("creance", "dette")
+
+
+class PurchaseLink(BaseModel):
+    purchase_id: int = Field(gt=0)
+    confirm: bool = False
 
 
 def _aware(moment: datetime) -> datetime:
@@ -75,12 +82,15 @@ def list_debts(
     kind: str = "",
     status: str = "",
     search: str = "",
+    orphan: bool = False,
     db: Session = Depends(get_db),
     _: User = Depends(require_permission("dettes")),
 ):
     query = db.query(Debt)
     if kind in KINDS:
         query = query.filter(Debt.kind == kind)
+    if orphan:
+        query = query.filter(Debt.kind == "dette", Debt.purchase_id.is_(None))
     term = search.strip()
     if term:
         like = f"%{term}%"
@@ -93,6 +103,25 @@ def list_debts(
     elif status == "retard":
         rows = [row for row in rows if row.overdue]
     return rows
+
+
+@router.get("/{debt_id}/purchase-candidates")
+def purchase_candidates(debt_id: int, db: Session = Depends(get_db),
+                        _: User = Depends(require_permission("dettes_gerer"))):
+    debt = _find(db, debt_id)
+    if debt.purchase_id or debt.kind != "dette":
+        raise HTTPException(409, "Cette écriture n'est pas une dette fournisseur sans origine")
+    return [{"id": p.id, "reference": p.reference, "supplier": p.supplier_name,
+             "balance": p.balance, "received_at": p.received_at, "reliable": reliable(debt, p)}
+            for p in candidates(db, debt)]
+
+
+@router.put("/{debt_id}/purchase", response_model=DebtOut)
+def reconcile_purchase(debt_id: int, payload: PurchaseLink, db: Session = Depends(get_db),
+                       user: User = Depends(require_permission("dettes_gerer"))):
+    if not payload.confirm:
+        raise HTTPException(400, "Confirmation explicite du rapprochement requise")
+    return reconcile(db, debt_id, payload.purchase_id, user)
 
 
 @router.get("/resume", response_model=DebtSummary, dependencies=[
@@ -147,7 +176,10 @@ def create_debt(
         due_date=payload.due_date,
         note=payload.note,
         created_by_id=current_user.id,
+        created_at=utcnow(),
     )
+    if kind == "dette" or payload.purchase_id is not None:
+        assign_new_origin(db, debt, payload.purchase_id)
     db.add(debt)
     db.commit()
     db.refresh(debt)
@@ -162,6 +194,10 @@ def update_debt(
     _: User = Depends(require_permission("dettes_gerer")),
 ):
     debt = _find(db, debt_id)
+    if debt.purchase_id:
+        raise HTTPException(409, "Dette liée à un achat : ses informations d'origine sont conservées")
+    if payload.purchase_id:
+        raise HTTPException(400, "Utilisez l'action Rapprocher pour lier une dette existante")
     if payload.amount <= 0:
         raise HTTPException(status_code=400, detail="Montant invalide")
     debt.kind = payload.kind if payload.kind in KINDS else debt.kind
@@ -436,5 +472,7 @@ def delete_debt(
             status_code=400,
             detail="Des règlements sont enregistrés : cette écriture se conserve",
         )
+    if debt.purchase_id:
+        raise HTTPException(409, "Dette d'origine conservée : gérez cet achat depuis Approvisionnements")
     db.delete(debt)
     db.commit()

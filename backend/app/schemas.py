@@ -1579,6 +1579,7 @@ class SettlementOut(DebtPaymentOut):
 
 
 class DebtCreate(BaseModel):
+    purchase_id: Optional[int] = None
     kind: str = "creance"  # creance (client) or dette (fournisseur)
     party: str = ""
     customer_id: Optional[int] = None
@@ -1597,6 +1598,8 @@ class DebtOut(BaseModel):
     customer_id: Optional[int] = None
     supplier_id: Optional[int] = None
     sale_id: Optional[int] = None
+    purchase_id: Optional[int] = None
+    purchase_reference: Optional[str] = None
     reference: str
     amount: float
     due_date: Optional[datetime] = None

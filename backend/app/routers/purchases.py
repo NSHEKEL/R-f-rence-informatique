@@ -32,6 +32,8 @@ from ..models import (
 )
 from ..permissions import has_permission, require_permission
 from ..receivables import open_purchase_payable
+from ..purchase_links import mentions_purchase, same_supplier
+from ..accounting_ledger import derive
 from ..schemas import (
     PurchaseCreate,
     CataloguePriceChange,
@@ -232,10 +234,16 @@ def delete_purchase(
     if purchase is None:
         raise HTTPException(404, "Approvisionnement introuvable")
     debts = db.query(Debt).filter_by(purchase_id=purchase.id).all()
-    if db.query(Debt.id).filter_by(purchase_id=None, kind="dette", reference=purchase.reference).first():
+    orphans = db.query(Debt).filter_by(purchase_id=None, kind="dette").all()
+    if any(same_supplier(debt, purchase, allow_name=True) and mentions_purchase(debt, purchase) for debt in orphans):
         raise HTTPException(409, "Dette fournisseur sans lien d'origine : rapprochez cette dette de l'approvisionnement avant suppression")
-    if purchase.paid or any(not payment.cancelled for debt in debts for payment in debt.payments):
-        raise HTTPException(409, "Règlements enregistrés : annulez d'abord les paiements fournisseur. Un acompte initial doit être régularisé avant suppression ; aucun paiement n'est effacé silencieusement.")
+    if purchase.paid or any(debt.payments for debt in debts):
+        raise HTTPException(409, "Historique de règlements (actifs ou annulés) conservé : suppression refusée pour cet achat. Conservez l'achat et ses reçus ; annulez les règlements erronés avec motif dans Dettes, puis faites valider la régularisation comptable et de stock par un administrateur. Annuler un paiement ne permet pas d'effacer son achat.")
+    entries, missing, _ = derive(db)
+    accounting_snapshot = [row for row in entries + missing if row["source_type"] == "purchase" and row["source_id"] == purchase.id]
+    source_snapshot = {"purchase": {col.name: getattr(purchase, col.name) for col in Purchase.__table__.columns},
+        "items": [{col.name: getattr(item, col.name) for col in PurchaseItem.__table__.columns} for item in purchase.items],
+        "debts": [{col.name: getattr(debt, col.name) for col in Debt.__table__.columns} for debt in debts]}
     movements = db.query(StockMovement).filter_by(kind="approvisionnement", reason=f"Approvisionnement {purchase.reference}").all()
     quantities = {}
     for movement in movements:
@@ -272,7 +280,8 @@ def delete_purchase(
         db.delete(debt)
     db.add(SecurityLog(event="suppression_approvisionnement", user_id=current_user.id, identifier=current_user.email,
         success=True, detail=json.dumps({"reference": purchase.reference, "id": purchase.id, "total": purchase.total,
-            "received_quantity": received, "reversed_prices": restored}, ensure_ascii=False)))
+            "received_quantity": received, "reversed_prices": restored, "sources": source_snapshot,
+            "accounting_snapshot": accounting_snapshot}, ensure_ascii=False, default=str)))
     db.delete(purchase)
     db.commit()
 

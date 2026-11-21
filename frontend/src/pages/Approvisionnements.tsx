@@ -1,6 +1,7 @@
 import { apiErrorMessage } from "../lib/apiErrors";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
+import { useSearchParams } from "react-router-dom";
 import {
   Ban,
   PackagePlus,
@@ -44,6 +45,8 @@ const statusStyles: Record<string, string> = {
 const OPEN_STATUSES = ["En attente", "Reçu partiellement"];
 
 export default function Approvisionnements() {
+  const [params, setParams] = useSearchParams();
+  const originId = params.get("purchase");
   const version = useSyncVersion();
   const { can } = useAuth();
   const { company, printing } = useCompany();
@@ -74,7 +77,8 @@ export default function Approvisionnements() {
   const [priceChanges, setPriceChanges] = useState<CataloguePriceChange[]>([]);
   const [reviewReady, setReviewReady] = useState(false);
 
-  const selection = useSelection(purchases);
+  const visiblePurchases = useMemo(() => originId ? purchases.filter((purchase) => String(purchase.id) === originId) : purchases, [purchases, originId]);
+  const selection = useSelection(visiblePurchases);
 
   const load = useCallback(async () => {
     try {
@@ -339,6 +343,7 @@ export default function Approvisionnements() {
         </div>
       </div>
 
+      {originId && <p className="text-sm">Achat d'origine de la dette. <button className="text-blue-600 underline" onClick={() => setParams({})}>Voir tous les approvisionnements</button></p>}
       {error && (
         <div className="rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-600">
           {error}
@@ -399,7 +404,7 @@ export default function Approvisionnements() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {purchases.map((p) => (
+            {visiblePurchases.map((p) => (
               <tr key={p.id} className="hover:bg-slate-50/60">
                 {manage && (
                   <td className="px-4 py-3.5">
@@ -489,7 +494,7 @@ export default function Approvisionnements() {
                 </td>
               </tr>
             ))}
-            {purchases.length === 0 && (
+            {visiblePurchases.length === 0 && (
               <tr>
                 <td
                   colSpan={manage ? 9 : 8}
