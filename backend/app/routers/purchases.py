@@ -383,7 +383,7 @@ def price_review(purchase_id: int, db: Session = Depends(get_db),
 def cancel_purchase(
     purchase_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("approvisionnements_gerer")),
+    user: User = Depends(require_permission("approvisionnements_gerer")),
 ):
     purchase = _get(db, purchase_id)
     if purchase.status == "Reçu":
@@ -391,6 +391,16 @@ def cancel_purchase(
             status_code=400,
             detail="Un approvisionnement entièrement reçu ne s'annule pas",
         )
+    debts = db.query(Debt).filter_by(purchase_id=purchase.id).with_for_update().all()
+    if debts and (purchase.paid or any(debt.payments for debt in debts)
+                  or any(item.received_quantity for item in purchase.items)):
+        raise HTTPException(409, "Achat lié avec réception ou historique de règlements : annulation refusée pour conserver l'origine comptable. Conservez l'achat et ses reçus ; régularisation administrateur requise.")
+    for debt in debts:
+        debt.purchase_id = None
+    if debts:
+        db.add(SecurityLog(event="annulation_approvisionnement", user_id=user.id, identifier=user.email,
+            success=True, detail=json.dumps({"id": purchase.id, "reference": purchase.reference,
+                "unlinked_debts": [debt.id for debt in debts]}, ensure_ascii=False)))
     purchase.status = "Annulé"
     db.commit()
     db.refresh(purchase)
