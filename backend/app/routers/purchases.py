@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..catalogue import require_active
-from ..purchase_prices import apply_changes, review
+from ..purchase_prices import apply_changes, remove_purchase_changes, review
 from .. import stock
 from ..models import (
     Debt,
@@ -270,23 +270,12 @@ def delete_purchase(
         db.add(StockMovement(depot_id=stock.resolve(db, depot_id), product_id=product.id, product_name=product.name,
             kind="annulation approvisionnement", quantity=-quantity, stock_before=before, stock_after=after,
             reason=f"Suppression {purchase.reference}", created_by_id=current_user.id))
-    histories = db.query(PriceHistory).filter_by(purchase_reference=purchase.reference).order_by(PriceHistory.id.desc()).all()
-    restored = []
-    for row in histories:
-        parts = row.field.split(":")
-        target = db.get(ProductPackaging, int(parts[1])) if len(parts) == 3 and parts[0] == "packaging" else db.get(Product, row.product_id)
-        field = parts[-1]
-        later = db.query(PriceHistory.id).filter(PriceHistory.product_id == row.product_id, PriceHistory.field == row.field,
-            PriceHistory.id > row.id, or_(PriceHistory.purchase_reference.is_(None), PriceHistory.purchase_reference != purchase.reference)).first()
-        if target is not None and hasattr(target, field) and later is None and getattr(target, field) == row.new_value:
-            setattr(target, field, row.old_value)
-            restored.append({"product_id": row.product_id, "field": row.field, "old": row.old_value, "new": row.new_value})
-        db.delete(row)
+    price_history = remove_purchase_changes(db, purchase)
     for debt in debts:
         db.delete(debt)
     db.add(SecurityLog(event="suppression_approvisionnement", user_id=current_user.id, identifier=current_user.email,
         success=True, detail=json.dumps({"reference": purchase.reference, "id": purchase.id, "total": purchase.total,
-            "received_quantity": received, "reversed_prices": restored, "sources": source_snapshot,
+            "received_quantity": received, "reversed_prices": price_history["restored"], "price_history": price_history, "sources": source_snapshot,
             "accounting_snapshot": accounting_snapshot}, ensure_ascii=False, default=str)))
     db.delete(purchase)
     db.commit()
