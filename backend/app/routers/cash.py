@@ -119,7 +119,8 @@ def _detail(db: Session, session: CashSession, user: User) -> CashSessionDetail:
             "cash_sales", "other_sales", "sales_count", "deposits_total", "expected_cash",
             "sales", "entries_total", "exits_total", "cash_refunds", "cash_settlements",
             "total_sales", "refunds_total", "net_sales", "expenses_total", "cash_expenses", "expenses",
-            "payments", "payment_groups",
+            "payments", "payment_groups", "mobile_money_to_cash", "mobile_money_sales",
+            "mobile_money_refunds", "kept_balance", "remitted_amount", "mobile_cash_adjustment",
         }),
     )
 
@@ -204,7 +205,8 @@ def _flow_groups(report, settlements=None):
 def _global_totals(db, sessions, user):
     fields = ("total_sales", "net_sales", "sales_count", "opening_balance", "entries_total", "exits_total",
               "refunds_total", "cash_refunds", "cash_expenses", "expenses_total", "cash_settlements",
-              "settlements_total", "deposits_total", "expected_cash", "advances_total")
+              "settlements_total", "deposits_total", "expected_cash", "advances_total",
+              "mobile_money_sales", "mobile_money_refunds", "kept_balance", "remitted_amount", "mobile_cash_adjustment")
     totals = {field: 0 for field in fields}
     payments, rows = {}, []
     inflows, outflows = group_payments({}), group_payments({})
@@ -226,6 +228,8 @@ def _global_totals(db, sessions, user):
             "total_sales": report.total_sales, "sales_count": report.sales_count,
             "payments": report.payments, "payment_groups": group_payments(report.payments),
             "expected_cash": report.expected_cash, "counted_cash": report.counted_cash,
+            "mobile_money_to_cash": report.mobile_money_to_cash,
+            "kept_balance": report.kept_balance, "remitted_amount": report.remitted_amount,
             "difference": report.difference,
         })
     by_cashier = {}
@@ -239,6 +243,9 @@ def _global_totals(db, sessions, user):
     for cashier in by_cashier.values():
         cashier["payment_groups"] = group_payments(cashier["payments"])
     counted = sum(row["counted_cash"] or 0 for row in rows) if all(row["closed_at"] for row in rows) else None
+    for field in ("kept_balance", "remitted_amount"):
+        if any(row[field] is None for row in rows):
+            totals[field] = None
     return {**totals, "payments": payments, "payment_groups": group_payments(payments),
             "inflow_groups": inflows, "outflow_groups": outflows,
             "sessions": rows, "cashiers": list(by_cashier.values()), "counted_cash": counted,
@@ -386,7 +393,15 @@ def create_movement(payload: CashMovementCreate, request: Request,
     session = lock_current_session(db, user)
     if session is None:
         raise HTTPException(status_code=400, detail="Ouvrez votre caisse avant une opération")
+    if payload.return_id is not None:
+        refund = db.get(SaleReturn, payload.return_id)
+        if (refund is None or refund.cash_session_id != session.id or payload.type != "out"
+                or refund.refund_method != CASH_PAYMENT or abs(refund.total - payload.amount) > 0.009):
+            raise HTTPException(400, "Le mouvement doit correspondre au remboursement espèces de cette caisse")
+        if db.query(CashMovement.id).filter_by(return_id=refund.id).first():
+            raise HTTPException(409, "Ce remboursement possède déjà son mouvement de caisse")
     row = CashMovement(session_id=session.id, type=payload.type, amount=payload.amount,
+                       return_id=payload.return_id,
                        reason=payload.reason.strip(), user_id=user.id,
                        workstation=request.client.host if request.client else "")
     db.add(row)
@@ -448,6 +463,8 @@ def close_session(
             status_code=400, detail="Aucune caisse ouverte à votre nom"
         )
     totals = session_amounts(db, session)
+    if payload.kept_balance is not None and payload.kept_balance > payload.closing_balance:
+        raise HTTPException(400, "Le montant laissé en caisse ne peut pas dépasser le montant compté")
     if not has_permission(db, current_user, "soldes_consulter") and not payload.note.strip():
         raise HTTPException(status_code=400, detail="Une note est obligatoire pour clôturer sans accès aux soldes")
     gap = payload.closing_balance - totals.expected_cash
@@ -459,12 +476,18 @@ def close_session(
     session.closed_at = datetime.now(timezone.utc)
     session.closed_by_id = current_user.id
     session.closing_balance = payload.closing_balance
+    session.kept_balance = payload.kept_balance
+    session.remitted_amount = payload.closing_balance - payload.kept_balance if payload.kept_balance is not None else None
     session.expected_balance = totals.expected_cash
     session.difference = gap
     if payload.note:
         session.note = payload.note
     # Freeze the Z snapshot at closing: it can never be edited afterwards.
-    session.z_report = session_amounts(db, session).model_dump_json()
+    session.z_report = totals.model_copy(update={
+        "closed_at": session.closed_at, "counted_cash": session.closing_balance,
+        "difference": gap, "note": session.note, "kept_balance": session.kept_balance,
+        "remitted_amount": session.remitted_amount,
+    }).model_dump_json()
     db.add(
         Notification(
             kind="caisse",
@@ -599,16 +622,24 @@ def session_amounts(db: Session, session: CashSession) -> CashSessionZ:
 
     movements = db.query(CashMovement).filter(CashMovement.session_id == session.id).all()
     entries = sum(m.amount for m in movements if m.type == "in")
-    exits = sum(m.amount for m in movements if m.type == "out")
+    exits = sum(m.amount for m in movements if m.type == "out" and m.return_id is None)
     cash_refunds = sum(r.total or 0 for r in returns if r.refund_method == CASH_PAYMENT)
     refunds_total = sum(r.total or 0 for r in returns)
     cash_expenses = sum(e.amount or 0 for e in expenses if e.payment_method == CASH_PAYMENT and not e.bank_account_id)
+    convert_mobile = bool(company is None or company.mobile_money_to_cash) and session.closed_at is None
+    mobile_sales = group_payments(payments)["mobile_money"]
+    mobile_refunds = sum(r.total or 0 for r in returns if group_payments({r.refund_method: 1})["mobile_money"])
+    mobile_expenses = sum(e.amount or 0 for e in expenses if not e.bank_account_id and group_payments({e.payment_method or "": 1})["mobile_money"])
+    mobile_settlements = group_payments(settlement_payments)["mobile_money"]
+    mobile_deposits = sum(d.amount or 0 for d in deposits if d.status == "validé" and group_payments({d.method or "": 1})["mobile_money"])
+    mobile_adjustment = mobile_sales + mobile_settlements - mobile_refunds - mobile_expenses - mobile_deposits if convert_mobile else 0
     expected = (
         session.opening_balance
         + payments.get(CASH_PAYMENT, 0.0)
         + cash_settlements
         - validated_deposits
         + entries - exits - cash_refunds - cash_expenses
+        + mobile_adjustment
     )
     if session.closed_at is not None and session.expected_balance is not None:
         expected = session.expected_balance
@@ -617,6 +648,10 @@ def session_amounts(db: Session, session: CashSession) -> CashSessionZ:
         other_sales=sum(value for method, value in payments.items() if method != CASH_PAYMENT),
         entries_total=entries, exits_total=exits,
         cash_refunds=cash_refunds, cash_settlements=cash_settlements,
+        mobile_money_to_cash=convert_mobile, mobile_money_sales=mobile_sales,
+        mobile_cash_adjustment=mobile_adjustment,
+        mobile_money_refunds=mobile_refunds, kept_balance=session.kept_balance,
+        remitted_amount=session.remitted_amount,
         net_sales=total_sales - refunds_total, cash_expenses=cash_expenses,
         sales=[{
             "id": s.id, "reference": s.reference, "total": s.total or 0,
@@ -724,7 +759,7 @@ def reopen_session(
     previous = session
     session = CashSession(
         opened_by_id=previous.opened_by_id,
-        opening_balance=previous.closing_balance or 0,
+        opening_balance=(previous.kept_balance if previous.kept_balance is not None else previous.closing_balance) or 0,
         business_day=business_day(),
         note=f"Nouvelle ouverture après clôture #{previous.id}, par {current_user.name}",
     )

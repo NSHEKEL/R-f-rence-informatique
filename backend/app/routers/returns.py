@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from .. import remote_sales
@@ -8,6 +9,7 @@ from ..database import get_db
 from .. import stock
 from ..models import (
     Notification,
+    CashSession,
     Product,
     Sale,
     SaleReturn,
@@ -56,10 +58,18 @@ def create_return(
     if not lines:
         raise HTTPException(status_code=400, detail="Aucun article à retourner")
 
-    if payload.refund_method == "Espèces" and not has_permission(db, current_user, "caisse_operations"):
+    if payload.refund_method != "Avoir" and not has_permission(db, current_user, "caisse_operations"):
         raise HTTPException(status_code=403, detail="Accès refusé : sortie de caisse")
-    session = lock_current_session(db, current_user)
-    if payload.refund_method == "Espèces" and session is None:
+    session = None
+    if sale.cash_session_id:
+        locked = db.execute(update(CashSession).where(
+            CashSession.id == sale.cash_session_id, CashSession.closed_at.is_(None),
+        ).values(note=CashSession.note))
+        if locked.rowcount:
+            session = db.get(CashSession, sale.cash_session_id)
+    if session is None:
+        session = lock_current_session(db, current_user)
+    if payload.refund_method != "Avoir" and session is None:
         raise HTTPException(status_code=400, detail="Ouvrez votre caisse avant un remboursement en espèces")
     credit = SaleReturn(
         cash_session_id=session.id if session else None,

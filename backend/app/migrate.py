@@ -23,6 +23,7 @@ FALSE_LITERAL = "0" if engine.dialect.name == "sqlite" else "FALSE"
 
 # table -> column -> SQL type/default appended to "ALTER TABLE ... ADD COLUMN".
 COLUMNS: dict[str, dict[str, str]] = {
+    "cash_movements": {"return_id": "INTEGER"},
     "inventory_counts": {"counts_json": "TEXT NOT NULL DEFAULT '{}'", "client_updated_at": "TIMESTAMP", "client_id": "VARCHAR NOT NULL DEFAULT ''"},
     "stock_lots": {"depot_id": "INTEGER", "unit_cost": "FLOAT DEFAULT NULL"},
     "stock_movements": {"depot_id": "INTEGER"},
@@ -72,6 +73,7 @@ COLUMNS: dict[str, dict[str, str]] = {
         "logo": "TEXT DEFAULT ''",
         "printer_name": "VARCHAR DEFAULT ''",
         "auto_print_cash": f"BOOLEAN DEFAULT {TRUE_LITERAL}",
+        "mobile_money_to_cash": f"BOOLEAN NOT NULL DEFAULT {TRUE_LITERAL}",
         "expiry_critical_days": "INTEGER DEFAULT 7",
         "expiry_alert_days": "INTEGER DEFAULT 30",
         "expiry_watch_days": "INTEGER DEFAULT 60",
@@ -175,6 +177,8 @@ COLUMNS: dict[str, dict[str, str]] = {
         "cancelled_by_id": "INTEGER",
     },
     "cash_sessions": {
+        "kept_balance": "FLOAT",
+        "remitted_amount": "FLOAT",
         "global_closure_id": "INTEGER",
         "business_day": "VARCHAR DEFAULT ''",
         "workstation": "VARCHAR",

@@ -50,6 +50,7 @@ class UserPhoto(BaseModel):
 
 # ---------- Company settings ----------
 class CompanySettingsOut(BaseModel):
+    mobile_money_to_cash: bool = True
     allow_negative_stock_sale: bool = False
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -117,6 +118,7 @@ class CompanySettingsOut(BaseModel):
 
 
 class CompanySettingsUpdate(BaseModel):
+    mobile_money_to_cash: bool = True
     allow_negative_stock_sale: bool = False
     name: Optional[str] = None
     slogan: Optional[str] = None
@@ -634,7 +636,7 @@ class ReturnLine(PackagingQuantities):
 class ReturnCreate(BaseModel):
     sale_reference: str
     reason: str = ""
-    refund_method: Literal["Avoir", "Espèces"] = "Avoir"
+    refund_method: Literal["Avoir", "Espèces", "Mobile Money"] = "Avoir"
     lines: List[ReturnLine]
 
 
@@ -903,6 +905,7 @@ class CashSessionOpen(BaseModel):
 
 
 class CashSessionClose(BaseModel):
+    kept_balance: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     closing_balance: float = 0
     note: str = ""
 
@@ -945,6 +948,12 @@ class CashSessionSaleLine(BaseModel):
 
 
 class CashSessionDetail(CashSessionOut):
+    mobile_cash_adjustment: Optional[float] = None
+    mobile_money_to_cash: bool = False
+    mobile_money_sales: Optional[float] = None
+    mobile_money_refunds: Optional[float] = None
+    kept_balance: Optional[float] = None
+    remitted_amount: Optional[float] = None
     """Open session enriched with live totals."""
 
     cash_sales: Optional[float] = None
@@ -968,12 +977,14 @@ class CashSessionDetail(CashSessionOut):
 
 
 class CashMovementCreate(BaseModel):
+    return_id: Optional[int] = None
     type: Literal["in", "out"]
     amount: float = Field(gt=0, allow_inf_nan=False)
     reason: str = Field(min_length=1, max_length=1000)
 
 
 class CashMovementOut(BaseModel):
+    return_id: Optional[int] = None
     model_config = ConfigDict(from_attributes=True)
     id: int
     session_id: int
@@ -1903,6 +1914,12 @@ class BankDepositReconcile(BaseModel):
 
 # ---------- Z de caisse ----------
 class CashSessionZ(BaseModel):
+    mobile_cash_adjustment: float = 0
+    mobile_money_to_cash: bool = False
+    mobile_money_sales: float = 0
+    mobile_money_refunds: float = 0
+    kept_balance: Optional[float] = None
+    remitted_amount: Optional[float] = None
     """État Z de caisse: definitive recap of a till session."""
 
     session_id: int

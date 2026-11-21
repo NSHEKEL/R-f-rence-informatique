@@ -46,6 +46,8 @@ class User(Base):
 class CompanySettings(Base):
     __tablename__ = "company_settings"
 
+    mobile_money_to_cash = Column(Boolean, default=True, nullable=False, server_default=true())
+
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, default="EasyGest", nullable=False)
     slogan = Column(String, default="")
@@ -497,6 +499,9 @@ class CashSession(Base):
     """A till session: opened with a starting balance, closed with a count."""
 
     __tablename__ = "cash_sessions"
+
+    kept_balance = Column(Float, nullable=True)
+    remitted_amount = Column(Float, nullable=True)
 
     id = Column(Integer, primary_key=True, index=True)
     opened_at = Column(DateTime, default=utcnow)
@@ -1207,6 +1212,7 @@ class CashMovement(Base):
     )
 
     id = Column(Integer, primary_key=True)
+    return_id = Column(Integer, ForeignKey("sale_returns.id"), nullable=True)
     session_id = Column(Integer, ForeignKey("cash_sessions.id"), nullable=False, index=True)
     type = Column(String, nullable=False)
     amount = Column(Float, nullable=False)

@@ -170,18 +170,22 @@ class CashRegisterTests(unittest.TestCase):
         engine = create_engine("sqlite:///:memory:")
         self.addCleanup(engine.dispose)
         with engine.begin() as conn:
-            for table in ("users", "cash_sessions", "sale_returns", "debt_payments"):
+            for table in ("users", "company_settings", "cash_sessions", "sale_returns", "debt_payments"):
                 conn.execute(text(f"CREATE TABLE {table} (id INTEGER PRIMARY KEY)"))
                 conn.execute(text(f"INSERT INTO {table} (id) VALUES (1)"))
+            conn.execute(text("ALTER TABLE company_settings ADD COLUMN name VARCHAR DEFAULT 'Ancien magasin'"))
         with patch.object(migration, "engine", engine):
             migration.migrate()
             migration.migrate()
         inspector = inspect(engine)
         self.assertIn("cash_movements", inspector.get_table_names())
+        self.assertIn("return_id", {col["name"] for col in inspector.get_columns("cash_movements")})
         for table in ("sale_returns", "debt_payments"):
             self.assertIn("cash_session_id", {col["name"] for col in inspector.get_columns(table)})
         with engine.connect() as conn:
             self.assertEqual(conn.execute(text("SELECT id, refund_method FROM sale_returns")).one(), (1, "Avoir"))
+            self.assertEqual(conn.execute(text("SELECT mobile_money_to_cash FROM company_settings WHERE id=1")).scalar(), 1)
+            self.assertEqual(conn.execute(text("SELECT kept_balance, remitted_amount FROM cash_sessions WHERE id=1")).one(), (None, None))
             self.assertEqual(conn.execute(text("SELECT COUNT(*) FROM debt_payments")).scalar(), 1)
 
     def test_corrupt_legacy_snapshot_is_not_overwritten(self):

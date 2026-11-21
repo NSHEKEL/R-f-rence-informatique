@@ -607,6 +607,7 @@ export default function Settings() {
       {tab === "tarifs" && <CatalogPriceSettings />}
       {(["articles", "fiscalite", "peripheriques", "caisse"] as string[]).includes(tab || "") && <div className="card space-y-4 p-6">
         <h3 className="font-bold">{visibleTabs.find((item) => item.key === tab)?.label}</h3>
+        {tab === "caisse" && <label className="flex items-center gap-3 text-sm"><input type="checkbox" checked={company.mobile_money_to_cash ?? true} disabled={!can("caisse_modifier")} onChange={(e) => update({ mobile_money_to_cash: e.target.checked })} />Mobile Money converti en espèces à la clôture</label>}
         {(tab === "articles" ? ["expiry_critical_days", "expiry_alert_days", "expiry_watch_days"] : tab === "fiscalite" ? ["tax_id", "rccm", "ncc", "capital_social", "regime_fiscal", "vat_rate"] : tab === "peripheriques" ? ["drawer_enabled", "drawer_port", "drawer_code"] : ["auto_print_cash", "drawer_open_after_sale"]).map((field) => {
           const key = field as keyof CompanyForm;
           return <label className="label" key={key}>{SETTING_LABELS[key] || key}{typeof company[key] === "boolean" ? <input type="checkbox" checked={Boolean(company[key])} onChange={(e) => update({ [key]: e.target.checked })} /> : <input className="input" type={typeof company[key] === "number" ? "number" : "text"} min={0} value={String(company[key] ?? "")} onChange={(e) => update({ [key]: typeof company[key] === "number" ? Number(e.target.value) : e.target.value })} />}</label>;

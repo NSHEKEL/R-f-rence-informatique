@@ -211,7 +211,7 @@ def derive(db):
     for expense in db.query(Expense):
         operation("expense", expense, expense.date, "CA" if expense.payment_method == "Espèces" else "BQ",
             lambda e=expense: [(account(f"depense:{e.category or 'Divers'}"), money(e.amount), 0), (payment(e.payment_method, e.bank_account_id), 0, money(e.amount))])
-    for movement in db.query(CashMovement):
+    for movement in db.query(CashMovement).filter(CashMovement.return_id.is_(None)):
         def build_movement(m=movement):
             cash, counterpart, amount = account("caisse"), account(f"mouvement:{m.type}"), money(m.amount)
             return [(cash, amount, 0), (counterpart, 0, amount)] if m.type == "in" else [(counterpart, amount, 0), (cash, 0, amount)]

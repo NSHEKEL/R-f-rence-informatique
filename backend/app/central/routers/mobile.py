@@ -184,7 +184,7 @@ def sales(
     ]
 
 
-def _expected_cash(db: Session, user: MirrorUser, client: Client, today, required_uids):
+def _expected_cash(db: Session, user: MirrorUser, client: Client, today, required_uids, field="expected_cash"):
     try:
         permissions = json.loads(user.cash_permissions or "[]")
     except (ValueError, TypeError):
@@ -210,7 +210,7 @@ def _expected_cash(db: Session, user: MirrorUser, client: Client, today, require
                 previous = sessions.get(row["key"])
                 timestamp = snapshot["generated_at"]
                 if previous is None or timestamp > previous[0]:
-                    sessions[row["key"]] = (timestamp, row.get("expected_cash"))
+                    sessions[row["key"]] = (timestamp, row.get(field))
         except (ValueError, TypeError, AttributeError, KeyError):
             return None
     if not required_uids.issubset(available) or not sessions or any(row[1] is None for row in sessions.values()):
@@ -427,6 +427,14 @@ def summary(
         "today_count": len(day_rows),
         "today_expected_cash": _expected_cash(db, user, client, today,
             {row.installation_uid for row in day_rows + day_refunds if row.installation_uid}),
+        "today_remaining_cash": _expected_cash(db, user, client, today,
+            {row.installation_uid for row in day_rows + day_refunds if row.installation_uid}, "kept_balance"),
+        "today_remitted_cash": _expected_cash(db, user, client, today,
+            {row.installation_uid for row in day_rows + day_refunds if row.installation_uid}, "remitted_amount"),
+        "today_cash_detail": {field: _expected_cash(db, user, client, today,
+            {row.installation_uid for row in day_rows + day_refunds if row.installation_uid}, field)
+            for field in ("cash_sales", "mobile_money_sales", "other_sales", "expenses_total", "refunds_total",
+                "entries_total", "exits_total", "mobile_money_to_cash")},
         "month_total": month_gross - month_returns,
         "month_gross_total": month_gross,
         "month_returns_total": month_returns,

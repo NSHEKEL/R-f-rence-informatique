@@ -47,6 +47,7 @@ export default function Caisse() {
   const [closeOpen, setCloseOpen] = useState(false);
   const [countedBalance, setCountedBalance] = useState("0");
   const [closeNote, setCloseNote] = useState("");
+  const [keptBalance, setKeptBalance] = useState("0");
   const [closedChoice, setClosedChoice] = useState(false);
 
   const [printJob, setPrintJob] = useState<
@@ -129,6 +130,7 @@ export default function Caisse() {
     try {
       const res = await api.post<CashSessionDetail>("/cash-sessions/close", {
         closing_balance: Number(countedBalance) || 0,
+        kept_balance: Number(keptBalance) || 0,
         note: closeNote,
       });
       setCloseOpen(false);
@@ -297,7 +299,7 @@ export default function Caisse() {
             {[
               ["Fonds d'ouverture", formatXOF(today.opening_balance)],
               ["Ventes espèces", formatXOF(today.cash_sales)],
-              ["Ventes Mobile Money", formatXOF(today.payment_groups?.mobile_money ?? 0)],
+              [today.mobile_money_to_cash ? "Ventes Mobile Money (converti en espèces)" : "Ventes Mobile Money", formatXOF(today.payment_groups?.mobile_money ?? 0)],
               ["Ventes bancaires", formatXOF(today.payment_groups?.bank ?? 0)],
               ["Crédit (non encaissé)", formatXOF(today.payment_groups?.credit ?? 0)],
               ["Autres moyens", formatXOF(today.payment_groups?.other ?? 0)],
@@ -309,6 +311,8 @@ export default function Caisse() {
               ["Sorties de caisse", formatXOF(today.exits_total)],
               ["Règlements espèces nets", formatXOF(today.cash_settlements)],
               ["Remboursements espèces", formatXOF(today.cash_refunds)],
+              ["Montant remis au patron", formatXOF(today.remitted_amount)],
+              ["Montant restant en caisse", formatXOF(today.kept_balance)],
               [
                 closed ? "Solde compté" : "Solde attendu",
                 formatXOF(
@@ -527,12 +531,16 @@ export default function Caisse() {
             {[
               ["Fonds d'ouverture", formatXOF(today?.opening_balance)],
               ["Ventes espèces", formatXOF(today?.cash_sales)],
-              ["Ventes Mobile Money", formatXOF(today?.payment_groups?.mobile_money ?? 0)],
+              [today?.mobile_money_to_cash ? "Ventes Mobile Money (converti en espèces)" : "Ventes Mobile Money", formatXOF(today?.payment_groups?.mobile_money ?? 0)],
               ["Ventes bancaires", formatXOF(today?.payment_groups?.bank ?? 0)],
               ["Total général des ventes", formatXOF(today?.total_sales)],
               ["Crédit (non encaissé)", formatXOF(today?.payment_groups?.credit ?? 0)],
               ["Autres moyens", formatXOF(today?.payment_groups?.other ?? 0)],
               ["Solde attendu", formatXOF(today?.expected_cash)],
+              ["Dépenses (tous modes)", formatXOF(today?.expenses_total)],
+              ["Retours / remboursements", formatXOF(today?.refunds_total)],
+              ["Apports", formatXOF(today?.entries_total)],
+              ["Retraits / remises déjà effectuées", formatXOF(today?.exits_total)],
             ].map(([label, value]) => (
               <div key={label} className="rounded-xl bg-slate-50 p-3">
                 <p className="text-xs text-slate-400">{label}</p>
@@ -541,7 +549,7 @@ export default function Caisse() {
             ))}
           </div>
           <div>
-            <p className="text-xs">Le solde attendu et le montant compté concernent uniquement les espèces physiques ; les paiements électroniques sont séparés.</p>
+            <p className="text-xs">Solde physique avant remise au patron. {today?.mobile_money_to_cash ? "Les flux Mobile Money sont convertis en espèces ; les ventes ne sont pas recomptées." : "Les paiements électroniques restent séparés."}</p>
             <label className="label">Montant compté en caisse (FCFA)</label>
             <input
               autoFocus
@@ -551,6 +559,11 @@ export default function Caisse() {
               value={countedBalance}
               onChange={(e) => setCountedBalance(e.target.value)}
             />
+          </div>
+          <div>
+            <label className="label">Montant laissé en caisse (FCFA)</label>
+            <input className="input" type="number" min="0" max={Number(countedBalance) || 0} value={keptBalance} onChange={(e) => setKeptBalance(e.target.value)} />
+            <p className="text-sm">À remettre au patron : {formatXOF((Number(countedBalance) || 0) - (Number(keptBalance) || 0))}</p>
           </div>
           <div>
             <label className="label">

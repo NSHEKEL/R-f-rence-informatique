@@ -14,7 +14,7 @@ export function canOpenSettingsTab(tab: string, admin: boolean, can: Can) {
 export function settingsCategoryForField(key: string): SettingsCategory {
   if (["tax_id", "rccm", "ncc", "regime_fiscal", "vat_rate", "capital_social"].includes(key)) return "fiscaux";
   if (["document_layouts", "receipt_header", "receipt_footer", "receipt_format", "printer_name"].includes(key)) return "imprimantes";
-  if (["auto_print_cash", "drawer_open_after_sale"].includes(key)) return "caisse";
+  if (["auto_print_cash", "drawer_open_after_sale", "mobile_money_to_cash"].includes(key)) return "caisse";
   if (key.startsWith("drawer_")) return "peripheriques";
   if (key.startsWith("expiry_")) return "articles";
   if (key.startsWith("backup_") || key.startsWith("drive_")) return "sauvegarde";

@@ -186,9 +186,11 @@ class SettingsPermissionTests(unittest.TestCase):
         self.check("PUT", "/settings/printing", json=config)
         config["receipt"]["auto_print"] = False
         self.check("PUT", "/settings/printing", 403, json=config)
+        self.check("PUT", "/settings/company", 403, json={"mobile_money_to_cash": False})
         self.grant("caisse_modifier")
         for enabled in (False, True):
-            self.check("PUT", "/settings/company", json={"auto_print_cash": enabled, "drawer_open_after_sale": enabled})
+            response = self.check("PUT", "/settings/company", json={"auto_print_cash": enabled, "drawer_open_after_sale": enabled, "mobile_money_to_cash": enabled})
+            self.assertEqual(response.json()["mobile_money_to_cash"], enabled)
             saved = self.check("GET", "/settings/printing").json()
             self.assertEqual(saved["receipt"]["auto_print"], enabled)
             self.assertEqual(saved["receipt"]["open_drawer"], enabled)

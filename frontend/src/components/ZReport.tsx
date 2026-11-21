@@ -3,6 +3,9 @@ import { formatXOF } from "../api/client";
 import type { CompanySettings, ReceiptFormat } from "../types";
 
 export interface ZReportData {
+  mobile_money_to_cash?: boolean;
+  kept_balance?: number | null;
+  remitted_amount?: number | null;
   session_id: number;
   company: string;
   company_address?: string;
@@ -208,6 +211,11 @@ export default function ZReport({
       )}
       <hr className="my-2 border-dashed" />
       <Row label="Montant théorique" value={formatXOF(report.expected_cash)} />
+      <Row label="Dépenses (tous modes)" value={formatXOF(report.expenses_total)} />
+      <Row label="Retours / remboursements (tous modes)" value={formatXOF(report.refunds_total ?? 0)} />
+      {report.mobile_money_to_cash && <Row label="Mobile Money" value="converti en espèces" />}
+      {report.remitted_amount != null && <Row label="Montant remis au patron" value={formatXOF(report.remitted_amount)} />}
+      {report.kept_balance != null && <Row label="Montant restant en caisse" value={formatXOF(report.kept_balance)} />}
       <Row label="Recettes de caisse" value={formatXOF(report.entries_total)} />
       <Row label="Sorties de caisse" value={formatXOF(report.exits_total)} />
       <Row label="Remboursements espèces" value={formatXOF(report.cash_refunds)} />

@@ -5,9 +5,11 @@ partially — increases the stock, records the movements and, on request,
 refreshes the purchase price used by the margin reports.
 """
 
+import json
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -15,11 +17,16 @@ from ..catalogue import require_active
 from ..purchase_prices import apply_changes, review
 from .. import stock
 from ..models import (
+    Debt,
     Notification,
+    PriceHistory,
     Product,
+    ProductPackaging,
     Purchase,
     PurchaseItem,
     StockMovement,
+    StockLot,
+    SecurityLog,
     Supplier,
     User,
 )
@@ -219,17 +226,53 @@ def update_purchase(
 def delete_purchase(
     purchase_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("approvisionnements_gerer")),
+    current_user: User = Depends(require_permission("approvisionnements_gerer")),
 ):
-    purchase = _get(db, purchase_id)
-    if any((item.received_quantity or 0) > 0 for item in purchase.items):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Un approvisionnement déjà reçu ne peut pas être supprimé : "
-                "annulez-le à la place"
-            ),
-        )
+    purchase = db.query(Purchase).filter_by(id=purchase_id).with_for_update().first()
+    if purchase is None:
+        raise HTTPException(404, "Approvisionnement introuvable")
+    debts = db.query(Debt).filter_by(purchase_id=purchase.id).all()
+    if db.query(Debt.id).filter_by(purchase_id=None, kind="dette", reference=purchase.reference).first():
+        raise HTTPException(409, "Dette fournisseur sans lien d'origine : rapprochez cette dette de l'approvisionnement avant suppression")
+    if purchase.paid or any(not payment.cancelled for debt in debts for payment in debt.payments):
+        raise HTTPException(409, "Règlements enregistrés : annulez d'abord les paiements fournisseur. Un acompte initial doit être régularisé avant suppression ; aucun paiement n'est effacé silencieusement.")
+    movements = db.query(StockMovement).filter_by(kind="approvisionnement", reason=f"Approvisionnement {purchase.reference}").all()
+    quantities = {}
+    for movement in movements:
+        key = (movement.product_id, movement.depot_id)
+        quantities[key] = quantities.get(key, 0) + movement.quantity
+    received = sum(item.received_quantity or 0 for item in purchase.items)
+    if sum(quantities.values()) != received:
+        raise HTTPException(409, "Historique de réception incomplet : rapprochez les mouvements de cet approvisionnement avant suppression")
+    for (product_id, depot_id), quantity in sorted(quantities.items(), key=lambda entry: (entry[0][0] or 0, entry[0][1] or 0)):
+        product = db.get(Product, product_id)
+        if product is None:
+            raise HTTPException(409, "Article reçu introuvable : régularisez le stock avant suppression")
+        before, after = stock.adjust(db, product, -quantity, depot_id, allow_negative=False, check_total=True)
+        lots = db.query(StockLot).filter(StockLot.product_id == product_id,
+            or_(StockLot.depot_id == stock.resolve(db, depot_id), StockLot.depot_id.is_(None))).all()
+        if sum(lot.quantity for lot in lots) > after:
+            raise HTTPException(409, "Stock déjà consommé ou affecté à des lots : régularisez les quantités non loties avant suppression (aucun lot étranger n'est supprimé)")
+        db.add(StockMovement(depot_id=stock.resolve(db, depot_id), product_id=product.id, product_name=product.name,
+            kind="annulation approvisionnement", quantity=-quantity, stock_before=before, stock_after=after,
+            reason=f"Suppression {purchase.reference}", created_by_id=current_user.id))
+    histories = db.query(PriceHistory).filter_by(purchase_reference=purchase.reference).order_by(PriceHistory.id.desc()).all()
+    restored = []
+    for row in histories:
+        parts = row.field.split(":")
+        target = db.get(ProductPackaging, int(parts[1])) if len(parts) == 3 and parts[0] == "packaging" else db.get(Product, row.product_id)
+        field = parts[-1]
+        later = db.query(PriceHistory.id).filter(PriceHistory.product_id == row.product_id, PriceHistory.field == row.field,
+            PriceHistory.id > row.id, or_(PriceHistory.purchase_reference.is_(None), PriceHistory.purchase_reference != purchase.reference)).first()
+        if target is not None and hasattr(target, field) and later is None and getattr(target, field) == row.new_value:
+            setattr(target, field, row.old_value)
+            restored.append({"product_id": row.product_id, "field": row.field, "old": row.old_value, "new": row.new_value})
+        db.delete(row)
+    for debt in debts:
+        db.delete(debt)
+    db.add(SecurityLog(event="suppression_approvisionnement", user_id=current_user.id, identifier=current_user.email,
+        success=True, detail=json.dumps({"reference": purchase.reference, "id": purchase.id, "total": purchase.total,
+            "received_quantity": received, "reversed_prices": restored}, ensure_ascii=False)))
     db.delete(purchase)
     db.commit()
 
