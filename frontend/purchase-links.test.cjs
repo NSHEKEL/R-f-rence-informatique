@@ -49,6 +49,22 @@ test('purchase metadata saves omit unchanged lines, but creation and actual line
   }
 });
 
+test('purchase deletion confirms supplier-independent removal and preserves server refusal messages', async () => {
+  for (const mode of ['cancel', 'success', 'refused']) {
+    const state = { calls: 0 };
+    const remove = expression('Approvisionnements', 'remove', {
+      window: { confirm: message => { assert.ok(message.includes('fournisseur a été supprimé')); assert.ok(message.includes('même annulés')); return mode !== 'cancel'; } },
+      api: { delete: async url => { state.calls++; assert.equal(url, '/purchases/3'); if (mode === 'refused') throw { response: { data: { detail: 'Règlements conservés' } } }; } },
+      load: async () => { state.loaded = true; }, axios: { isAxiosError: () => true },
+      apiErrorMessage: detail => detail, setError: message => { state.error = message; }
+    });
+    await remove({ id: 3, reference: 'APP-2026-0001' });
+    assert.equal(state.calls, mode === 'cancel' ? 0 : 1);
+    assert.equal(!!state.loaded, mode === 'success');
+    if (mode === 'refused') assert.equal(state.error, 'Règlements conservés');
+  }
+});
+
 test('manual purchase choices are explicit even for empty candidates; request errors retain debt state', async () => {
   for (const result of [[], [{ id: 2, reference: 'APP-2026-0001' }], null]) {
     const state = { purchaseId: 'old', debt: null };

@@ -254,7 +254,7 @@ export default function Approvisionnements() {
   }
 
   async function remove(purchase: Purchase) {
-    if (!window.confirm(`Supprimer définitivement l'approvisionnement ${purchase.reference} ? Le stock reçu et les prix liés seront régularisés. Les paiements doivent d'abord être annulés. Cette action sera journalisée.`))
+    if (!window.confirm(`Supprimer définitivement l'approvisionnement ${purchase.reference} et sa dette d'origine identifiée, même si le fournisseur a été supprimé ? Le stock reçu et les prix liés seront régularisés. Les paiements, même annulés, bloquent la suppression pour conserver leurs reçus. Cette action sera journalisée.`))
       return;
     try {
       await api.delete(`/purchases/${purchase.id}`);

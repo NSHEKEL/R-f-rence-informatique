@@ -94,6 +94,56 @@ class SupplierOriginsTests(unittest.TestCase):
         self.assertEqual(self.db.query(DebtPayment).count(), 0)
         self.assertEqual(self.stock(), 200)
 
+    def test_direct_delete_includes_unique_orphan_without_supplier_or_prior_reconciliation(self):
+        for legacy in (False, True):
+            if legacy:
+                self.supplier = Supplier(name="FVFD")
+                self.db.add(self.supplier)
+                self.db.commit()
+            purchase, debt = self.received()
+            purchase_id, debt_id, supplier_id = purchase.id, debt.id, self.supplier.id
+            self.orphan(debt)
+            foreign = Debt(kind="dette", party="Autre", reference=purchase.reference, amount=1000000)
+            self.db.add(foreign)
+            self.db.commit()
+            foreign_id = foreign.id
+            self.call(f"/api/suppliers/{supplier_id}", "DELETE", status=204)
+            self.db.expire_all()
+            if legacy:
+                self.db.get(Purchase, purchase_id).supplier_id = supplier_id
+                self.db.get(Debt, debt_id).supplier_id = supplier_id
+                self.db.commit()
+            self.call(f"/api/purchases/{purchase_id}", "DELETE", status=204)
+            self.db.expire_all()
+            self.assertIsNone(self.db.get(Purchase, purchase_id))
+            self.assertIsNone(self.db.get(Debt, debt_id))
+            self.assertIsNotNone(self.db.get(Debt, foreign_id))
+            self.assertEqual(self.stock(), 200)
+            audit = json.loads(self.db.query(SecurityLog).filter_by(event="suppression_approvisionnement").order_by(SecurityLog.id.desc()).first().detail)
+            self.assertEqual(audit["deleted_orphan_debts"], [debt_id])
+            self.assertIsNone(audit["sources"]["debts"][0]["purchase_id"])
+
+    def test_missing_supplier_does_not_bypass_ambiguity_or_payment_preservation(self):
+        purchase, debt = self.received()
+        purchase_id, debt_id = purchase.id, debt.id
+        self.orphan(debt)
+        duplicate = Debt(kind="dette", supplier_id=self.supplier.id, party="FVFD", reference=purchase.reference, amount=1000000)
+        self.db.add(duplicate)
+        self.db.commit()
+        duplicate_id = duplicate.id
+        self.call(f"/api/suppliers/{self.supplier.id}", "DELETE", status=204)
+        self.call(f"/api/purchases/{purchase_id}", "DELETE", status=409)
+        self.call(f"/api/debts/{duplicate_id}", "DELETE", status=204)
+        payment = DebtPayment(debt_id=debt_id, amount=50, cancelled=True, cancel_reason="Historique", receipt_reference="RP-KEEP", created_by_id=self.user.id)
+        self.db.add(payment)
+        self.db.commit()
+        payment_id = payment.id
+        self.call(f"/api/purchases/{purchase_id}", "DELETE", status=409)
+        self.db.expire_all()
+        self.assertEqual(self.db.get(DebtPayment, payment_id).receipt_reference, "RP-KEEP")
+        self.assertIsNotNone(self.db.get(Purchase, purchase_id))
+        self.assertEqual(self.stock(), 201)
+
 
 if __name__ == "__main__":
     unittest.main()

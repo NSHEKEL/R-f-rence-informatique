@@ -32,7 +32,7 @@ from ..models import (
 )
 from ..permissions import has_permission, require_permission
 from ..receivables import open_purchase_payable
-from ..purchase_links import mentions_purchase, same_supplier
+from ..purchase_links import compatible, mentions_purchase, same_supplier
 from ..accounting_ledger import derive
 from ..schemas import (
     PurchaseCreate,
@@ -241,8 +241,16 @@ def delete_purchase(
         raise HTTPException(404, "Approvisionnement introuvable")
     debts = db.query(Debt).filter_by(purchase_id=purchase.id).all()
     orphans = db.query(Debt).filter_by(purchase_id=None, kind="dette").all()
-    if any(same_supplier(debt, purchase, allow_name=True) and mentions_purchase(debt, purchase) for debt in orphans):
-        raise HTTPException(409, "Dette fournisseur sans lien d'origine : rapprochez cette dette de l'approvisionnement avant suppression")
+    matching = [debt for debt in orphans if same_supplier(debt, purchase, allow_name=True) and mentions_purchase(debt, purchase)]
+    if matching:
+        if len(matching) != 1 or debts:
+            raise HTTPException(409, "Origine des dettes ambiguë : sélectionnez explicitement l'achat via Rapprocher avant suppression")
+        orphan = db.query(Debt).filter_by(id=matching[0].id, purchase_id=None).populate_existing().with_for_update().first()
+        origins = [other.id for other in db.query(Purchase).all()
+            if orphan is not None and same_supplier(orphan, other, allow_name=True) and mentions_purchase(orphan, other)]
+        if orphan is None or not compatible(orphan, purchase, manual=True) or origins != [purchase.id]:
+            raise HTTPException(409, "Origine ou montant de la dette à confirmer via Rapprocher avant suppression")
+        debts = [orphan]
     if purchase.paid or any(debt.payments for debt in debts):
         raise HTTPException(409, "Historique de règlements (actifs ou annulés) conservé : suppression refusée pour cet achat. Conservez l'achat et ses reçus ; annulez les règlements erronés avec motif dans Dettes, puis faites valider la régularisation comptable et de stock par un administrateur. Annuler un paiement ne permet pas d'effacer son achat.")
     entries, missing, _ = derive(db)
@@ -275,7 +283,8 @@ def delete_purchase(
         db.delete(debt)
     db.add(SecurityLog(event="suppression_approvisionnement", user_id=current_user.id, identifier=current_user.email,
         success=True, detail=json.dumps({"reference": purchase.reference, "id": purchase.id, "total": purchase.total,
-            "received_quantity": received, "reversed_prices": price_history["restored"], "price_history": price_history, "sources": source_snapshot,
+            "received_quantity": received, "deleted_orphan_debts": [debt.id for debt in debts if debt.purchase_id is None],
+            "reversed_prices": price_history["restored"], "price_history": price_history, "sources": source_snapshot,
             "accounting_snapshot": accounting_snapshot}, ensure_ascii=False, default=str)))
     db.delete(purchase)
     db.commit()
