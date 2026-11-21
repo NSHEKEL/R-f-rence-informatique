@@ -72,6 +72,12 @@ const api = axios.create();
 // Resolved per request so a new server address applies without a reload.
 api.interceptors.request.use((config) => {
   config.baseURL = `${getServerUrl()}/api`;
+  let workstation = localStorage.getItem("ri_workstation_id");
+  if (!workstation) {
+    workstation = `poste-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    localStorage.setItem("ri_workstation_id", workstation);
+  }
+  config.headers["X-Workstation-Name"] = workstation;
   const token = localStorage.getItem("ri_token");
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -107,12 +113,13 @@ export const localApi = axios.create();
  */
 export function localBaseUrl(): string {
   const { hostname, origin, port } = window.location;
-  if (["127.0.0.1", "::1", "localhost"].includes(hostname)) return `${origin}/api`;
+  if (["127.0.0.1", "::1", "[::1]", "localhost"].includes(hostname)) return `${origin}/api`;
   return `http://127.0.0.1:${port || DEFAULT_PORT}/api`;
 }
 
 localApi.interceptors.request.use((config) => {
   config.baseURL = localBaseUrl();
+  if (["/settings/printers", "/settings/printers/diagnose"].includes(config.url || "")) config.timeout = 5000;
   const token = localStorage.getItem("ri_token");
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;

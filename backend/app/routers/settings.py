@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from .. import drawer, printing
 from ..auth import get_current_user
+from ..local_peripherals import local_peripheral_permission
 from ..permissions import has_permission, require_permission, require_any_permission
 from ..settings_access import check_company_update
 from ..database import get_db
@@ -163,7 +164,7 @@ def update_printing(
 
 
 @router.get("/printers", response_model=PrinterList)
-def list_printers(_: User = Depends(require_any_permission("poste_consulter", "imprimantes_consulter", "peripheriques_consulter", "vente_nouvelle"))):
+def list_printers(_: User = Depends(local_peripheral_permission("poste_consulter", "imprimantes_consulter", "peripheriques_consulter", "vente_nouvelle"))):
     """Printers installed on this computer, for the selection lists."""
     try:
         devices = printing.printer_devices()
@@ -185,7 +186,7 @@ def list_printers(_: User = Depends(require_any_permission("poste_consulter", "i
 
 
 @router.get("/printers/diagnose")
-def diagnose_printers(_: User = Depends(require_any_permission("poste_consulter", "imprimantes_consulter", "vente_nouvelle"))):
+def diagnose_printers(_: User = Depends(local_peripheral_permission("poste_consulter", "imprimantes_consulter", "vente_nouvelle"))):
     """Per-stage detection report (Windows calls, per-queue details)."""
     return printing.diagnose()
 

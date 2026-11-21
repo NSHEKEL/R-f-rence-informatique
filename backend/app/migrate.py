@@ -6,12 +6,15 @@ databases created by earlier versions keep working, on SQLite as well as on the
 shared PostgreSQL server.
 """
 
+import logging
+
 from sqlalchemy import inspect, select, text
+from sqlalchemy.orm import Session
 
 from .accounting_ledger import seed_accounts
 
 from .database import engine
-from .models import AppMigration, CashMovement, Delivery, Depot, DepotStock, DepotTransfer, DepotTransferItem, Product, RolePermission, User, Workstation
+from .models import AppMigration, CashClosure, CashMovement, Delivery, Depot, DepotStock, DepotTransfer, DepotTransferItem, Product, RolePermission, User, Workstation
 from .stock import default_id, reconcile
 from .permissions import CONFIGURABLE_ROLES, DEFAULTS, PERMISSIONS
 
@@ -20,6 +23,7 @@ FALSE_LITERAL = "0" if engine.dialect.name == "sqlite" else "FALSE"
 
 # table -> column -> SQL type/default appended to "ALTER TABLE ... ADD COLUMN".
 COLUMNS: dict[str, dict[str, str]] = {
+    "cash_movements": {"return_id": "INTEGER"},
     "inventory_counts": {"counts_json": "TEXT NOT NULL DEFAULT '{}'", "client_updated_at": "TIMESTAMP", "client_id": "VARCHAR NOT NULL DEFAULT ''"},
     "stock_lots": {"depot_id": "INTEGER", "unit_cost": "FLOAT DEFAULT NULL"},
     "stock_movements": {"depot_id": "INTEGER"},
@@ -69,6 +73,7 @@ COLUMNS: dict[str, dict[str, str]] = {
         "logo": "TEXT DEFAULT ''",
         "printer_name": "VARCHAR DEFAULT ''",
         "auto_print_cash": f"BOOLEAN DEFAULT {TRUE_LITERAL}",
+        "mobile_money_to_cash": f"BOOLEAN NOT NULL DEFAULT {TRUE_LITERAL}",
         "expiry_critical_days": "INTEGER DEFAULT 7",
         "expiry_alert_days": "INTEGER DEFAULT 30",
         "expiry_watch_days": "INTEGER DEFAULT 60",
@@ -156,6 +161,7 @@ COLUMNS: dict[str, dict[str, str]] = {
         "validated_at": "TIMESTAMP",
     },
     "sale_items": {
+        "packaging_divisor": "INTEGER",
         "scanned_code": "VARCHAR", "scanned_label": "VARCHAR",
         # Per-line discount at the register (proforma/order lines had it).
         "discount": "FLOAT DEFAULT 0",
@@ -171,7 +177,11 @@ COLUMNS: dict[str, dict[str, str]] = {
         "cancelled_by_id": "INTEGER",
     },
     "cash_sessions": {
+        "kept_balance": "FLOAT",
+        "remitted_amount": "FLOAT",
+        "global_closure_id": "INTEGER",
         "business_day": "VARCHAR DEFAULT ''",
+        "workstation": "VARCHAR",
         "z_report": "TEXT DEFAULT ''",
     },
     "license_state": {
@@ -321,6 +331,33 @@ def _inventory_permissions(conn) -> None:
     conn.execute(AppMigration.__table__.insert().values(name=marker))
 
 
+def _packaging_retail_from_wholesale() -> None:
+    from . import backup
+
+    marker = "packaging_retail_from_wholesale_v1"
+    with engine.connect() as conn:
+        if "product_packagings" not in inspect(conn).get_table_names():
+            return
+        AppMigration.__table__.create(bind=conn, checkfirst=True)
+        conn.commit()
+        if conn.execute(select(AppMigration.name).where(AppMigration.name == marker)).first():
+            return
+        count = conn.execute(text("SELECT COUNT(*) FROM product_packagings WHERE price_gros > 0 AND (price_detail IS NULL OR price_detail <> price_gros)")).scalar_one()
+    if count:
+        try:
+            with Session(engine) as db:
+                backup.create(db, reason="migration-packaging-retail-v1", drive_background=False, mirror_required=False)
+        except Exception:
+            logging.getLogger(__name__).exception("%s: sauvegarde locale impossible, migration différée", marker)
+            return
+    with engine.begin() as conn:
+        if conn.execute(select(AppMigration.name).where(AppMigration.name == marker)).first():
+            return
+        result = conn.execute(text("UPDATE product_packagings SET price_detail = price_gros WHERE price_gros > 0 AND (price_detail IS NULL OR price_detail <> price_gros)"))
+        conn.execute(AppMigration.__table__.insert().values(name=marker))
+        logging.getLogger(__name__).warning("%s: %s conditionnements mis à jour", marker, result.rowcount)
+
+
 def migrate() -> None:
     insp = inspect(engine)
     tables = set(insp.get_table_names())
@@ -330,6 +367,7 @@ def migrate() -> None:
         Depot.__table__.create(bind=conn, checkfirst=True)
         Workstation.__table__.create(bind=conn, checkfirst=True)
         if "cash_sessions" in tables:
+            CashClosure.__table__.create(bind=conn, checkfirst=True)
             CashMovement.__table__.create(bind=conn, checkfirst=True)
         for table, columns in COLUMNS.items():
             if table not in tables:
@@ -373,3 +411,4 @@ def migrate() -> None:
             for row in conn.execute(select(Product.id, Product.quantity)):
                 reconcile(conn, row.id, row.quantity or 0)
             conn.execute(AppMigration.__table__.insert().values(name=marker))
+    _packaging_retail_from_wholesale()

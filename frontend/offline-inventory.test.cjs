@@ -77,8 +77,10 @@ test('sync retains network and closed-session failures; a newer edit during uplo
   env.api.put = async (_url, payload) => ({ data: { ...report, rows: [{ ...row, ...payload, physical_qty: 0 }] } });
   assert.equal((await lib.syncCounts(7)).pending, 0);
   await lib.queueCount(7, 1, { base: 2 }, 'closed');
-  env.api.put = async () => { throw { response: { status: 409 } }; };
-  assert.equal((await lib.syncCounts(7)).pending, 1);
+  env.api.put = async () => { throw { response: { status: 409, data: { detail: "Session déjà validée" } } }; };
+  const failed = await lib.syncCounts(7);
+  assert.equal(failed.pending, 1);
+  assert.match(failed.error, /Session déjà validée/);
   assert.equal(Object.keys(await lib.pendingCounts(7)).length, 1);
 });
 

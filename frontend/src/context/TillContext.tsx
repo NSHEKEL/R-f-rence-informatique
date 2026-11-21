@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import api from "../api/client";
@@ -50,12 +51,17 @@ export function TillProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<CashSessionDetail | null>(null);
   const [dayClosed, setDayClosed] = useState(false);
   const [loading, setLoading] = useState(true);
+  const accountKey = `${user?.id ?? ""}:${can("caisse")}`;
+  const account = useRef(accountKey);
+  account.current = accountKey;
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!user || !can("caisse")) {
       setSession(null);
       setDayClosed(false);
       setLoading(false);
+      setLoadedFor(accountKey);
       return;
     }
     try {
@@ -63,14 +69,15 @@ export function TillProvider({ children }: { children: React.ReactNode }) {
         api.get<CashSessionDetail | null>("/cash-sessions/current"),
         api.get<CashSessionDetail | null>("/cash-sessions/today"),
       ]);
+      if (account.current !== accountKey) return;
       setSession(open.data ?? null);
       setDayClosed(Boolean(today.data && today.data.closed_at));
     } catch {
       // Offline or server restarting: keep the last known state.
     } finally {
-      setLoading(false);
+      if (account.current === accountKey) { setLoading(false); setLoadedFor(accountKey); }
     }
-  }, [user, can]);
+  }, [user, can, accountKey]);
 
   useEffect(() => {
     void refresh();
@@ -82,11 +89,11 @@ export function TillProvider({ children }: { children: React.ReactNode }) {
     () => ({
       session,
       dayClosed,
-      loading,
+      loading: loading || loadedFor !== accountKey,
       selling: user?.role !== "vendeur" || session !== null,
       refresh,
     }),
-    [session, dayClosed, loading, user, refresh]
+    [session, dayClosed, loading, loadedFor, accountKey, user, refresh]
   );
 
   return <TillContext.Provider value={value}>{children}</TillContext.Provider>;

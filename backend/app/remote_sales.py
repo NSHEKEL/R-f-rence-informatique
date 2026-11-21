@@ -158,13 +158,21 @@ def _cash_balances(db: Session) -> dict:
         if session is None:
             continue
         try:
-            expected = cash.session_amounts(db, session).expected_cash
+            report = cash.session_amounts(db, session)
+            expected = report.expected_cash
         except (HTTPException, ValueError, TypeError):
             expected = None
+            report = None
         sessions.append({
             "key": f"{user.email.lower()}:{session.id}:{session.opened_at.isoformat()}",
             "seller_email": user.email.lower(), "closed": session.closed_at is not None,
             "expected_cash": expected,
+            "kept_balance": report.kept_balance if report else None,
+            "remitted_amount": report.remitted_amount if report else None,
+            "mobile_money_to_cash": report.mobile_money_to_cash if report else False,
+            **{field: getattr(report, field) if report else None for field in (
+                "cash_sales", "mobile_money_sales", "expenses_total", "refunds_total", "entries_total", "exits_total")},
+            "other_sales": report.other_sales - report.mobile_money_sales if report else None,
         })
     return {"day": now.date().isoformat(), "generated_at": now.isoformat(), "sessions": sessions}
 

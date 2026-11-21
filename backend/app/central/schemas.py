@@ -368,6 +368,16 @@ class MirrorExpenseIn(BaseModel):
 
 
 class MirrorCashSessionIn(BaseModel):
+    cash_sales: Optional[float] = None
+    mobile_money_sales: Optional[float] = None
+    other_sales: Optional[float] = None
+    expenses_total: Optional[float] = None
+    refunds_total: Optional[float] = None
+    entries_total: Optional[float] = None
+    exits_total: Optional[float] = None
+    kept_balance: Optional[float] = None
+    remitted_amount: Optional[float] = None
+    mobile_money_to_cash: bool = False
     key: str
     seller_email: str
     expected_cash: Optional[float] = None

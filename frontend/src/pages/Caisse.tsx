@@ -8,11 +8,11 @@ import type { CashMovement, CashSession, CashSessionDetail, ReceiptFormat } from
 import CashTicket, { type CashTicketKind } from "../components/CashTicket";
 import ZReport, { type ZReportData } from "../components/ZReport";
 import Modal from "../components/Modal";
-import PrinterHint from "../components/PrinterHint";
+import AutomaticDocumentPrint from "../components/AutomaticDocumentPrint";
 import CashExpenses from "../components/CashExpenses";
 import CashProductMovements from "../components/CashProductMovements";
+import GlobalCash from "../components/GlobalCash";
 import { enterFullscreen, leaveFullscreen } from "../lib/fullscreen";
-import { printReceipt } from "../lib/print";
 import { useAuth } from "../context/AuthContext";
 import { useTill } from "../context/TillContext";
 import { useCompany } from "../context/CompanyContext";
@@ -23,7 +23,7 @@ import { useSyncVersion } from "../context/SyncContext";
  * Selling happens on the dedicated POS screen.
  */
 export default function Caisse() {
-  const { user, isAdmin, can } = useAuth();
+  const { user, isAdmin, can, logout } = useAuth();
   const canBalances = can("soldes_consulter");
   const canClosures = can("clotures_consulter");
   const canZ = canBalances && (canClosures || can("caisse_z"));
@@ -47,12 +47,12 @@ export default function Caisse() {
   const [closeOpen, setCloseOpen] = useState(false);
   const [countedBalance, setCountedBalance] = useState("0");
   const [closeNote, setCloseNote] = useState("");
+  const [keptBalance, setKeptBalance] = useState("0");
+  const [closedChoice, setClosedChoice] = useState(false);
 
-  const [ticket, setTicket] = useState<{
-    session: CashSessionDetail;
-    kind: CashTicketKind;
-  } | null>(null);
-  const [zReport, setZReport] = useState<ZReportData | null>(null);
+  const [printJob, setPrintJob] = useState<
+    { session: CashSessionDetail; kind: CashTicketKind } | { report: ZReportData }
+  | null>(null);
   const format: ReceiptFormat = printing.receipt.width;
 
   const load = useCallback(async () => {
@@ -71,14 +71,11 @@ export default function Caisse() {
 
   const showTicket = useCallback(
     (session: CashSessionDetail, kind: CashTicketKind, auto: boolean) => {
-      if (!canBalances || (kind === "close" && !canZ)) return;
-      setTicket({ session, kind });
-      if (auto && company?.auto_print_cash !== false) {
-        // Let the print copy mount before asking the browser to print.
-        window.setTimeout(() => printReceipt(format, printing.receipt), 400);
-      }
+      if (!canBalances || (kind === "close" && !canZ) || (auto && company?.auto_print_cash === false)) return false;
+      setPrintJob({ session, kind });
+      return true;
     },
-    [company?.auto_print_cash, format, printing.receipt, canBalances, canZ]
+    [company?.auto_print_cash, canBalances, canZ]
   );
 
   async function addMovement() {
@@ -100,6 +97,7 @@ export default function Caisse() {
   }
 
   async function openTill() {
+    if (printJob) return;
     setSaving(true);
     setError("");
     try {
@@ -109,6 +107,7 @@ export default function Caisse() {
       });
       setNote("");
       setOpeningBalance("0");
+      sessionStorage.removeItem("ri_till_closed");
       await load();
       await refreshTill();
       // The counter works better without the desktop around it; the header
@@ -125,18 +124,22 @@ export default function Caisse() {
   }
 
   async function closeTill() {
+    if (printJob) { setError("Attendez la fin de l'impression avant de fermer la caisse."); return; }
     setSaving(true);
     setError("");
     try {
       const res = await api.post<CashSessionDetail>("/cash-sessions/close", {
         closing_balance: Number(countedBalance) || 0,
+        kept_balance: Number(keptBalance) || 0,
         note: closeNote,
       });
       setCloseOpen(false);
       setCloseNote("");
-      await load();
+      setToday(res.data);
+      sessionStorage.setItem("ri_till_closed", "1");
       await refreshTill();
       await leaveFullscreen();
+      setClosedChoice(true);
       showTicket(res.data, "close", true);
     } catch (err) {
       if (axios.isAxiosError(err)) {
@@ -148,10 +151,11 @@ export default function Caisse() {
   }
 
   async function showZ(sessionId: number) {
+    if (printJob) return;
     setError("");
     try {
       const res = await api.get<ZReportData>(`/cash-sessions/${sessionId}/z`);
-      setZReport(res.data);
+      setPrintJob({ report: res.data });
     } catch (err) {
       if (axios.isAxiosError(err)) {
         setError(apiErrorMessage(err.response?.data?.detail, "État Z indisponible"));
@@ -177,6 +181,8 @@ export default function Caisse() {
           {error}
         </div>
       )}
+
+      {isAdmin && <GlobalCash />}
 
       {!today && (
         <div className="card space-y-4 p-6">
@@ -250,17 +256,19 @@ export default function Caisse() {
             <div className="ml-auto flex flex-wrap gap-2">
               {canBalances && <button
                 className="btn-ghost"
+                disabled={!!printJob}
                 onClick={() => showTicket(today, "open", false)}
               >
                 <Printer size={16} /> Ticket d'ouverture
               </button>}
-              {canZ && <button className="btn-ghost" onClick={() => showZ(today.id)}>
+              {canZ && <button className="btn-ghost" disabled={!!printJob} onClick={() => showZ(today.id)}>
                 <Printer size={16} /> État Z
               </button>}
               {closed && canZ && (
                 <button
                   className="btn-ghost"
                   onClick={() => showTicket(today, "close", false)}
+                  disabled={!!printJob}
                 >
                   <Printer size={16} /> Ticket de fermeture
                 </button>
@@ -291,7 +299,10 @@ export default function Caisse() {
             {[
               ["Fonds d'ouverture", formatXOF(today.opening_balance)],
               ["Ventes espèces", formatXOF(today.cash_sales)],
-              ["Autres paiements", formatXOF(today.other_sales)],
+              [today.mobile_money_to_cash ? "Ventes Mobile Money (converti en espèces)" : "Ventes Mobile Money", formatXOF(today.payment_groups?.mobile_money ?? 0)],
+              ["Ventes bancaires", formatXOF(today.payment_groups?.bank ?? 0)],
+              ["Crédit (non encaissé)", formatXOF(today.payment_groups?.credit ?? 0)],
+              ["Autres moyens", formatXOF(today.payment_groups?.other ?? 0)],
               ["Ventes brutes", formatXOF(today.total_sales ?? (today.cash_sales ?? 0) + (today.other_sales ?? 0))],
               ["Retours / remboursements (tous modes)", formatXOF(today.refunds_total ?? today.cash_refunds)],
               ["Ventes nettes après retours", formatXOF(today.net_sales ?? (today.cash_sales ?? 0) + (today.other_sales ?? 0) - (today.cash_refunds ?? 0))],
@@ -300,6 +311,8 @@ export default function Caisse() {
               ["Sorties de caisse", formatXOF(today.exits_total)],
               ["Règlements espèces nets", formatXOF(today.cash_settlements)],
               ["Remboursements espèces", formatXOF(today.cash_refunds)],
+              ["Montant remis au patron", formatXOF(today.remitted_amount)],
+              ["Montant restant en caisse", formatXOF(today.kept_balance)],
               [
                 closed ? "Solde compté" : "Solde attendu",
                 formatXOF(
@@ -518,7 +531,16 @@ export default function Caisse() {
             {[
               ["Fonds d'ouverture", formatXOF(today?.opening_balance)],
               ["Ventes espèces", formatXOF(today?.cash_sales)],
+              [today?.mobile_money_to_cash ? "Ventes Mobile Money (converti en espèces)" : "Ventes Mobile Money", formatXOF(today?.payment_groups?.mobile_money ?? 0)],
+              ["Ventes bancaires", formatXOF(today?.payment_groups?.bank ?? 0)],
+              ["Total général des ventes", formatXOF(today?.total_sales)],
+              ["Crédit (non encaissé)", formatXOF(today?.payment_groups?.credit ?? 0)],
+              ["Autres moyens", formatXOF(today?.payment_groups?.other ?? 0)],
               ["Solde attendu", formatXOF(today?.expected_cash)],
+              ["Dépenses (tous modes)", formatXOF(today?.expenses_total)],
+              ["Retours / remboursements", formatXOF(today?.refunds_total)],
+              ["Apports", formatXOF(today?.entries_total)],
+              ["Retraits / remises déjà effectuées", formatXOF(today?.exits_total)],
             ].map(([label, value]) => (
               <div key={label} className="rounded-xl bg-slate-50 p-3">
                 <p className="text-xs text-slate-400">{label}</p>
@@ -527,6 +549,7 @@ export default function Caisse() {
             ))}
           </div>
           <div>
+            <p className="text-xs">Solde physique avant remise au patron. {today?.mobile_money_to_cash ? "Les flux Mobile Money sont convertis en espèces ; les ventes ne sont pas recomptées." : "Les paiements électroniques restent séparés."}</p>
             <label className="label">Montant compté en caisse (FCFA)</label>
             <input
               autoFocus
@@ -536,6 +559,11 @@ export default function Caisse() {
               value={countedBalance}
               onChange={(e) => setCountedBalance(e.target.value)}
             />
+          </div>
+          <div>
+            <label className="label">Montant laissé en caisse (FCFA)</label>
+            <input className="input" type="number" min="0" max={Number(countedBalance) || 0} value={keptBalance} onChange={(e) => setKeptBalance(e.target.value)} />
+            <p className="text-sm">À remettre au patron : {formatXOF((Number(countedBalance) || 0) - (Number(keptBalance) || 0))}</p>
           </div>
           <div>
             <label className="label">
@@ -562,63 +590,22 @@ export default function Caisse() {
         </div>
       </Modal>
 
-      <Modal
-        open={zReport !== null}
-        onClose={() => setZReport(null)}
-        title={`État Z de caisse — session #${zReport?.session_id ?? ""}`}
-        footer={
-          <div className="no-print flex w-full justify-end gap-3">
-            <button className="btn-ghost" onClick={() => setZReport(null)}>
-              Fermer
-            </button>
-            <PrinterHint />
-            <button
-              className="btn-primary"
-              onClick={() => printReceipt(format, printing.receipt)}
-            >
-              <Printer size={16} /> Imprimer
-            </button>
-          </div>
-        }
-      >
-        {zReport && (
-          <ZReport report={zReport} company={company} format={format} />
-        )}
+      <Modal open={closedChoice} onClose={() => { if (!printJob) setClosedChoice(false); }} title="Caisse clôturée" footer={<>
+        <button className="btn-secondary" disabled={Boolean(printJob)} onClick={() => setClosedChoice(false)}>Rester connecté</button>
+        <button className="btn-primary" disabled={Boolean(printJob)} onClick={logout}>Se déconnecter</button>
+      </>}>
+        <p>Votre caisse est fermée. Ouvrez une nouvelle caisse avant toute vente.</p>
+        {printJob && <p>Impression du ticket en cours…</p>}
+        {error && <p role="alert" className="text-red-600">{error}</p>}
       </Modal>
-
-      <Modal
-        open={ticket !== null}
-        size="compact"
-        onClose={() => setTicket(null)}
-        title={
-          ticket?.kind === "close"
-            ? "Ticket de fermeture de caisse"
-            : "Ticket d'ouverture de caisse"
-        }
-        footer={
-          <div className="no-print flex w-full justify-end gap-3">
-            <button className="btn-ghost" onClick={() => setTicket(null)}>
-              Fermer
-            </button>
-            <PrinterHint />
-            <button
-              className="btn-primary"
-              onClick={() => printReceipt(format, printing.receipt)}
-            >
-              <Printer size={16} /> Imprimer
-            </button>
-          </div>
-        }
-      >
-        {ticket && (
-          <CashTicket
-            session={ticket.session}
-            company={company}
-            format={format}
-            kind={ticket.kind}
-          />
-        )}
-      </Modal>
+      {printJob && <AutomaticDocumentPrint config={printing.receipt} onDone={(message) => {
+        setPrintJob(null);
+        if (message) setError(message);
+      }}>
+        {"report" in printJob
+          ? <ZReport inline report={printJob.report} company={company} format={format} />
+          : <CashTicket inline session={printJob.session} company={company} format={format} kind={printJob.kind} />}
+      </AutomaticDocumentPrint>}
     </div>
   );
 }

@@ -4,7 +4,7 @@ from .permissions import has_permission
 
 FISCAL_FIELDS = {"tax_id", "rccm", "ncc", "regime_fiscal", "vat_rate", "capital_social"}
 PRINT_FIELDS = {"document_layouts", "receipt_header", "receipt_footer", "receipt_format", "printer_name"}
-CASH_FIELDS = {"auto_print_cash", "drawer_open_after_sale"}
+CASH_FIELDS = {"auto_print_cash", "drawer_open_after_sale", "mobile_money_to_cash"}
 
 
 def category_for_field(key):

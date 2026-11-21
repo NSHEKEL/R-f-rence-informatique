@@ -39,7 +39,11 @@ export default function Login() {
     () => localStorage.getItem(LAST_EMAIL_KEY) ?? ""
   );
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(() => {
+    const message = sessionStorage.getItem("ri_cash_print_error") || "";
+    sessionStorage.removeItem("ri_cash_print_error");
+    return message;
+  });
   const [loading, setLoading] = useState(false);
 
   const [serverOpen, setServerOpen] = useState(false);
@@ -92,7 +96,9 @@ export default function Login() {
       await login(email, password);
       localStorage.setItem(LAST_EMAIL_KEY, email);
       setPassword("");
-      navigate("/");
+      const afterTillClose = sessionStorage.getItem("ri_till_closed");
+      sessionStorage.removeItem("ri_till_closed");
+      navigate(afterTillClose ? "/caisse" : "/");
     } catch (err) {
       if (axios.isAxiosError(err)) {
         setError(

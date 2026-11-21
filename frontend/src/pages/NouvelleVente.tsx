@@ -65,7 +65,7 @@ import type {
 import Modal from "../components/Modal";
 import { scanCodes } from "../lib/scan";
 import { useScanner } from "../lib/useScanner";
-import { packagingChoices } from "../lib/posPackaging";
+import { dividePackaging, packagingChoices } from "../lib/posPackaging";
 import { vatBreakdown } from "../lib/vat";
 import {
   fetchCached,
@@ -122,6 +122,7 @@ function unitPrice(product: Product, mode: PriceMode): number {
 }
 
 interface CartLine {
+  packaging_divisor?: number;
   sourceProduct?: Product;
   scanned_code?: string | null;
   scanned_label?: string | null;
@@ -140,7 +141,12 @@ interface CartLine {
 
 /** Price actually charged for a cart line. */
 function linePrice(line: CartLine, _mode: PriceMode): number {
+  if (line.packaging_divisor) return line.price ?? dividePackaging(line.product, line.packaging_divisor, line.price_tier || "detail", line.quantity).unitPrice;
   return line.price ?? catalogUnitPrice(line.product, line.quantity, line.price_tier || "detail", cartParts(line));
+}
+
+function priceWillBeSaved(line: CartLine): boolean {
+  return !line.packaging_divisor && line.price !== undefined && Number.isFinite(line.price);
 }
 
 function cartParts(line: CartLine) {
@@ -435,6 +441,8 @@ export default function NouvelleVente() {
   const lastIndex = cart.findIndex((line) => line.product.id === lastAdded.current?.id && line.packaging_id === lastAdded.current?.packaging_id && line.scanned_code === lastAdded.current?.code && (line.price_tier || "detail") === lastAdded.current?.tier);
   const activeLineIndex = selectedLine != null && selectedLine < cart.length ? selectedLine : lastIndex >= 0 ? lastIndex : cart.length - 1;
   const [mixedTarget, setMixedTarget] = useState<{ line: CartLine; product: Product } | null>(null);
+  const [divideTarget, setDivideTarget] = useState<number | null>(null);
+  const [divisor, setDivisor] = useState("2");
   const addToCart = useCallback((original: Product, packaging_id?: number) => {
     if (original.active === false) { setError("Cet article est désactivé."); return; }
     const product = withPackaging(original, packaging_id);
@@ -443,7 +451,7 @@ export default function NouvelleVente() {
     lastAdded.current = { id: product.id, packaging_id, code: original.scanned_code, tier: priceMode };
     setSelectedLine(null);
     setCart((prev) => {
-      const existing = prev.find((l) => l.product.id === product.id && l.scanned_code === original.scanned_code && l.packaging_id === packaging_id && (l.price_tier || "detail") === priceMode && (packaging_id ? l.unitMode === "packaging" : (!l.unitMode || l.unitMode === "base")));
+      const existing = prev.find((l) => !l.packaging_divisor && l.product.id === product.id && l.scanned_code === original.scanned_code && l.packaging_id === packaging_id && (l.price_tier || "detail") === priceMode && (packaging_id ? l.unitMode === "packaging" : (!l.unitMode || l.unitMode === "base")));
       if (prev.filter((l) => l.product.id === product.id).reduce((sum, l) => sum + l.quantity, 0) + increment > stockLimit(product, allowNegativeStock)) return prev;
       if (!existing) return [...prev, { product, sourceProduct: original, scanned_code: original.scanned_code, scanned_label: original.scanned_label, packaging_id, quantity: increment, price_tier: priceMode, unitMode: packaging_id ? "packaging" : "base" }];
       return prev.map((l) =>
@@ -464,12 +472,14 @@ export default function NouvelleVente() {
     for (const code of codes) {
       const cached = products.find((p) => scanCodes(p).includes(code.toLowerCase()));
       let target: Product;
-      if (cached) {
+      try {
+        target = (await api.get<Product>(`/products/by-code/${encodeURIComponent(code)}`)).data;
+        setProducts((rows) => rows.map((p) => p.id === target.id ? { ...target, scanned_code: undefined, scanned_label: undefined, packaging_id: undefined } : p));
+      } catch (error) {
+        if (axios.isAxiosError(error) && error.response?.status === 404) continue;
+        if (!cached || !axios.isAxiosError(error) || error.response) throw error;
         const alias = cached.barcodes?.find((b) => b.active && b.code.toLowerCase() === code.toLowerCase());
         target = { ...cached, scanned_code: code, scanned_label: alias?.label };
-      } else {
-        try { target = (await api.get<Product>(`/products/by-code/${encodeURIComponent(code)}`)).data; }
-        catch (error) { if (axios.isAxiosError(error) && error.response?.status === 404) continue; throw error; }
       }
       const packaging = target.packagings?.find((p) => p.active && p.barcode?.toLowerCase() === code.toLowerCase());
       if (stockLimit(target, allowNegativeStock) <= 0) throw new Error(`${target.name} est en rupture de stock`);
@@ -498,13 +508,24 @@ export default function NouvelleVente() {
   }
 
   /** Enter validates the search: exact code first (scanner), else best match. */
-  function submitSearch() {
+  async function submitSearch() {
     const q = scanValue(query).toLowerCase();
     if (!q) return;
     const exact = products.find(
       (p) => scanCodes(p).includes(q) || p.name.toLowerCase() === q
     );
-    const target = exact ?? filtered[0];
+    let target = exact ?? filtered[0];
+    try {
+      target = (await api.get<Product>(`/products/by-code/${encodeURIComponent(q)}`)).data;
+      setProducts((rows) => rows.map((p) => p.id === target.id ? { ...target, scanned_code: undefined, scanned_label: undefined, packaging_id: undefined } : p));
+    } catch (error) {
+      if (!axios.isAxiosError(error) || (error.response && error.response.status !== 404)) {
+        setError("Lecture impossible, vérifiez la connexion"); return;
+      }
+      if (error.response?.status === 404 && exact && scanCodes(exact).includes(q)) {
+        setError("Ce code a été remplacé ou retiré. Rechargez le catalogue."); return;
+      }
+    }
     if (!target) {
       setError(`Aucun article pour « ${query.trim()} »`);
       return;
@@ -559,7 +580,8 @@ export default function NouvelleVente() {
       prev.flatMap((l, index) => {
         if (index !== lineIndex) return [l];
         const others = prev.filter((other) => other !== l && other.product.id === l.product.id).reduce((sum, other) => sum + other.quantity, 0);
-        const capped = Math.min(Math.max(Math.floor(quantity), 0), stockLimit(l.product, allowNegativeStock) - others);
+        const step = l.packaging_divisor ? (l.product.units_per_packaging || 1) / l.packaging_divisor : 1;
+        const capped = Math.floor(Math.min(Math.max(Math.floor(quantity), 0), stockLimit(l.product, allowNegativeStock) - others) / step) * step;
         return capped === 0 ? [] : [{ ...l, quantity: capped, packagingQuantity: undefined, pieceQuantity: undefined }];
       })
     );
@@ -573,7 +595,7 @@ export default function NouvelleVente() {
     const others = cart.filter((l) => l !== line && l.product.id === line.product.id).reduce((sum, l) => sum + l.quantity, 0);
     if (quantity + others > stockLimit(line.product, allowNegativeStock)) { setError("Stock insuffisant pour un conditionnement complet"); return; }
     const product = unitMode === "base" ? products.find((p) => p.id === line.product.id) || line.sourceProduct || line.product : line.product;
-    setCart((prev) => prev.map((l, index) => index === lineIndex ? { ...l, product, packaging_id: unitMode === "base" ? undefined : l.packaging_id, unitMode, quantity, price: undefined, packagingQuantity: undefined, pieceQuantity: undefined } : l));
+    setCart((prev) => prev.map((l, index) => index === lineIndex ? { ...l, packaging_divisor: undefined, product, packaging_id: unitMode === "base" ? undefined : l.packaging_id, unitMode, quantity, price: undefined, packagingQuantity: undefined, pieceQuantity: undefined } : l));
   }
 
   function setPackaging(lineIndex: number, packaging_id?: number) {
@@ -584,7 +606,7 @@ export default function NouvelleVente() {
     const quantity = product.packaging_unit ? product.units_per_packaging || 1 : 1;
     const others = cart.filter((l, i) => i !== lineIndex && l.product.id === product.id).reduce((sum, l) => sum + l.quantity, 0);
     if (quantity + others > stockLimit(product, allowNegativeStock)) { setError("Stock insuffisant pour ce conditionnement"); return; }
-    setCart((prev) => prev.map((l, i) => i === lineIndex ? { ...l, product, packaging_id, quantity, unitMode: product.packaging_unit ? "packaging" : "base", packagingQuantity: undefined, pieceQuantity: undefined, price: undefined } : l));
+    setCart((prev) => prev.map((l, i) => i === lineIndex ? { ...l, packaging_divisor: undefined, product, packaging_id, quantity, unitMode: product.packaging_unit ? "packaging" : "base", packagingQuantity: undefined, pieceQuantity: undefined, price: undefined } : l));
   }
 
   function applyMixed(selection: MixedSelection) {
@@ -599,10 +621,10 @@ export default function NouvelleVente() {
     let discount = line.discount || 0;
     if (selection.packs) {
       const packDiscount = Math.min(discount, selection.packPrice * selection.packs);
-      replacements.push({ ...line, product: selection.product, packaging_id: selection.packaging_id, price_tier: selection.tier, unitMode: "packaging", quantity: selection.packs * (selection.product.units_per_packaging || 1), packagingQuantity: selection.packs, pieceQuantity: 0, price: undefined, discount: packDiscount });
+      replacements.push({ ...line, packaging_divisor: undefined, product: selection.product, packaging_id: selection.packaging_id, price_tier: selection.tier, unitMode: "packaging", quantity: selection.packs * (selection.product.units_per_packaging || 1), packagingQuantity: selection.packs, pieceQuantity: 0, price: undefined, discount: packDiscount });
       discount -= packDiscount;
     }
-    if (selection.pieces) replacements.push({ ...line, product, packaging_id: undefined, price_tier: selection.tier, unitMode: "base", quantity: selection.pieces, packagingQuantity: undefined, pieceQuantity: undefined, price: undefined, discount: Math.min(discount, selection.piecePrice * selection.pieces) });
+    if (selection.pieces) replacements.push({ ...line, packaging_divisor: undefined, product, packaging_id: undefined, price_tier: selection.tier, unitMode: "base", quantity: selection.pieces, packagingQuantity: undefined, pieceQuantity: undefined, price: undefined, discount: Math.min(discount, selection.piecePrice * selection.pieces) });
     setCart((prev) => prev.flatMap((item) => item === line ? replacements : [item]));
     setSelectedLine(index);
     setMixedTarget(null);
@@ -722,6 +744,7 @@ export default function NouvelleVente() {
     setError("");
     const payload: SalePayload = {
       client_id: newClientId(),
+      cash_session_id: session?.id,
       customer_id: customer?.id ?? null,
       payment_method: gift ? "Cadeau" : payment,
       status: "Payée",
@@ -734,10 +757,12 @@ export default function NouvelleVente() {
         scanned_code: l.scanned_code,
         product_id: l.product.id,
         packaging_id: l.packaging_id,
+        packaging_divisor: l.packaging_divisor,
         price_tier: l.price_tier || "detail",
         quantity: l.quantity,
         ...(l.product.packaging_unit ? { ...cartParts(l), expected_units_per_packaging: l.product.units_per_packaging || 1 } : {}),
         unit_price: linePrice(l, priceMode),
+        price_edited: priceWillBeSaved(l),
         discount: l.discount ?? 0,
       })),
       payments:
@@ -748,7 +773,7 @@ export default function NouvelleVente() {
           : undefined,
     };
     try {
-      const res = await api.post<Sale>("/sales", payload);
+      const res = await api.post<Sale>("/sales", payload, { timeout: 15000 });
       finishSale(res.data);
       resetCart();
       void Promise.allSettled([loadProducts(), loadSession()]);
@@ -836,7 +861,7 @@ export default function NouvelleVente() {
       if (!fresh || fresh.active === false) return false;
       if (l.packaging_id != null && !fresh.packagings?.some((p) => p.id === l.packaging_id && p.active)) return false;
       const selected = withPackaging(fresh, l.packaging_id);
-      if (cartParts(l).packaging_quantity && l.product.units_per_packaging !== selected.units_per_packaging) return false;
+      if ((cartParts(l).packaging_quantity || l.packaging_divisor) && l.product.units_per_packaging !== selected.units_per_packaging) return false;
       l.product = selected;
       l.sourceProduct = fresh;
       return l.quantity <= stockLimit(fresh, allowNegativeStock);
@@ -1276,6 +1301,7 @@ export default function NouvelleVente() {
                             {formatXOF(linePrice(l, priceMode) * (l.unitMode === "packaging" ? l.product.units_per_packaging || 1 : 1))}
                           </span>
                         )}
+                        {canChangePrice && priceWillBeSaved(l) && <p className="mt-1 text-[10px] text-blue-700">Prix enregistré à la validation</p>}
                       </td>
                       <td className="px-1 py-1 text-right">
                         {canChangePrice ? <input
@@ -1296,7 +1322,7 @@ export default function NouvelleVente() {
                           <button
                             className="rounded-lg bg-slate-100 p-1 text-slate-600 hover:bg-slate-200"
                             onClick={() =>
-                              setQuantity(index, l.quantity - 1)
+                              setQuantity(index, l.quantity - (l.packaging_divisor ? (l.product.units_per_packaging || 1) / l.packaging_divisor : 1))
                             }
                             title="Diminuer la quantité"
                             aria-label={`Diminuer la quantité de ${l.product.name}`}
@@ -1318,7 +1344,7 @@ export default function NouvelleVente() {
                           <button
                             className="rounded-lg bg-slate-100 p-1 text-slate-600 hover:bg-slate-200"
                             onClick={() =>
-                              setQuantity(index, l.quantity + 1)
+                              setQuantity(index, l.quantity + (l.packaging_divisor ? (l.product.units_per_packaging || 1) / l.packaging_divisor : 1))
                             }
                             title="Augmenter la quantité"
                             aria-label={`Augmenter la quantité de ${l.product.name}`}
@@ -1818,6 +1844,8 @@ export default function NouvelleVente() {
                   setSelectedLine(index);
                 }}>{choice.label}</button>)}
                 {packagingChoices(original).length > 1 && <button className="btn-ghost" onClick={() => { setError(""); setMixedTarget({ line, product: original }); }}>MIXTE</button>}
+                {line.product.packaging_unit && <button className="btn-secondary" onClick={() => { setError(""); setDivisor("2"); setDivideTarget(index); }}>Diviser</button>}
+                {line.packaging_divisor && <span className="text-xs">Part de {line.product.packaging_unit} : 1/{line.packaging_divisor} · prix ponctuel, non enregistré dans la fiche</span>}
               </div>;
             })()}
             <div className="border-t border-slate-100 pt-2">
@@ -1887,6 +1915,25 @@ export default function NouvelleVente() {
         </button>
       </div>
 
+      {divideTarget !== null && cart[divideTarget] && (() => {
+        const line = cart[divideTarget];
+        let preview: ReturnType<typeof dividePackaging> | undefined;
+        let reason = "";
+        try { preview = dividePackaging(line.product, Number(divisor), line.price_tier || "detail"); }
+        catch (e) { reason = e instanceof Error ? e.message : "Division impossible"; }
+        return <Modal open onClose={() => setDivideTarget(null)} title={`Diviser ${line.product.packaging_unit}`} footer={<button className="btn-primary" disabled={!preview} onClick={() => {
+          if (!preview) return;
+          const others = cart.filter((_, i) => i !== divideTarget).filter((l) => l.product.id === line.product.id).reduce((sum, l) => sum + l.quantity, 0);
+          if (others + preview.quantity > stockLimit(line.product, allowNegativeStock)) { setError("Stock insuffisant pour cette part"); return; }
+          setCart((rows) => rows.map((l, i) => i === divideTarget ? { ...l, packaging_divisor: Number(divisor), quantity: preview.quantity, unitMode: "base", packagingQuantity: 0, pieceQuantity: preview.quantity, price: undefined } : l));
+          setDivideTarget(null);
+        }}>Appliquer au panier</button>}>
+          <label className="label">Nombre de parts<input className="input" type="number" min="2" step="1" value={divisor} onChange={(e) => setDivisor(e.target.value)} /></label>
+          <p>{line.product.units_per_packaging} unités · {formatXOF(catalogPrices(line.product, line.price_tier, preview?.quantity).carton)} le conditionnement</p>
+          {preview ? <p>{preview.quantity} unités par part · {formatXOF(preview.total)}. Le prix peut être ajusté dans la ligne avec le droit habituel de modification des prix.</p> : <p role="alert">{reason}</p>}
+          <p className="text-xs">FCFA arrondis à l'unité par part. La fiche et les prix du conditionnement restent inchangés. Les fractions d'unité de base ne sont pas vendables.</p>
+        </Modal>;
+      })()}
       {/* New customer */}
       <Modal
         open={newCustomer}

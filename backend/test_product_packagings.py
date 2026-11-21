@@ -41,14 +41,14 @@ class ProductPackagingsTests(unittest.TestCase):
         sale = self.sell([{"packaging_id": packaging["id"], "packaging_quantity": 2}])
         self.assertEqual(sale["items"][0]["quantity"], 48)
         self.assertEqual(sale["items"][0]["packaging_unit"], "Colis")
-        self.balances(4200, 1920, 392)
+        self.balances(3000, 1920, 392)
         self.sell([{"quantity": 5}])
-        self.balances(4700, 2120, 387)
+        self.balances(3500, 2120, 387)
         mixed = self.sell([{"packaging_id": packaging["id"], "packaging_quantity": 2,
                             "piece_quantity": 3, "price_tier": "gros"}])
         self.assertEqual(mixed["items"][0]["quantity"], 51)
         self.assertEqual(mixed["total"], 3240)
-        self.balances(7940, 4160, 336)
+        self.balances(6740, 4160, 336)
 
     def test_tiers_thresholds_and_fallbacks(self):
         packaging = self.configure()

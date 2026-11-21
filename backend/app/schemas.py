@@ -50,6 +50,7 @@ class UserPhoto(BaseModel):
 
 # ---------- Company settings ----------
 class CompanySettingsOut(BaseModel):
+    mobile_money_to_cash: bool = True
     allow_negative_stock_sale: bool = False
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -117,6 +118,7 @@ class CompanySettingsOut(BaseModel):
 
 
 class CompanySettingsUpdate(BaseModel):
+    mobile_money_to_cash: bool = True
     allow_negative_stock_sale: bool = False
     name: Optional[str] = None
     slogan: Optional[str] = None
@@ -512,6 +514,7 @@ class PriceHistoryOut(BaseModel):
 
 # ---------- Sales ----------
 class SaleItemCreate(PackagingQuantities):
+    packaging_divisor: Optional[int] = Field(default=None, ge=2, le=2147483647)
     scanned_code: Optional[str] = Field(default=None, max_length=200)
     packaging_id: Optional[int] = Field(default=None, ge=1)
     price_tier: Optional[Literal["detail", "semi_gros", "gros", "auto"]] = None
@@ -519,13 +522,15 @@ class SaleItemCreate(PackagingQuantities):
     product_id: int
     quantity: int = 0
     # Price agreed at the counter; ignored unless the seller holds the right
-    # to change a price, and never written back to the product sheet.
+    # to change a price.
     unit_price: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    price_edited: bool = False
     # Discount granted on this line only, in currency units (not %).
     discount: float = Field(default=0, ge=0, allow_inf_nan=False)
 
 
 class SaleCreate(BaseModel):
+    cash_session_id: Optional[int] = Field(default=None, ge=1)
     customer_id: Optional[int] = None
     payment_method: str = "Espèces"
     status: str = "Payée"
@@ -566,6 +571,7 @@ class SalePaymentOut(BaseModel):
 
 
 class SaleItemOut(UnitSnapshotOut):
+    packaging_divisor: Optional[int] = None
     scanned_code: Optional[str] = None
     scanned_label: Optional[str] = None
     packaging_id: Optional[int] = None
@@ -630,7 +636,7 @@ class ReturnLine(PackagingQuantities):
 class ReturnCreate(BaseModel):
     sale_reference: str
     reason: str = ""
-    refund_method: Literal["Avoir", "Espèces"] = "Avoir"
+    refund_method: Literal["Avoir", "Espèces", "Mobile Money"] = "Avoir"
     lines: List[ReturnLine]
 
 
@@ -842,12 +848,17 @@ class TopProduct(BaseModel):
 
 
 class TopSeller(BaseModel):
+    user_id: Optional[int] = None
     name: str
     sales_count: int
     revenue: float
+    collected: float = 0
+    payments: dict[str, float] = {}
 
 
 class DashboardStats(BaseModel):
+    total_collected: float = 0
+    payments: dict[str, float] = {}
     total_products: int
     total_stock_value: float
     low_stock_count: int
@@ -894,11 +905,22 @@ class CashSessionOpen(BaseModel):
 
 
 class CashSessionClose(BaseModel):
+    kept_balance: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     closing_balance: float = 0
     note: str = ""
 
 
+class CashGlobalClose(BaseModel):
+    date_from: date
+    date_to: date
+    session_ids: list[int] = Field(min_length=1)
+    closing_balance: float = Field(ge=0, allow_inf_nan=False)
+    note: str = Field(default="", max_length=5000)
+
+
 class CashSessionOut(BaseModel):
+    global_closure_id: Optional[int] = None
+    workstation: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
     id: int
     opened_at: datetime
@@ -926,9 +948,17 @@ class CashSessionSaleLine(BaseModel):
 
 
 class CashSessionDetail(CashSessionOut):
+    mobile_cash_adjustment: Optional[float] = None
+    mobile_money_to_cash: bool = False
+    mobile_money_sales: Optional[float] = None
+    mobile_money_refunds: Optional[float] = None
+    kept_balance: Optional[float] = None
+    remitted_amount: Optional[float] = None
     """Open session enriched with live totals."""
 
     cash_sales: Optional[float] = None
+    payments: dict[str, float] = {}
+    payment_groups: dict[str, float] = {}
     other_sales: Optional[float] = None
     sales_count: Optional[int] = None
     deposits_total: Optional[float] = None
@@ -947,12 +977,14 @@ class CashSessionDetail(CashSessionOut):
 
 
 class CashMovementCreate(BaseModel):
+    return_id: Optional[int] = None
     type: Literal["in", "out"]
     amount: float = Field(gt=0, allow_inf_nan=False)
     reason: str = Field(min_length=1, max_length=1000)
 
 
 class CashMovementOut(BaseModel):
+    return_id: Optional[int] = None
     model_config = ConfigDict(from_attributes=True)
     id: int
     session_id: int
@@ -1547,6 +1579,7 @@ class SettlementOut(DebtPaymentOut):
 
 
 class DebtCreate(BaseModel):
+    purchase_id: Optional[int] = None
     kind: str = "creance"  # creance (client) or dette (fournisseur)
     party: str = ""
     customer_id: Optional[int] = None
@@ -1565,6 +1598,8 @@ class DebtOut(BaseModel):
     customer_id: Optional[int] = None
     supplier_id: Optional[int] = None
     sale_id: Optional[int] = None
+    purchase_id: Optional[int] = None
+    purchase_reference: Optional[str] = None
     reference: str
     amount: float
     due_date: Optional[datetime] = None
@@ -1882,6 +1917,12 @@ class BankDepositReconcile(BaseModel):
 
 # ---------- Z de caisse ----------
 class CashSessionZ(BaseModel):
+    mobile_cash_adjustment: float = 0
+    mobile_money_to_cash: bool = False
+    mobile_money_sales: float = 0
+    mobile_money_refunds: float = 0
+    kept_balance: Optional[float] = None
+    remitted_amount: Optional[float] = None
     """État Z de caisse: definitive recap of a till session."""
 
     session_id: int
@@ -1902,6 +1943,9 @@ class CashSessionZ(BaseModel):
     cancelled_count: int = 0
     gift_total: float = 0
     payments: dict[str, float] = {}  # per payment method
+    payment_groups: dict[str, float] = {}
+    inflow_groups: dict[str, float] = {}
+    outflow_groups: dict[str, float] = {}
     refunds_total: float = 0
     refunds: list[dict] = []
     advances_total: float = 0  # acomptes de commandes encaissés

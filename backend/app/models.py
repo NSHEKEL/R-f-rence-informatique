@@ -46,6 +46,8 @@ class User(Base):
 class CompanySettings(Base):
     __tablename__ = "company_settings"
 
+    mobile_money_to_cash = Column(Boolean, default=True, nullable=False, server_default=true())
+
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, default="EasyGest", nullable=False)
     slogan = Column(String, default="")
@@ -290,6 +292,16 @@ class Product(UnitSnapshot, Base):
                               packaging.factor if packaging else self.units_per_packaging)
 
 
+class ProductUpdateOperation(Base):
+    __tablename__ = "product_update_operations"
+
+    id = Column(String(36), primary_key=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    payload = Column(Text, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+
+
 class ProductBarcode(Base):
     __tablename__ = "product_barcodes"
 
@@ -398,6 +410,7 @@ class SalePayment(Base):
 
 
 class SaleItem(UnitSnapshot, Base):
+    packaging_divisor = Column(Integer, nullable=True)
     __tablename__ = "sale_items"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -487,10 +500,15 @@ class CashSession(Base):
 
     __tablename__ = "cash_sessions"
 
+    kept_balance = Column(Float, nullable=True)
+    remitted_amount = Column(Float, nullable=True)
+
     id = Column(Integer, primary_key=True, index=True)
     opened_at = Column(DateTime, default=utcnow)
     # Business day (YYYY-MM-DD): one session per cashier and per day.
     business_day = Column(String, default="", index=True)
+    workstation = Column(String, nullable=True)
+    global_closure_id = Column(Integer, ForeignKey("cash_closures.id"), nullable=True, index=True)
     opened_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     opening_balance = Column(Float, default=0)
     closed_at = Column(DateTime, nullable=True)
@@ -505,6 +523,17 @@ class CashSession(Base):
     opened_by = relationship("User", foreign_keys=[opened_by_id])
     closed_by = relationship("User", foreign_keys=[closed_by_id])
     sales = relationship("Sale", backref="cash_session")
+
+
+class CashClosure(Base):
+    __tablename__ = "cash_closures"
+
+    id = Column(Integer, primary_key=True)
+    closed_at = Column(DateTime, nullable=False, default=utcnow)
+    closed_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    date_from = Column(String, nullable=False)
+    date_to = Column(String, nullable=False)
+    report = Column(Text, nullable=False)
 
 
 class BankAccount(Base):
@@ -1126,10 +1155,15 @@ class Debt(Base):
     customer = relationship("Customer")
     supplier = relationship("Supplier")
     sale = relationship("Sale")
+    purchase = relationship("Purchase")
     created_by = relationship("User")
     payments = relationship(
         "DebtPayment", back_populates="debt", cascade="all, delete-orphan"
     )
+
+    @property
+    def purchase_reference(self) -> str | None:
+        return self.purchase.reference if self.purchase else None
 
     @property
     def paid(self) -> float:
@@ -1183,6 +1217,7 @@ class CashMovement(Base):
     )
 
     id = Column(Integer, primary_key=True)
+    return_id = Column(Integer, ForeignKey("sale_returns.id"), nullable=True)
     session_id = Column(Integer, ForeignKey("cash_sessions.id"), nullable=False, index=True)
     type = Column(String, nullable=False)
     amount = Column(Float, nullable=False)

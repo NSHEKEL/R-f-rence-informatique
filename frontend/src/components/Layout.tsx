@@ -48,7 +48,7 @@ import { useTheme } from "../context/ThemeContext";
 import { TILL_GATED, useTill } from "../context/TillContext";
 import { useNetwork } from "../context/NetworkContext";
 import { ADMIN_FEATURE, PLAN_FEATURE } from "../lib/planFeatures";
-import { isFullscreen, toggleFullscreen } from "../lib/fullscreen";
+import { isFullscreen, leaveFullscreen, toggleFullscreen } from "../lib/fullscreen";
 import LicenseBanner from "./LicenseBanner";
 import NetworkBanner from "./NetworkBanner";
 import UpdateBanner from "./UpdateBanner";
@@ -522,6 +522,17 @@ export default function Layout() {
     .slice(0, 2)
     .join("")
     .toUpperCase();
+
+  if (location.pathname === "/ventes/nouvelle") return (
+    <div className="flex h-screen flex-col overflow-hidden bg-slate-100" style={{ zoom: uiScale }}>
+      <TillGate />
+      <NetworkBanner />
+      <div className="flex shrink-0 items-center justify-end border-b border-slate-200 bg-white px-3 py-1">
+        <button className="btn-secondary" aria-label="Quitter le point de vente" onClick={async () => { await leaveFullscreen(); navigate(can("caisse") ? "/caisse" : "/"); }}><X size={20} /> Quitter la vente</button>
+      </div>
+      <main id="contenu" className="min-h-0 flex-1"><Outlet /></main>
+    </div>
+  );
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ zoom: uiScale }}>

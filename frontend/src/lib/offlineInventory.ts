@@ -1,6 +1,7 @@
 import api from "../api/client";
 import { readAuthCache } from "./authCache";
-import { cacheRead, fetchCached, newClientId } from "./offline";
+import { apiErrorMessage } from "./apiErrors";
+import { cacheRead, fetchCached, newClientId, pendingCatalogue } from "./offline";
 import { inventoryTotal, type InventoryReport, type InventoryRow } from "./inventoryReport";
 
 interface Snapshot<T> { data: T; savedAt: string }
@@ -57,11 +58,16 @@ function compact<T>(data: T): T {
   return JSON.parse(JSON.stringify(data, (field, value) => ["image", "photo", "logo"].includes(field) ? "" : value));
 }
 export async function readOffline<T>(path: string, name: string): Promise<Snapshot<T> & { fromCache: boolean }> {
+  const snapshot = await readSnapshot<T>(path, name);
+  return { ...snapshot, data: pendingCatalogue(path, snapshot.data) };
+}
+
+async function readSnapshot<T>(path: string, name: string): Promise<Snapshot<T> & { fromCache: boolean }> {
   const storageKey = key(`cache:${name}`);
   const cached = await read<Snapshot<T>>(storageKey);
   if (navigator.onLine === false && cached) return { ...cached, fromCache: true };
   try {
-    const result = await fetchCached<T>(path, storageKey);
+    const result = await fetchCached<T>(path, storageKey, false);
     if (result.fromCache) return { data: cached?.data ?? result.data, savedAt: cached?.savedAt || localStorage.getItem(`ri_cache_${storageKey}_at`) || "", fromCache: true };
     const snapshot = { data: compact(result.data), savedAt: new Date().toISOString() };
     await mutate(storageKey, () => snapshot);
@@ -127,8 +133,9 @@ export function syncCounts(sessionId: number) {
             return next;
           });
           await mutate<Snapshot<InventoryReport> | undefined>(snapshotKey, (snapshot) => snapshot ? { ...snapshot, data: { ...snapshot.data, rows: snapshot.data.rows.map((row) => row.product_id === entry.product_id ? data.rows[0] : row) } } : undefined);
-        } catch {
-          error = "Synchronisation indisponible ou session clôturée : les comptages restent conservés sur ce poste."; break;
+        } catch (cause) {
+          const detail = (cause as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+          error = `${apiErrorMessage(detail || cause, "Synchronisation indisponible ou session clôturée.")} Les comptages restent conservés sur ce poste.`; break;
         }
       }
     }

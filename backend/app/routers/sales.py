@@ -1,7 +1,9 @@
+import json
 from datetime import datetime, timezone
+from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import update
+from sqlalchemy import null, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -9,13 +11,17 @@ from .. import backup, remote_sales
 from ..database import get_db
 from ..catalogue import require_active
 from ..models import (
+    CashMovement,
     CompanySettings,
     Debt,
     Notification,
     Product,
+    ProductPackaging,
+    PriceHistory,
     Sale,
     SaleItem,
     SalePayment,
+    SecurityLog,
     StockLot,
     StockMovement,
     User,
@@ -156,6 +162,33 @@ def _consume_lots_fefo(db: Session, product: Product, quantity: int, depot_id=No
         remaining -= take
 
 
+def _save_typed_price(db, product_id, packaging_id, packs, pieces, tier, price, factor, user):
+    product = db.query(Product).filter_by(id=product_id).populate_existing().with_for_update().one()
+    changes = []
+    if pieces:
+        field = {"detail": "sale_price", "semi_gros": "semi_wholesale_price", "gros": "wholesale_price"}[tier]
+        changes.append((product, field, price))
+    if packs:
+        if packaging_id is not None:
+            packaging = db.query(ProductPackaging).filter_by(id=packaging_id).populate_existing().with_for_update().one()
+            field = {"detail": "price_detail", "semi_gros": "price_semi_gros", "gros": "price_gros"}[tier]
+            changes.append((packaging, field, price * factor))
+            if tier == "gros" and price > 0:
+                changes.append((packaging, "price_detail", price * factor))
+        else:
+            field = {"detail": "packaging_sale_price", "semi_gros": "semi_wholesale_price", "gros": "wholesale_packaging_price"}[tier]
+            changes.append((product, field, price if tier == "semi_gros" else price * factor))
+    for target, field, value in changes:
+        old = getattr(target, field)
+        if old == value:
+            continue
+        history_field = field if target is product else f"packaging:{target.id}:{field}"
+        db.add(PriceHistory(product_id=product_id, field=history_field,
+                            old_value=old if old is not None else null(), new_value=value, changed_by_id=user.id))
+        setattr(target, field, value)
+    db.flush()
+
+
 def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
     depot_id = stock.resolve(db)
     settings = db.query(CompanySettings).first()
@@ -177,6 +210,8 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
             detail="Votre caisse est fermée. Veuillez ouvrir une session de "
             "caisse avant d'effectuer une vente.",
         )
+    if payload.cash_session_id is not None and payload.cash_session_id != session.id:
+        raise HTTPException(status_code=409, detail="La caisse d'origine du ticket est fermée ou appartient à un autre caissier. Ticket conservé : vérifiez sa session avant de le ressaisir.")
     sale = Sale(
         reference=reference,
         client_id=payload.client_id,
@@ -195,6 +230,7 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
     )
     total = 0.0
     low_stock: list[Product] = []
+    price_edits = []
     for item in payload.items:
         product = db.query(Product).get(item.product_id)
         if not product:
@@ -220,7 +256,23 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
         packs = item.packaging_quantity or 0
         pieces = item.piece_quantity if item.piece_quantity is not None else (0 if item.packaging_quantity is not None else item.quantity)
         unit_price = (packs * pack_price + pieces * base_price) / quantity
+        if item.packaging_divisor is not None:
+            factor = spec.units_per_packaging or 1
+            divisor = item.packaging_divisor
+            if not spec.packaging_unit or factor % divisor or packs or quantity % (factor // divisor):
+                raise HTTPException(400, "Division impossible : les parts doivent contenir un nombre entier d'unités de base, sans carton entier sur la même ligne")
+            part_total = float((Decimal(str(pack_price)) / divisor).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+            unit_price = part_total / (factor // divisor)
+            base_price = unit_price
+            pack_price = unit_price * factor
         catalog_unit_price = unit_price
+        if item.price_edited:
+            if not has_permission(db, current_user, "prix_modifier"):
+                raise HTTPException(403, "Vous n'avez pas le droit de modifier le prix de vente")
+            if item.unit_price is None:
+                raise HTTPException(400, "Renseignez le prix saisi")
+            if payload.status not in {"Annulée", "Brouillon"} and item.packaging_divisor is None:
+                price_edits.append((product.id, item.packaging_id, packs, pieces, tier, float(item.unit_price), spec.units_per_packaging or 1))
         if item.unit_price is not None and abs(item.unit_price - unit_price) > 0.000001:
             if not has_permission(db, current_user, "prix_modifier"):
                 raise HTTPException(
@@ -256,6 +308,7 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
                 packaging_id=item.packaging_id,
                 price_tier=tier,
                 catalog_unit_price=catalog_unit_price,
+                packaging_divisor=item.packaging_divisor,
                 unit_cost=product.purchase_price or 0,
                 **snapshot(spec),
                 sold_unit="mixte" if packs and pieces else (spec.packaging_unit if packs else spec.base_unit),
@@ -345,6 +398,8 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
             )
         )
 
+    for edit in price_edits:
+        _save_typed_price(db, *edit, current_user)
     db.commit()
     db.refresh(sale)
     _backup_after_sale(db)
@@ -504,6 +559,17 @@ def delete_sale(
                             created_by_id=current_user.id,
                         )
                     )
+    refunds = {credit.id: credit for credit in sale.returns}
+    movements = db.query(CashMovement).filter(CashMovement.return_id.in_(refunds)).all() if refunds else []
+    if movements:
+        detached = [{"id": row.id, "return_id": row.return_id, "return_reference": refunds[row.return_id].reference,
+            "amount": row.amount, "session_id": row.session_id, "reason": row.reason} for row in movements]
+        for movement in movements:
+            movement.return_id = None
+        db.add(SecurityLog(event="suppression_vente", user_id=current_user.id, identifier=current_user.email,
+            success=True, detail=json.dumps({"id": sale.id, "reference": sale.reference,
+                "detached_refund_movements": detached}, ensure_ascii=False)))
+        db.flush()
     db.query(Notification).filter(Notification.sale_id == sale.id).delete()
     db.delete(sale)
     db.commit()

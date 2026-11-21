@@ -9,6 +9,7 @@ interface CashTicketProps {
   company: CompanySettings | null;
   format: ReceiptFormat;
   kind: CashTicketKind;
+  inline?: boolean;
 }
 
 function dateTime(value: string): string {
@@ -80,10 +81,10 @@ function TicketBody({
                 <td>Ventes espèces</td>
                 <td className="num strong">{money(session.cash_sales)}</td>
               </tr>
-              <tr>
-                <td>Autres paiements</td>
-                <td className="num strong">{money(session.other_sales)}</td>
-              </tr>
+              {([['mobile_money', 'Ventes Mobile Money'], ['bank', 'Ventes bancaires'], ['credit', 'Crédit (non encaissé)'], ['other', 'Autres moyens']] as const).map(([key, label]) => <tr key={key}><td>{label}</td><td className="num strong">{money(session.payment_groups?.[key] ?? 0)}</td></tr>)}
+              {!session.payment_groups && <tr><td>Autres paiements</td><td className="num strong">{money(session.other_sales)}</td></tr>}
+              {session.mobile_money_to_cash && <tr><td colSpan={2}>Mobile Money converti en espèces</td></tr>}
+              <tr><td>Total général des ventes</td><td className="num strong">{money(session.total_sales ?? 0)}</td></tr>
               <tr>
                 <td>Tickets encaissés</td>
                 <td className="num strong">{session.sales_count}</td>
@@ -99,7 +100,11 @@ function TicketBody({
                 ["Sorties de caisse", session.exits_total],
                 ["Règlements espèces nets", session.cash_settlements],
                 ["Remboursements espèces", session.cash_refunds],
-              ] as const).map(([label, amount]) => <tr key={label}><td>{label}</td><td className="num strong">{money(amount)}</td></tr>)}
+                ["Dépenses (tous modes)", session.expenses_total],
+                ["Retours / remboursements", session.refunds_total],
+                ["Montant remis au patron", session.remitted_amount],
+                ["Montant restant en caisse", session.kept_balance],
+              ] as const).map(([label, amount]) => <tr key={label}><td>{label}</td><td className="num strong">{amount == null ? "—" : money(amount)}</td></tr>)}
               <tr>
                 <td>Solde compté</td>
                 <td className="num strong">
@@ -131,8 +136,10 @@ export default function CashTicket({
   company,
   format,
   kind,
+  inline = false,
 }: CashTicketProps) {
   const body = <TicketBody session={session} company={company} kind={kind} />;
+  if (inline) return <div className={`receipt receipt-${format}`}>{body}</div>;
   return (
     <>
       <div className={`receipt receipt-preview receipt-${format}`}>{body}</div>

@@ -88,6 +88,10 @@ def _start(db, session):
     if session.status != "draft":
         return
     rows = _counts(db, session.id)
+    if any(row.physical_qty is not None for row in rows):
+        session.status = "in_progress"
+        db.flush()
+        return
     products = {product.id: product for product in db.query(Product).filter(Product.id.in_([row.product_id for row in rows])).order_by(Product.id).with_for_update().all()}
     for row in rows:
         product = products.get(row.product_id)
@@ -405,8 +409,7 @@ def cancel(session_id: int, db: Session = Depends(get_db), user: User = Depends(
 def validate(session_id: int, db: Session = Depends(get_db), user: User = Depends(require_permission("inventaire_valider"))):
     try:
         session = _editable(db, session_id)
-        if session.status != "in_progress":
-            raise HTTPException(409, "Démarrez le comptage avant validation")
+        _start(db, session)
         counts = [row for row in _counts(db, session_id) if row.physical_qty is not None]
         if not counts:
             raise HTTPException(400, "Aucun article compté")

@@ -17,6 +17,7 @@ import {
 import api, { formatDateTime, formatXOF } from "../api/client";
 import type { Customer, Delivery, Order, Product } from "../types";
 import Modal from "../components/Modal";
+import ProductSearch from "../components/ProductSearch";
 import BulkDelete, { SelectBox } from "../components/BulkDelete";
 import { useSelection } from "../lib/selection";
 import {
@@ -679,6 +680,10 @@ export default function Commandes() {
             </div>
           </div>
 
+          <ProductSearch products={products} onPick={(product) => setLines((previous) => [...previous, {
+            product_id: product.id, product_name: product.name, quantity: 1, unit: product.base_unit || "u",
+            unit_price: priceMode === "gros" && product.wholesale_price ? product.wholesale_price : product.sale_price, discount: 0,
+          }])} />
           <div className="space-y-2">
             {lines.map((l, index) => (
               <div key={index} className="flex flex-wrap items-end gap-2">

@@ -5,6 +5,7 @@ the order itself: it becomes an entry of Dettes & créances, settled payment
 after payment, so nothing of the history can be rewritten afterwards.
 """
 
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from .models import Debt, DebtPayment, Order, Purchase, User, utcnow
@@ -85,8 +86,11 @@ def open_purchase_payable(
 ) -> None:
     """What the shop still owes its supplier on a received supply."""
     balance = purchase.balance
-    if balance <= 0 or _exists(db, "dette", purchase.reference):
+    db.flush()
+    if balance <= 0 or db.query(Debt.id).filter_by(purchase_id=purchase.id).first():
         return
+    if db.query(Debt.id).filter_by(kind="dette", purchase_id=None, reference=purchase.reference).first():
+        raise HTTPException(409, "Dette fournisseur existante sans origine : utilisez Rapprocher dans Dettes avant de réceptionner cet achat")
     db.add(
         Debt(
             purchase_id=purchase.id,

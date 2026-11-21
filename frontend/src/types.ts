@@ -255,6 +255,7 @@ export interface CompanySettings {
   receipt_format: ReceiptFormat;
   printer_name: string;
   auto_print_cash: boolean;
+  mobile_money_to_cash?: boolean;
   /** Electronic cash drawer plugged into the receipt printer. */
   drawer_enabled: boolean;
   drawer_port: string;
@@ -655,12 +656,17 @@ export interface TopProduct {
 }
 
 export interface TopSeller {
+  user_id?: number | null;
+  collected: number;
+  payments: Record<string, number>;
   name: string;
   sales_count: number;
   revenue: number;
 }
 
 export interface DashboardStats {
+  total_collected: number;
+  payments: Record<string, number>;
   total_products: number;
   total_stock_value: number;
   low_stock_count: number;
@@ -729,6 +735,13 @@ export interface CashSessionSaleLine {
 }
 
 export interface CashSessionDetail extends CashSession {
+  mobile_money_to_cash?: boolean;
+  mobile_money_sales?: number | null;
+  mobile_money_refunds?: number | null;
+  kept_balance?: number | null;
+  remitted_amount?: number | null;
+  payments?: Record<string, number>;
+  payment_groups?: Record<string, number>;
   total_sales?: number | null;
   refunds_total?: number | null;
   net_sales?: number | null;

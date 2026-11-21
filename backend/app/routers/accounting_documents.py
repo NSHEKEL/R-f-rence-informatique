@@ -13,6 +13,7 @@ from ..auth import get_current_user, require_admin
 from ..database import get_db
 from ..models import AccountingAccount, AccountingSetting, Debt, Purchase, SecurityLog, User, utcnow
 from ..permissions import has_permission, require_permission
+from ..purchase_links import reconcile
 
 router = APIRouter(prefix="/api/accounting/documents", tags=["accounting-documents"])
 
@@ -110,20 +111,7 @@ def historical_tax(payload: HistoricalInput, db: Session = Depends(get_db), user
 
 @router.put("/debts/{debt_id}/purchase")
 def link_purchase(debt_id: int, payload: LinkInput, db: Session = Depends(get_db), user: User = Depends(require_permission("plan_comptable_modifier"))):
-    debt, purchase = db.get(Debt, debt_id), db.get(Purchase, payload.purchase_id)
-    if not debt or not purchase:
-        raise HTTPException(status_code=404, detail="Achat ou dette introuvable")
-    if debt.kind != "dette" or purchase.status != "Reçu":
-        raise HTTPException(status_code=400, detail="Liez une dette fournisseur à un achat reçu")
-    if debt.purchase_id or db.query(Debt).filter(Debt.purchase_id == purchase.id).first():
-        raise HTTPException(status_code=409, detail="Liaison existante conservée")
-    if debt.supplier_id != purchase.supplier_id or (debt.supplier_id is None and debt.party != purchase.supplier_name):
-        raise HTTPException(status_code=400, detail="Fournisseurs différents")
-    if abs(debt.amount - purchase.balance) > 0.009:
-        raise HTTPException(status_code=400, detail="Montants incompatibles : rapprochement manuel nécessaire")
-    debt.purchase_id = purchase.id
-    audit(db, user, "comptabilite_liaison", f"Dette {debt.id} → achat {purchase.id}")
-    db.commit()
+    reconcile(db, debt_id, payload.purchase_id, user)
     return configuration(db)
 
 
