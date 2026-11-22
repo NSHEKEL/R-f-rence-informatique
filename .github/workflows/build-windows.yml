@@ -146,7 +146,15 @@ jobs:
           body: |
             **EasyGest — gestion de vente et de stock.**
 
-            ### Nouveautés 2.18.39
+            ### Correctifs 2.18.40
+            - Les bons de livraison conservent et affichent les quantités
+              « déjà livrées » fractionnaires, y compris sur PostgreSQL.
+            - Une fiche article dont le stock est fractionnaire peut être
+              modifiée normalement, sans imposer un stock entier.
+            - Réceptions successives décimales fiabilisées : une commande de
+              0,3 peut être reçue en 0,1 puis 0,2 sans faux dépassement.
+
+            ### Nouveautés 2.18.39 incluses
             - Au panier, « Fraction d’unité » propose 1/2, 1/4 ou une quantité
               décimale libre, avec aperçu avant application. Exemple : 0,5 kg
               à 3 500 F/kg coûte 1 750 F et laisse 0,5 en stock sur une unité.
