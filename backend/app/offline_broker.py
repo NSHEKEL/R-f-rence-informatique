@@ -410,7 +410,7 @@ class OfflineBroker:
             if cached is None:
                 raise BrokerError(409, "Catalogue signé absent de ce poste")
             requested_session = payload.get("cash_session_id")
-            if requested_session is not None and requested_session not in {session["id"], session.get("server_session_id")}:
+            if requested_session is not None and requested_session not in {session["id"], session.get("server_session_id"), session.get("baseline", {}).get("id")}:
                 raise BrokerError(409, "Le panier appartient à une autre caisse ; vente non enregistrée")
             data = SaleCreate.model_validate({**payload, "cash_session_id": None})
             if data.status != "Payée" or not data.items:

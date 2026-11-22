@@ -144,3 +144,36 @@ class WorkstationRestartTests(unittest.TestCase):
             self.assertEqual(db.execute("SELECT state FROM offline_events WHERE id=?", (third_id,)).fetchone()[0], "conflict")
         print("REAL_POSTE_COLD_START_OK server_off_during_entire_launch=True durable_sales=2 replay_count=3 final_sales=2 stock=8.5 provisional_sessions_reconciled=1 opening_float_preserved=500 no_reopen_prompt=True same_provisional_identity=True disabled_account_locked=True pending_sale_preserved=True")
         print("SCENARIO_EVIDENCE=" + str(self.root))
+
+    def test_online_open_till_is_adopted_after_disconnect_and_sale_is_journaled(self):
+        self.start("server")
+        self.start("poste")
+        server = f"http://127.0.0.1:{self.ports['server']}"
+        admin = self.http("server", "/auth/login", {"email": "admin", "password": "admin123"})["access_token"]
+        identity = self.http("server", "/offline/identity", token=admin)
+        online = self.command("login", server=server, email="admin", password="admin123", trusted_fingerprint=identity["fingerprint"])
+        product = self.http("server", "/products", {"name": "Lait caisse existante", "sku": "ADOPT-ONLINE-TILL", "quantity": 1, "base_unit": "kg", "sale_price": 3500}, admin)
+        self.command("catalogue", images=False)
+        device = self.http("poste", "/local-offline/bootstrap", {})["device_id"]
+        request = urllib.request.Request(server + "/api/cash-sessions/open", data=json.dumps({"opening_balance": 500}).encode(), headers={"Content-Type": "application/json", "Authorization": "Bearer " + online["access_token"], "X-Workstation-Name": device}, method="POST")
+        with urllib.request.urlopen(request, timeout=35) as response:
+            original = json.load(response)
+        self.assertGreater(original["id"], 0)
+        self.assertTrue(self.command("remember", path="/cash-sessions/current", data=original, access_token=online["access_token"])["cached"])
+        self.stop("server")
+        operation = str(uuid.uuid4())
+        receipt = self.command("sale", payload={"client_id": operation, "cash_session_id": original["id"], "payment_method": "Espèces", "status": "Payée", "items": [{"product_id": product["id"], "quantity": 0.5, "unit_price": 3500}]}, snapshot={"total": 1750})
+        self.assertEqual(receipt["total"], 1750)
+        self.assertTrue(any(row["id"] == operation for row in self.command("state")["pending"]))
+        adopted = self.command("request", method="GET", path="/cash-sessions/current")
+        self.assertLess(adopted["id"], 0)
+        self.assertEqual(adopted["opening_balance"], 500)
+        self.start("server")
+        self.command("sync")
+        self.command("sync")
+        with sqlite3.connect(self.root / "server" / "business.sqlite3") as db:
+            self.assertEqual(db.execute("SELECT count(*) FROM cash_sessions").fetchone()[0], 1)
+            self.assertEqual(db.execute("SELECT cash_session_id, total FROM sales WHERE client_id=?", (operation,)).fetchone(), (original["id"], 1750))
+            self.assertEqual(db.execute("SELECT quantity FROM products WHERE id=?", (product["id"],)).fetchone()[0], 0.5)
+        print("REAL_ONLINE_TILL_DISCONNECT_OK positive_till_id_accepted=True sale_journaled=True total=1750 stock=0.5 same_server_session=True replayed_once=True opening_float_preserved=500")
+        print("SCENARIO_EVIDENCE=" + str(self.root))
