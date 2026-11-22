@@ -35,6 +35,7 @@ import type {
 import { documentHeader, readDocumentLayout } from "../lib/print";
 import GoogleDriveSettings from "../components/GoogleDriveSettings";
 import NetworkSettings from "../components/NetworkSettings";
+import OfflineSettings from "../components/OfflineSettings";
 import type { DocumentLayout } from "../lib/print";
 import { useAuth } from "../context/AuthContext";
 import PhotoPicker from "../components/PhotoPicker";
@@ -604,6 +605,7 @@ export default function Settings() {
       <fieldset disabled={!tabEditable} className="min-w-0 space-y-6">
       {tab === "depots" && <DepotSettings />}
       {tab === "poste" && <WorkstationSettings />}
+      {tab === "reseau" && <OfflineSettings />}
       {tab === "tarifs" && <CatalogPriceSettings />}
       {(["articles", "fiscalite", "peripheriques", "caisse"] as string[]).includes(tab || "") && <div className="card space-y-4 p-6">
         <h3 className="font-bold">{visibleTabs.find((item) => item.key === tab)?.label}</h3>

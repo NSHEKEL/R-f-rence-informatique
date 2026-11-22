@@ -13,10 +13,11 @@ import { TillProvider } from "./context/TillContext";
 import FrontendMounted from "./components/FrontendMounted";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { installNumberWheelGuard } from "./lib/numberWheel";
+import { initializeDesktopOffline } from "./lib/desktopOffline";
 
 installNumberWheelGuard();
 
-createRoot(document.getElementById("root")!).render(
+void initializeDesktopOffline().finally(() => createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <FrontendMounted>
     <ErrorBoundary>
@@ -40,4 +41,4 @@ createRoot(document.getElementById("root")!).render(
     </ErrorBoundary>
     </FrontendMounted>
   </StrictMode>
-);
+));

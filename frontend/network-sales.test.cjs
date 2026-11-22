@@ -5,18 +5,18 @@ const vm = require('node:vm');
 const ts = require('typescript');
 
 function setup() {
-  const storage = new Map(), events = new Map(), api = { post: async () => ({ data: {} }) };
+  const storage = new Map(), events = new Map(), api = { post: async () => ({ data: {} }), get: async path => ({ data: path === '/auth/me' ? { id: 1, role: 'vendeur' } : { allowed: [] } }) };
   const localStorage = { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) };
   const window = { dispatchEvent() {}, addEventListener: (event, callback) => events.set(event, callback), removeEventListener() {}, setInterval() {}, clearInterval() {}, setTimeout() {} };
   const cache = {};
   function load(name) {
     if (cache[name]) return cache[name];
     const exports = {}; cache[name] = exports;
-    vm.runInNewContext(ts.transpileModule(readFileSync(`${__dirname}/src/lib/${name}.ts`, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, { exports, require: path => path === '../api/client' ? { __esModule: true, default: api } : load(path.slice(2)), localStorage, window, Event, atob });
+    vm.runInNewContext(ts.transpileModule(readFileSync(`${__dirname}/src/lib/${name}.ts`, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, { exports, require: path => path === '../api/client' ? { __esModule: true, default: api } : load(path.slice(2)), localStorage, window, Event, atob, crypto: require('node:crypto').webcrypto });
     return exports;
   }
   const identity = (server, user) => { localStorage.setItem('ri_server_url', server); localStorage.setItem('ri_auth_cache', JSON.stringify({ user: { id: user }, token: 'token' })); localStorage.setItem('ri_token', 'token'); };
-  return { lib: load('offline'), api, storage, localStorage, window, events, identity };
+  return { lib: load('offline'), api, storage, localStorage, window, events, identity, load };
 }
 const entry = id => ({ payload: { client_id: id, cash_session_id: 42 }, snapshot: { reference: id } });
 
@@ -54,11 +54,11 @@ test('business refusal retained as readable rejection', async () => {
 });
 
 test('network health retries even when already online and never flushes without authenticated cache', async () => {
-  const { lib, api, identity, localStorage, window } = setup(); identity('http://server', 1);
+  const { lib, api, identity, localStorage, window, load } = setup(); identity('http://server', 1);
   let effects = [], supplied, requests = 0, fail = true;
   const react = { createContext: () => ({ Provider: 'provider' }), useState: value => [typeof value === 'function' ? value() : value, () => {}], useRef: value => ({ current: value }), useCallback: fn => fn, useEffect: fn => effects.push(fn), useContext() {} };
   const exports = {};
-  vm.runInNewContext(ts.transpileModule(readFileSync(`${__dirname}/src/context/NetworkContext.tsx`, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText, { exports, require: path => path === 'react' ? react : path === 'react/jsx-runtime' ? { jsx: (_type, props) => { supplied = props.value; } } : path === 'axios' ? { __esModule: true, default: { get: async () => ({ data: { status: 'ok', app: 'EasyGest' } }) } } : path === '../api/client' ? { getServerUrl: () => 'http://server' } : lib, localStorage, window, Event });
+  vm.runInNewContext(ts.transpileModule(readFileSync(`${__dirname}/src/context/NetworkContext.tsx`, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText, { exports, require: path => path === 'react' ? react : path === 'react/jsx-runtime' ? { jsx: (_type, props) => { supplied = props.value; } } : path === 'axios' ? { __esModule: true, default: { get: async () => ({ data: { status: 'ok', app: 'EasyGest' } }) } } : path === '../api/client' ? { __esModule: true, default: api, getServerUrl: () => 'http://server' } : path === '../lib/offline' ? lib : load(path.split('/').at(-1)), localStorage, window, Event });
   exports.NetworkProvider({ children: null });
   await supplied.refresh(); lib.queueSale(entry('retry'));
   api.post = async () => { requests++; if (fail) throw Error('network'); return { data: {} }; };

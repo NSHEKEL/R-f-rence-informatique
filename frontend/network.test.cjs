@@ -3,8 +3,12 @@ const { readFileSync } = require("node:fs");
 const { test } = require("node:test");
 const vm = require("node:vm");
 const ts = require("typescript");
+const authStorage = () => { const data = new Map([["ri_token", "token"], ["ri_auth_cache", JSON.stringify({ token: "token", user: { id: 1 }, rights: [] })]]); return { getItem: key => data.get(key) ?? null, setItem: (key, value) => data.set(key, value), removeItem: key => data.delete(key) }; };
+const verifiedApi = { get: async path => ({ data: path === "/auth/me" ? { id: 1, role: "vendeur" } : { allowed: [] } }) };
 
 function load(path, imports, globals = {}) {
+  imports = { "./desktopOffline": { desktopOffline: { available: () => false } }, "../lib/desktopOffline": { desktopOffline: { available: () => false } }, "../lib/authCache": loadAuth(), ...imports };
+  if (imports["../api/client"] && !imports["../api/client"].default) imports["../api/client"].default = verifiedApi;
   const exports = {};
   const source = ts.transpileModule(readFileSync(`${__dirname}/src/${path}`, "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
@@ -12,7 +16,13 @@ function load(path, imports, globals = {}) {
   vm.runInNewContext(source, { exports, require: (name) => {
     assert.ok(name in imports, `unexpected import ${name}`);
     return { __esModule: true, ...imports[name] };
-  }, ...globals });
+  }, crypto: require("node:crypto").webcrypto, localStorage: authStorage(), ...globals });
+  return exports;
+}
+
+function loadAuth() {
+  const exports = {};
+  vm.runInNewContext(ts.transpileModule(readFileSync(`${__dirname}/src/lib/authCache.ts`, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports, localStorage: authStorage() });
   return exports;
 }
 

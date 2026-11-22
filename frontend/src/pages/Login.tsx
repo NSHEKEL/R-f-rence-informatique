@@ -19,6 +19,7 @@ import api, {
 import Modal from "../components/Modal";
 import { useAuth } from "../context/AuthContext";
 import { useNetwork } from "../context/NetworkContext";
+import { desktopOffline } from "../lib/desktopOffline";
 
 type ForgotStep = "email" | "code";
 
@@ -272,6 +273,7 @@ export default function Login() {
             </div>
           </div>
 
+          {desktopOffline.available() && <p className="mb-3 text-xs text-amber-800">Serveur arrêté ? Utilisez vos identifiants habituels sur ce poste déjà préparé. L'autorisation hors ligne doit encore être valide ; votre mot de passe n'est jamais conservé en clair.</p>}
           <button type="submit" className="btn-primary w-full" disabled={loading}>
             {loading ? "Connexion..." : "Se connecter"}
           </button>

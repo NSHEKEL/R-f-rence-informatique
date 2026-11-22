@@ -1,6 +1,7 @@
 import api from "../api/client";
 import { apiErrorMessage } from "./apiErrors";
 import type { Product, Sale } from "../types";
+import { desktopOffline } from "./desktopOffline";
 
 const CACHE_PREFIX = "ri_cache_";
 const QUEUE_KEY = "ri_pending_sales";
@@ -112,6 +113,10 @@ export async function fetchCached<T>(
   key: string,
   overlay = true
 ): Promise<{ data: T; fromCache: boolean }> {
+  if (desktopOffline.available() && path.split("?")[0] === "/products/pos") {
+    const result = await desktopOffline.catalogue(/[?&]images=true/.test(path));
+    return { data: result.data as T, fromCache: result.fromCache };
+  }
   try {
     const res = await api.get<T>(path, { timeout: 8000 });
     const data = catalogueData(path, res.data);
@@ -156,7 +161,12 @@ function saleScope(): string {
 }
 
 export function newClientId(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 15) | 64;
+  bytes[8] = (bytes[8] & 63) | 128;
+  const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 export interface SyncResult {

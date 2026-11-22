@@ -76,6 +76,7 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
 import { useNetwork } from "../context/NetworkContext";
+import { desktopOffline } from "../lib/desktopOffline";
 import { useCatalogueVersion, useSyncVersion } from "../context/SyncContext";
 
 const PAYMENTS = [
@@ -227,8 +228,8 @@ export default function NouvelleVente() {
   const canGift = can("ventes_cadeau");
   const canQuote = can("proformas");
   const { company, printing } = useCompany();
-  const allowNegativeStock = company?.allow_negative_stock_sale === true;
   const { online } = useNetwork();
+  const allowNegativeStock = !online || company?.allow_negative_stock_sale === true;
   const version = useCatalogueVersion();
   const sharedVersion = useSyncVersion();
   const navigate = useNavigate();
@@ -247,6 +248,7 @@ export default function NouvelleVente() {
 
   const [query, setQuery] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
+  const checkoutId = useRef("");
   const [customerQuery, setCustomerQuery] = useState("");
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [payment, setPayment] = useState(PAYMENTS[0]);
@@ -766,8 +768,9 @@ export default function NouvelleVente() {
     }
     setSaving(true);
     setError("");
+    checkoutId.current ||= newClientId();
     const payload: SalePayload = {
-      client_id: newClientId(),
+      client_id: checkoutId.current,
       cash_session_id: session?.id,
       customer_id: customer?.id ?? null,
       payment_method: gift ? "Cadeau" : payment,
@@ -797,6 +800,7 @@ export default function NouvelleVente() {
           : undefined,
     };
     try {
+      if (desktopOffline.available() && (desktopOffline.state().journal_session || !desktopOffline.state().online)) throw new Error("Journal provisoire");
       const res = await api.post<Sale>("/sales", payload, { timeout: 15000 });
       finishSale(res.data);
       resetCart();
@@ -826,15 +830,27 @@ export default function NouvelleVente() {
         payload.payments,
         gift
       );
-      queueSale({ payload, snapshot });
-      finishSale(snapshot);
-      resetCart();
+      try {
+        if (desktopOffline.available()) {
+          const receipt = await desktopOffline.sale(payload, snapshot);
+          finishSale(receipt);
+        } else {
+          if (desktopOffline.local()) throw new Error("Journal durable indisponible : vente non validée. Conservez le panier.");
+          queueSale({ payload, snapshot });
+          finishSale(snapshot);
+        }
+        resetCart();
+        void Promise.allSettled([loadProducts(), loadSession()]);
+      } catch (localError) {
+        setError(localError instanceof Error ? localError.message : "Écriture locale impossible : vente non validée");
+      }
     } finally {
       setSaving(false);
     }
   }
 
   function resetCart() {
+    checkoutId.current = "";
     setCart([]);
     setNote("");
     setDiscount(0);

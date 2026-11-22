@@ -11,6 +11,7 @@ export default function NetworkBanner() {
     justReconnected,
     syncErrors,
     rejected,
+    journal,
     dismissRejectedSale,
   } = useNetwork();
 
@@ -18,7 +19,9 @@ export default function NetworkBanner() {
     <div className="no-print space-y-2 px-5 pt-4 lg:px-7">
       <div className={`flex items-center gap-2 text-xs font-medium ${online ? "text-emerald-700" : "text-amber-800"}`}>
         {online ? <Wifi size={13} /> : <CloudOff size={13} />}
-        {online ? "Serveur connecté" : serverReachable ? "Serveur joignable — poste non autorisé" : "Serveur déconnecté"}
+        {online ? "Connecté" : serverReachable ? "Serveur joignable — poste non autorisé" : "Hors ligne"}
+        {journal?.last_synced && pendingCount === 0 && <span>— Synchronisation terminée à {new Date(journal.last_synced).toLocaleTimeString("fr-FR")}</span>}
+        {syncErrors.length > 0 && <span className="text-red-700">— Erreur de synchronisation</span>}
         {online && !justReconnected && pendingCount > 0 && <span>— {pendingCount} élément(s) en attente de synchronisation</span>}
       </div>
       {serverReachable && workstationStatus && workstationStatus !== "approved" && <div className="rounded-xl bg-amber-100 px-4 py-3 text-sm text-amber-900">
@@ -28,8 +31,7 @@ export default function NetworkBanner() {
         <div className="flex items-center gap-3 rounded-xl bg-amber-100 px-4 py-3 text-sm font-semibold text-amber-900">
           <CloudOff size={18} />
           <span>
-            Pas de réseau, l'application fonctionne et se mettra à jour quand le
-            réseau sera rétabli.
+            Hors ligne — stock possiblement non actualisé. Les opérations validées sont conservées sur ce poste jusqu'à leur confirmation par le serveur.
           </span>
           {pendingCount > 0 && (
             <span className="ml-auto flex items-center gap-1.5 rounded-lg bg-amber-200 px-2.5 py-1 text-xs">
@@ -80,6 +82,11 @@ export default function NetworkBanner() {
           </ul>
         </div>
       )}
+      {journal && journal.pending.length > 0 && <details className="rounded-xl border border-amber-200 px-4 py-2 text-xs">
+        <summary className="cursor-pointer">{journal.pending.filter((row) => row.kind === "sale").length} vente(s) en attente · {journal.pending.length} opération(s) conservée(s)</summary>
+        <ul className="mt-2 max-h-40 space-y-1 overflow-auto">{journal.pending.map((row) => <li key={row.id}>{row.reference} — {row.state === "conflict" ? "À vérifier" : "En attente"}{row.reason ? ` : ${row.reason}` : ""}</li>)}</ul>
+        <p className="mt-2 text-slate-500">Ne ressaisissez pas un ticket en attente : son identifiant empêche les doublons.</p>
+      </details>}
     </div>
   );
 }
