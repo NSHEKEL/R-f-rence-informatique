@@ -48,6 +48,29 @@ class ProductPackagingsTests(unittest.TestCase):
         finally:
             event.remove(self.engine, "before_cursor_execute", count)
 
+    def test_catalogue_indexes_and_delta_column_are_additive_and_idempotent(self):
+        old = create_engine("sqlite:///:memory:")
+        self.addCleanup(old.dispose)
+        with old.begin() as conn:
+            conn.execute(text("CREATE TABLE change_log (id INTEGER PRIMARY KEY, entities VARCHAR, at TIMESTAMP)"))
+            conn.execute(text("INSERT INTO change_log (id, entities) VALUES (1, 'products')"))
+        with patch.object(migration, "engine", old):
+            migration.migrate()
+            migration.migrate()
+        with old.connect() as conn:
+            self.assertEqual(conn.execute(text("SELECT id, entities, product_ids FROM change_log")).one(), (1, "products", None))
+        before = self.call(f"/api/products/{self.product.id}")
+        with patch.object(migration, "engine", self.engine):
+            migration.migrate()
+            migration.migrate()
+        self.assertEqual(self.call(f"/api/products/{self.product.id}"), before)
+        inspector = inspect(self.engine)
+        self.assertIn("product_ids", {column["name"] for column in inspector.get_columns("change_log")})
+        for table, expected in (("products", {"ix_products_active_name"}),
+            ("stock_movements", {"ix_stock_movements_product_date_id"}),
+            ("sale_items", {"ix_sale_items_product_id", "ix_sale_items_sale_id"})):
+            self.assertTrue(expected.issubset({index["name"] for index in inspector.get_indexes(table)}))
+
     def update(self, **changes):
         payload = self.call(f"/api/products/{self.product.id}")
         return self.call(f"/api/products/{self.product.id}", "PUT", {**payload, **changes})

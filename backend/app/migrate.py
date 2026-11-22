@@ -404,6 +404,14 @@ def migrate() -> None:
         cost_marker = "stock_lot_cost_snapshot_v1"
         if "stock_movements" in tables and "date" in _columns(inspect(conn), "stock_movements"):
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_stock_movements_date ON stock_movements (date)"))
+        for table, name, columns in (
+            ("products", "ix_products_active_name", ("active", "name")),
+            ("stock_movements", "ix_stock_movements_product_date_id", ("product_id", "date", "id")),
+            ("sale_items", "ix_sale_items_product_id", ("product_id",)),
+            ("sale_items", "ix_sale_items_sale_id", ("sale_id",)),
+        ):
+            if table in tables and set(columns).issubset(_columns(inspect(conn), table)):
+                conn.execute(text(f"CREATE INDEX IF NOT EXISTS {name} ON {table} ({', '.join(columns)})"))
         if {"products", "stock_lots"}.issubset(tables) and "purchase_price" in _columns(inspect(conn), "products") and not conn.execute(select(AppMigration.name).where(AppMigration.name == cost_marker)).first():
             conn.execute(text("UPDATE stock_lots SET unit_cost = COALESCE((SELECT purchase_price FROM products WHERE products.id = stock_lots.product_id), 0) WHERE unit_cost IS NULL"))
             conn.execute(AppMigration.__table__.insert().values(name=cost_marker))
