@@ -13,6 +13,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..quantities import round_quantity
 from ..catalogue import require_active
 from ..purchase_prices import apply_changes, remove_purchase_changes, review
 from .. import stock
@@ -77,7 +78,7 @@ def _fill_items(db: Session, purchase: Purchase, payload) -> None:
         require_active(product)
         spec = selected_packaging(db, product, item.packaging_id)
         quantity = base_quantity(item, spec)
-        if quantity <= 0:
+        if round_quantity(quantity) <= 0:
             raise HTTPException(status_code=400, detail="Quantité invalide")
         cost = (
             item.unit_cost
@@ -268,9 +269,9 @@ def delete_purchase(
     quantities = {}
     for movement in movements:
         key = (movement.product_id, movement.depot_id)
-        quantities[key] = quantities.get(key, 0) + movement.quantity
-    received = sum(item.received_quantity or 0 for item in purchase.items)
-    if sum(quantities.values()) != received:
+        quantities[key] = round_quantity(quantities.get(key, 0) + movement.quantity)
+    received = round_quantity(sum(item.received_quantity or 0 for item in purchase.items))
+    if round_quantity(sum(quantities.values())) != received:
         raise HTTPException(409, "Historique de réception incomplet : rapprochez les mouvements de cet approvisionnement avant suppression")
     for (product_id, depot_id), quantity in sorted(quantities.items(), key=lambda entry: (entry[0][0] or 0, entry[0][1] or 0)):
         product = db.get(Product, product_id)
@@ -279,7 +280,7 @@ def delete_purchase(
         before, after = stock.adjust(db, product, -quantity, depot_id, allow_negative=False, check_total=True)
         lots = db.query(StockLot).filter(StockLot.product_id == product_id,
             or_(StockLot.depot_id == stock.resolve(db, depot_id), StockLot.depot_id.is_(None))).all()
-        if sum(lot.quantity for lot in lots) > after:
+        if round_quantity(sum(lot.quantity for lot in lots)) > round_quantity(after):
             raise HTTPException(409, "Stock déjà consommé ou affecté à des lots : régularisez les quantités non loties avant suppression (aucun lot étranger n'est supprimé)")
         db.add(StockMovement(depot_id=stock.resolve(db, depot_id), product_id=product.id, product_name=product.name,
             kind="annulation approvisionnement", quantity=-quantity, stock_before=before, stock_after=after,
@@ -330,12 +331,12 @@ def receive_purchase(
     received_ids = set()
     moved = 0
     for item in purchase.items:
-        remaining = round((item.quantity or 0) - (item.received_quantity or 0), 6)
+        remaining = round_quantity((item.quantity or 0) - (item.received_quantity or 0))
         entry = wanted.get(item.id)
         quantity = base_quantity(entry, item) if entry else (0 if wanted else remaining)
-        if quantity <= 0:
+        if round_quantity(quantity) <= 0:
             continue
-        if quantity > remaining:
+        if round_quantity(quantity) > remaining:
             raise HTTPException(
                 status_code=400,
                 detail=(
@@ -354,8 +355,8 @@ def receive_purchase(
         received_ids.add(product.id)
         if update_cost and (item.unit_cost or 0) > 0 and not any(change.product_id == product.id and change.packaging_id is None and change.field == "purchase_price" for change in changes):
             legacy_costs[product.id] = CataloguePriceChange(product_id=product.id, field="purchase_price", old_value=product.purchase_price, new_value=item.unit_cost)
-        item.received_quantity = round((item.received_quantity or 0) + quantity, 6)
-        moved += quantity
+        item.received_quantity = round_quantity((item.received_quantity or 0) + quantity)
+        moved = round_quantity(moved + quantity)
         db.add(
             StockMovement(
                 depot_id=depot_id,
@@ -371,12 +372,12 @@ def receive_purchase(
             )
         )
 
-    if moved == 0:
+    if round_quantity(moved) == 0:
         raise HTTPException(status_code=400, detail="Aucune quantité à réceptionner")
     apply_changes(db, purchase, changes + list(legacy_costs.values()), received_ids, current_user)
 
     complete = all(
-        (item.received_quantity or 0) >= (item.quantity or 0)
+        round_quantity(item.received_quantity) >= round_quantity(item.quantity)
         for item in purchase.items
     )
     purchase.status = "Reçu" if complete else "Reçu partiellement"
@@ -418,7 +419,7 @@ def cancel_purchase(
         )
     debts = db.query(Debt).filter_by(purchase_id=purchase.id).with_for_update().all()
     if debts and (purchase.paid or any(debt.payments for debt in debts)
-                  or any(item.received_quantity for item in purchase.items)):
+                  or any(round_quantity(item.received_quantity) for item in purchase.items)):
         raise HTTPException(409, "Achat lié avec réception ou historique de règlements : annulation refusée pour conserver l'origine comptable. Conservez l'achat et ses reçus ; régularisation administrateur requise.")
     for debt in debts:
         debt.purchase_id = None

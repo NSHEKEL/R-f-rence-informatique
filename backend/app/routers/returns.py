@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from .. import remote_sales
 from ..database import get_db
+from ..quantities import round_quantity
 from .. import stock
 from ..models import (
     Notification,
@@ -95,12 +96,12 @@ def create_return(
         if item.id in seen:
             raise HTTPException(status_code=400, detail="Ligne de retour répétée")
         seen.add(item.id)
-        remaining = round(item.quantity - item.returned_quantity, 6)
+        remaining = round_quantity(item.quantity - item.returned_quantity)
         quantity = base_quantity(line, item)
-        if quantity <= 0:
+        if round_quantity(quantity) <= 0:
             raise HTTPException(status_code=400, detail="Quantité invalide")
         line = line.model_copy(update={"quantity": quantity})
-        if line.quantity > remaining:
+        if round_quantity(line.quantity) > remaining:
             raise HTTPException(
                 status_code=400,
                 detail=(

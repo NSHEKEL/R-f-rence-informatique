@@ -4,7 +4,7 @@ import test_units as fixtures
 from app import stock
 from app.models import Product, StockLot, StockMovement
 from app.models import DeliveryItem
-from app.routers import deliveries
+from app.routers import deliveries, orders
 
 
 class FractionalQuantityTests(unittest.TestCase):
@@ -42,6 +42,20 @@ class FractionalQuantityTests(unittest.TestCase):
         self.assertEqual(received["items"][0]["received_quantity"], 0.3)
         self.assertEqual(received["status"], "Reçu")
         self.assertEqual(self.stock(), before + 0.3)
+        self.call(f"/api/purchases/{purchase['id']}", "DELETE", status=204)
+        self.assertEqual(self.stock(), before)
+
+    def test_successive_decimal_deliveries_complete_exactly(self):
+        self.app.include_router(orders.router)
+        self.app.include_router(deliveries.router)
+        order = self.call("/api/orders", "POST", {"customer_name": "Client", "items": [{"product_id": self.product.id, "quantity": 0.3}]}, 201)
+        for quantity in (0.1, 0.2):
+            note = self.call("/api/delivery-notes", "POST", {"order_id": order["id"], "items": [{"product_id": self.product.id, "quantity": quantity}]}, 201)
+            self.call(f"/api/delivery-notes/{note['id']}/validate", "POST", {"paid": False})
+        updated = self.call(f"/api/orders/{order['id']}")
+        self.assertEqual(updated["items"][0]["delivered_quantity"], 0.3)
+        self.assertEqual(updated["items"][0]["remaining_quantity"], 0)
+        self.assertEqual(updated["status"], "Livrée")
 
     def test_half_unit_sale_and_return_preserve_fractional_stock_and_cash(self):
         self.prepare()

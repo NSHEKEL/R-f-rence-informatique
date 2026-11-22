@@ -943,7 +943,7 @@ class OrderItem(UnitSnapshot, Base):
 
     @property
     def remaining_quantity(self) -> float:
-        return max(self.quantity - (self.delivered_quantity or 0), 0)
+        return max(round(self.quantity - (self.delivered_quantity or 0), 6), 0)
 
 
 class Delivery(Base):
