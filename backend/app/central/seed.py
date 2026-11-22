@@ -154,10 +154,11 @@ ADDED_COLUMNS: dict[str, dict[str, str]] = {
         "manager": "VARCHAR DEFAULT ''",
         "is_active": "BOOLEAN DEFAULT TRUE",
     },
-    "mirror_sales": {"installation_uid": "VARCHAR DEFAULT ''"},
+    "mirror_sales": {"installation_uid": "VARCHAR DEFAULT ''", "operation_id": "VARCHAR(64)", "provisional": "BOOLEAN DEFAULT FALSE", "offline_original": "TEXT DEFAULT ''"},
     "mirror_returns": {"installation_uid": "VARCHAR DEFAULT ''"},
     "mirror_users": {"cash_permissions": "TEXT DEFAULT '[]'"},
 }
+ADDED_COLUMNS["installations"]["offline_public_key"] = "TEXT DEFAULT ''"
 
 
 def _add_missing_columns() -> None:
@@ -174,6 +175,8 @@ def _add_missing_columns() -> None:
                 conn.execute(
                     text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
                 )
+        if "mirror_sales" in tables:
+            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_mirror_offline_sale ON mirror_sales (client_id, installation_uid, operation_id)"))
 
 
 def seed() -> None:

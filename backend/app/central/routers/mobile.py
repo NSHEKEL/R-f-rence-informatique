@@ -172,6 +172,7 @@ def sales(
     return [
         {
             "reference": row.reference,
+            "provisional": bool(row.provisional),
             "date": row.date.isoformat() if row.date else "",
             "total": row.total,
             "status": row.status,

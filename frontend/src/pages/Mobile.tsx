@@ -41,6 +41,7 @@ interface Session {
 }
 
 interface MobileSale {
+  provisional?: boolean;
   reference: string;
   date: string;
   total: number;
@@ -806,7 +807,7 @@ export default function Mobile() {
                       className="w-full rounded-xl bg-white p-3 text-left shadow-sm dark:bg-slate-900"
                     >
                       <div className="flex items-center justify-between">
-                        <span className="font-medium">{sale.reference}</span>
+                        <span className="font-medium">{sale.reference}{sale.provisional && <small className="ml-2 rounded bg-amber-100 px-2 py-1 text-amber-900">Hors ligne · provisoire</small>}</span>
                         <span className="font-semibold">
                           {money(sale.total)}
                         </span>

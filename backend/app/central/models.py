@@ -191,6 +191,7 @@ class Installation(Base):
     """One computer (or one shop server) running EasyGest."""
 
     __tablename__ = "installations"
+    offline_public_key = Column(Text, default="")
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
@@ -252,6 +253,7 @@ class MirrorSale(Base):
     __tablename__ = "mirror_sales"
     __table_args__ = (
         UniqueConstraint("client_id", "reference", name="uq_mirror_sale"),
+        UniqueConstraint("client_id", "installation_uid", "operation_id", name="uq_mirror_offline_sale"),
     )
 
     id = Column(Integer, primary_key=True, index=True)
@@ -267,7 +269,22 @@ class MirrorSale(Base):
     seller = Column(String, default="")
     seller_email = Column(String, default="", index=True)
     items = Column(Text, default="[]")
+    operation_id = Column(String(64), nullable=True)
+    provisional = Column(Boolean, default=False)
+    offline_original = Column(Text, default="")
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class OfflineDelegation(Base):
+    __tablename__ = "offline_delegations"
+    id = Column(String(64), primary_key=True)
+    installation_uid = Column(String, nullable=False, index=True)
+    device_id = Column(String(64), nullable=False)
+    public_key = Column(Text, nullable=False)
+    grant = Column(Text, nullable=False)
+    seller_email = Column(String, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    active = Column(Boolean, default=True, nullable=False)
 
 
 class MirrorReturn(Base):

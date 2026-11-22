@@ -48,6 +48,7 @@ def _sales(db: Session) -> list[dict]:
         copies.append(
             {
                 "reference": sale.reference,
+                "operation_id": sale.client_id,
                 "date": sale.date.isoformat() if sale.date else None,
                 "total": sale.total or 0,
                 "status": sale.status or "",

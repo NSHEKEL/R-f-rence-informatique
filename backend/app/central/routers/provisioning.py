@@ -49,8 +49,19 @@ from ..service import (
 )
 
 from .mobile import mobile_code
+from .. import offline_sales
 
 router = APIRouter(prefix="/api/central/public", tags=["central-public"])
+
+
+@router.post("/offline/delegate")
+def delegate_offline(payload: offline_sales.DelegateRequest, db: Session = Depends(get_db)):
+    return offline_sales.delegate(db, payload)
+
+
+@router.post("/offline/events")
+def offline_events(payload: offline_sales.UploadRequest, db: Session = Depends(get_db)):
+    return offline_sales.upload(db, payload)
 
 
 def _naive(value: datetime | None) -> datetime | None:
@@ -217,14 +228,21 @@ def mirror(payload: MirrorRequest, db: Session = Depends(get_db)):
         row.reference: row
         for row in db.query(MirrorSale).filter(MirrorSale.client_id == client.id)
     }
+    by_operation = {(row.installation_uid, row.operation_id): row for row in stored.values() if row.operation_id}
     new_sales = []
     for sale in payload.sales:
-        row = stored.get(sale.reference)
+        row = by_operation.get((installation.uid, sale.operation_id)) if sale.operation_id else None
+        row = row or stored.get(sale.reference)
+        if row and row.operation_id and sale.operation_id and (row.operation_id != sale.operation_id or row.installation_uid != installation.uid):
+            raise HTTPException(409, "Référence déjà liée à une autre opération ; copie originale conservée")
         if row is None:
             row = MirrorSale(client_id=client.id, reference=sale.reference)
             db.add(row)
             new_sales.append(sale)
         row.installation_uid = installation.uid
+        row.operation_id = sale.operation_id or row.operation_id
+        row.provisional = False
+        row.reference = sale.reference
         row.date = _naive(sale.date)
         row.total = sale.total
         row.status = sale.status
@@ -233,6 +251,9 @@ def mirror(payload: MirrorRequest, db: Session = Depends(get_db)):
         row.seller = sale.seller
         row.seller_email = sale.seller_email.strip().lower()
         row.items = json.dumps(sale.items, ensure_ascii=False)
+        stored[sale.reference] = row
+        if row.operation_id:
+            by_operation[(installation.uid, row.operation_id)] = row
 
     credits = {
         row.reference: row

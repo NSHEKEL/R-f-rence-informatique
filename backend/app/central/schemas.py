@@ -325,6 +325,7 @@ class MirrorUserIn(BaseModel):
 
 class MirrorSaleIn(BaseModel):
     reference: str
+    operation_id: Optional[str] = Field(default=None, max_length=64)
     date: Optional[datetime] = None
     total: float = 0
     status: str = ""
