@@ -82,7 +82,9 @@ export function TillProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     void refresh();
     const timer = window.setInterval(() => void refresh(), 60000);
-    return () => window.clearInterval(timer);
+    const changed = () => void refresh();
+    window.addEventListener("ri:offline-state", changed);
+    return () => { window.clearInterval(timer); window.removeEventListener("ri:offline-state", changed); };
   }, [refresh]);
 
   const value = useMemo<TillState>(

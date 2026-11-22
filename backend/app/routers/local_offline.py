@@ -4,12 +4,16 @@ import socket
 import sys
 import threading
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field, ValidationError
 
 from ..offline_broker import BrokerError, OfflineBroker
 from ..offline_crypto import canonical
 from ..network import lan_ips
+from ..auth import get_current_user
+from ..database import get_db
+from ..licensing import installation_uid
+from ..models import User
 
 router = APIRouter(prefix="/api/local-offline", tags=["local-offline"])
 NONCE = secrets.token_urlsafe(32)
@@ -59,6 +63,19 @@ def bootstrap(request: Request):
         return {"supported": True, "nonce": NONCE, "local_hosts": [socket.gethostname(), *lan_ips()], **broker().bootstrap()}
     except (OSError, RuntimeError) as error:
         raise HTTPException(507, "Journal durable indisponible : vérifiez l'espace disque et le profil Windows") from error
+
+
+@router.post("/recover")
+def recover(request: Request, x_easygest_offline: str = Header(default=""), db=Depends(get_db), user: User = Depends(get_current_user)):
+    local_only(request)
+    if not secrets.compare_digest(x_easygest_offline, NONCE):
+        raise HTTPException(403, "Session locale invalide")
+    try:
+        return broker().recover_local(db, installation_uid(), user.id)
+    except BrokerError as error:
+        raise HTTPException(error.status, error.message) from None
+    except OSError:
+        raise HTTPException(507, "Récupération interrompue : journal conservé, ne rouvrez pas la caisse et vérifiez le disque") from None
 
 
 @router.post("/command")

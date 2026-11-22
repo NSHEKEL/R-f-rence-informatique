@@ -138,6 +138,12 @@ class OfflineBroker:
         public = response["offline_public_key"]
         with self.store.connection() as db:
             pinned = self.store.get(db, "server:" + server)
+            if pinned is None:
+                for previous in self.store.get(db, "servers", []):
+                    candidate = self.store.get(db, "server:" + previous)
+                    if candidate and candidate["public_key"] == public:
+                        pinned = candidate
+                        break
         new_pin = pinned is None
         if pinned is None:
             if me["role"] != "admin" or trusted_fingerprint != fingerprint(public):
@@ -168,7 +174,33 @@ class OfflineBroker:
             self.store.put(db, "servers", list(dict.fromkeys([*servers, server])))
         self.identity = {"server": server, "key": key, "scope": claims["iss"], "user_id": int(claims["sub"])}
         self._delegation(server, auth)
-        return {"access_token": response["access_token"], "user": claims["user"], "rights": sorted(set(rights) & set(claims["permissions"])), "offline_ready": True, "expires_at": claims["exp"]}
+        self.sync(wait=True)
+        return {**self.account(), "offline_ready": True}
+
+    def recover_local(self, db, scope, user_id):
+        from fastapi import HTTPException
+        from .offline_ingest import ingest
+
+        recovered = 0
+        with self.sync_lock:
+            with self.store.connection() as journal:
+                entries = self.store.events(journal, scope, user_id, pending=True)
+            failures = []
+            for item in entries:
+                event = item["envelope"]["event"]
+                try:
+                    result = ingest(db, item["envelope"])
+                    with self.store.connection() as journal:
+                        self.store.acknowledge(journal, event["id"], result)
+                    recovered += int(result["state"] == "applied")
+                    if result["state"] != "applied":
+                        failures.append(str(result.get("reason") or "Rapprochement administrateur nécessaire"))
+                except HTTPException as error:
+                    db.rollback()
+                    failures.append(str(error.detail))
+            if failures:
+                raise BrokerError(409, "Opérations locales conservées, ne rouvrez pas la caisse : " + "; ".join(dict.fromkeys(failures)))
+        return {"recovered": recovered}
 
     def _deny(self, server, email, reason):
         with self.store.connection() as db:
@@ -606,8 +638,12 @@ class OfflineBroker:
             servers = self.store.get(db, "servers", [])
             current = self.identity
             entries = []
+            scopes = set()
             for server in servers:
                 scope = self.store.get(db, "server:" + server)["shop_id"]
+                if scope in scopes:
+                    continue
+                scopes.add(scope)
                 for item in self.store.events(db, scope, pending=True):
                     event = item["envelope"]["event"]
                     visible = current and current["scope"] == scope and current["user_id"] == event["user_id"]

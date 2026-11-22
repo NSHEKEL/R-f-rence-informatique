@@ -12,8 +12,9 @@ test('local server login never prepares a workstation; remote seller preparation
     { server: 'https://shop.example:8000', remote: true, prepared: true },
     { server: 'http://10.1.2.4:8000', remote: true, seller: true },
     { server: '', remote: false, denied: true },
+    { server: '', remote: false, unsupported: true },
   ]) {
-    let value, prompts = 0, nativeLogins = 0, onlineLogins = 0;
+    let value, prompts = 0, nativeLogins = 0, onlineLogins = 0, recoveries = 0;
     const storage = new Map();
     const localStorage = { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) };
     const window = { location: { origin: 'http://127.0.0.1:8000', hostname: '127.0.0.1' }, prompt: () => { prompts++; return scenario.cancel ? null : 'fingerprint'; }, alert() {} };
@@ -21,7 +22,7 @@ test('local server login never prepares a workstation; remote seller preparation
     const options = { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } };
     vm.runInNewContext(ts.transpileModule(readFileSync(`${__dirname}/src/lib/desktopOffline.ts`, 'utf8'), options).outputText, {
       exports: native, window, localStorage, URL, AbortSignal,
-      fetch: async () => ({ status: 200, ok: true, json: async () => ({ supported: true, nonce: 'local', locked: true, local_hosts: ['10.1.2.3', 'server-pc'] }) }),
+      fetch: async path => { if (path.endsWith('/recover')) recoveries++; return { status: 200, ok: true, json: async () => ({ supported: !scenario.unsupported, nonce: 'local', locked: true, local_hosts: ['10.1.2.3', 'server-pc'] }) }; },
     });
     await native.initializeDesktopOffline(() => scenario.server);
     assert.equal(native.desktopOffline.available(), scenario.remote, scenario.server);
@@ -41,5 +42,6 @@ test('local server login never prepares a workstation; remote seller preparation
     assert.equal(prompts, prepare ? 1 : 0, scenario.server);
     assert.equal(nativeLogins, scenario.remote ? (prepare && !scenario.cancel ? 2 : 1) : 0, scenario.server);
     assert.equal(onlineLogins, scenario.remote ? 0 : 1, scenario.server);
+    assert.equal(recoveries, !scenario.remote && !scenario.denied && !scenario.unsupported ? 1 : 0, scenario.server);
   }
 });

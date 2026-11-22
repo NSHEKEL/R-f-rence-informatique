@@ -22,6 +22,7 @@ export interface JournalState {
 
 let nonce = "";
 let local = false;
+let unsupported = false;
 let ready = false;
 let serverAddress = () => localStorage.getItem("ri_server_url") || window.location.origin;
 const localHosts = new Set(["localhost", "127.0.0.1", "[::1]"]);
@@ -51,6 +52,7 @@ export async function initializeDesktopOffline(address?: () => string) {
     if (response.status === 404) return;
     local = true;
     const result = await response.json();
+    unsupported = result.supported === false;
     if (!response.ok || !result.supported) return;
     nonce = result.nonce;
     for (const host of result.local_hosts || []) localHosts.add(host.toLowerCase());
@@ -65,6 +67,15 @@ export const desktopOffline = {
   available: () => ready && remoteApi(),
   local: () => local,
   state: () => state,
+  async recoverLocal(token: string) {
+    if (!local || unsupported || remoteApi()) return;
+    if (!ready) throw new DesktopOfflineError(507, "Journal local indisponible : ne rouvrez pas la caisse, vérifiez le profil Windows et relancez EasyGest");
+    const response = await fetch("/api/local-offline/recover", {
+      method: "POST", headers: { "Content-Type": "application/json", "X-Easygest-Offline": nonce, Authorization: "Bearer " + token },
+    });
+    const result = await response.json();
+    if (!response.ok) throw new DesktopOfflineError(response.status, typeof result.detail === "string" ? result.detail : "Récupération du journal local impossible : ne rouvrez pas la caisse");
+  },
   async command<T>(action: string, params: Record<string, unknown> = {}): Promise<T> {
     if (!ready) throw new DesktopOfflineError(507, "Journal durable indisponible sur ce poste : vente hors ligne non validée");
     const response = await fetch("/api/local-offline/command", {

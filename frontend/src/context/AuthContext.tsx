@@ -73,12 +73,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .get<User>("/auth/me")
       .then(async (res) => {
         if (localStorage.getItem("ri_token") !== token) return;
+        await desktopOffline.recoverLocal(token);
+        if (localStorage.getItem("ri_token") !== token) return;
         setUser(res.data);
         setRights(readAuthCache(token)?.rights ?? []);
         await loadRights(res.data);
       })
       .catch((error) => {
         if (authDenied(error)) { localStorage.removeItem("ri_token"); clearAuthCache(); setRights([]); }
+        else if (desktopOffline.local() && error instanceof Error) window.alert(error.message);
         else if (!desktopOffline.local()) { const cached = readAuthCache(token); if (cached) { setUser(cached.user); setRights(cached.rights); } }
       })
       .finally(() => setLoading(false));
@@ -149,6 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setRights([]);
     localStorage.setItem("ri_token", res.data.access_token);
     const me = await api.get<User>("/auth/me");
+    await desktopOffline.recoverLocal(res.data.access_token);
     setUser(me.data);
     await loadRights(me.data);
   }

@@ -30,8 +30,11 @@ export default function TillGate() {
       });
       await refresh();
     } catch (err) {
+      await refresh();
       if (axios.isAxiosError(err)) {
-        setError(apiErrorMessage(err.response?.data?.detail, "Impossible d'ouvrir la caisse"));
+        setError(apiErrorMessage(err.response?.data, err.message || "Impossible d'ouvrir la caisse") + (err.response?.status ? ` (HTTP ${err.response.status})` : ""));
+      } else {
+        setError(err instanceof Error ? err.message : "Impossible d'ouvrir la caisse");
       }
     } finally {
       setSaving(false);

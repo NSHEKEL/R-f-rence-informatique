@@ -146,6 +146,17 @@ jobs:
           body: |
             **EasyGest — gestion de vente et de stock.**
 
+            ### Reprise automatique des caisses et ventes 2.18.46
+            - Sur le PC serveur, les anciennes ventes du journal local sont
+              rapprochées avant d'afficher la caisse, sans recopier d'empreinte,
+              sans réouverture ni ressaisie du fonds initial.
+            - Sur les postes vendeurs, la connexion en ligne rapproche le journal
+              avant de rendre la main. Un changement d'adresse du même serveur
+              conserve la confiance existante après vérification cryptographique.
+            - Les UUID garantissent un seul enregistrement ; les tickets non
+              rapprochables restent conservés et signalés. Les erreurs de caisse
+              affichent le détail reçu et le statut HTTP au lieu d'un message vague.
+
             ### Connexion du PC serveur 2.18.45
             - Sur le PC serveur, la connexion normale ne demande plus de préparer
               un poste hors ligne ni de recopier une empreinte SHA-256.

@@ -76,6 +76,7 @@ class WorkstationRestartTests(unittest.TestCase):
         self.start("server")
         self.start("poste")
         server = f"http://127.0.0.1:{self.ports['server']}"
+        original_device = self.http("poste", "/local-offline/bootstrap", {})["device_id"]
         admin = self.http("server", "/auth/login", {"email": "admin", "password": "admin123"})["access_token"]
         self.assertEqual(self.http("server", "/settings/company", token=admin)["offline_authorization_hours"], 24)
         self.http("server", "/settings/company", {"offline_authorization_hours": 168}, admin, "PUT")
@@ -111,6 +112,11 @@ class WorkstationRestartTests(unittest.TestCase):
         self.assertLess(before["id"], 0)
         self.assertEqual(len(self.command("state")["pending"]), 3)
         self.start("server")
+        self.assertEqual(self.http("poste", "/local-offline/bootstrap", {})["device_id"], original_device)
+        alias_login = self.command("login", server=server.replace("127.0.0.1", "localhost"), email="offline-seller@test.invalid", password="offline-test-password")
+        self.assertTrue(alias_login["offline_ready"])
+        self.assertEqual(self.command("state")["pending"], [])
+        print("REAL_SELLER_UPGRADE_RECOVERY_OK same_device=True trusted_alias_reused=True replayed_before_login_returns=True")
         for _ in range(3):
             self.command("sync")
         admin = self.http("server", "/auth/login", {"email": "admin", "password": "admin123"})["access_token"]
@@ -132,6 +138,7 @@ class WorkstationRestartTests(unittest.TestCase):
         self.command("sync")
         third_id = str(uuid.uuid4())
         self.command("sale", payload={"client_id": third_id, "cash_session_id": adopted["id"], "payment_method": "Espèces", "status": "Payée", "items": [{"product_id": product["id"], "quantity": 0.5, "unit_price": 3500}]}, snapshot={"reference": "BEFORE-REVOCATION", "total": 1750})
+        self.assertEqual(len(self.command("state")["pending"]), 1)
         with sqlite3.connect(self.root / "server" / "business.sqlite3") as db:
             db.execute("UPDATE users SET is_active=0 WHERE email=?", ("offline-seller@test.invalid",))
             db.commit()
@@ -143,6 +150,67 @@ class WorkstationRestartTests(unittest.TestCase):
             self.assertEqual(db.execute("SELECT count(*) FROM sales WHERE client_id=?", (third_id,)).fetchone()[0], 0)
             self.assertEqual(db.execute("SELECT state FROM offline_events WHERE id=?", (third_id,)).fetchone()[0], "conflict")
         print("REAL_POSTE_COLD_START_OK server_off_during_entire_launch=True durable_sales=2 replay_count=3 final_sales=2 stock=8.5 provisional_sessions_reconciled=1 opening_float_preserved=500 no_reopen_prompt=True same_provisional_identity=True disabled_account_locked=True pending_sale_preserved=True")
+        print("SCENARIO_EVIDENCE=" + str(self.root))
+
+    def test_server_local_journal_recovers_before_login_with_changed_port_and_no_duplicates(self):
+        from app.offline_broker import OfflineBroker
+
+        self.start("server")
+        old_server = f"http://127.0.0.1:{self.ports['server']}"
+        admin = self.http("server", "/auth/login", {"email": "admin", "password": "admin123"})["access_token"]
+        self.http("server", "/users", {"email": "hawa@test.invalid", "name": "HAWA", "password": "recovery-test-password", "role": "admin"}, admin)
+        identity = self.http("server", "/offline/identity", token=admin)
+        product = self.http("server", "/products", {"name": "Lait reprise locale", "sku": "LOCAL-RECOVERY", "quantity": 10, "base_unit": "kg", "sale_price": 3500}, admin)
+        broker = OfflineBroker(self.root / "server" / "offline")
+        account = broker.login(old_server, "hawa@test.invalid", "recovery-test-password", identity["fingerprint"])
+        device = broker.bootstrap()["device_id"]
+        broker.catalogue(False)
+        self.stop("server")
+        broker.login(old_server, "hawa@test.invalid", "recovery-test-password")
+        till = broker.request("POST", "/cash-sessions/open", {"opening_balance": 170000})
+        ids = [str(uuid.uuid4()), str(uuid.uuid4())]
+        for client_id, quantity, payment in zip(ids, (1, 0.5), ("Mobile Money", "Espèces")):
+            broker.sale({"client_id": client_id, "cash_session_id": till["id"], "payment_method": payment, "status": "Payée", "items": [{"product_id": product["id"], "quantity": quantity, "unit_price": 3500}]}, {"total": quantity * 3500})
+        self.assertEqual(len(broker.state()["pending"]), 3)
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            self.ports["server"] = probe.getsockname()[1]
+        self.start("server")
+        token = self.http("server", "/auth/login", {"email": "hawa@test.invalid", "password": "recovery-test-password"})["access_token"]
+        self.assertIsNone(self.http("server", "/cash-sessions/current", token=token))
+        self.assertEqual(self.http("server", "/sales", token=token), [])
+        self.nonce = self.http("server", "/local-offline/bootstrap", {})["nonce"]
+        self.assertEqual(self.http("server", "/local-offline/bootstrap", {})["device_id"], device)
+        self.assertEqual(self.http("server", "/local-offline/recover", {}, token)["recovered"], 3)
+        restored = self.http("server", "/cash-sessions/current", token=token)
+        self.assertEqual(restored["opened_by"]["id"], account["user"]["id"])
+        self.assertEqual(restored["opening_balance"], 170000)
+        self.assertEqual(restored["sales_count"], 2)
+        self.assertEqual(restored["total_sales"], 5250)
+        self.assertIsNone(restored["closed_at"])
+        self.assertEqual(self.http("server", "/local-offline/recover", {}, token)["recovered"], 0)
+        with self.assertRaises(urllib.error.HTTPError) as duplicate:
+            self.http("server", "/cash-sessions/open", {"opening_balance": 170000}, token)
+        self.assertEqual(duplicate.exception.code, 400)
+        detail = json.load(duplicate.exception)["detail"]
+        self.assertEqual(detail, "Votre caisse est déjà ouverte")
+        print("REAL_OPEN_EXISTING_HTTP status=400 detail=" + detail)
+        with sqlite3.connect(self.root / "server" / "business.sqlite3") as db:
+            self.assertEqual(db.execute("SELECT count(*) FROM sales WHERE client_id IN (?,?)", ids).fetchone()[0], 2)
+            self.assertEqual(db.execute("SELECT count(*), opening_balance FROM cash_sessions").fetchone(), (1, 170000))
+            self.assertEqual(db.execute("SELECT quantity FROM products WHERE id=?", (product["id"],)).fetchone()[0], 8.5)
+        self.assertEqual(broker.state()["pending"], [])
+        with broker.store.connection() as journal:
+            broker.store.append(journal, "another-shop", account["user"]["id"], str(uuid.uuid4()), "open", {"opening_balance": 1}, "not-a-grant")
+            malformed = broker.store.append(journal, identity["shop_id"], account["user"]["id"], str(uuid.uuid4()), "open", {"opening_balance": 1}, "not-a-grant")
+        with self.assertRaises(urllib.error.HTTPError) as invalid:
+            self.http("server", "/local-offline/recover", {}, token)
+        self.assertEqual(invalid.exception.code, 409)
+        self.assertIn("ne rouvrez pas", json.load(invalid.exception)["detail"])
+        with broker.store.connection() as journal:
+            self.assertEqual(len(broker.store.events(journal, "another-shop", pending=True)), 1)
+            self.assertTrue(any(row["envelope"]["event"]["id"] == malformed["event"]["id"] for row in broker.store.events(journal, identity["shop_id"], pending=True)))
+        print("REAL_SERVER_UPGRADE_RECOVERY_OK old_url_unreachable=True restored_sales=2 stock=8.5 sessions=1 opening_float=170000 same_user=True same_device=True replayed_once=True foreign_shop_untouched=True invalid_event_retained=True")
         print("SCENARIO_EVIDENCE=" + str(self.root))
 
     def test_online_open_till_is_adopted_after_disconnect_and_sale_is_journaled(self):
