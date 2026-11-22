@@ -146,6 +146,16 @@ jobs:
           body: |
             **EasyGest — gestion de vente et de stock.**
 
+            ### Connexion et diagnostic de caisse 2.18.47
+            - Une reprise de journal en conflit ne bloque plus une connexion
+              valide. Un avertissement persistant garde les opérations visibles,
+              permet à l'administrateur d'accéder à Configuration / Réseau et
+              propose de réessayer après vérification, sans rouvrir la caisse.
+            - Une panne pendant l'ouverture de caisse affiche toujours l'erreur
+              d'origine et son statut HTTP, même si le rechargement échoue aussi.
+            - Conservation de la reprise automatique et idempotente des ventes
+              existantes, de la caisse et du fonds initial introduite en 2.18.46.
+
             ### Reprise automatique des caisses et ventes 2.18.46
             - Sur le PC serveur, les anciennes ventes du journal local sont
               rapprochées avant d'afficher la caisse, sans recopier d'empreinte,
