@@ -97,7 +97,7 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
     log_event(db, "connexion", user=user, station=station)
     token = create_access_token(user)
     grant = issue(db, user, payload.offline_device_id, payload.offline_device_public_key,
-                  user.role == "admin" or getattr(request.state, "workstation_status", "") == "approved", workstation_ip=station, nonce=payload.offline_nonce)
+                  user.role == "admin" or not getattr(request.state, "network_restricted", False) or getattr(request.state, "workstation_status", "") == "approved", workstation_ip=station, nonce=payload.offline_nonce)
     return Token(access_token=token, **grant)
 
 
