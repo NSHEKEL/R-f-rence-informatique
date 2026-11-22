@@ -146,6 +146,33 @@ jobs:
           body: |
             **EasyGest — gestion de vente et de stock.**
 
+            ### Nouveau mode hors ligne 2.18.42 — postes Windows
+            - Après préparation unique du poste par l'administrateur, une
+              autorisation signée est conservée après chaque connexion serveur.
+              Validité de 24 h par défaut, configurable jusqu'à 365 jours,
+              notamment 7 jours ; aucun mot de passe conservé en clair.
+            - Démarrage à froid possible serveur boutique éteint : connexion
+              locale, caisse provisoire, catalogue conservé, paiements habituels,
+              quantités fractionnaires, impression et opérations de caisse.
+            - Journal SQLite chiffré, clé protégée par Windows DPAPI, UUID par
+              opération ; conservation après redémarrage et jusqu'à accusé signé.
+            - Au retour réseau : envoi automatique sans doublon, adoption de la
+              caisse et du fonds initial sans demander au vendeur de rouvrir.
+              Conflits conservés et visibles pour résolution administrateur.
+            - Droits et compte immédiatement recontrôlés ; compte désactivé
+              déconnecté sans effacer les ventes déjà réalisées. Indicateurs
+              connecté/hors ligne/attente/synchronisé/erreur et stock possiblement
+              non actualisé. Aucune vente bloquée uniquement par la panne réseau.
+            - Si le central a été mis à jour et la délégation sécurisée préparée,
+              le poste connecté à Internet envoie directement ses ventes : Android
+              les voit comme provisoires, puis le serveur les confirme avec le
+              même UUID sans second comptage. Aucun secret serveur sur le poste.
+            - Migrations additives uniquement. Les anciens tickets non signés de
+              localStorage sont conservés dans le journal pour rapprochement
+              administrateur, sans rejeu aveugle ni suppression d'historique.
+            - Conserver le profil Windows et les données locales EasyGest : la
+              protection DPAPI est liée à ce profil. Sauvegarder avant mise à jour.
+
             ### Correctif 2.18.41
             - Suppression d'un approvisionnement reçue en fractions : les
               mouvements 0,1 + 0,2 correspondent bien à 0,3 reçu, sans faux
