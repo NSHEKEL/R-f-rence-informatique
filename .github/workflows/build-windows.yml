@@ -146,7 +146,14 @@ jobs:
           body: |
             **EasyGest — gestion de vente et de stock.**
 
-            ### Correctifs 2.18.40
+            ### Correctif 2.18.41
+            - Suppression d'un approvisionnement reçue en fractions : les
+              mouvements 0,1 + 0,2 correspondent bien à 0,3 reçu, sans faux
+              blocage « historique incomplet ». Stock et historique contrôlés.
+            - Arrondi commun à six décimales pour les comparaisons de quantités
+              des achats, les retours et les restes/cumuls des livraisons.
+
+            ### Correctifs 2.18.40 inclus
             - Les bons de livraison conservent et affichent les quantités
               « déjà livrées » fractionnaires, y compris sur PostgreSQL.
             - Une fiche article dont le stock est fractionnaire peut être
