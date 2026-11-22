@@ -505,6 +505,7 @@ class CashSession(Base):
     __tablename__ = "cash_sessions"
 
     kept_balance = Column(Float, nullable=True)
+    offline_mobile_money_to_cash = Column(Boolean, nullable=True)
     remitted_amount = Column(Float, nullable=True)
 
     id = Column(Integer, primary_key=True, index=True)
@@ -1225,6 +1226,7 @@ class CashMovement(Base):
     )
 
     id = Column(Integer, primary_key=True)
+    client_id = Column(String(64), nullable=True, unique=True)
     return_id = Column(Integer, ForeignKey("sale_returns.id"), nullable=True)
     session_id = Column(Integer, ForeignKey("cash_sessions.id"), nullable=False, index=True)
     type = Column(String, nullable=False)
@@ -1554,6 +1556,8 @@ class OfflineDevice(Base):
     id = Column(String(64), primary_key=True)
     public_key = Column(Text, nullable=False)
     auth_counter = Column(Integer, nullable=False, default=0)
+    workstation_ip = Column(String, nullable=False, default="")
+    last_seen = Column(DateTime, nullable=True)
     active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, default=utcnow)
 
@@ -1600,4 +1604,5 @@ class OfflineEvent(Base):
     envelope = Column(Text, nullable=False)
     state = Column(String, nullable=False, default="received", index=True)
     result = Column(Text, nullable=False, default="{}")
+    resolution = Column(Text, nullable=False, default="")
     received_at = Column(DateTime, default=utcnow)

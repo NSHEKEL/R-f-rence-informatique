@@ -23,8 +23,11 @@ FALSE_LITERAL = "0" if engine.dialect.name == "sqlite" else "FALSE"
 
 # table -> column -> SQL type/default appended to "ALTER TABLE ... ADD COLUMN".
 COLUMNS: dict[str, dict[str, str]] = {
+    "cash_sessions": {"offline_mobile_money_to_cash": "BOOLEAN"},
+    "offline_devices": {"workstation_ip": "VARCHAR NOT NULL DEFAULT ''", "last_seen": "TIMESTAMP"},
+    "offline_events": {"resolution": "TEXT NOT NULL DEFAULT ''"},
     "change_log": {"product_ids": "TEXT"},
-    "cash_movements": {"return_id": "INTEGER"},
+    "cash_movements": {"return_id": "INTEGER", "client_id": "VARCHAR(64)"},
     "inventory_counts": {"counts_json": "TEXT NOT NULL DEFAULT '{}'", "client_updated_at": "TIMESTAMP", "client_id": "VARCHAR NOT NULL DEFAULT ''"},
     "stock_lots": {"depot_id": "INTEGER", "unit_cost": "FLOAT DEFAULT NULL"},
     "stock_movements": {"depot_id": "INTEGER"},
@@ -404,6 +407,8 @@ def migrate() -> None:
         if "sales" in tables:
             for statement in INDEXES:
                 conn.execute(text(statement))
+        if "cash_movements" in tables:
+            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_cash_movements_client_id ON cash_movements (client_id)"))
         if "deliveries" in tables:
             _relax_delivery_order(conn, inspect(conn))
         if "role_permissions" in tables:

@@ -145,6 +145,14 @@ def create_expense(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("depenses_gerer")),
 ):
+    expense = _new_expense(db, payload, current_user)
+    db.commit()
+    db.refresh(expense)
+    remote_sales.schedule()
+    return expense
+
+
+def _new_expense(db, payload, current_user):
     if payload.amount <= 0:
         raise HTTPException(status_code=400, detail="Montant invalide")
     expense = Expense(
@@ -158,9 +166,6 @@ def create_expense(
         created_by_id=current_user.id,
     )
     db.add(expense)
-    db.commit()
-    db.refresh(expense)
-    remote_sales.schedule()
     return expense
 
 

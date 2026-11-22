@@ -1,4 +1,5 @@
 from fastapi import HTTPException
+from decimal import Decimal, ROUND_HALF_UP
 from types import SimpleNamespace
 
 from .models import ProductPackaging
@@ -32,6 +33,50 @@ def resolve_tier(product, tier, quantity):
         if threshold is not None and quantity >= threshold:
             return resolved
     return "detail"
+
+
+def quote_line(product, spec, item, price_mode):
+    quantity = item.quantity
+    tier = resolve_tier(product, item.price_tier or price_mode, quantity)
+    base_price, pack_price = prices(spec, tier)
+    packs = item.packaging_quantity or 0
+    pieces = item.piece_quantity if item.piece_quantity is not None else (0 if item.packaging_quantity is not None else quantity)
+    unit_price = (packs * pack_price + pieces * base_price) / quantity
+    if item.packaging_divisor is not None:
+        factor = spec.units_per_packaging or 1
+        divisor = item.packaging_divisor
+        if not spec.packaging_unit or factor % divisor or packs or quantity % (factor // divisor):
+            raise HTTPException(400, "Division impossible : les parts doivent contenir un nombre entier d'unités de base, sans carton entier sur la même ligne")
+        part_total = float((Decimal(str(pack_price)) / divisor).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+        unit_price = part_total / (factor // divisor)
+        base_price = unit_price
+        pack_price = unit_price * factor
+    if quantity != int(quantity) and item.packaging_divisor is None:
+        gross = Decimal(str(packs)) * Decimal(str(pack_price)) + Decimal(str(pieces)) * Decimal(str(base_price))
+        charged = float(gross.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+        ratio = charged / float(gross) if gross else 1
+        base_price *= ratio
+        pack_price *= ratio
+        unit_price = charged / quantity
+    return tier, base_price, pack_price, packs, pieces, unit_price
+
+
+def cached_packaging(product, packaging_id):
+    spec = SimpleNamespace(**{"base_unit": "pièce", "packaging_unit": "", "units_per_packaging": 1,
+        "packaging_sale_price": None, "wholesale_packaging_price": None, "semi_packaging_price": None,
+        "wholesale_price": 0, "semi_wholesale_price": None, **product})
+    if packaging_id is None:
+        return spec
+    packaging = next((row for row in product.get("packagings", []) if row["id"] == packaging_id and row.get("active", True)), None)
+    if packaging is None:
+        raise HTTPException(409, "Conditionnement absent du catalogue signé")
+    spec.packaging_unit = packaging["name"]
+    spec.units_per_packaging = packaging["factor"]
+    spec.packaging_sale_price = packaging.get("price_detail")
+    spec.wholesale_packaging_price = packaging.get("price_gros")
+    spec.semi_packaging_price = packaging.get("price_semi_gros")
+    spec.packaging_purchase_price = packaging.get("purchase_price")
+    return spec
 
 
 def prices(product, tier="detail"):

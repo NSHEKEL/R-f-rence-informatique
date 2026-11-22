@@ -28,7 +28,7 @@ from ..models import (
     User,
 )
 from ..permissions import has_permission, require_permission
-from ..payment_totals import group_payments
+from ..payment_totals import group_payments, physical_expected
 from ..schemas import (
     CashSessionClose,
     CashGlobalClose,
@@ -462,6 +462,14 @@ def close_session(
         raise HTTPException(
             status_code=400, detail="Aucune caisse ouverte à votre nom"
         )
+    _close_session(db, session, payload, current_user)
+    db.commit()
+    db.refresh(session)
+    remote_sales.schedule()
+    return _detail(db, session, current_user)
+
+
+def _close_session(db, session, payload, current_user):
     totals = session_amounts(db, session)
     if payload.kept_balance is not None and payload.kept_balance > payload.closing_balance:
         raise HTTPException(400, "Le montant laissé en caisse ne peut pas dépasser le montant compté")
@@ -498,10 +506,6 @@ def close_session(
             link="/caisse",
         )
     )
-    db.commit()
-    db.refresh(session)
-    remote_sales.schedule()
-    return _detail(db, session, current_user)
 
 
 def _session_or_404(db: Session, session_id: int) -> CashSession:
@@ -626,21 +630,17 @@ def session_amounts(db: Session, session: CashSession) -> CashSessionZ:
     cash_refunds = sum(r.total or 0 for r in returns if r.refund_method == CASH_PAYMENT)
     refunds_total = sum(r.total or 0 for r in returns)
     cash_expenses = sum(e.amount or 0 for e in expenses if e.payment_method == CASH_PAYMENT and not e.bank_account_id)
-    convert_mobile = bool(company is None or company.mobile_money_to_cash) and session.closed_at is None
+    convert_mobile = bool(session.offline_mobile_money_to_cash if session.offline_mobile_money_to_cash is not None else (company is None or company.mobile_money_to_cash)) and session.closed_at is None
     mobile_sales = group_payments(payments)["mobile_money"]
     mobile_refunds = sum(r.total or 0 for r in returns if group_payments({r.refund_method: 1})["mobile_money"])
     mobile_expenses = sum(e.amount or 0 for e in expenses if not e.bank_account_id and group_payments({e.payment_method or "": 1})["mobile_money"])
     mobile_settlements = group_payments(settlement_payments)["mobile_money"]
     mobile_deposits = sum(d.amount or 0 for d in deposits if d.status == "validé" and group_payments({d.method or "": 1})["mobile_money"])
     mobile_adjustment = mobile_sales + mobile_settlements - mobile_refunds - mobile_expenses - mobile_deposits if convert_mobile else 0
-    expected = (
-        session.opening_balance
-        + payments.get(CASH_PAYMENT, 0.0)
-        + cash_settlements
-        - validated_deposits
-        + entries - exits - cash_refunds - cash_expenses
-        + mobile_adjustment
-    )
+    expected = physical_expected(session.opening_balance, payments.get(CASH_PAYMENT, 0.0),
+        cash_settlements=cash_settlements, validated_deposits=validated_deposits,
+        entries=entries, exits=exits, cash_refunds=cash_refunds,
+        cash_expenses=cash_expenses, mobile_adjustment=mobile_adjustment)
     if session.closed_at is not None and session.expected_balance is not None:
         expected = session.expected_balance
     report = CashSessionZ(

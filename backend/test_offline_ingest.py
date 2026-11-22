@@ -1,0 +1,135 @@
+import json
+import unittest
+import uuid
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import test_cash_register as fixtures
+from app.models import CashMovement, CashSession, OfflineEvent, OfflineSession, Product, Sale
+from app.offline_auth import issue, read_grant
+from app.offline_crypto import sign
+from app.offline_store import OfflineStore
+from app.offline_crypto import private_key, public_key
+from app.routers import offline
+
+
+class OfflineIngestTests(unittest.TestCase):
+    call = fixtures.CashRegisterTests.call
+    grant = fixtures.CashRegisterTests.grant
+
+    def setUp(self):
+        fixtures.CashRegisterTests.setUp(self)
+        self.app.include_router(offline.router)
+        self.grant("caisse", "vente_nouvelle", "caisse_fermer", "soldes_consulter", "caisse_operations")
+        self.private = private_key()
+        for target in (
+            patch("app.offline_auth.persistent_secret", return_value=self.private.encode()),
+            patch("app.offline_auth.installation_uid", return_value="offline-test-shop"),
+            patch("app.licensing.installation_uid", return_value="offline-test-shop"),
+            patch("app.offline_auth.has_feature", return_value=True),
+            patch("app.licensing.has_feature", return_value=True),
+            patch("app.licensing.effective", return_value=SimpleNamespace(blocked=False, features=set())),
+            patch("app.remote_sales.schedule"),
+        ):
+            target.start()
+            self.addCleanup(target.stop)
+        self.device = str(uuid.uuid4())
+        self.session = str(uuid.uuid4())
+        grant = issue(self.db, self.user, self.device, public_key(self.private), True)
+        self.token = grant["offline_grant"]
+        self.claims = read_grant(self.db, self.token)
+        catalogue = self.call("/api/offline/catalogue")
+        from app.offline_crypto import digest
+        self.catalogue_id = catalogue["snapshot_id"]
+        self.sequence = 0
+
+    def event(self, kind, payload):
+        self.sequence += 1
+        body = {"id": str(uuid.uuid4()), "v": 1, "scope": self.claims["iss"], "device_id": self.device,
+                "user_id": self.user.id, "session_id": self.session, "sequence": self.sequence,
+                "kind": kind, "occurred_at": self.claims["auth_at"] + 0.01, "grant": self.token, "payload": payload}
+        return {"event": body, "signature": sign(self.private, body)}
+
+    def submit(self, *events):
+        return self.call("/api/offline/events", "POST", {"events": list(events)})["results"]
+
+    def sale(self, payment="Espèces", quantity=1):
+        return self.event("sale", {"catalogue_id": self.catalogue_id,
+            "sale": {"payment_method": payment, "status": "Payée", "items": [{"product_id": self.product.id, "quantity": quantity, "unit_price": 100}]},
+            "snapshot": {"reference": "RECU-ORIGINAL", "total": quantity * 100}})
+
+    def test_two_sales_fraction_momo_lost_ack_and_movements_are_applied_once(self):
+        opening = self.event("open", {"opening_balance": 500})
+        first, second = self.sale("Mobile Money"), self.sale(quantity=0.5)
+        movement = self.event("movement", {"type": "out", "amount": 10, "reason": "Remise"})
+        for envelope in (opening, first, second, movement):
+            self.assertEqual(self.submit(envelope)[0]["state"], "applied")
+        for _ in range(2):
+            self.assertTrue(all(row["state"] == "applied" for row in self.submit(opening, first, second, movement)))
+        with self.sessions() as db:
+            self.assertEqual(db.query(Sale).count(), 2)
+            self.assertEqual(db.query(CashSession).count(), 1)
+            self.assertEqual(db.query(CashMovement).count(), 1)
+            self.assertEqual(db.get(Product, self.product.id).quantity, 18.5)
+            self.assertEqual(db.query(OfflineSession).one().status, "open")
+        self.assertEqual(self.call("/api/cash-sessions/current")["expected_cash"], 640)
+        self.assertEqual(self.call("/api/offline/catalogue")["snapshot_id"], self.catalogue_id)
+        closing = self.event("close", {"closing_balance": 640, "kept_balance": 100})
+        self.assertEqual(self.submit(closing)[0]["state"], "applied")
+        with self.sessions() as db:
+            self.assertEqual(db.query(CashSession).one().remitted_amount, 540)
+
+    def test_historical_prices_are_preserved_without_updating_catalogue(self):
+        self.submit(self.event("open", {"opening_balance": 0}))
+        with self.sessions() as db:
+            db.get(Product, self.product.id).sale_price = 200
+            db.commit()
+        sale = self.sale(quantity=0.5)
+        self.assertEqual(self.submit(sale)[0]["state"], "applied")
+        with self.sessions() as db:
+            self.assertEqual(db.query(Sale).one().total, 50)
+            self.assertEqual(db.get(Product, self.product.id).sale_price, 200)
+
+    def test_lost_online_ack_adopts_same_sale_and_same_open_session(self):
+        source = self.call("/api/cash-sessions/open", "POST", {"opening_balance": 500}, 201)
+        with self.sessions() as db:
+            db.get(CashSession, source["id"]).workstation = self.device
+            db.commit()
+        client_id = str(uuid.uuid4())
+        self.call("/api/sales", "POST", {"client_id": client_id, "payment_method": "Espèces", "items": [{"product_id": self.product.id, "quantity": 1, "unit_price": 100}]}, 201)
+        opening = self.event("open", {"opening_balance": 500, "source_session_id": source["id"]})
+        sale = self.sale()
+        sale["event"]["id"] = client_id
+        sale["signature"] = sign(self.private, sale["event"])
+        self.assertTrue(all(row["state"] == "applied" for row in self.submit(opening, sale)))
+        self.assertTrue(all(row["state"] == "applied" for row in self.submit(opening, sale)))
+        with self.sessions() as db:
+            self.assertEqual(db.query(Sale).count(), 1)
+            self.assertEqual(db.query(CashSession).count(), 1)
+            self.assertEqual(db.get(Product, self.product.id).quantity, 19)
+            self.assertEqual(db.query(OfflineSession).one().cash_session_id, source["id"])
+
+    def test_disabled_account_preserves_inbox_without_posting(self):
+        self.user.is_active = False
+        self.db.commit()
+        opening = self.event("open", {"opening_balance": 0})
+        sale = self.sale()
+        self.assertTrue(all(row["state"] == "conflict" for row in self.submit(opening, sale)))
+        with self.sessions() as db:
+            self.assertEqual(db.query(OfflineEvent).count(), 2)
+            self.assertEqual(db.query(Sale).count(), 0)
+            self.assertEqual(json.loads(db.get(OfflineEvent, sale["event"]["id"]).envelope), sale)
+
+    def test_stock_conflict_and_uuid_tampering_never_lose_original(self):
+        self.submit(self.event("open", {"opening_balance": 0}))
+        sale = self.sale(quantity=100)
+        self.assertEqual(self.submit(sale)[0]["state"], "conflict")
+        changed = json.loads(json.dumps(sale))
+        changed["event"]["payload"]["snapshot"]["total"] = 1
+        self.call("/api/offline/events", "POST", {"events": [changed]}, 403)
+        changed["signature"] = sign(self.private, changed["event"])
+        self.call("/api/offline/events", "POST", {"events": [changed]}, 409)
+        self.assertEqual(self.submit(sale)[0]["state"], "conflict")
+        with self.sessions() as db:
+            self.assertEqual(db.query(Sale).count(), 0)
+            self.assertEqual(json.loads(db.get(OfflineEvent, sale["event"]["id"]).envelope), sale)

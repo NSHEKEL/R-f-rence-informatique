@@ -76,10 +76,10 @@ class OfflineStore:
     def clock(self, db, server_time=None):
         now = time.time()
         last = self.get(db, "clock", {"wall": now, "offset": 0})
-        if now < last["wall"] - 60:
+        if server_time is None and now < last["wall"] - 60:
             raise ValueError("Horloge reculée : reconnectez le poste au serveur")
         offset = float(server_time) - now if server_time is not None else last["offset"]
-        self.put(db, "clock", {"wall": max(now, last["wall"]), "offset": offset})
+        self.put(db, "clock", {"wall": now if server_time is not None else max(now, last["wall"]), "offset": offset})
         return now + offset
 
     def append(self, db, scope, user_id, session_id, kind, payload, grant, event_id=None):
@@ -89,7 +89,7 @@ class OfflineStore:
         if existing:
             envelope = self.open(existing[0])
             event = envelope["event"]
-            if event["scope"] != scope or event["payload"] != payload or event["kind"] != kind:
+            if event["scope"] != scope or event["user_id"] != user_id or event["session_id"] != session_id or event["payload"] != payload or event["kind"] != kind:
                 raise ValueError("UUID déjà utilisé avec un contenu différent")
             return envelope
         sequence = db.execute("SELECT coalesce(max(sequence),0)+1 FROM events WHERE scope=? AND session_id=?", (scope, session_id)).fetchone()[0]

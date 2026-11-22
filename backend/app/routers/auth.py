@@ -22,6 +22,7 @@ from ..licensing import installation_uid
 from ..mailer import is_configured, send_mail
 from ..models import CompanySettings, PasswordResetToken, RecoveryKey, User
 from ..rescue import RescueError, read_key
+from ..offline_auth import issue
 from ..schemas import (
     ChangePasswordRequest,
     ForgotPasswordRequest,
@@ -95,9 +96,8 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
     _attempts.pop(key, None)
     log_event(db, "connexion", user=user, station=station)
     token = create_access_token(user)
-    from ..offline_auth import issue
     grant = issue(db, user, payload.offline_device_id, payload.offline_device_public_key,
-                  user.role == "admin" or getattr(request.state, "workstation_status", "") == "approved")
+                  user.role == "admin" or getattr(request.state, "workstation_status", "") == "approved", workstation_ip=station, nonce=payload.offline_nonce)
     return Token(access_token=token, **grant)
 
 

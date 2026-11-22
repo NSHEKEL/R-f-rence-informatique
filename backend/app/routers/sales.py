@@ -1,4 +1,5 @@
 import json
+from types import SimpleNamespace
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -30,7 +31,7 @@ from ..permissions import has_permission, require_permission
 from ..schemas import SaleCreate, SaleOut, SaleUpdate
 from ..sequences import next_reference
 from .cash import lock_current_session
-from ..units import base_quantity, prices, snapshot, selected_packaging, resolve_tier
+from ..units import base_quantity, prices, snapshot, selected_packaging, resolve_tier, cached_packaging, quote_line
 from ..profits import financials
 from .. import stock
 from ..product_codes import scanned_product
@@ -189,7 +190,7 @@ def _save_typed_price(db, product_id, packaging_id, packs, pieces, tier, price, 
     db.flush()
 
 
-def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
+def _persist_sale(db: Session, payload: SaleCreate, current_user: User, *, offline=None, commit=True) -> Sale:
     depot_id = stock.resolve(db)
     settings = db.query(CompanySettings).first()
     allow_negative_stock = bool(settings and settings.allow_negative_stock_sale)
@@ -203,7 +204,9 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
             detail="Vous n'avez pas le droit d'enregistrer une vente cadeau",
         )
     reference = _generate_reference(db)
-    session = lock_current_session(db, current_user)
+    session = offline["session"] if offline else lock_current_session(db, current_user)
+    if session and (session.opened_by_id != current_user.id or session.closed_at is not None):
+        raise HTTPException(409, "La caisse d'origine n'est plus ouverte pour ce vendeur")
     if session is None:
         raise HTTPException(
             status_code=400,
@@ -239,6 +242,15 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
             )
         require_active(product)
         spec = selected_packaging(db, product, item.packaging_id)
+        pricing_product = product
+        if offline:
+            historical = offline["products"].get(product.id)
+            if historical is None:
+                raise HTTPException(409, "Article absent du catalogue signé")
+            historical_spec = cached_packaging(historical, item.packaging_id)
+            if any(getattr(spec, key) != getattr(historical_spec, key) for key in ("base_unit", "packaging_unit", "units_per_packaging")):
+                raise HTTPException(409, "Unités ou conditionnement modifiés : ticket conservé pour rapprochement")
+            pricing_product, spec = SimpleNamespace(**historical), historical_spec
         if item.expected_units_per_packaging is not None and item.expected_units_per_packaging != (spec.units_per_packaging or 1):
             raise HTTPException(status_code=409, detail="Conditionnement modifié : vérifiez le ticket avant synchronisation")
         quantity = base_quantity(item, spec)
@@ -251,34 +263,14 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
                 detail=f"Stock insuffisant pour {product.name} "
                 f"(disponible : {product.quantity})",
             )
-        tier = resolve_tier(product, item.price_tier or sale.price_mode, quantity)
-        base_price, pack_price = prices(spec, tier)
-        packs = item.packaging_quantity or 0
-        pieces = item.piece_quantity if item.piece_quantity is not None else (0 if item.packaging_quantity is not None else item.quantity)
-        unit_price = (packs * pack_price + pieces * base_price) / quantity
-        if item.packaging_divisor is not None:
-            factor = spec.units_per_packaging or 1
-            divisor = item.packaging_divisor
-            if not spec.packaging_unit or factor % divisor or packs or quantity % (factor // divisor):
-                raise HTTPException(400, "Division impossible : les parts doivent contenir un nombre entier d'unités de base, sans carton entier sur la même ligne")
-            part_total = float((Decimal(str(pack_price)) / divisor).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
-            unit_price = part_total / (factor // divisor)
-            base_price = unit_price
-            pack_price = unit_price * factor
-        if quantity != int(quantity) and item.packaging_divisor is None:
-            gross = Decimal(str(packs)) * Decimal(str(pack_price)) + Decimal(str(pieces)) * Decimal(str(base_price))
-            charged = float(gross.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
-            ratio = charged / float(gross) if gross else 1
-            base_price *= ratio
-            pack_price *= ratio
-            unit_price = charged / quantity
+        tier, base_price, pack_price, packs, pieces, unit_price = quote_line(pricing_product, spec, item, sale.price_mode)
         catalog_unit_price = unit_price
         if item.price_edited:
             if not has_permission(db, current_user, "prix_modifier"):
                 raise HTTPException(403, "Vous n'avez pas le droit de modifier le prix de vente")
             if item.unit_price is None:
                 raise HTTPException(400, "Renseignez le prix saisi")
-            if payload.status not in {"Annulée", "Brouillon"} and item.packaging_divisor is None and quantity == int(quantity):
+            if not offline and payload.status not in {"Annulée", "Brouillon"} and item.packaging_divisor is None and quantity == int(quantity):
                 price_edits.append((product.id, item.packaging_id, packs, pieces, tier, float(item.unit_price), spec.units_per_packaging or 1))
         if item.unit_price is not None and abs(item.unit_price - unit_price) > 0.000001:
             if not has_permission(db, current_user, "prix_modifier"):
@@ -322,7 +314,7 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
                 packaging_quantity=packs, piece_quantity=pieces, base_quantity=quantity,
                 base_unit_price=base_price, packaging_sale_price=pack_price,
                 product_id=product.id,
-                product_name=product.name,
+                product_name=pricing_product.name,
                 quantity=item.quantity,
                 unit_price=unit_price,
                 discount=line_discount,
@@ -407,10 +399,13 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
 
     for edit in price_edits:
         _save_typed_price(db, *edit, current_user)
-    db.commit()
-    db.refresh(sale)
-    _backup_after_sale(db)
-    remote_sales.schedule()
+    if commit:
+        db.commit()
+        db.refresh(sale)
+        _backup_after_sale(db)
+        remote_sales.schedule()
+    else:
+        db.flush()
     return sale
 
 

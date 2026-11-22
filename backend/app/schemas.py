@@ -20,6 +20,7 @@ class LoginRequest(BaseModel):
     password: str
     offline_device_id: Optional[str] = Field(default=None, max_length=64)
     offline_device_public_key: Optional[str] = Field(default=None, max_length=4096)
+    offline_nonce: Optional[str] = Field(default=None, max_length=128)
 
 
 class UserOut(BaseModel):
@@ -128,7 +129,7 @@ class CompanySettingsOut(BaseModel):
 
 class CompanySettingsUpdate(BaseModel):
     offline_enabled: Optional[bool] = None
-    offline_authorization_hours: Optional[int] = Field(default=None, ge=1, le=72)
+    offline_authorization_hours: Optional[int] = Field(default=None, ge=1, le=8760)
     mobile_money_to_cash: bool = True
     allow_negative_stock_sale: bool = False
     name: Optional[str] = None

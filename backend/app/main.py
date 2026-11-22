@@ -41,6 +41,8 @@ from .routers import (
     inventory,
     license as license_router,
     notifications,
+    offline,
+    local_offline,
     orders,
     payroll,
     permissions,
@@ -87,6 +89,8 @@ def feature(code: str) -> list:
 
 
 app.include_router(auth.router)
+app.include_router(offline.router)
+app.include_router(local_offline.router)
 app.include_router(backup_drive.callback_router)
 app.include_router(shop_network.router)
 app.include_router(dashboard.router, dependencies=feature("tableau_bord"))
@@ -141,6 +145,9 @@ LICENSE_FREE_PREFIXES = (
     "/api/license",
     "/api/backups",
     "/api/updates",
+    "/api/local-offline",
+    "/api/offline/events",
+    "/api/offline/status",
 )
 
 # How often the workstation checks its licence with the central server. Ten
@@ -165,14 +172,14 @@ def _user_id(request: Request) -> Optional[int]:
 
 async def record_workstation(request: Request, call_next):
     """Remember which machines use this server, to list them in the settings."""
-    if request.url.path.startswith("/api/"):
+    if request.url.path.startswith("/api/") and not request.url.path.startswith("/api/local-offline/"):
         restricted, status = await run_in_threadpool(
             shop_network.observe, request.client.host if request.client else "", _user_id(request),
             request.headers.get("user-agent", ""), request.headers.get("x-workstation-name", ""),
         )
         request.state.network_restricted = restricted
         request.state.workstation_status = status
-        if restricted and status != "approved" and request.url.path != "/api/health":
+        if restricted and status != "approved" and request.url.path not in {"/api/health", "/api/offline/events"}:
             return JSONResponse(status_code=403, content={"detail": shop_network.MESSAGE, "code": "workstation_not_authorized"})
         clients.record(
             request.client.host if request.client else "", _user_id(request)
