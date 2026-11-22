@@ -62,6 +62,7 @@ export default function Inventaire() {
   const [counted, setCounted] = useState<Counted>({});
   const [blind, setBlind] = useState(false);
   const [query, setQuery] = useState("");
+  const [stockPage, setStockPage] = useState(1);
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -108,6 +109,12 @@ export default function Inventaire() {
         p.name.toLowerCase().includes(q) || scanCodes(p).some((code) => code.includes(q))
     );
   }, [products, query]);
+
+  const stockPageSize = 50;
+  const stockPages = Math.max(1, Math.ceil(filtered.length / stockPageSize));
+  const visibleStockPage = Math.min(stockPage, stockPages);
+  const pagedStock = filtered.slice((visibleStockPage - 1) * stockPageSize, visibleStockPage * stockPageSize);
+  useEffect(() => { setStockPage(1); }, [query]);
 
   const differences = useMemo(
     () =>
@@ -500,7 +507,7 @@ export default function Inventaire() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filtered.map((p) => {
+              {pagedStock.map((p) => {
                 const entry = counted[p.id] ?? { rayon: "", stock: "" };
                 const total = countedTotal(entry);
                 const delta = total === null ? null : total - p.quantity;
@@ -568,6 +575,12 @@ export default function Inventaire() {
             </tbody>
           </table>
         </div>
+
+        <nav aria-label="Pages du stock" className="mt-3 flex items-center justify-between gap-2 text-sm">
+          <button className="btn-secondary" disabled={visibleStockPage === 1} onClick={() => setStockPage(visibleStockPage - 1)}>Précédent</button>
+          <span>{filtered.length} articles · {visibleStockPage} / {stockPages}</span>
+          <button className="btn-secondary" disabled={visibleStockPage === stockPages} onClick={() => setStockPage(visibleStockPage + 1)}>Suivant</button>
+        </nav>
 
         <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-slate-100 pt-4">
           <input

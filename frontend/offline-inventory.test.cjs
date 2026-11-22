@@ -31,6 +31,20 @@ function setup() {
 const row = { product_id: 1, sku: 'RIZ', name: 'Riz', base_unit: 'pièce', packaging_unit: 'Carton', units_per_packaging: 12, packagings: [{ id: 6, name: 'Colis', factor: 6 }], physical_qty: null, theoretical_qty: 150, unit_cost: 2, counts: { base: null }, note: '' };
 const report = { id: 7, status: 'in_progress', theoretical_visible: true, stats: { counted: 0, not_counted: 1 }, rows: [row] };
 
+test('stock pagination bounds visible rows without slicing the counted inventory', () => {
+  const source = readFileSync(`${__dirname}/src/pages/Inventaire.tsx`, 'utf8');
+  const calculations = source.slice(source.indexOf('  const stockPageSize ='), source.indexOf('  useEffect(() => { setStockPage(1); }'));
+  const filtered = Array.from({ length: 123 }, (_, id) => ({ id }));
+  const counted = { 1: { rayon: '2', stock: '3' }, 122: { rayon: '4', stock: '5' } };
+  const page = (stockPage, items = filtered) => vm.runInNewContext(`${calculations}\n({ pagedStock, visibleStockPage, stockPages })`, { filtered: items, stockPage, Math });
+  assert.equal(page(1).pagedStock.length, 50); assert.equal(page(3).pagedStock.length, 23);
+  assert.equal(page(3).pagedStock[22].id, 122);
+  assert.equal(page(999, []).visibleStockPage, 1); assert.equal(page(999, []).pagedStock.length, 0);
+  assert.equal(counted[122].stock, '5'); assert.equal(filtered.length, 123);
+  assert.match(source, /pagedStock\.map\(\(p\) =>/);
+  assert.match(source, /products\s*\.map\(/);
+});
+
 test('targeted catalogue cache patches preserve other products, variants, costs and filtered removals', async () => {
   const env = setup(), lib = env.reload();
   env.api.get = async () => ({ data: [{ id: 1, name: 'A', quantity: 12 }, { id: 2, name: 'B', quantity: 24 }] });
