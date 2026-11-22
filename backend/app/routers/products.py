@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, defer
+from sqlalchemy.orm import Session, defer, joinedload, selectinload
 
 from ..database import get_db
 from ..catalogue_import import read_catalogue
@@ -54,6 +54,11 @@ from .cash import require_open_till
 router = APIRouter(prefix="/api/products", tags=["products"])
 
 
+def _catalogue_loading():
+    return (selectinload(Product.packagings), selectinload(Product.barcodes),
+            selectinload(Product.category), selectinload(Product.supplier))
+
+
 def _stock_allowed(db, user):
     return has_permission(db, user, 'produits') or has_permission(db, user, 'inventaire')
 
@@ -76,7 +81,7 @@ def pos_products(images: bool = False, db: Session = Depends(get_db), user: User
     config = read_display(settings) if settings else None
     include_images = bool(images and config and config.images and config.mode.startswith('image+'))
     stock_visible = _stock_allowed(db, user)
-    query = db.query(Product).filter(Product.active.is_(True))
+    query = db.query(Product).options(*_catalogue_loading()).filter(Product.active.is_(True))
     if not (settings and settings.allow_negative_stock_sale):
         query = query.filter(Product.quantity > 0)
     query = query.order_by(Product.name)
@@ -247,7 +252,7 @@ def list_products(
     """
     stats = _sales_stats(db)
     stock_visible = _stock_allowed(db, user)
-    query = db.query(Product)
+    query = db.query(Product).options(*_catalogue_loading())
     if state != "active" and not (has_permission(db, user, "produits") or has_permission(db, user, "inventaire")):
         raise HTTPException(403, "Le droit de consulter les articles est requis")
     if state != "all":
@@ -296,7 +301,7 @@ def best_sellers(
     if not order:
         return []
     products = (
-        db.query(Product).options(defer(Product.image)).filter(Product.active.is_(True), Product.id.in_(list(order))).all()
+        db.query(Product).options(defer(Product.image), *_catalogue_loading()).filter(Product.active.is_(True), Product.id.in_(list(order))).all()
     )
     stock_visible = _stock_allowed(db, user)
     return [_product_out(p, stock_visible, False) for p in sorted(products, key=lambda p: order[p.id])]
@@ -825,7 +830,7 @@ def lot_alerts(
     """Lots expiring within `days` (or already expired), soonest first."""
     horizon = datetime.now().date() + timedelta(days=max(days, 0))
     lots = (
-        db.query(StockLot)
+        db.query(StockLot).options(joinedload(StockLot.product))
         .filter(StockLot.quantity > 0, StockLot.expiry_date.isnot(None))
         .order_by(StockLot.expiry_date.asc())
         .all()
