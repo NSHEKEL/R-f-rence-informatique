@@ -113,9 +113,11 @@ export async function fetchCached<T>(
   key: string,
   overlay = true
 ): Promise<{ data: T; fromCache: boolean }> {
-  if (desktopOffline.available() && path.split("?")[0] === "/products/pos") {
-    const result = await desktopOffline.catalogue(/[?&]images=true/.test(path));
-    return { data: result.data as T, fromCache: result.fromCache };
+  if (desktopOffline.available() && !desktopOffline.state().locked && path.split("?")[0] === "/products/pos") {
+    try {
+      const result = await desktopOffline.catalogue(/[?&]images=true/.test(path));
+      return { data: result.data as T, fromCache: result.fromCache };
+    } catch { /* a local broker refusal must not prevent an authenticated server request */ }
   }
   try {
     const res = await api.get<T>(path, { timeout: 8000 });

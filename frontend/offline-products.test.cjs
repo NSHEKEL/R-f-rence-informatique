@@ -15,9 +15,32 @@ function setup() {
       exports, require: (path) => path === '../api/client' ? { __esModule: true, default: api } : load(path.slice(2)), localStorage, window: { dispatchEvent() {} }, Event,
     }); return exports;
   }
-  return { lib: load('offline'), api, localStorage, quota: () => { quota = true; } };
+  return { lib: load('offline'), api, localStorage, load, quota: () => { quota = true; } };
 }
 const payload = { client_uuid: 'uuid-one', name: 'Riz', sku: 'RIZ', quantity: 7, barcode: '123', qr_code: '', image: 'full image', packagings: [{ name: 'Carton', factor: 6, active: true, barcode: 'PACK' }], barcodes: [{ code: 'VAR', active: true }] };
+
+test('POS catalogue bypasses locked broker, falls back after local auth refusal and retains cache on failure', async () => {
+  const { lib, api, load } = setup();
+  const desktop = load('desktopOffline').desktopOffline;
+  desktop.available = () => true;
+  desktop.state = () => ({ locked: true });
+  let localCalls = 0, serverCalls = 0;
+  desktop.catalogue = async () => { localCalls++; throw { response: { status: 401 } }; };
+  api.get = async () => { serverCalls++; return { data: [{ id: 42, active: true }] }; };
+  assert.equal((await lib.fetchCached('/products/pos', 'catalogue')).data[0].id, 42);
+  assert.equal(localCalls, 0);
+  desktop.state = () => ({ locked: false });
+  assert.equal((await lib.fetchCached('/products/pos', 'catalogue')).data[0].id, 42);
+  assert.equal(localCalls, 1);
+  assert.equal(serverCalls, 2);
+  api.get = async () => { throw Error('network'); };
+  const cached = await lib.fetchCached('/products/pos', 'catalogue');
+  assert.equal(cached.data[0].id, 42);
+  assert.equal(cached.fromCache, true);
+  api.get = async () => ({ data: [] });
+  assert.equal((await lib.fetchCached('/products/pos', 'catalogue')).data.length, 0);
+  assert.doesNotMatch(readFileSync(`${__dirname}/src/pages/NouvelleVente.tsx`, 'utf8'), /loadProducts\(\)\.catch\(\(\) => setProducts\(\[\]\)\)/);
+});
 
 test('product create and edit refresh only the saved id, with full reload only on refresh failure', async () => {
   const source = readFileSync(`${__dirname}/src/pages/Products.tsx`, 'utf8');

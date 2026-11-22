@@ -354,7 +354,7 @@ export default function NouvelleVente() {
   }, []);
 
   useEffect(() => {
-    loadProducts().catch(() => setProducts([]));
+    loadProducts().catch(() => undefined);
   }, [loadProducts, version]);
 
   useEffect(() => { void loadSession(); }, [loadSession, sharedVersion]);
