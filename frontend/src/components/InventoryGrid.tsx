@@ -37,11 +37,11 @@ export default forwardRef<InventoryGridHandle, { report: InventoryReport; editab
       await previous?.catch(() => {});
       const draft = drafts.current.get(id);
       if (!draft) return;
-      if (Object.values(draft.counts).some((value) => value !== null && (!Number.isSafeInteger(value) || value < 0 || value > 2147483647))) throw new Error("Quantité invalide");
+      if (Object.values(draft.counts).some((value) => value !== null && (!Number.isFinite(value) || value < 0 || value > 2147483647))) throw new Error("Quantité invalide");
       try {
         const row = report.rows.find((row) => row.product_id === id)!;
         const total = inventoryTotal(draft.counts, row);
-        if (total !== null && (!Number.isSafeInteger(total) || total > 2147483647)) throw new Error("Quantité trop grande");
+        if (total !== null && (!Number.isFinite(total) || total > 2147483647)) throw new Error("Quantité trop grande");
         const entry = await queueCount(report.id, id, draft.counts, draft.note);
         onSaved(mergeCounts({ ...report, rows: [row] }, { [id]: entry }).rows[0], report.status);
         if (drafts.current.get(id) === draft) drafts.current.delete(id);
@@ -73,8 +73,8 @@ export default forwardRef<InventoryGridHandle, { report: InventoryReport; editab
     drafts.current.set(row.product_id, next);
     clearTimeout(timers.current.get(row.product_id));
     const total = inventoryTotal(next.counts, row);
-    if (Object.values(next.counts).some((count) => count !== null && (!Number.isInteger(count) || count < 0)) || (total !== null && (!Number.isSafeInteger(total) || total > 2147483647))) {
-      errors.current.set(row.product_id, "Quantités entières ≥ 0 requises, total maximal 2147483647.");
+    if (Object.values(next.counts).some((count) => count !== null && (!Number.isFinite(count) || count < 0)) || (total !== null && (!Number.isFinite(total) || total > 2147483647))) {
+      errors.current.set(row.product_id, "Quantités ≥ 0, six décimales au maximum requises, total maximal 2147483647.");
     } else {
       errors.current.delete(row.product_id);
       timers.current.set(row.product_id, setTimeout(() => { void save(row.product_id).catch(() => {}); }, 500));
@@ -136,7 +136,7 @@ export default forwardRef<InventoryGridHandle, { report: InventoryReport; editab
       const counts = draft?.counts || row.counts || { base: row.physical_qty };
       const total = inventoryTotal(counts, row);
       const delta = total === null ? null : total - (row.theoretical_qty || 0);
-      return <tr key={row.product_id} className="border-t align-top"><td className="p-2">{row.sku}</td><td className="p-2">{row.name}</td><td className="p-2">{row.category || "—"}<br />{row.supplier || "—"}</td><td className="min-w-80 p-2"><div className="flex flex-wrap gap-2">{inventoryUnits(row).map((unit, column) => <label className="label w-28" key={unit.key}>{unit.name}{unit.key !== "base" && ` ×${unit.factor}`}<input className="input" data-count-id={row.product_id} data-count-key={unit.key} aria-label={`${row.sku} ${unit.name}`} disabled={!editable} type="number" min={0} max={2147483647} step={1} value={counts[unit.key] ?? ""} onChange={(event) => update(row, unit.key, event.target.value)} onKeyDown={(event) => navigate(event, row, column)} /></label>)}</div><input className="input mt-2" aria-label={`Note ${row.sku}`} disabled={!editable} maxLength={4000} placeholder="Note" value={draft?.note ?? row.note} onChange={(event) => update(row, "note", event.target.value)} />{errors.current.has(row.product_id) && <p role="alert" className="text-red-600">{errors.current.get(row.product_id)}</p>}</td><td className="p-2 font-bold">{total ?? "Non compté"}</td>{report.theoretical_visible && <><td className="p-2">{row.theoretical_qty}</td><td className="p-2">{delta ?? "—"}</td><td className="p-2">{delta === null ? "—" : delta * (row.unit_cost || 0)}</td></>}</tr>;
+      return <tr key={row.product_id} className="border-t align-top"><td className="p-2">{row.sku}</td><td className="p-2">{row.name}</td><td className="p-2">{row.category || "—"}<br />{row.supplier || "—"}</td><td className="min-w-80 p-2"><div className="flex flex-wrap gap-2">{inventoryUnits(row).map((unit, column) => <label className="label w-28" key={unit.key}>{unit.name}{unit.key !== "base" && ` ×${unit.factor}`}<input className="input" data-count-id={row.product_id} data-count-key={unit.key} aria-label={`${row.sku} ${unit.name}`} disabled={!editable} type="number" min={0} max={2147483647} step={0.000001} value={counts[unit.key] ?? ""} onChange={(event) => update(row, unit.key, event.target.value)} onKeyDown={(event) => navigate(event, row, column)} /></label>)}</div><input className="input mt-2" aria-label={`Note ${row.sku}`} disabled={!editable} maxLength={4000} placeholder="Note" value={draft?.note ?? row.note} onChange={(event) => update(row, "note", event.target.value)} />{errors.current.has(row.product_id) && <p role="alert" className="text-red-600">{errors.current.get(row.product_id)}</p>}</td><td className="p-2 font-bold">{total ?? "Non compté"}</td>{report.theoretical_visible && <><td className="p-2">{row.theoretical_qty}</td><td className="p-2">{delta ?? "—"}</td><td className="p-2">{delta === null ? "—" : delta * (row.unit_cost || 0)}</td></>}</tr>;
     })}</tbody></table></div>
     <div className="flex items-center gap-3"><button className="btn-secondary" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>Précédent</button><span>Page {currentPage + 1} / {pages} · {rows.length} articles</span><button className="btn-secondary" disabled={currentPage + 1 >= pages} onClick={() => setPage(currentPage + 1)}>Suivant</button><button className="btn-secondary" onClick={() => void flush().then(() => setMessage("Toutes les saisies sont enregistrées.")).catch(() => setMessage("Sauvegarde impossible : vérifiez les lignes en erreur."))}>Enregistrer maintenant</button></div>
   </div>;

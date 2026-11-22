@@ -95,7 +95,7 @@ def create_return(
         if item.id in seen:
             raise HTTPException(status_code=400, detail="Ligne de retour répétée")
         seen.add(item.id)
-        remaining = item.quantity - item.returned_quantity
+        remaining = round(item.quantity - item.returned_quantity, 6)
         quantity = base_quantity(line, item)
         if quantity <= 0:
             raise HTTPException(status_code=400, detail="Quantité invalide")

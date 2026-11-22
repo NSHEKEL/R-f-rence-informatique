@@ -237,7 +237,7 @@ def _sales_stats(db: Session, product_ids=None) -> dict[int, tuple[int, object]]
     if product_ids is not None:
         query = query.filter(SaleItem.product_id.in_(product_ids))
     rows = query.all()
-    return {row.product_id: (int(row.sold or 0), row.last_sold) for row in rows}
+    return {row.product_id: (float(row.sold or 0), row.last_sold) for row in rows}
 
 
 @router.get("", response_model=list[ProductOut])
@@ -448,7 +448,9 @@ def _import_quantity(fields, present, product, packagings):
     field = "quantity" if "quantity" in present else "initial_quantity" if product is None and "initial_quantity" in present else None
     if field is None:
         return None
-    quantity = _to_int(fields.get(field, ""))
+    quantity = _to_float(fields.get(field, ""))
+    if not math.isfinite(quantity) or round(quantity, 6) != quantity:
+        raise ValueError("Quantité invalide : six décimales au maximum")
     unit = _import_name(fields.get("quantity_unit", ""))
     base = (fields.get("base_unit") or product.base_unit) if product else fields.get("base_unit", "pièce")
     if not unit or unit in {_import_name(base or ""), "piece", "pieces", "unite"}:
@@ -935,7 +937,7 @@ def create_lot(
         .filter((StockLot.depot_id == depot_id) | (StockLot.depot_id.is_(None) & (depot_id == stock.resolve(db))))
         .scalar()
     )
-    untagged = stock.quantity(db, product_id, depot_id) - int(tagged)
+    untagged = round(stock.quantity(db, product_id, depot_id) - float(tagged), 6)
     if payload.quantity > untagged:
         raise HTTPException(
             status_code=400,
@@ -978,7 +980,7 @@ def _expired_map(db: Session, today) -> dict[int, int]:
         .group_by(StockLot.product_id)
         .all()
     )
-    return {pid: int(qty or 0) for pid, qty in rows}
+    return {pid: float(qty or 0) for pid, qty in rows}
 
 
 @router.get("/stock/dashboard")
@@ -1166,8 +1168,8 @@ def write_off_lot(
     product = db.query(Product).get(lot.product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Produit introuvable")
-    quantity = int(payload.get("quantity") or lot.quantity)
-    if quantity <= 0 or quantity > lot.quantity:
+    quantity = float(payload.get("quantity", lot.quantity))
+    if not math.isfinite(quantity) or round(quantity, 6) != quantity or quantity <= 0 or quantity > lot.quantity:
         raise HTTPException(status_code=400, detail="Quantité invalide")
 
     depot_id = stock.resolve(db, lot.depot_id, active=False)

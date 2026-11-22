@@ -11,6 +11,14 @@ export function dividePackaging(product: Product, divisor: number, tier: PriceTi
   return { quantity, total, unitPrice: total / quantity };
 }
 
+export function fractionalBasePrice(product: Product, quantity: number, tier: PriceTier) {
+  if (!Number.isFinite(quantity) || quantity <= 0 || quantity > 2147483647 || Math.abs(quantity - Math.round(quantity * 1e6) / 1e6) > 1e-10) {
+    throw new Error("Quantité positive requise, avec six décimales au maximum.");
+  }
+  const total = Math.round(catalogPrices(product, tier, quantity).piece * quantity);
+  return { quantity, total, unitPrice: total / quantity };
+}
+
 export function packagingChoices(product: Product) {
   return [{ key: "base", label: product.base_unit || "Pièce" },
     ...(product.packaging_unit ? [{ key: "primary", label: product.packaging_unit }] : []),

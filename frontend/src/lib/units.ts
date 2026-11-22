@@ -55,10 +55,11 @@ export function saleUnitPrice(product: UnitSpec, quantity: number, basePrice: nu
 
 export function formatQuantity(product: QuantitySpec, quantity: number) {
   const unit = product.base_unit || "pièce";
-  const label = `${quantity} ${unit}`;
+  const formatted = (value: number) => new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 6, useGrouping: false }).format(value);
+  const label = `${formatted(quantity)} ${unit}`;
   if (!product.packaging_unit) return label;
   const parts = splitQuantity(product, Math.abs(quantity));
-  return `${label} = ${quantity < 0 ? "−" : ""}${parts.packaging_quantity} ${product.packaging_unit}${parts.piece_quantity ? ` ${quantity < 0 ? "−" : "+"} ${parts.piece_quantity} ${unit}` : ""}`;
+  return `${label} = ${quantity < 0 ? "−" : ""}${formatted(parts.packaging_quantity)} ${product.packaging_unit}${parts.piece_quantity ? ` ${quantity < 0 ? "−" : "+"} ${formatted(parts.piece_quantity)} ${unit}` : ""}`;
 }
 
 export function escapeUnitText(text: string) {

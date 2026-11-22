@@ -359,11 +359,28 @@ def _packaging_retail_from_wholesale() -> None:
         logging.getLogger(__name__).warning("%s: %s conditionnements mis à jour", marker, result.rowcount)
 
 
+def _fractional_quantities(conn):
+    if conn.dialect.name != "postgresql":
+        return
+    insp = inspect(conn)
+    tables = set(insp.get_table_names())
+    quote = conn.dialect.identifier_preparer.quote
+    for table in Product.metadata.tables.values():
+        if table.name not in tables:
+            continue
+        existing = {column["name"]: column["type"] for column in insp.get_columns(table.name)}
+        for column in table.columns:
+            if getattr(column.type, "scale", None) == 6 and str(existing.get(column.name, "")).upper() in ("INTEGER", "BIGINT", "SMALLINT"):
+                name = quote(column.name)
+                conn.execute(text(f"ALTER TABLE {quote(table.name)} ALTER COLUMN {name} TYPE NUMERIC(24,6) USING {name}::NUMERIC(24,6)"))
+
+
 def migrate() -> None:
     insp = inspect(engine)
     tables = set(insp.get_table_names())
 
     with engine.begin() as conn:
+        _fractional_quantities(conn)
         insp = inspect(conn)
         Depot.__table__.create(bind=conn, checkfirst=True)
         Workstation.__table__.create(bind=conn, checkfirst=True)

@@ -7,6 +7,20 @@ const output = {};
 vm.runInNewContext(ts.transpileModule(readFileSync(`${__dirname}/src/lib/units.ts`, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports: output });
 const product = { base_unit: "pièce", packaging_unit: "carton", units_per_packaging: 12, packaging_sale_price: 1000 };
 
+test("fractional base units charge rounded FCFA and print decimal quantities", () => {
+  const packaging = {};
+  vm.runInNewContext(ts.transpileModule(readFileSync(`${__dirname}/src/lib/posPackaging.ts`, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports: packaging, require: () => output });
+  const milk = { base_unit: "kg", sale_price: 3500 };
+  for (const [quantity, total] of [[0.5, 1750], [0.25, 875], [0.333333, 1167]]) {
+    const part = packaging.fractionalBasePrice(milk, quantity, "detail");
+    assert.equal(part.total, total);
+    assert.ok(Math.abs(part.unitPrice * quantity - total) < 1e-9);
+  }
+  for (const invalid of [0, -1, NaN, Infinity, 0.0000001]) assert.throws(() => packaging.fractionalBasePrice(milk, invalid, "detail"));
+  assert.equal(output.quantityHtml(milk, 0.5), "0,5 kg");
+  assert.equal(output.formatQuantity(product, 12.25), "12,25 pièce = 1 carton + 0,25 pièce");
+});
+
 test("mixed and packaging prices use exactly one base quantity", () => {
   assert.equal(output.saleUnitPrice(product, 27, 100, "mixed") * 27, 2300);
   assert.equal(output.saleUnitPrice(product, 24, 100, "packaging") * 24, 2000);

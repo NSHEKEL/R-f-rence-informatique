@@ -208,6 +208,7 @@ export default function Returns() {
                           type="number"
                           min={0}
                           max={max}
+                          step={0.000001}
                           disabled={max === 0}
                           className="input w-20 text-center"
                           value={quantities[it.id] ?? 0}

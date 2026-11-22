@@ -3,6 +3,8 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from .quantities import Quantity
+
 
 # ---------- Auth ----------
 class Token(BaseModel):
@@ -415,7 +417,7 @@ class UnitSnapshotOut(BaseModel):
 
 class PackagingQuantities(BaseModel):
     packaging_quantity: Optional[int] = Field(default=None, ge=0)
-    piece_quantity: Optional[int] = Field(default=None, ge=0)
+    piece_quantity: Optional[Quantity] = Field(default=None, ge=0)
 
 
 class ProductPackagingInput(BaseModel):
@@ -462,7 +464,7 @@ class ProductBase(BaseModel):
     purchase_price: float = 0
     sale_price: float = 0
     wholesale_price: float = 0
-    quantity: int = 0
+    quantity: Quantity = 0
     min_stock: int = 5
     qr_code: str = ""
     barcode: str = ""
@@ -487,7 +489,7 @@ class ProductOut(ProductBase):
     scanned_code: Optional[str] = None
     scanned_label: Optional[str] = None
     packaging_id: Optional[int] = None
-    quantity: Optional[int] = None
+    quantity: Optional[Quantity] = None
     min_stock: Optional[int] = None
     quantity_label: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
@@ -496,7 +498,7 @@ class ProductOut(ProductBase):
     category: Optional[CategoryOut] = None
     supplier: Optional[SupplierOut] = None
     # Filled by the "jamais vendu / plus vendus" filters.
-    sold_quantity: int = 0
+    sold_quantity: Quantity = 0
     last_sold_at: Optional[datetime] = None
 
 
@@ -520,7 +522,7 @@ class SaleItemCreate(PackagingQuantities):
     price_tier: Optional[Literal["detail", "semi_gros", "gros", "auto"]] = None
     expected_units_per_packaging: Optional[int] = Field(default=None, ge=1)
     product_id: int
-    quantity: int = 0
+    quantity: Quantity = 0
     # Price agreed at the counter; ignored unless the seller holds the right
     # to change a price.
     unit_price: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
@@ -584,19 +586,19 @@ class SaleItemOut(UnitSnapshotOut):
     margin: Optional[float] = None
     sold_unit: Optional[str] = None
     packaging_quantity: Optional[int] = None
-    piece_quantity: Optional[int] = None
-    base_quantity: Optional[int] = None
+    piece_quantity: Optional[Quantity] = None
+    base_quantity: Optional[Quantity] = None
     base_unit_price: Optional[float] = None
     packaging_sale_price: Optional[float] = None
     model_config = ConfigDict(from_attributes=True)
     id: int
     product_id: Optional[int]
     product_name: str
-    quantity: int
+    quantity: Quantity
     unit_price: float
     discount: float = 0
     subtotal: float
-    returned_quantity: int = 0
+    returned_quantity: Quantity = 0
 
 
 class SaleOut(BaseModel):
@@ -630,7 +632,7 @@ class SaleOut(BaseModel):
 class ReturnLine(PackagingQuantities):
     sale_item_id: Optional[int] = None
     product_id: int
-    quantity: int = 0
+    quantity: Quantity = 0
 
 
 class ReturnCreate(BaseModel):
@@ -645,7 +647,7 @@ class ReturnItemOut(UnitSnapshotOut):
     id: int
     product_id: Optional[int]
     product_name: str
-    quantity: int
+    quantity: Quantity
     unit_price: float
     subtotal: float
 
@@ -668,7 +670,7 @@ class ProformaItemCreate(BaseModel):
     product_id: Optional[int] = None
     product_name: str = ""
     unit: str = "u"
-    quantity: int = 1
+    quantity: Quantity = 1
     unit_price: float = 0
     discount: float = 0
 
@@ -709,7 +711,7 @@ class ProformaItemOut(UnitSnapshotOut):
     product_name: str
     reference: str = ""
     unit: str = "u"
-    quantity: int
+    quantity: Quantity
     unit_price: float
     discount: float = 0
     subtotal: float
@@ -843,7 +845,7 @@ class MonthlyRevenue(BaseModel):
 
 class TopProduct(BaseModel):
     name: str
-    quantity: int
+    quantity: Quantity
     revenue: float
 
 
@@ -1025,7 +1027,7 @@ class ExpenseOut(BaseModel):
 class InventoryLine(PackagingQuantities):
     product_id: int
     packaging_id: Optional[int] = Field(default=None, ge=1)
-    counted_quantity: int = 0
+    counted_quantity: Quantity = 0
 
 
 class InventoryApply(BaseModel):
@@ -1037,17 +1039,17 @@ class StockLotCreate(BaseModel):
     depot_id: Optional[int] = Field(default=None, ge=1)
     lot_number: str = ""
     expiry_date: Optional[datetime] = None
-    quantity: int
+    quantity: Quantity
 
 
 class ProductStockEntryLine(BaseModel):
     packaging_id: Optional[int] = Field(default=None, ge=1)
-    quantity: int = Field(ge=0, le=2147483647, strict=True)
+    quantity: Quantity = Field(ge=0, le=2147483647, strict=True)
     unit: Literal["base", "packaging"] = "base"
 
 
 class ProductStockEntry(BaseModel):
-    quantity: Optional[int] = Field(default=None, gt=0, le=2147483647, strict=True)
+    quantity: Optional[Quantity] = Field(default=None, gt=0, le=2147483647, strict=True)
     lines: Optional[List[ProductStockEntryLine]] = Field(default=None, min_length=1, max_length=1000)
     unit: Literal["base", "packaging"] = "base"
     packaging_id: Optional[int] = Field(default=None, ge=1)
@@ -1074,7 +1076,7 @@ class StockLotOut(BaseModel):
     product_id: int
     lot_number: str
     expiry_date: Optional[datetime] = None
-    quantity: int
+    quantity: Quantity
     created_at: datetime
     product_name: str = ""
     days_left: Optional[int] = None
@@ -1082,7 +1084,7 @@ class StockLotOut(BaseModel):
 
 class StockTransferItemCreate(PackagingQuantities):
     product_id: int
-    quantity: int = 0
+    quantity: Quantity = 0
 
 
 class StockTransferCreate(BaseModel):
@@ -1097,7 +1099,7 @@ class StockTransferItemOut(UnitSnapshotOut):
     id: int
     product_id: Optional[int]
     product_name: str
-    quantity: int
+    quantity: Quantity
 
 
 class StockTransferOut(BaseModel):
@@ -1119,9 +1121,9 @@ class StockMovementOut(UnitSnapshotOut):
     product_id: Optional[int]
     product_name: str
     kind: str
-    quantity: int
-    stock_before: int
-    stock_after: int
+    quantity: Quantity
+    stock_before: Quantity
+    stock_after: Quantity
     reason: str = ""
     date: datetime
     created_by: Optional[UserOut] = None
@@ -1167,7 +1169,7 @@ class UpdateInstallResult(BaseModel):
 # ---------- Orders and deliveries ----------
 class OrderItemCreate(BaseModel):
     product_id: int
-    quantity: int
+    quantity: Quantity
     unit_price: Optional[float] = None
     unit: str = "u"
     discount: float = 0
@@ -1210,9 +1212,9 @@ class OrderItemOut(UnitSnapshotOut):
     product_name: str
     reference: str = ""
     unit: str = "u"
-    quantity: int
-    delivered_quantity: int = 0
-    remaining_quantity: int = 0
+    quantity: Quantity
+    delivered_quantity: Quantity = 0
+    remaining_quantity: Quantity = 0
     unit_price: float
     discount: float = 0
     subtotal: float
@@ -1236,7 +1238,7 @@ class DeliveryUpdate(BaseModel):
 
 class DeliveryItemCreate(BaseModel):
     product_id: int
-    quantity: int
+    quantity: Quantity
     unit: str = "u"
     observation: str = ""
     unit_price: Optional[float] = None
@@ -1277,9 +1279,9 @@ class DeliveryItemOut(UnitSnapshotOut):
     product_name: str = ""
     reference: str = ""
     unit: str = "u"
-    ordered_quantity: int = 0
+    ordered_quantity: Quantity = 0
     previously_delivered: int = 0
-    quantity: int = 0
+    quantity: Quantity = 0
     unit_price: float = 0
     subtotal: float = 0
     observation: str = ""
@@ -1386,7 +1388,7 @@ class PurchaseItemCreate(PackagingQuantities):
     packaging_id: Optional[int] = Field(default=None, ge=1)
     packaging_unit_cost: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     product_id: int
-    quantity: int = 0
+    quantity: Quantity = 0
     unit_cost: Optional[float] = None
 
 
@@ -1415,7 +1417,7 @@ class PurchaseUpdate(BaseModel):
 
 class PurchaseReceiveItem(PackagingQuantities):
     item_id: int
-    quantity: int = 0
+    quantity: Quantity = 0
 
 
 class CataloguePriceChange(BaseModel):
@@ -1445,8 +1447,8 @@ class PurchaseItemOut(UnitSnapshotOut):
     id: int
     product_id: Optional[int] = None
     product_name: str
-    quantity: int
-    received_quantity: int = 0
+    quantity: Quantity
+    received_quantity: Quantity = 0
     unit_cost: float
     subtotal: float
 

@@ -12,6 +12,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    Numeric,
     Index,
     String,
     Text,
@@ -157,7 +158,7 @@ class DepotStock(Base):
     id = Column(Integer, primary_key=True)
     depot_id = Column(Integer, ForeignKey("depots.id"), nullable=False, index=True)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False, index=True)
-    quantity = Column(Integer, nullable=False, default=0)
+    quantity = Column(Numeric(24, 6, asdecimal=False), nullable=False, default=0)
 
 
 class DepotTransfer(Base):
@@ -180,7 +181,7 @@ class DepotTransferItem(Base):
     transfer_id = Column(Integer, ForeignKey("depot_transfers.id"), nullable=False)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
     product_name = Column(String, nullable=False)
-    quantity = Column(Integer, nullable=False)
+    quantity = Column(Numeric(24, 6, asdecimal=False), nullable=False)
     transfer = relationship("DepotTransfer", back_populates="items")
 
 
@@ -271,7 +272,7 @@ class Product(UnitSnapshot, Base):
     supplier_purchase_price = Column(Float, nullable=True)
     semi_wholesale_min_qty = Column(Integer, nullable=True)
     wholesale_min_qty = Column(Integer, nullable=True)
-    quantity = Column(Integer, default=0)
+    quantity = Column(Numeric(24, 6, asdecimal=False), default=0)
     min_stock = Column(Integer, default=5)
     qr_code = Column(String, default="")  # scan code, defaults to the SKU
     barcode = Column(String, default="", index=True)  # printed EAN-13 digits
@@ -423,13 +424,13 @@ class SaleItem(UnitSnapshot, Base):
     unit_cost = Column(Float, nullable=True)
     sold_unit = Column(String, default="pièce", nullable=True)
     packaging_quantity = Column(Integer, default=0, nullable=True)
-    piece_quantity = Column(Integer, nullable=True)
-    base_quantity = Column(Integer, nullable=True)
+    piece_quantity = Column(Numeric(24, 6, asdecimal=False), nullable=True)
+    base_quantity = Column(Numeric(24, 6, asdecimal=False), nullable=True)
     base_unit_price = Column(Float, nullable=True)
     packaging_sale_price = Column(Float, nullable=True)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
     product_name = Column(String, default="")
-    quantity = Column(Integer, default=1)
+    quantity = Column(Numeric(24, 6, asdecimal=False), default=1)
     unit_price = Column(Float, default=0)
     # Discount granted on this line only, deducted from its subtotal.
     discount = Column(Float, default=0)
@@ -439,16 +440,16 @@ class SaleItem(UnitSnapshot, Base):
     product = relationship("Product")
 
     @property
-    def returned_quantity(self) -> int:
+    def returned_quantity(self) -> float:
         """Units of this line already given back through a credit note."""
         if not self.sale:
             return 0
-        return sum(
+        return round(sum(
             line.quantity
             for credit in self.sale.returns
             for line in credit.items
             if line.sale_item_id == self.id or (line.sale_item_id is None and line.product_id == self.product_id)
-        )
+        ), 6)
 
 
 class SaleReturn(Base):
@@ -487,7 +488,7 @@ class SaleReturnItem(UnitSnapshot, Base):
     unit_cost = Column(Float, nullable=True)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
     product_name = Column(String, default="")
-    quantity = Column(Integer, default=1)
+    quantity = Column(Numeric(24, 6, asdecimal=False), default=1)
     unit_price = Column(Float, default=0)
     subtotal = Column(Float, default=0)
 
@@ -634,12 +635,12 @@ class InventoryCount(Base):
     session_id = Column(Integer, ForeignKey("inventory_sessions.id"), nullable=False, index=True)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
     product_snapshot = Column(Text, nullable=False)
-    theoretical_qty = Column(Integer, nullable=False)
-    physical_qty = Column(Integer, nullable=True)
+    theoretical_qty = Column(Numeric(24, 6, asdecimal=False), nullable=False)
+    physical_qty = Column(Numeric(24, 6, asdecimal=False), nullable=True)
     counts_json = Column(Text, nullable=False, default="{}")
     client_updated_at = Column(DateTime(timezone=True), nullable=True)
     client_id = Column(String, nullable=False, default="")
-    stock_after = Column(Integer, nullable=True)
+    stock_after = Column(Numeric(24, 6, asdecimal=False), nullable=True)
     unit_cost = Column(Float, nullable=False)
     counted_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     counted_at = Column(DateTime, nullable=True)
@@ -656,9 +657,9 @@ class StockMovement(UnitSnapshot, Base):
     product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
     product_name = Column(String, default="")
     kind = Column(String, default="ajustement")  # vente, inventaire, ajustement
-    quantity = Column(Integer, default=0)  # signed delta
-    stock_before = Column(Integer, default=0)
-    stock_after = Column(Integer, default=0)
+    quantity = Column(Numeric(24, 6, asdecimal=False), default=0)  # signed delta
+    stock_before = Column(Numeric(24, 6, asdecimal=False), default=0)
+    stock_after = Column(Numeric(24, 6, asdecimal=False), default=0)
     reason = Column(String, default="")
     date = Column(DateTime, default=utcnow, index=True)
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
@@ -682,7 +683,7 @@ class StockLot(Base):
     product_id = Column(Integer, ForeignKey("products.id"), index=True)
     lot_number = Column(String, default="")
     expiry_date = Column(DateTime, nullable=True)
-    quantity = Column(Integer, default=0)
+    quantity = Column(Numeric(24, 6, asdecimal=False), default=0)
     unit_cost = Column(Float, nullable=True)
     created_at = Column(DateTime, default=utcnow)
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
@@ -723,7 +724,7 @@ class StockTransferItem(UnitSnapshot, Base):
     )
     product_id = Column(Integer, ForeignKey("products.id"))
     product_name = Column(String, default="")
-    quantity = Column(Integer, default=0)
+    quantity = Column(Numeric(24, 6, asdecimal=False), default=0)
 
     transfer = relationship("StockTransfer", back_populates="items")
 
@@ -767,7 +768,7 @@ class ProformaItem(UnitSnapshot, Base):
     product_name = Column(String, default="")
     reference = Column(String, default="")
     unit = Column(String, default="u")
-    quantity = Column(Integer, default=1)
+    quantity = Column(Numeric(24, 6, asdecimal=False), default=1)
     unit_price = Column(Float, default=0)
     discount = Column(Float, default=0)
     subtotal = Column(Float, default=0)
@@ -930,9 +931,9 @@ class OrderItem(UnitSnapshot, Base):
     product_name = Column(String, default="")
     reference = Column(String, default="")
     unit = Column(String, default="u")
-    quantity = Column(Integer, default=1)
+    quantity = Column(Numeric(24, 6, asdecimal=False), default=1)
     # Quantity handed over by the validated delivery notes of this order.
-    delivered_quantity = Column(Integer, default=0, nullable=False)
+    delivered_quantity = Column(Numeric(24, 6, asdecimal=False), default=0, nullable=False)
     unit_price = Column(Float, default=0)
     discount = Column(Float, default=0)
     subtotal = Column(Float, default=0)
@@ -941,7 +942,7 @@ class OrderItem(UnitSnapshot, Base):
     product = relationship("Product")
 
     @property
-    def remaining_quantity(self) -> int:
+    def remaining_quantity(self) -> float:
         return max(self.quantity - (self.delivered_quantity or 0), 0)
 
 
@@ -991,9 +992,9 @@ class DeliveryItem(UnitSnapshot, Base):
     product_name = Column(String, default="")
     reference = Column(String, default="")
     unit = Column(String, default="u")
-    ordered_quantity = Column(Integer, default=0)
+    ordered_quantity = Column(Numeric(24, 6, asdecimal=False), default=0)
     previously_delivered = Column(Integer, default=0)
-    quantity = Column(Integer, default=0)  # handed over by this note
+    quantity = Column(Numeric(24, 6, asdecimal=False), default=0)  # handed over by this note
     unit_price = Column(Float, default=0)
     subtotal = Column(Float, default=0)
     observation = Column(String, default="")
@@ -1081,8 +1082,8 @@ class PurchaseItem(UnitSnapshot, Base):
     packaging_id = Column(Integer, ForeignKey("product_packagings.id"), nullable=True)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
     product_name = Column(String, default="")
-    quantity = Column(Integer, default=1)  # ordered
-    received_quantity = Column(Integer, default=0)  # already in stock
+    quantity = Column(Numeric(24, 6, asdecimal=False), default=1)  # ordered
+    received_quantity = Column(Numeric(24, 6, asdecimal=False), default=0)  # already in stock
     unit_cost = Column(Float, default=0)  # purchase price
     subtotal = Column(Float, default=0)
 

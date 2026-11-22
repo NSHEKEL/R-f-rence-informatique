@@ -65,7 +65,7 @@ import type {
 import Modal from "../components/Modal";
 import { scanCodes } from "../lib/scan";
 import { useScanner } from "../lib/useScanner";
-import { dividePackaging, packagingChoices } from "../lib/posPackaging";
+import { dividePackaging, fractionalBasePrice, packagingChoices } from "../lib/posPackaging";
 import { vatBreakdown } from "../lib/vat";
 import {
   fetchCached,
@@ -142,11 +142,12 @@ interface CartLine {
 /** Price actually charged for a cart line. */
 function linePrice(line: CartLine, _mode: PriceMode): number {
   if (line.packaging_divisor) return line.price ?? dividePackaging(line.product, line.packaging_divisor, line.price_tier || "detail", line.quantity).unitPrice;
-  return line.price ?? catalogUnitPrice(line.product, line.quantity, line.price_tier || "detail", cartParts(line));
+  const price = line.price ?? catalogUnitPrice(line.product, line.quantity, line.price_tier || "detail", cartParts(line));
+  return Number.isInteger(line.quantity) ? price : Math.round(price * line.quantity) / line.quantity;
 }
 
 function priceWillBeSaved(line: CartLine): boolean {
-  return !line.packaging_divisor && line.price !== undefined && Number.isFinite(line.price);
+  return Number.isInteger(line.quantity) && !line.packaging_divisor && line.price !== undefined && Number.isFinite(line.price);
 }
 
 function cartParts(line: CartLine) {
@@ -460,21 +461,25 @@ export default function NouvelleVente() {
   const [mixedTarget, setMixedTarget] = useState<{ line: CartLine; product: Product } | null>(null);
   const [divideTarget, setDivideTarget] = useState<number | null>(null);
   const [divisor, setDivisor] = useState("2");
+  const [divideBase, setDivideBase] = useState(false);
+  const [baseAmount, setBaseAmount] = useState("0.5");
   const addToCart = useCallback((original: Product, packaging_id?: number) => {
     if (original.active === false) { setError("Cet article est désactivé."); return; }
     const product = withPackaging(original, packaging_id);
-    const increment = packaging_id ? product.units_per_packaging || 1 : 1;
     setError("");
     lastAdded.current = { id: product.id, packaging_id, code: original.scanned_code, tier: priceMode };
     setSelectedLine(null);
     setCart((prev) => {
+      const available = stockLimit(product, allowNegativeStock) - prev.filter((l) => l.product.id === product.id).reduce((sum, l) => sum + l.quantity, 0);
+      const increment = packaging_id ? product.units_per_packaging || 1 : Math.min(1, available);
+      if (increment <= 0) return prev;
       const existing = prev.find((l) => !l.packaging_divisor && l.product.id === product.id && l.scanned_code === original.scanned_code && l.packaging_id === packaging_id && (l.price_tier || "detail") === priceMode && (packaging_id ? l.unitMode === "packaging" : (!l.unitMode || l.unitMode === "base")));
       if (prev.filter((l) => l.product.id === product.id).reduce((sum, l) => sum + l.quantity, 0) + increment > stockLimit(product, allowNegativeStock)) return prev;
       if (!existing) return [...prev, { product, sourceProduct: original, scanned_code: original.scanned_code, scanned_label: original.scanned_label, packaging_id, quantity: increment, price_tier: priceMode, unitMode: packaging_id ? "packaging" : "base" }];
       return prev.map((l) =>
         l === existing ? (() => {
           const packs = l.unitMode === "packaging" ? 1 : 0;
-          const pieces = packs ? 0 : 1;
+          const pieces = packs ? 0 : increment;
           const quantity = l.quantity + packs * (product.units_per_packaging || 1) + pieces;
           const parts = cartParts(l);
           return quantity > stockLimit(product, allowNegativeStock) ? l : { ...l, quantity, packagingQuantity: parts.packaging_quantity + packs, pieceQuantity: parts.piece_quantity + pieces };
@@ -598,7 +603,9 @@ export default function NouvelleVente() {
         if (index !== lineIndex) return [l];
         const others = prev.filter((other) => other !== l && other.product.id === l.product.id).reduce((sum, other) => sum + other.quantity, 0);
         const step = l.packaging_divisor ? (l.product.units_per_packaging || 1) / l.packaging_divisor : 1;
-        const capped = Math.floor(Math.min(Math.max(Math.floor(quantity), 0), stockLimit(l.product, allowNegativeStock) - others) / step) * step;
+        if (!Number.isFinite(quantity)) return [l];
+        const maximum = Math.min(Math.max(quantity, 0), stockLimit(l.product, allowNegativeStock) - others);
+        const capped = l.packaging_divisor ? Math.floor(maximum / step) * step : Math.round(maximum * 1e6) / 1e6;
         return capped === 0 ? [] : [{ ...l, quantity: capped, packagingQuantity: undefined, pieceQuantity: undefined }];
       })
     );
@@ -1861,7 +1868,8 @@ export default function NouvelleVente() {
                   setSelectedLine(index);
                 }}>{choice.label}</button>)}
                 {packagingChoices(original).length > 1 && <button className="btn-ghost" onClick={() => { setError(""); setMixedTarget({ line, product: original }); }}>MIXTE</button>}
-                {line.product.packaging_unit && <button className="btn-secondary" onClick={() => { setError(""); setDivisor("2"); setDivideTarget(index); }}>Diviser</button>}
+                {line.product.packaging_unit && <button className="btn-secondary" onClick={() => { setError(""); setDivideBase(false); setDivisor("2"); setDivideTarget(index); }}>Diviser</button>}
+                <button className="btn-secondary" onClick={() => { setError(""); setDivideBase(true); setBaseAmount("0.5"); setDivideTarget(index); }}>Fraction d’unité</button>
                 {line.packaging_divisor && <span className="text-xs">Part de {line.product.packaging_unit} : 1/{line.packaging_divisor} · prix ponctuel, non enregistré dans la fiche</span>}
               </div>;
             })()}
@@ -1936,19 +1944,20 @@ export default function NouvelleVente() {
         const line = cart[divideTarget];
         let preview: ReturnType<typeof dividePackaging> | undefined;
         let reason = "";
-        try { preview = dividePackaging(line.product, Number(divisor), line.price_tier || "detail"); }
+        const baseProduct = products.find((p) => p.id === line.product.id) || line.sourceProduct || line.product;
+        try { preview = divideBase ? fractionalBasePrice(baseProduct, Number(baseAmount.replace(",", ".")), line.price_tier || "detail") : dividePackaging(line.product, Number(divisor), line.price_tier || "detail"); }
         catch (e) { reason = e instanceof Error ? e.message : "Division impossible"; }
-        return <Modal open onClose={() => setDivideTarget(null)} title={`Diviser ${line.product.packaging_unit}`} footer={<button className="btn-primary" disabled={!preview} onClick={() => {
+        return <Modal open onClose={() => setDivideTarget(null)} title={divideBase ? `Fraction de ${baseProduct.base_unit || "l’unité"}` : `Diviser ${line.product.packaging_unit}`} footer={<button className="btn-primary" disabled={!preview} onClick={() => {
           if (!preview) return;
           const others = cart.filter((_, i) => i !== divideTarget).filter((l) => l.product.id === line.product.id).reduce((sum, l) => sum + l.quantity, 0);
           if (others + preview.quantity > stockLimit(line.product, allowNegativeStock)) { setError("Stock insuffisant pour cette part"); return; }
-          setCart((rows) => rows.map((l, i) => i === divideTarget ? { ...l, packaging_divisor: Number(divisor), quantity: preview.quantity, unitMode: "base", packagingQuantity: 0, pieceQuantity: preview.quantity, price: undefined } : l));
+          setCart((rows) => rows.map((l, i) => i === divideTarget ? { ...l, packaging_divisor: divideBase ? undefined : Number(divisor), product: divideBase ? baseProduct : l.product, packaging_id: divideBase ? undefined : l.packaging_id, quantity: preview.quantity, unitMode: "base", packagingQuantity: 0, pieceQuantity: preview.quantity, price: undefined } : l));
           setDivideTarget(null);
         }}>Appliquer au panier</button>}>
-          <label className="label">Nombre de parts<input className="input" type="number" min="2" step="1" value={divisor} onChange={(e) => setDivisor(e.target.value)} /></label>
+          {divideBase ? <><div className="flex gap-2"><button className="btn-secondary" onClick={() => setBaseAmount("0.5")}>1/2</button><button className="btn-secondary" onClick={() => setBaseAmount("0.25")}>1/4</button></div><label className="label">Quantité en {baseProduct.base_unit || "unité"}<input className="input" inputMode="decimal" value={baseAmount} onChange={(e) => setBaseAmount(e.target.value)} /></label></> : <label className="label">Nombre de parts<input className="input" type="number" min="2" step="1" value={divisor} onChange={(e) => setDivisor(e.target.value)} /></label>}
           <p>{line.product.units_per_packaging} unités · {formatXOF(catalogPrices(line.product, line.price_tier, preview?.quantity).carton)} le conditionnement</p>
           {preview ? <p>{preview.quantity} unités par part · {formatXOF(preview.total)}. Le prix peut être ajusté dans la ligne avec le droit habituel de modification des prix.</p> : <p role="alert">{reason}</p>}
-          <p className="text-xs">FCFA arrondis à l'unité par part. La fiche et les prix du conditionnement restent inchangés. Les fractions d'unité de base ne sont pas vendables.</p>
+          <p className="text-xs">FCFA arrondis à l'unité par part. La fiche et les prix du conditionnement restent inchangés. Utilisez « Fraction d’unité » pour vendre une demi-unité, un quart ou une quantité décimale.</p>
         </Modal>;
       })()}
       {/* New customer */}

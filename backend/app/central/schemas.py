@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AdminLogin(BaseModel):
@@ -468,7 +468,7 @@ class MagasinStats(BaseModel):
 # ---------- Relais de transferts inter-magasins ----------
 class TransferItemIn(BaseModel):
     product_name: str
-    quantity: int
+    quantity: float = Field(gt=0, allow_inf_nan=False)
 
 
 class TransferPushIn(BaseModel):

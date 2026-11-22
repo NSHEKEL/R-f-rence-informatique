@@ -158,7 +158,7 @@ def _consume_lots_fefo(db: Session, product: Product, quantity: int, depot_id=No
         if remaining <= 0:
             break
         take = min(lot.quantity, remaining)
-        lot.quantity -= take
+        lot.quantity = round(lot.quantity - take, 6)
         remaining -= take
 
 
@@ -265,13 +265,20 @@ def _persist_sale(db: Session, payload: SaleCreate, current_user: User) -> Sale:
             unit_price = part_total / (factor // divisor)
             base_price = unit_price
             pack_price = unit_price * factor
+        if quantity != int(quantity) and item.packaging_divisor is None:
+            gross = Decimal(str(packs)) * Decimal(str(pack_price)) + Decimal(str(pieces)) * Decimal(str(base_price))
+            charged = float(gross.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+            ratio = charged / float(gross) if gross else 1
+            base_price *= ratio
+            pack_price *= ratio
+            unit_price = charged / quantity
         catalog_unit_price = unit_price
         if item.price_edited:
             if not has_permission(db, current_user, "prix_modifier"):
                 raise HTTPException(403, "Vous n'avez pas le droit de modifier le prix de vente")
             if item.unit_price is None:
                 raise HTTPException(400, "Renseignez le prix saisi")
-            if payload.status not in {"Annulée", "Brouillon"} and item.packaging_divisor is None:
+            if payload.status not in {"Annulée", "Brouillon"} and item.packaging_divisor is None and quantity == int(quantity):
                 price_edits.append((product.id, item.packaging_id, packs, pieces, tier, float(item.unit_price), spec.units_per_packaging or 1))
         if item.unit_price is not None and abs(item.unit_price - unit_price) > 0.000001:
             if not has_permission(db, current_user, "prix_modifier"):

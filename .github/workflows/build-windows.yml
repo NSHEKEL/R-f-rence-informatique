@@ -146,7 +146,20 @@ jobs:
           body: |
             **EasyGest — gestion de vente et de stock.**
 
-            ### Nouveautés 2.18.38
+            ### Nouveautés 2.18.39
+            - Au panier, « Fraction d’unité » propose 1/2, 1/4 ou une quantité
+              décimale libre, avec aperçu avant application. Exemple : 0,5 kg
+              à 3 500 F/kg coûte 1 750 F et laisse 0,5 en stock sur une unité.
+            - Arrondi FCFA par ligne fractionnée ; tarifs catalogue et division
+              des conditionnements existante conservés. Retour au prix vendu.
+            - Quantités décimales conservées dans les stocks, lots/FEFO,
+              mouvements, inventaires, valorisations et tickets ; caisse sans
+              double comptage. Jusqu’à six décimales pour les quantités.
+            - Migration non destructive PostgreSQL : élargissement des colonnes
+              de quantité INTEGER en NUMERIC(24,6), valeurs entières conservées.
+              SQLite conserve ses tables et accepte les valeurs fractionnaires.
+
+            ### Corrections 2.18.38 incluses
             - Après suppression d'un achat annulé, la dette conservée pour ses
               reçus annulés est désormais annulée explicitement : solde nul,
               montant d'origine et reçus conservés, motif et audit lisibles.
