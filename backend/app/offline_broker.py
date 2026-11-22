@@ -77,7 +77,8 @@ class OfflineBroker:
         with self.store.connection() as db:
             device = self.store.get(db, "device")
             last = self.store.get(db, "last-login")
-        return {"device_id": device["id"], "locked": self.identity is None, "durable": True, "server": last["server"] if last else None}
+            server = last["server"] if last else self.store.get(db, "last-server")
+        return {"device_id": device["id"], "locked": self.identity is None, "durable": True, "server": server}
 
     def _claims(self, auth, server, now, device=None):
         try:
@@ -227,8 +228,13 @@ class OfflineBroker:
         return self.account()
 
     def logout(self):
-        with self.store.lock:
+        with self.store.connection() as db:
+            previous = self.store.get(db, "last-login")
+            if previous:
+                self.store.put(db, "last-server", previous["server"])
+            self.store.put(db, "last-login", None)
             self.identity = None
+            self.checking = False
         return {"locked": True}
 
     def import_legacy(self, entries):
