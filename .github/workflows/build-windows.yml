@@ -146,6 +146,21 @@ jobs:
           body: |
             **EasyGest — gestion de vente et de stock.**
 
+            ### Correctifs hors ligne 2.18.43
+            - Après déconnexion explicite, un rechargement ne reprend plus
+              l'ancien compte : nouveau mot de passe obligatoire, grant chiffré
+              conservé uniquement pour une future connexion authentifiée.
+            - Le checkout du POS accepte sa caisse provisoire locale sans envoyer
+              son identifiant négatif au validateur des caisses serveur. Le ticket
+              est réellement journalé et rejoué une seule fois après reconnexion.
+            - Préparation hors ligne ignorée ou désactivée : le catalogue continue
+              à se charger depuis le serveur. Un refus du broker local ne vide
+              plus la liste d'articles existante.
+            - Les reçus signés pendant la validité du grant sont acceptés après
+              une reconnexion tardive. Dates et bornes serveur contrôlées ; aucun
+              droit à créer de nouvelles ventes avec un grant expiré. Compte et
+              droits actuels toujours recontrôlés.
+
             ### Nouveau mode hors ligne 2.18.42 — postes Windows
             - Après préparation unique du poste par l'administrateur, une
               autorisation signée est conservée après chaque connexion serveur.
