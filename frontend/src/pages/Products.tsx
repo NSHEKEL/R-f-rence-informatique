@@ -399,8 +399,8 @@ export default function Products() {
       setError(textError);
       return;
     }
-    if (!Number.isInteger(form.quantity) || form.quantity < 0 || (form.packaging_unit.trim() && (!Number.isInteger(form.units_per_packaging) || form.units_per_packaging < 1))) {
-      setError("Stock et facteur doivent être des nombres entiers valides.");
+    if (!Number.isFinite(form.quantity) || form.quantity < 0 || Math.abs(form.quantity - Math.round(form.quantity * 1e6) / 1e6) > 1e-10 || (form.packaging_unit.trim() && (!Number.isInteger(form.units_per_packaging) || form.units_per_packaging < 1))) {
+      setError("Stock positif ou nul, six décimales au maximum ; facteur entier positif requis.");
       return;
     }
     if (form.packagings.some((p) => !p.name.trim() || !Number.isInteger(p.factor) || p.factor < 1 || p.factor > 2147483647 || !Number.isInteger(p.sort_order) || [p.price_detail, p.price_semi_gros, p.price_gros, p.purchase_price].some((price) => price != null && (!Number.isFinite(price) || price < 0))) ||
