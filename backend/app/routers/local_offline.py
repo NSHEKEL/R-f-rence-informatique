@@ -1,5 +1,6 @@
 import ipaddress
 import secrets
+import socket
 import sys
 import threading
 
@@ -8,6 +9,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from ..offline_broker import BrokerError, OfflineBroker
 from ..offline_crypto import canonical
+from ..network import lan_ips
 
 router = APIRouter(prefix="/api/local-offline", tags=["local-offline"])
 NONCE = secrets.token_urlsafe(32)
@@ -54,7 +56,7 @@ def bootstrap(request: Request):
     if sys.platform != "win32":
         return {"supported": False}
     try:
-        return {"supported": True, "nonce": NONCE, **broker().bootstrap()}
+        return {"supported": True, "nonce": NONCE, "local_hosts": [socket.gethostname(), *lan_ips()], **broker().bootstrap()}
     except (OSError, RuntimeError) as error:
         raise HTTPException(507, "Journal durable indisponible : vérifiez l'espace disque et le profil Windows") from error
 

@@ -23,7 +23,16 @@ export interface JournalState {
 let nonce = "";
 let local = false;
 let ready = false;
+let serverAddress = () => localStorage.getItem("ri_server_url") || window.location.origin;
+const localHosts = new Set(["localhost", "127.0.0.1", "[::1]"]);
 let state: JournalState = { online: true, locked: true, checking: false, journal_session: false, pending: [], last_synced: null };
+
+function remoteApi() {
+  try {
+    const target = new URL(serverAddress() || window.location.origin);
+    return target.hostname !== window.location.hostname && !localHosts.has(target.hostname.toLowerCase()) && !/^127\.\d+\.\d+\.\d+$/.test(target.hostname);
+  } catch { return false; }
+}
 
 export class DesktopOfflineError extends Error {
   isAxiosError = true;
@@ -34,7 +43,8 @@ export class DesktopOfflineError extends Error {
   }
 }
 
-export async function initializeDesktopOffline() {
+export async function initializeDesktopOffline(address?: () => string) {
+  if (address) serverAddress = address;
   if (!["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname)) return;
   try {
     const response = await fetch("/api/local-offline/bootstrap", { method: "POST", headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(1500) });
@@ -43,6 +53,7 @@ export async function initializeDesktopOffline() {
     const result = await response.json();
     if (!response.ok || !result.supported) return;
     nonce = result.nonce;
+    for (const host of result.local_hosts || []) localHosts.add(host.toLowerCase());
     ready = true;
     state.locked = result.locked;
     localStorage.setItem("ri_workstation_id", result.device_id);
@@ -51,7 +62,7 @@ export async function initializeDesktopOffline() {
 }
 
 export const desktopOffline = {
-  available: () => ready,
+  available: () => ready && remoteApi(),
   local: () => local,
   state: () => state,
   async command<T>(action: string, params: Record<string, unknown> = {}): Promise<T> {

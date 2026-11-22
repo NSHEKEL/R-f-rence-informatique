@@ -146,6 +146,15 @@ jobs:
           body: |
             **EasyGest — gestion de vente et de stock.**
 
+            ### Connexion du PC serveur 2.18.45
+            - Sur le PC serveur, la connexion normale ne demande plus de préparer
+              un poste hors ligne ni de recopier une empreinte SHA-256.
+            - L'API du poste lui-même est reconnue par son origine, ses adresses
+              loopback, son nom de machine et ses adresses LAN locales. Aucun
+              journal de poste vendeur n'est utilisé pour cette connexion locale.
+            - Les postes vendeurs configurés vers un serveur distant conservent
+              leur préparation sécurisée, leur autorisation et leurs ventes offline.
+
             ### Correctif caisse adoptée 2.18.44
             - Si le réseau coupe pendant qu'une caisse serveur est ouverte, le POS
               peut continuer à vendre avec l'identifiant positif de cette caisse.

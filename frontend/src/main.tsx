@@ -14,10 +14,11 @@ import FrontendMounted from "./components/FrontendMounted";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { installNumberWheelGuard } from "./lib/numberWheel";
 import { initializeDesktopOffline } from "./lib/desktopOffline";
+import { getServerUrl } from "./api/client";
 
 installNumberWheelGuard();
 
-void initializeDesktopOffline().finally(() => createRoot(document.getElementById("root")!).render(
+void initializeDesktopOffline(getServerUrl).finally(() => createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <FrontendMounted>
     <ErrorBoundary>
