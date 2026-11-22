@@ -3,6 +3,8 @@ import unittest
 import test_units as fixtures
 from app import stock
 from app.models import Product, StockLot, StockMovement
+from app.models import DeliveryItem
+from app.routers import deliveries
 
 
 class FractionalQuantityTests(unittest.TestCase):
@@ -21,6 +23,15 @@ class FractionalQuantityTests(unittest.TestCase):
         product.purchase_price = 2000
         self.db.add(StockLot(product_id=product.id, quantity=1, unit_cost=2000))
         self.db.commit()
+
+    def test_delivery_lists_preserve_previously_delivered_decimals(self):
+        self.app.include_router(deliveries.router)
+        delivery = self.call("/api/delivery-notes", "POST", {"customer_name": "Client", "items": [{"product_id": self.product.id, "quantity": 0.5}]}, 201)
+        item = self.db.get(DeliveryItem, delivery["items"][0]["id"])
+        item.previously_delivered = 0.25
+        self.db.commit()
+        listing = self.call("/api/delivery-notes")
+        self.assertEqual(listing[0]["items"][0]["previously_delivered"], 0.25)
 
     def test_half_unit_sale_and_return_preserve_fractional_stock_and_cash(self):
         self.prepare()

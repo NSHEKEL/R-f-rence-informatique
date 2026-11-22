@@ -1280,7 +1280,7 @@ class DeliveryItemOut(UnitSnapshotOut):
     reference: str = ""
     unit: str = "u"
     ordered_quantity: Quantity = 0
-    previously_delivered: int = 0
+    previously_delivered: Quantity = 0
     quantity: Quantity = 0
     unit_price: float = 0
     subtotal: float = 0

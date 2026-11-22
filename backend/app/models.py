@@ -993,7 +993,7 @@ class DeliveryItem(UnitSnapshot, Base):
     reference = Column(String, default="")
     unit = Column(String, default="u")
     ordered_quantity = Column(Numeric(24, 6, asdecimal=False), default=0)
-    previously_delivered = Column(Integer, default=0)
+    previously_delivered = Column(Numeric(24, 6, asdecimal=False), default=0)
     quantity = Column(Numeric(24, 6, asdecimal=False), default=0)  # handed over by this note
     unit_price = Column(Float, default=0)
     subtotal = Column(Float, default=0)
