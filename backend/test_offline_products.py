@@ -1,8 +1,10 @@
+import json
 import unittest
+from unittest.mock import patch
 
 import test_wholesale as wholesale
-from app import stock
-from app.models import Category, ChangeLog, CompanySettings, PriceHistory, Product, ProductPackaging, ProductUpdateOperation, StockLot, StockMovement, Workstation
+from app import history, stock
+from app.models import ActionLog, Category, ChangeLog, CompanySettings, PriceHistory, Product, ProductPackaging, ProductUpdateOperation, StockLot, StockMovement, Workstation
 from app.database import SessionLocal
 from app.routers import sync
 
@@ -12,6 +14,37 @@ class OfflineProductTests(unittest.TestCase):
     call = wholesale.WholesaleTests.call
     open = wholesale.WholesaleTests.open
     grant = wholesale.WholesaleTests.grant
+
+    def test_catalogue_undo_and_redo_bump_revision_and_invalidate_prices_and_stock(self):
+        stock.reconcile(self.db.connection(), self.product.id, self.product.quantity)
+        self.db.commit()
+        before = history._snapshot(self.db.get(Product, self.product.id))
+        stock.set_total(self.db, self.db.get(Product, self.product.id), 220)
+        self.db.get(Product, self.product.id).sale_price = 150
+        self.db.commit()
+        after = history._snapshot(self.db.get(Product, self.product.id))
+        self.db.add(ActionLog(label="Modification d'un article", user_id=self.user.id,
+            entries=json.dumps([{"table": "products", "before": before, "after": after}])))
+        self.db.add(ChangeLog(entities="products", product_ids=json.dumps([self.product.id])))
+        self.db.commit()
+        with self.sessions() as db, patch.object(history, "engine", self.engine):
+            version = sync.get_version(db, self.user, scope="catalogue").version
+            for replay, price, quantity in ((history.undo_last, 100, 200), (history.redo_last, 150, 220)):
+                self.assertIsNotNone(replay(db))
+                delta = sync.get_version(db, self.user, scope="catalogue", since=version)
+                self.assertGreater(delta.version, version)
+                self.assertIsNone(delta.product_ids)
+                rows = self.call("/api/products/pos")
+                self.assertEqual((rows[0]["sale_price"], rows[0]["quantity"]), (price, quantity))
+                self.assertEqual(stock.inconsistencies(db), [])
+                version = delta.version
+            history._apply([], undo=True)
+            history._apply([{"table": "unknown", "before": None, "after": None}], undo=True)
+            self.assertEqual(sync.get_version(db, self.user, scope="catalogue").version, version)
+            with patch.object(stock, "replay_product", side_effect=ValueError("replay failed")):
+                with self.assertRaisesRegex(ValueError, "replay failed"):
+                    history.undo_last(db)
+            self.assertEqual(sync.get_version(db, self.user, scope="catalogue").version, version)
 
     def test_catalogue_revision_ignores_heartbeats_but_keeps_product_stock_and_price_changes(self):
         with SessionLocal(bind=self.engine) as db:
