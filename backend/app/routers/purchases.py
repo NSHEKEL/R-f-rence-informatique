@@ -330,7 +330,7 @@ def receive_purchase(
     received_ids = set()
     moved = 0
     for item in purchase.items:
-        remaining = (item.quantity or 0) - (item.received_quantity or 0)
+        remaining = round((item.quantity or 0) - (item.received_quantity or 0), 6)
         entry = wanted.get(item.id)
         quantity = base_quantity(entry, item) if entry else (0 if wanted else remaining)
         if quantity <= 0:
@@ -354,7 +354,7 @@ def receive_purchase(
         received_ids.add(product.id)
         if update_cost and (item.unit_cost or 0) > 0 and not any(change.product_id == product.id and change.packaging_id is None and change.field == "purchase_price" for change in changes):
             legacy_costs[product.id] = CataloguePriceChange(product_id=product.id, field="purchase_price", old_value=product.purchase_price, new_value=item.unit_cost)
-        item.received_quantity = (item.received_quantity or 0) + quantity
+        item.received_quantity = round((item.received_quantity or 0) + quantity, 6)
         moved += quantity
         db.add(
             StockMovement(

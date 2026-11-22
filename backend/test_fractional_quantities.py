@@ -33,6 +33,16 @@ class FractionalQuantityTests(unittest.TestCase):
         listing = self.call("/api/delivery-notes")
         self.assertEqual(listing[0]["items"][0]["previously_delivered"], 0.25)
 
+    def test_successive_decimal_purchase_receipts_complete_exactly(self):
+        before = self.stock()
+        purchase = self.call("/api/purchases", "POST", {"supplier_name": "Fournisseur", "items": [{"product_id": self.product.id, "quantity": 0.3, "unit_cost": 100}]}, 201)
+        item_id = purchase["items"][0]["id"]
+        for quantity in (0.1, 0.2):
+            received = self.call(f"/api/purchases/{purchase['id']}/receive", "POST", {"items": [{"item_id": item_id, "quantity": quantity}]})
+        self.assertEqual(received["items"][0]["received_quantity"], 0.3)
+        self.assertEqual(received["status"], "Reçu")
+        self.assertEqual(self.stock(), before + 0.3)
+
     def test_half_unit_sale_and_return_preserve_fractional_stock_and_cash(self):
         self.prepare()
         opening = self.call("/api/cash-sessions/current")["expected_cash"]
