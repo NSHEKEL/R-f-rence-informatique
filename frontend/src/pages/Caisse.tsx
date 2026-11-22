@@ -23,7 +23,7 @@ import { useSyncVersion } from "../context/SyncContext";
  * Selling happens on the dedicated POS screen.
  */
 export default function Caisse() {
-  const { user, isAdmin, can, logout } = useAuth();
+  const { user, isAdmin, can, logout, recoveryWarning } = useAuth();
   const canBalances = can("soldes_consulter");
   const canClosures = can("clotures_consulter");
   const canZ = canBalances && (canClosures || can("caisse_z"));
@@ -98,6 +98,7 @@ export default function Caisse() {
 
   async function openTill() {
     if (printJob) return;
+    if (recoveryWarning) { setError(recoveryWarning); return; }
     setSaving(true);
     setError("");
     try {

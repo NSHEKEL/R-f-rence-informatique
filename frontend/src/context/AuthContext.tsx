@@ -14,6 +14,8 @@ import { getServerUrl } from "../api/client";
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
+  recoveryWarning: string;
+  retryLocalRecovery: () => Promise<void>;
   isAdmin: boolean;
   /** Administrators and stock managers: catalogue, stock and purchases. */
   isStockManager: boolean;
@@ -33,6 +35,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [rights, setRights] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [desktopBound, setDesktopBound] = useState(false);
+  const [recoveryWarning, setRecoveryWarning] = useState("");
+
+  async function recoverLocalJournal(token: string) {
+    try {
+      await desktopOffline.recoverLocal(token);
+      if (localStorage.getItem("ri_token") === token) setRecoveryWarning("");
+    } catch (error) {
+      if (localStorage.getItem("ri_token") !== token) return;
+      const message = error && typeof error === "object" && "message" in error && typeof error.message === "string" ? error.message : "Reprise locale impossible ; les opérations restent conservées";
+      setRecoveryWarning(message);
+    }
+  }
+
+  async function retryLocalRecovery() {
+    const token = localStorage.getItem("ri_token");
+    if (token) {
+      await recoverLocalJournal(token);
+      window.dispatchEvent(new CustomEvent("ri:offline-state"));
+    }
+  }
 
   async function loadRights(account: User | null = user) {
     const token = localStorage.getItem("ri_token");
@@ -73,7 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .get<User>("/auth/me")
       .then(async (res) => {
         if (localStorage.getItem("ri_token") !== token) return;
-        await desktopOffline.recoverLocal(token);
+        await recoverLocalJournal(token);
         if (localStorage.getItem("ri_token") !== token) return;
         setUser(res.data);
         setRights(readAuthCache(token)?.rights ?? []);
@@ -137,6 +159,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearAuthCache();
       localStorage.setItem("ri_token", account.access_token);
       writeAuthCache(account.access_token, account.user, account.rights);
+      setRecoveryWarning("");
       setUser(account.user);
       setRights(account.rights);
       setDesktopBound(Boolean(account.offline_ready));
@@ -152,7 +175,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setRights([]);
     localStorage.setItem("ri_token", res.data.access_token);
     const me = await api.get<User>("/auth/me");
-    await desktopOffline.recoverLocal(res.data.access_token);
+    await recoverLocalJournal(res.data.access_token);
     setUser(me.data);
     await loadRights(me.data);
   }
@@ -167,6 +190,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   function logout() {
+    setRecoveryWarning("");
     if (desktopOffline.available()) void desktopOffline.command("logout").then(() => desktopOffline.refresh());
     setDesktopBound(false);
     clearAuthCache();
@@ -180,6 +204,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         user,
         loading,
+        recoveryWarning,
+        retryLocalRecovery,
         isAdmin: user?.role === "admin",
         isStockManager: user?.role === "admin" || user?.role === "gestionnaire",
         isSeller: user?.role === "vendeur",
