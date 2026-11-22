@@ -48,6 +48,7 @@ class OfflineProductTests(unittest.TestCase):
             db.add(Category(name="Nouvelle catégorie"))
             db.commit()
             self.assertIsNone(sync.get_version(db, self.user, scope="catalogue", since=delta.version).product_ids)
+            self.assertIsNone(sync.get_version(db, self.user, scope="catalogue", since=999999).product_ids)
             db.add(ChangeLog(entities="products", product_ids="invalid JSON"))
             db.commit()
             self.assertIsNone(sync.get_version(db, self.user, scope="catalogue", since=delta.version).product_ids)

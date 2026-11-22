@@ -86,7 +86,7 @@ def get_version(
         if latest is not None and since <= latest:
             version = max(version, since)
         changes = query.filter(ChangeLog.id > max(since, 0), ChangeLog.id <= version).all()
-        if since > 0 and oldest is not None and since >= oldest - 1:
+        if since > 0 and oldest is not None and oldest - 1 <= since <= latest:
             try:
                 values = [json.loads(change.product_ids) if change.product_ids is not None else None for change in changes]
                 if all(isinstance(value, list) and all(type(item) is int and item > 0 for item in value) for value in values):
