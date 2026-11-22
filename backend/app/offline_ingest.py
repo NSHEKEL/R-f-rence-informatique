@@ -90,7 +90,7 @@ def _attempt(db, event_id, claims, admin=None, regularize=False):
     try:
         event = json.loads(row.envelope)["event"]
         if admin is None:
-            user, _ = current_account(db, claims)
+            user, _ = current_account(db, claims, occurred_at=row.occurred_at)
         else:
             user = db.get(User, row.user_id)
             if user is None or licensing.effective(db).blocked:

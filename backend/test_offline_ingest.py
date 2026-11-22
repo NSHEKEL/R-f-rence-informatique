@@ -90,6 +90,23 @@ class OfflineIngestTests(unittest.TestCase):
             self.assertEqual(db.query(Sale).one().total, 50)
             self.assertEqual(db.get(Product, self.product.id).sale_price, 200)
 
+    def test_valid_receipts_sync_after_expiry_but_new_out_of_window_receipts_do_not(self):
+        from fastapi import HTTPException
+        from app.offline_auth import current_account
+
+        opening, sale = self.event("open", {"opening_balance": 500}), self.sale()
+        with patch("app.offline_auth.time.time", return_value=self.claims["exp"] + 3600):
+            with self.assertRaises(HTTPException):
+                current_account(self.db, self.claims)
+            self.assertTrue(all(row["state"] == "applied" for row in self.submit(opening, sale)))
+            expired = self.sale()
+            expired["event"]["occurred_at"] = self.claims["exp"] + 1
+            expired["signature"] = sign(self.private, expired["event"])
+            self.call("/api/offline/events", "POST", {"events": [expired]}, 403)
+            with self.sessions() as db:
+                self.assertEqual(db.query(Sale).count(), 1)
+                self.assertEqual(db.get(Product, self.product.id).quantity, 19)
+
     def test_lost_online_ack_adopts_same_sale_and_same_open_session(self):
         source = self.call("/api/cash-sessions/open", "POST", {"opening_balance": 500}, 201)
         with self.sessions() as db:

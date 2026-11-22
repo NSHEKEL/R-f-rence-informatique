@@ -1,5 +1,6 @@
 import hashlib
 import json
+import math
 import time
 import uuid
 
@@ -74,7 +75,7 @@ def read_grant(db, token, *, expired=False):
         raise HTTPException(401, "Autorisation hors ligne invalide ou expirée")
 
 
-def current_account(db, claims):
+def current_account(db, claims, *, occurred_at=None):
     user = db.get(User, int(claims["sub"]))
     device = db.get(OfflineDevice, claims["device_id"])
     settings = db.query(CompanySettings).first()
@@ -87,7 +88,10 @@ def current_account(db, claims):
         raise HTTPException(403, "Licence inactive : opérations conservées pour validation")
     if not user or not user.is_active or claims["pwv"] != password_version(user):
         raise HTTPException(403, "Compte désactivé ou authentification révoquée")
-    if settings and (not settings.offline_enabled or time.time() > claims["auth_at"] + settings.offline_authorization_hours * 3600):
+    checked_at = time.time() if occurred_at is None else float(occurred_at)
+    if occurred_at is not None and (not math.isfinite(checked_at) or not claims["auth_at"] <= checked_at <= claims["exp"] or checked_at > time.time() + 120):
+        raise HTTPException(403, "Opération datée hors de son autorisation signée")
+    if settings and (not settings.offline_enabled or checked_at > claims["auth_at"] + settings.offline_authorization_hours * 3600):
         raise HTTPException(403, "Autorisation hors ligne désactivée ou réduite")
     rights = allowed_keys(db, user)
     if not {"caisse", "vente_nouvelle"}.issubset(rights) or not all(has_feature(db, code) for code in ("ventes", "versements")):
