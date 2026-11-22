@@ -116,8 +116,8 @@ export default function Caisse() {
       if (!isAdmin) await enterFullscreen();
       showTicket(res.data, "open", true);
     } catch (err) {
-      await load();
-      await refreshTill();
+      await load().catch(() => {});
+      await refreshTill().catch(() => {});
       if (axios.isAxiosError(err)) {
         setError(apiErrorMessage(err.response?.data, err.message || "Impossible d'ouvrir la caisse") + (err.response?.status ? ` (HTTP ${err.response.status})` : ""));
       } else {
