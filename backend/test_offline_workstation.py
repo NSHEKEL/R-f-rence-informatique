@@ -96,12 +96,13 @@ class WorkstationRestartTests(unittest.TestCase):
         login = self.command("login", server=server, email="offline-seller@test.invalid", password="offline-test-password")
         self.assertTrue(login["offline"])
         self.assertLess(time.monotonic() - cold_at, 15)
-        self.command("request", method="POST", path="/cash-sessions/open", data={"opening_balance": 500})
+        provisional = self.command("request", method="POST", path="/cash-sessions/open", data={"opening_balance": 500})
+        self.assertLess(provisional["id"], 0)
         ids = []
         for method, quantity in (("Mobile Money", 1), ("Espèces", 0.5)):
             client_id = str(uuid.uuid4())
             ids.append(client_id)
-            receipt = self.command("sale", payload={"client_id": client_id, "payment_method": method, "status": "Payée", "items": [{"product_id": product["id"], "quantity": quantity, "unit_price": 3500}]}, snapshot={"reference": "ORIGINAL-RECEIPT", "total": quantity * 3500, "items": []})
+            receipt = self.command("sale", payload={"client_id": client_id, "cash_session_id": provisional["id"], "payment_method": method, "status": "Payée", "items": [{"product_id": product["id"], "quantity": quantity, "unit_price": 3500}]}, snapshot={"reference": "ORIGINAL-RECEIPT", "total": quantity * 3500, "items": []})
             self.assertEqual(receipt["total"], quantity * 3500)
         self.stop("poste")
         self.start("poste")
@@ -130,7 +131,7 @@ class WorkstationRestartTests(unittest.TestCase):
         self.stop("server")
         self.command("sync")
         third_id = str(uuid.uuid4())
-        self.command("sale", payload={"client_id": third_id, "payment_method": "Espèces", "status": "Payée", "items": [{"product_id": product["id"], "quantity": 0.5, "unit_price": 3500}]}, snapshot={"reference": "BEFORE-REVOCATION", "total": 1750})
+        self.command("sale", payload={"client_id": third_id, "cash_session_id": adopted["id"], "payment_method": "Espèces", "status": "Payée", "items": [{"product_id": product["id"], "quantity": 0.5, "unit_price": 3500}]}, snapshot={"reference": "BEFORE-REVOCATION", "total": 1750})
         with sqlite3.connect(self.root / "server" / "business.sqlite3") as db:
             db.execute("UPDATE users SET is_active=0 WHERE email=?", ("offline-seller@test.invalid",))
             db.commit()
