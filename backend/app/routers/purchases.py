@@ -32,7 +32,7 @@ from ..models import (
 )
 from ..permissions import has_permission, require_permission
 from ..receivables import open_purchase_payable
-from ..purchase_links import compatible, mentions_purchase, same_supplier
+from ..purchase_links import mentions_purchase, same_supplier
 from ..accounting_ledger import derive
 from ..schemas import (
     PurchaseCreate,
@@ -248,16 +248,22 @@ def delete_purchase(
         orphan = db.query(Debt).filter_by(id=matching[0].id, purchase_id=None).populate_existing().with_for_update().first()
         origins = [other.id for other in db.query(Purchase).all()
             if orphan is not None and same_supplier(orphan, other, allow_name=True) and mentions_purchase(orphan, other)]
-        if orphan is None or not compatible(orphan, purchase, manual=True) or origins != [purchase.id]:
+        if (orphan is None or not same_supplier(orphan, purchase, allow_name=True)
+                or abs(orphan.amount - purchase.balance) > 0.009 or origins != [purchase.id]):
             raise HTTPException(409, "Origine ou montant de la dette à confirmer via Rapprocher avant suppression")
         debts = [orphan]
-    if purchase.paid or any(debt.payments for debt in debts):
+    cancelled_without_active_payments = purchase.status == "Annulé" and not any(
+        not payment.cancelled for debt in debts for payment in debt.payments
+    )
+    if purchase.paid or (any(debt.payments for debt in debts) and not cancelled_without_active_payments):
         raise HTTPException(409, "Historique de règlements (actifs ou annulés) conservé : suppression refusée pour cet achat. Conservez l'achat et ses reçus ; annulez les règlements erronés avec motif dans Dettes, puis faites valider la régularisation comptable et de stock par un administrateur. Annuler un paiement ne permet pas d'effacer son achat.")
     entries, missing, _ = derive(db)
     accounting_snapshot = [row for row in entries + missing if row["source_type"] == "purchase" and row["source_id"] == purchase.id]
     source_snapshot = {"purchase": {col.name: getattr(purchase, col.name) for col in Purchase.__table__.columns},
         "items": [{col.name: getattr(item, col.name) for col in PurchaseItem.__table__.columns} for item in purchase.items],
-        "debts": [{col.name: getattr(debt, col.name) for col in Debt.__table__.columns} for debt in debts]}
+        "debts": [{col.name: getattr(debt, col.name) for col in Debt.__table__.columns} for debt in debts],
+        "payments": [{col.name: getattr(payment, col.name) for col in payment.__table__.columns}
+            for debt in debts for payment in debt.payments]}
     movements = db.query(StockMovement).filter_by(kind="approvisionnement", reason=f"Approvisionnement {purchase.reference}").all()
     quantities = {}
     for movement in movements:
@@ -279,11 +285,18 @@ def delete_purchase(
             kind="annulation approvisionnement", quantity=-quantity, stock_before=before, stock_after=after,
             reason=f"Suppression {purchase.reference}", created_by_id=current_user.id))
     price_history = remove_purchase_changes(db, purchase)
+    preserved_debts = []
     for debt in debts:
-        db.delete(debt)
+        if debt.payments:
+            preserved_debts.append(debt.id)
+            debt.purchase_id = None
+            debt.purchase = None
+        else:
+            db.delete(debt)
     db.add(SecurityLog(event="suppression_approvisionnement", user_id=current_user.id, identifier=current_user.email,
         success=True, detail=json.dumps({"reference": purchase.reference, "id": purchase.id, "total": purchase.total,
-            "received_quantity": received, "deleted_orphan_debts": [debt.id for debt in debts if debt.purchase_id is None],
+            "received_quantity": received, "preserved_debts": preserved_debts,
+            "deleted_orphan_debts": [debt.id for debt in debts if debt.purchase_id is None and debt.id not in preserved_debts],
             "reversed_prices": price_history["restored"], "price_history": price_history, "sources": source_snapshot,
             "accounting_snapshot": accounting_snapshot}, ensure_ascii=False, default=str)))
     db.delete(purchase)

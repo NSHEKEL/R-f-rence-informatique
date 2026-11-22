@@ -144,6 +144,44 @@ class SupplierOriginsTests(unittest.TestCase):
         self.assertIsNotNone(self.db.get(Purchase, purchase_id))
         self.assertEqual(self.stock(), 201)
 
+    def test_cancelled_purchase_deletion_handles_own_debt_and_preserves_cancelled_receipts(self):
+        for deleted_supplier, payment_state in ((False, None), (True, None), (True, "cancelled"), (True, "active")):
+            with self.subTest(deleted_supplier=deleted_supplier, payment_state=payment_state):
+                self.supplier = Supplier(name="FVFD")
+                self.db.add(self.supplier)
+                self.db.commit()
+                purchase = self.call("/api/purchases", "POST", {"supplier_id": self.supplier.id,
+                    "items": [{"product_id": self.product.id, "quantity": 1, "unit_cost": 100}]}, 201)
+                debt = self.call("/api/debts", "POST", {"kind": "dette", "supplier_id": self.supplier.id,
+                    "reference": purchase["reference"], "amount": 100, "purchase_id": purchase["id"]}, 201)
+                self.call(f"/api/purchases/{purchase['id']}/cancel", "POST")
+                if deleted_supplier:
+                    self.call(f"/api/suppliers/{self.supplier.id}", "DELETE", status=204)
+                payment_id = None
+                if payment_state:
+                    self.db.expire_all()
+                    self.db.get(Debt, debt["id"]).purchase_id = purchase["id"]
+                    payment = DebtPayment(debt_id=debt["id"], amount=20, cancelled=payment_state == "cancelled",
+                        receipt_reference="RP-CANCELLED-ORIGIN", cancel_reason="Motif conservé", created_by_id=self.user.id)
+                    self.db.add(payment)
+                    self.db.commit()
+                    payment_id = payment.id
+                self.call(f"/api/purchases/{purchase['id']}", "DELETE", status=409 if payment_state == "active" else 204)
+                self.db.expire_all()
+                if payment_state == "active":
+                    self.assertIsNotNone(self.db.get(Purchase, purchase["id"]))
+                else:
+                    self.assertIsNone(self.db.get(Purchase, purchase["id"]))
+                    kept = self.db.get(Debt, debt["id"])
+                    if payment_state:
+                        self.assertIsNone(kept.purchase_id)
+                        payment = self.db.get(DebtPayment, payment_id)
+                        self.assertEqual((payment.receipt_reference, payment.cancel_reason, payment.created_by_id),
+                            ("RP-CANCELLED-ORIGIN", "Motif conservé", self.user.id))
+                    else:
+                        self.assertIsNone(kept)
+                self.assertEqual(self.stock(), 200)
+
 
 if __name__ == "__main__":
     unittest.main()
