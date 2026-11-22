@@ -146,6 +146,15 @@ jobs:
           body: |
             **EasyGest — gestion de vente et de stock.**
 
+            ### Correctif caisse adoptée 2.18.44
+            - Si le réseau coupe pendant qu'une caisse serveur est ouverte, le POS
+              peut continuer à vendre avec l'identifiant positif de cette caisse.
+              Le journal accepte sa caisse d'origine, conserve le ticket et le
+              fonds initial, puis rapproche les opérations sans doublon.
+            - Les identifiants d'autres caisses restent refusés. Scénario réel
+              serveur/poste vérifié : ouverture connectée, coupure, vente de
+              0,5 unité à 1 750 F, reconnexion sur la même caisse, stock 0,5.
+
             ### Correctifs hors ligne 2.18.43
             - Après déconnexion explicite, un rechargement ne reprend plus
               l'ancien compte : nouveau mot de passe obligatoire, grant chiffré
