@@ -1603,6 +1603,7 @@ class DebtOut(BaseModel):
     purchase_reference: Optional[str] = None
     reference: str
     amount: float
+    cancelled: bool = False
     due_date: Optional[datetime] = None
     note: str
     created_at: datetime

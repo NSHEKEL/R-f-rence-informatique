@@ -20,7 +20,7 @@ def same_supplier(debt, purchase, allow_name=False):
 
 def compatible(debt, purchase, manual=False):
     statuses = ("En attente", "Reçu partiellement", "Reçu") if manual else ("Reçu",)
-    return (debt.kind == "dette" and purchase.status in statuses
+    return (not debt.cancelled and debt.kind == "dette" and purchase.status in statuses
             and same_supplier(debt, purchase, allow_name=manual)
             and abs(debt.amount - purchase.balance) <= 0.009)
 

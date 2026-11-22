@@ -195,6 +195,8 @@ def update_debt(
     _: User = Depends(require_permission("dettes_gerer")),
 ):
     debt = _find(db, debt_id)
+    if debt.cancelled:
+        raise HTTPException(409, "Dette annulée : historique conservé en lecture seule")
     if debt.purchase_id:
         raise HTTPException(409, "Dette liée à un achat : ses informations d'origine sont conservées")
     if payload.purchase_id:
@@ -332,7 +334,7 @@ def balances(
     """Customers with a balance, or suppliers left to pay."""
     wanted = kind if kind in KINDS else "creance"
     grouped: dict[str, PartyBalance] = {}
-    for debt in db.query(Debt).filter(Debt.kind == wanted):
+    for debt in db.query(Debt).filter(Debt.kind == wanted, Debt.cancelled.is_not(True)):
         key = debt.party or "—"
         row = grouped.setdefault(key, PartyBalance(party=key))
         row.customer_id = row.customer_id or debt.customer_id

@@ -29,7 +29,7 @@ COLUMNS: dict[str, dict[str, str]] = {
     "stock_lots": {"depot_id": "INTEGER", "unit_cost": "FLOAT DEFAULT NULL"},
     "stock_movements": {"depot_id": "INTEGER"},
     "expenses": {"payment_method": "VARCHAR", "bank_account_id": "INTEGER"},
-    "debts": {"purchase_id": "INTEGER"},
+    "debts": {"purchase_id": "INTEGER", "cancelled": f"BOOLEAN DEFAULT {FALSE_LITERAL}"},
     "sale_returns": {"cash_session_id": "INTEGER", "refund_method": "VARCHAR DEFAULT 'Avoir'", "vat_rate_snapshot": "FLOAT"},
     "purchases": {"vat_rate_snapshot": "FLOAT", "payment_method": "VARCHAR", "bank_account_id": "INTEGER"},
     "users": {

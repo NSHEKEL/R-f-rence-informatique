@@ -5,7 +5,7 @@ from sqlalchemy import event, text
 from sqlalchemy.exc import IntegrityError
 
 import test_purchase_links as links
-from app import purchase_links
+from app import accounting_ledger, purchase_links
 from app.models import Debt, DebtPayment, Product, Purchase, SecurityLog, Supplier, utcnow
 from app.routers import suppliers
 
@@ -145,7 +145,7 @@ class SupplierOriginsTests(unittest.TestCase):
         self.assertEqual(self.stock(), 201)
 
     def test_cancelled_purchase_deletion_handles_own_debt_and_preserves_cancelled_receipts(self):
-        for deleted_supplier, payment_state in ((False, None), (True, None), (True, "cancelled"), (True, "active")):
+        for deleted_supplier, payment_state in ((False, None), (True, None), (False, "cancelled"), (True, "cancelled"), (True, "active")):
             with self.subTest(deleted_supplier=deleted_supplier, payment_state=payment_state):
                 self.supplier = Supplier(name="FVFD")
                 self.db.add(self.supplier)
@@ -175,6 +175,20 @@ class SupplierOriginsTests(unittest.TestCase):
                     kept = self.db.get(Debt, debt["id"])
                     if payment_state:
                         self.assertIsNone(kept.purchase_id)
+                        self.assertEqual((kept.amount, kept.remaining, kept.paid, kept.settled, kept.status), (100, 0, 0, True, "Annulé"))
+                        self.assertTrue(kept.cancelled)
+                        self.assertIn(purchase["reference"], kept.note)
+                        audit = json.loads(self.db.query(SecurityLog).filter_by(event="suppression_approvisionnement").order_by(SecurityLog.id.desc()).first().detail)
+                        self.assertEqual(audit["retired_debts"], [kept.id])
+                        self.assertEqual(self.call("/api/debts/soldes?kind=dette"), [])
+                        visible = self.call("/api/debts?kind=dette&status=soldees")
+                        self.assertTrue(any(row["id"] == kept.id and row["cancelled"] for row in visible))
+                        entries, missing, _ = accounting_ledger.derive(self.db)
+                        self.assertFalse(any(row["source_type"] == "debt" and row["source_id"] == kept.id for row in entries + missing))
+                        report = accounting_ledger.report(self.db, "suppliers", "2000-01-01", "2100-01-01")
+                        self.assertEqual(report["summary"]["Reste dettes"], 0)
+                        self.call(f"/api/debts/{kept.id}", "PUT", {"kind": "dette", "party": "FVFD", "amount": 100}, status=409)
+                        self.call(f"/api/debts/{kept.id}/paiements", "POST", {"amount": 1, "method": "Espèces"}, status=400)
                         payment = self.db.get(DebtPayment, payment_id)
                         self.assertEqual((payment.receipt_reference, payment.cancel_reason, payment.created_by_id),
                             ("RP-CANCELLED-ORIGIN", "Motif conservé", self.user.id))

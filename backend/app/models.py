@@ -1148,6 +1148,7 @@ class Debt(Base):
     sale_id = Column(Integer, ForeignKey("sales.id"), nullable=True)
     reference = Column(String, default="")
     amount = Column(Float, default=0)
+    cancelled = Column(Boolean, default=False)
     due_date = Column(DateTime, nullable=True)
     note = Column(Text, default="")
     created_at = Column(DateTime, default=utcnow)
@@ -1175,7 +1176,7 @@ class Debt(Base):
 
     @property
     def remaining(self) -> float:
-        return round(self.amount - self.paid, 2)
+        return 0.0 if self.cancelled else round(self.amount - self.paid, 2)
 
     @property
     def settled(self) -> bool:
@@ -1203,6 +1204,8 @@ class Debt(Base):
     @property
     def status(self) -> str:
         """Single source of truth for the four states shown everywhere."""
+        if self.cancelled:
+            return "Annulé"
         if self.settled:
             return "Payé"
         if self.overdue:

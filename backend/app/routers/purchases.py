@@ -240,7 +240,7 @@ def delete_purchase(
     if purchase is None:
         raise HTTPException(404, "Approvisionnement introuvable")
     debts = db.query(Debt).filter_by(purchase_id=purchase.id).all()
-    orphans = db.query(Debt).filter_by(purchase_id=None, kind="dette").all()
+    orphans = db.query(Debt).filter_by(purchase_id=None, kind="dette").filter(Debt.cancelled.is_not(True)).all()
     matching = [debt for debt in orphans if same_supplier(debt, purchase, allow_name=True) and mentions_purchase(debt, purchase)]
     if matching:
         if len(matching) != 1 or debts:
@@ -291,11 +291,14 @@ def delete_purchase(
             preserved_debts.append(debt.id)
             debt.purchase_id = None
             debt.purchase = None
+            debt.cancelled = True
+            reason = f"Dette annulée : suppression de l'approvisionnement {purchase.reference} (ID {purchase.id}), règlements annulés conservés."
+            debt.note = f"{debt.note}\n{reason}" if debt.note else reason
         else:
             db.delete(debt)
     db.add(SecurityLog(event="suppression_approvisionnement", user_id=current_user.id, identifier=current_user.email,
         success=True, detail=json.dumps({"reference": purchase.reference, "id": purchase.id, "total": purchase.total,
-            "received_quantity": received, "preserved_debts": preserved_debts,
+            "received_quantity": received, "preserved_debts": preserved_debts, "retired_debts": preserved_debts,
             "deleted_orphan_debts": [debt.id for debt in debts if debt.purchase_id is None and debt.id not in preserved_debts],
             "reversed_prices": price_history["restored"], "price_history": price_history, "sources": source_snapshot,
             "accounting_snapshot": accounting_snapshot}, ensure_ascii=False, default=str)))

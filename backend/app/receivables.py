@@ -89,7 +89,7 @@ def open_purchase_payable(
     db.flush()
     if balance <= 0 or db.query(Debt.id).filter_by(purchase_id=purchase.id).first():
         return
-    if db.query(Debt.id).filter_by(kind="dette", purchase_id=None, reference=purchase.reference).first():
+    if db.query(Debt.id).filter_by(kind="dette", purchase_id=None, reference=purchase.reference).filter(Debt.cancelled.is_not(True)).first():
         raise HTTPException(409, "Dette fournisseur existante sans origine : utilisez Rapprocher dans Dettes avant de réceptionner cet achat")
     db.add(
         Debt(
