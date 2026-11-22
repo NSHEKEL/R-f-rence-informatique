@@ -31,6 +31,26 @@ function setup() {
 const row = { product_id: 1, sku: 'RIZ', name: 'Riz', base_unit: 'pièce', packaging_unit: 'Carton', units_per_packaging: 12, packagings: [{ id: 6, name: 'Colis', factor: 6 }], physical_qty: null, theoretical_qty: 150, unit_cost: 2, counts: { base: null }, note: '' };
 const report = { id: 7, status: 'in_progress', theoretical_visible: true, stats: { counted: 0, not_counted: 1 }, rows: [row] };
 
+test('targeted catalogue cache patches preserve other products, variants, costs and filtered removals', async () => {
+  const env = setup(), lib = env.reload();
+  env.api.get = async () => ({ data: [{ id: 1, name: 'A', quantity: 12 }, { id: 2, name: 'B', quantity: 24 }] });
+  await lib.readOffline('/products', 'products:all:active');
+  await lib.patchCatalogue('products:all:active', [2, 3], [
+    { id: 2, name: 'B', quantity: 36, stock_value: 18000, packagings: [{ factor: 12 }], barcodes: [{ code: 'VAR', active: true }] },
+    { id: 3, name: 'C', quantity: 1 },
+  ]);
+  env.navigator.onLine = false;
+  let saved = await lib.readOffline('/products', 'products:all:active');
+  assert.equal(saved.data.length, 3); assert.equal(saved.data[0].quantity, 12);
+  assert.equal(saved.data[1].stock_value, 18000); assert.equal(saved.data[1].packagings[0].factor, 12);
+  assert.equal(saved.data[1].barcodes[0].code, 'VAR');
+  await lib.patchCatalogue('products:all:active', [2], []);
+  saved = await lib.readOffline('/products', 'products:all:active');
+  assert.equal(saved.data.map((p) => p.id).join(','), '1,3');
+  await assert.rejects(lib.patchCatalogue('missing-cache', [1], []), /absent/);
+  env.quota(); await assert.rejects(lib.patchCatalogue('products:all:active', [1], []), /quota/);
+});
+
 test('image-free catalogue cache survives reload offline and preserves its date', async () => {
   const env = setup();
   const products = Array.from({ length: 2000 }, (_, id) => ({ id, name: `Article ${id}`, image: 'binary-image'.repeat(200), packagings: [{ factor: 12 }] }));

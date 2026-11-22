@@ -2,6 +2,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -16,15 +17,18 @@ interface SyncContextValue {
   /** Revision of the shared database; bumps on every write, anywhere. */
   version: number;
   catalogueVersion: number;
+  productIds: number[] | null;
 }
 
-const SyncContext = createContext<SyncContextValue>({ version: 0, catalogueVersion: 0 });
+const SyncContext = createContext<SyncContextValue>({ version: 0, catalogueVersion: 0, productIds: null });
 
 export function SyncProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const { online } = useNetwork();
   const [version, setVersion] = useState(0);
   const [catalogueVersion, setCatalogueVersion] = useState(0);
+  const [productIds, setProductIds] = useState<number[] | null>(null);
+  const catalogueCursor = useRef(0);
   const [localVersion, setLocalVersion] = useState(0);
 
   useEffect(() => {
@@ -36,19 +40,28 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!user || !online) return;
     let cancelled = false;
+    let polling = false;
 
     const poll = async () => {
+      if (polling) return;
+      polling = true;
       try {
         const [res, catalogue] = await Promise.all([
           api.get<{ version: number }>("/sync/version"),
-          api.get<{ version: number }>("/sync/version?scope=catalogue"),
+          api.get<{ version: number; product_ids?: number[] | null }>(`/sync/version?scope=catalogue&since=${catalogueCursor.current}`),
         ]);
         if (!cancelled) {
           setVersion(res.data.version);
-          setCatalogueVersion((previous) => Math.max(previous, catalogue.data.version));
+          if (catalogue.data.version !== catalogueCursor.current) {
+            setProductIds(catalogue.data.product_ids ?? null);
+            catalogueCursor.current = catalogue.data.version;
+            setCatalogueVersion(catalogue.data.version);
+          }
         }
       } catch {
         /* offline: the network banner already tells the cashier */
+      } finally {
+        polling = false;
       }
     };
 
@@ -63,7 +76,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   }, [user, online]);
 
   return (
-    <SyncContext.Provider value={{ version: version + localVersion, catalogueVersion: catalogueVersion + localVersion }}>{children}</SyncContext.Provider>
+    <SyncContext.Provider value={{ version: version + localVersion, catalogueVersion, productIds }}>{children}</SyncContext.Provider>
   );
 }
 
@@ -78,5 +91,12 @@ export function useSyncVersion(): number {
 
 // eslint-disable-next-line react-refresh/only-export-components
 export function useCatalogueVersion(): number {
-  return useContext(SyncContext).catalogueVersion;
+  const { catalogueVersion } = useContext(SyncContext);
+  return catalogueVersion;
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function useCatalogueChanges() {
+  const { catalogueVersion, productIds } = useContext(SyncContext);
+  return { version: catalogueVersion, productIds };
 }

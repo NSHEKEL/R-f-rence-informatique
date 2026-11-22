@@ -1,7 +1,8 @@
 import api from "../api/client";
 import { readAuthCache } from "./authCache";
 import { apiErrorMessage } from "./apiErrors";
-import { cacheRead, fetchCached, newClientId, pendingCatalogue } from "./offline";
+import { cacheRead, cacheWrite, fetchCached, newClientId, pendingCatalogue } from "./offline";
+import type { Product } from "../types";
 import { inventoryTotal, type InventoryReport, type InventoryRow } from "./inventoryReport";
 
 interface Snapshot<T> { data: T; savedAt: string }
@@ -56,6 +57,22 @@ async function mutate<T>(name: string, change: (previous: T | undefined) => T): 
 }
 function compact<T>(data: T): T {
   return JSON.parse(JSON.stringify(data, (field, value) => ["image", "photo", "logo"].includes(field) ? "" : value));
+}
+
+export function mergeCatalogueProducts(previous: Product[], ids: number[], products: Product[], ranked = false): Product[] {
+  const changed = new Set(ids);
+  return [...previous.filter((product) => !changed.has(product.id)), ...products].sort((a, b) =>
+    (ranked ? (b.sold_quantity || 0) - (a.sold_quantity || 0) : 0) || (a.name < b.name ? -1 : a.name > b.name ? 1 : a.id - b.id));
+}
+
+export async function patchCatalogue(name: string, ids: number[], products: Product[], ranked = false): Promise<string> {
+  const storageKey = key(`cache:${name}`), savedAt = new Date().toISOString();
+  const next = await mutate<Snapshot<Product[]>>(storageKey, (previous) => {
+    if (!previous || !Array.isArray(previous.data)) throw new Error("Catalogue local absent");
+    return { data: compact(mergeCatalogueProducts(previous.data, ids, products, ranked)), savedAt };
+  });
+  cacheWrite(storageKey, next.data);
+  return savedAt;
 }
 export async function readOffline<T>(path: string, name: string): Promise<Snapshot<T> & { fromCache: boolean }> {
   const snapshot = await readSnapshot<T>(path, name);

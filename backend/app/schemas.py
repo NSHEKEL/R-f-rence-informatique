@@ -883,6 +883,7 @@ class DashboardStats(BaseModel):
 class SyncVersion(BaseModel):
     version: int
     entities: str = ""
+    product_ids: Optional[List[int]] = None
 
 
 # ---------- Notifications ----------

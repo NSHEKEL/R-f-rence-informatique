@@ -2,7 +2,7 @@ import unittest
 
 import test_wholesale as wholesale
 from app import stock
-from app.models import ChangeLog, CompanySettings, PriceHistory, Product, ProductUpdateOperation, StockLot, StockMovement, Workstation
+from app.models import Category, ChangeLog, CompanySettings, PriceHistory, Product, ProductPackaging, ProductUpdateOperation, StockLot, StockMovement, Workstation
 from app.database import SessionLocal
 from app.routers import sync
 
@@ -31,6 +31,31 @@ class OfflineProductTests(unittest.TestCase):
             db.commit()
             self.assertEqual(sync.get_version(db, self.user, scope="catalogue").version, previous)
             self.assertGreater(sync.get_version(db, self.user).version, previous)
+
+    def test_catalogue_delta_has_created_ids_and_falls_back_for_metadata_or_legacy_changes(self):
+        with SessionLocal(bind=self.engine) as db:
+            product = db.get(Product, self.product.id)
+            product.sale_price = 110
+            db.commit()
+            cursor = sync.get_version(db, self.user, scope="catalogue").version
+            db.add(ProductPackaging(product_id=product.id, name="Carton", factor=12))
+            created = Product(name="Créé", sku="DELTA-CREATED", quantity=1)
+            db.add(created)
+            db.commit()
+            delta = sync.get_version(db, self.user, scope="catalogue", since=cursor)
+            self.assertEqual(delta.product_ids, sorted([product.id, created.id]))
+            self.assertEqual(sync.get_version(db, self.user, scope="catalogue", since=delta.version).product_ids, [])
+            db.add(Category(name="Nouvelle catégorie"))
+            db.commit()
+            self.assertIsNone(sync.get_version(db, self.user, scope="catalogue", since=delta.version).product_ids)
+            db.add(ChangeLog(entities="products", product_ids="invalid JSON"))
+            db.commit()
+            self.assertIsNone(sync.get_version(db, self.user, scope="catalogue", since=delta.version).product_ids)
+        full = self.call("/api/products")
+        for product in full:
+            self.assertEqual(self.call(f"/api/products?ids={product['id']}&state=active"), [product])
+        self.assertEqual(self.call("/api/products?ids=999999"), [])
+        self.call("/api/products?ids=invalid", status=422)
 
     def test_offline_update_is_partial_atomic_and_idempotent(self):
         payload = {"operation_id": "10a370fd-b127-4dc0-899f-fc065b211001", "changes": {"sale_price": 120}, "originals": {"sale_price": 100}}

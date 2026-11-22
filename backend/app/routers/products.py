@@ -8,7 +8,7 @@ from datetime import date, datetime, time, timedelta
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
@@ -222,9 +222,9 @@ def get_product_by_code(
     return _product_out(product, _stock_allowed(db, user)).model_copy(update={"packaging_id": packaging.id if packaging else None, "scanned_code": value, "scanned_label": alias.label if alias else None})
 
 
-def _sales_stats(db: Session) -> dict[int, tuple[int, object]]:
+def _sales_stats(db: Session, product_ids=None) -> dict[int, tuple[int, object]]:
     """Units sold and last sale date per product, cancelled tickets aside."""
-    rows = (
+    query = (
         db.query(
             SaleItem.product_id,
             func.sum(SaleItem.quantity).label("sold"),
@@ -233,8 +233,10 @@ def _sales_stats(db: Session) -> dict[int, tuple[int, object]]:
         .join(Sale, Sale.id == SaleItem.sale_id)
         .filter(Sale.status != "Annulée", SaleItem.product_id.isnot(None))
         .group_by(SaleItem.product_id)
-        .all()
     )
+    if product_ids is not None:
+        query = query.filter(SaleItem.product_id.in_(product_ids))
+    rows = query.all()
     return {row.product_id: (int(row.sold or 0), row.last_sold) for row in rows}
 
 
@@ -244,21 +246,27 @@ def list_products(
     state: Literal["active", "inactive", "all"] = "active",
     db: Session = Depends(get_db),
     user: User = Depends(require_open_till),
+    ids: list[int] | None = Query(default=None, max_length=200),
 ):
     """Catalogue, optionally filtered on sales history.
 
     ``sold=jamais`` keeps the articles never sold, ``sold=top`` the ones sold
     the most (best first); anything else returns the whole catalogue.
     """
-    stats = _sales_stats(db)
+    stats = _sales_stats(db, ids)
     stock_visible = _stock_allowed(db, user)
     query = db.query(Product).options(*_catalogue_loading())
+    if ids is not None:
+        query = query.filter(Product.id.in_(ids))
     if state != "active" and not (has_permission(db, user, "produits") or has_permission(db, user, "inventaire")):
         raise HTTPException(403, "Le droit de consulter les articles est requis")
     if state != "all":
         query = query.filter(Product.active.is_(state == "active"))
     products = query.order_by(Product.name).all()
-    expiries = dict(db.query(StockLot.product_id, func.min(StockLot.expiry_date)).filter(StockLot.quantity > 0, StockLot.expiry_date.isnot(None)).group_by(StockLot.product_id).all())
+    expiry_query = db.query(StockLot.product_id, func.min(StockLot.expiry_date)).filter(StockLot.quantity > 0, StockLot.expiry_date.isnot(None))
+    if ids is not None:
+        expiry_query = expiry_query.filter(StockLot.product_id.in_(ids))
+    expiries = dict(expiry_query.group_by(StockLot.product_id).all())
     cost_visible = stock_visible and has_permission(db, user, "rapports_financiers")
     for product in products:
         product.stock_purchase_price = product.purchase_price if cost_visible else None

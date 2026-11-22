@@ -39,14 +39,14 @@ import { StockColumnChooser, StockExtraCells, StockExtraHeaders } from "../compo
 import { useStockColumns } from "../lib/useStockColumns";
 import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
-import { useCatalogueVersion } from "../context/SyncContext";
+import { useCatalogueChanges } from "../context/SyncContext";
 import { formatQuantity } from "../lib/units";
 import PackagingQuantity from "../components/PackagingQuantity";
 import ProductPackagings from "../components/ProductPackagings";
 import { useScanner } from "../lib/useScanner";
 import { scanCandidates } from "../lib/scanCapture";
 import type { ProductBarcode } from "../types";
-import { readOffline } from "../lib/offlineInventory";
+import { mergeCatalogueProducts, patchCatalogue, readOffline } from "../lib/offlineInventory";
 import { useOnline } from "../lib/useOnline";
 import OfflineBanner from "../components/OfflineBanner";
 import { discardPendingProduct, flushPendingProducts, newProductUuid, pendingCatalogue, pendingProducts, pendingProductMatches, queueProduct, queueProductEdit, retryPendingProduct, type PendingProduct } from "../lib/offline";
@@ -123,7 +123,7 @@ export default function Products() {
   const can = (permission: string) => permitted(permission) && !(readOnly && ["produits_gerer", "stocks"].includes(permission));
   const { company, printing } = useCompany();
   const { hasFeature } = useLicense();
-  const version = useCatalogueVersion();
+  const { version, productIds } = useCatalogueChanges();
   const [sold, setSold] = useState<SoldFilter>("");
   const [state, setState] = useState("active");
   const csvInputRef = useRef<HTMLInputElement>(null);
@@ -176,22 +176,62 @@ export default function Products() {
   const [lotError, setLotError] = useState("");
   const imageInput = useRef<HTMLInputElement>(null);
   const pageSize = 8;
+  const catalogueScope = useRef("");
+  catalogueScope.current = `${sold}:${state}`;
+  const catalogueQueue = useRef<Promise<void>>(Promise.resolve());
+  const enqueueCatalogue = useCallback((work: () => Promise<void>) => {
+    const next = catalogueQueue.current.catch(() => undefined).then(work);
+    catalogueQueue.current = next;
+    return next;
+  }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(() => enqueueCatalogue(async () => {
+    const scope = `${sold}:${state}`;
+    if (catalogueScope.current !== scope) return;
+    const owner = `${localStorage.getItem("ri_server_url")}:${localStorage.getItem("ri_token")}`;
     const p = await readOffline<Product[]>(`/products?${new URLSearchParams({ sold, state })}`, `products:${sold || "all"}:${state}`);
     const [c, s] = await Promise.all([
       readOffline<Category[]>("/categories", "categories").catch(() => ({ data: p.data.flatMap((product) => product.category ? [product.category] : []) })),
       readOffline<Supplier[]>("/suppliers", "suppliers").catch(() => ({ data: p.data.flatMap((product) => product.supplier ? [product.supplier] : []) })),
     ]);
+    if (catalogueScope.current !== scope || owner !== `${localStorage.getItem("ri_server_url")}:${localStorage.getItem("ri_token")}`) return;
     setProducts(p.data);
     setCategories(c.data);
     setSuppliers(s.data);
     setCached(p.fromCache); setSavedAt(p.savedAt);
-  }, [sold, state]);
+  }), [sold, state, enqueueCatalogue]);
+
+  const refreshProducts = useCallback((ids: number[]) => {
+    if (!ids.length) return Promise.resolve();
+    if (ids.length > 200) return load();
+    return enqueueCatalogue(async () => {
+      const scope = `${sold}:${state}`;
+      if (catalogueScope.current !== scope) return;
+      const owner = `${localStorage.getItem("ri_server_url")}:${localStorage.getItem("ri_token")}`;
+      const params = new URLSearchParams({ sold, state });
+      ids.forEach((id) => params.append("ids", String(id)));
+      const { data } = await api.get<Product[]>(`/products?${params}`);
+      if (catalogueScope.current !== scope || owner !== `${localStorage.getItem("ri_server_url")}:${localStorage.getItem("ri_token")}`) return;
+      const savedAt = await patchCatalogue(`products:${sold || "all"}:${state}`, ids, data, sold === "top");
+      if (catalogueScope.current !== scope || owner !== `${localStorage.getItem("ri_server_url")}:${localStorage.getItem("ri_token")}`) return;
+      setProducts((previous) => mergeCatalogueProducts(previous, ids, data, sold === "top"));
+      setCached(false); setSavedAt(savedAt);
+    });
+  }, [sold, state, load, enqueueCatalogue]);
+
+  const loadedCatalogue = useRef("");
 
   useEffect(() => {
-    void load().catch(() => setError("Catalogue indisponible : ouvrez cette page en ligne pour préparer le cache."));
-  }, [load, version, online]);
+    const key = `${sold}:${state}:${online}`;
+    const update = async () => {
+      if (loadedCatalogue.current === key && online && productIds !== null) {
+        try { await refreshProducts(productIds); return; } catch { /* full catalogue fallback */ }
+      }
+      await load();
+      loadedCatalogue.current = key;
+    };
+    void update().catch(() => setError("Catalogue indisponible : ouvrez cette page en ligne pour préparer le cache."));
+  }, [load, refreshProducts, version, online, sold, state, productIds]);
 
   useEffect(() => {
     const update = () => setPending(pendingProducts());
@@ -396,13 +436,15 @@ export default function Products() {
         else queueProduct({ ...payload, client_uuid: pendingUuid || newProductUuid(), initial_expiry_date: form.expiry_date || null });
         setModalOpen(false);
         setNotice("Produit enregistré sur ce poste — en attente de synchronisation.");
-        if (online) { await flushPendingProducts(); window.dispatchEvent(new Event("ri:synced")); await load(); }
+        if (online) { await flushPendingProducts(); window.dispatchEvent(new Event("ri:synced")); }
         return;
       }
+      let saved: Product;
       if (editing) {
-        await api.put(`/products/${editing.id}`, payload);
+        saved = (await api.put<Product>(`/products/${editing.id}`, payload)).data;
       } else {
         const res = await api.post<Product>("/products", payload);
+        saved = res.data;
         // Date de péremption saisie → le stock initial devient un lot
         // périssable (les ventes le consommeront en FEFO).
         if (form.expiry_date && Number(form.quantity) > 0) {
@@ -420,7 +462,7 @@ export default function Products() {
         }
       }
       setModalOpen(false);
-      await load();
+      try { await refreshProducts([saved.id]); } catch { await load(); }
     } catch (err) {
       setError(apiErrorMessage(axios.isAxiosError(err) ? err.response?.data?.detail : err instanceof Error ? err.message : err, "Erreur lors de l'enregistrement"));
     } finally {

@@ -840,6 +840,7 @@ class ChangeLog(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     entities = Column(String, default="")
+    product_ids = Column(Text, nullable=True)
     at = Column(DateTime, default=utcnow)
 
 

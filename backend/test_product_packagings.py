@@ -1,11 +1,11 @@
 import unittest
 from unittest.mock import patch
 
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, event, inspect, text
 
 from app.database import Base
 from app import migrate as migration
-from app.models import PriceHistory, ProductPackaging
+from app.models import PriceHistory, Product, ProductBarcode, ProductPackaging, StockLot, utcnow
 import test_wholesale as wholesale_tests
 
 
@@ -17,6 +17,36 @@ class ProductPackagingsTests(unittest.TestCase):
     open = wholesale_tests.WholesaleTests.open
     grant = wholesale_tests.WholesaleTests.grant
     balances = wholesale_tests.WholesaleTests.balances
+
+    def test_catalogue_and_lot_queries_are_batched_without_losing_variants(self):
+        for index in range(24):
+            product = Product(name=f"Batch {index}", sku=f"BATCH-{index}", quantity=12)
+            self.db.add(product)
+            self.db.flush()
+            self.db.add_all([ProductPackaging(product_id=product.id, name="Carton", factor=12),
+                ProductBarcode(product_id=product.id, code=f"BATCH-VAR-{index}"),
+                StockLot(product_id=product.id, quantity=12, expiry_date=utcnow())])
+        self.db.commit()
+        statements = []
+        def count(_conn, _cursor, statement, _parameters, _context, _many):
+            statements.append(statement)
+        event.listen(self.engine, "before_cursor_execute", count)
+        try:
+            for path in ("/api/products", "/api/products/pos"):
+                statements.clear()
+                rows = self.call(path)
+                self.assertEqual(len(rows), 25)
+                self.assertLess(len(statements), 20)
+                batch = next(row for row in rows if row["sku"] == "BATCH-0")
+                self.assertEqual(batch["packagings"][0]["factor"], 12)
+                self.assertEqual(batch["barcodes"][0]["code"], "BATCH-VAR-0")
+            statements.clear()
+            lots = self.call("/api/products/lots/alertes?days=90")
+            self.assertEqual(len(lots), 24)
+            self.assertLess(len(statements), 5)
+            self.assertTrue(all(row["product_name"].startswith("Batch") for row in lots))
+        finally:
+            event.remove(self.engine, "before_cursor_execute", count)
 
     def update(self, **changes):
         payload = self.call(f"/api/products/{self.product.id}")

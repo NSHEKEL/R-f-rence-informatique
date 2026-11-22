@@ -291,6 +291,8 @@ export default function NouvelleVente() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [supplierFilter, setSupplierFilter] = useState<number | "all">("all");
   const [posDisplay, setPosDisplay] = useState<PosDisplay>(DEFAULT_POS);
+  const stockRight = can("produits") || can("inventaire");
+  const loadedImages = useRef<boolean | undefined>(undefined);
   const [cartCollapsed, setCartCollapsed] = useState(false);
   const [validMenu, setValidMenu] = useState(false);
   const discountRef = useRef<HTMLInputElement>(null);
@@ -312,8 +314,8 @@ export default function NouvelleVente() {
     const display = await fetchCached<PosDisplay>("/settings/pos-display", "pos-display");
     const config = mergePos(display.data);
     setPosDisplay(config);
-    const stockRight = can("produits") || can("inventaire");
     const images = tileVisibility(config, stockRight).image;
+    loadedImages.current = images;
     const { data } = await fetchCached<Product[]>(`/products/pos?images=${images}`, `pos-products-${user?.id}-${stockRight}-${images}`);
     setProducts(data.filter((product) => product.active !== false));
     const cats = await fetchCached<Category[]>("/categories", "categories");
@@ -330,7 +332,7 @@ export default function NouvelleVente() {
     } catch {
       /* offline: fall back to every article */
     }
-  }, [can, user?.id]);
+  }, [stockRight, user?.id]);
 
 
   const loadSession = useCallback(async () => {
@@ -353,6 +355,19 @@ export default function NouvelleVente() {
   }, [loadProducts, version]);
 
   useEffect(() => { void loadSession(); }, [loadSession, sharedVersion]);
+
+  useEffect(() => {
+    let alive = true;
+    void fetchCached<PosDisplay>("/settings/pos-display", "pos-display").then(({ data }) => {
+      if (!alive) return;
+      const config = mergePos(data);
+      setPosDisplay(config);
+      if (loadedImages.current !== undefined && loadedImages.current !== tileVisibility(config, stockRight).image) {
+        void loadProducts().catch(() => undefined);
+      }
+    }).catch(() => undefined);
+    return () => { alive = false; };
+  }, [sharedVersion, stockRight, loadProducts]);
 
   // Customers are looked up on demand: the till never lists the whole file.
   useEffect(() => {
