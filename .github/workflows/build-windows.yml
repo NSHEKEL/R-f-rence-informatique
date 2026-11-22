@@ -146,6 +146,20 @@ jobs:
           body: |
             **EasyGest — gestion de vente et de stock.**
 
+            ### Nouveautés 2.18.37
+            - Chargement accéléré des produits, du POS et des alertes de lots,
+              sans changement des prix, stocks, variantes ou conditionnements.
+            - Les heartbeats des postes vendeurs ne provoquent plus de
+              rechargement du catalogue ; actualisation ciblée après édition.
+            - Affichage Stocks paginé et index de performance additifs.
+            - Suppression corrigée des achats annulés avec leur propre dette
+              impayée, même lorsque le fournisseur a été supprimé ; historique
+              des paiements conservé et paiements actifs toujours protégés.
+            - Mesure sur 1 807 produits : Produits 822 → 259 ms, POS 848 → 227 ms,
+              quatre POS simultanés 5 934 → 1 492 ms (base SQLite de test,
+              valeurs indicatives, pas de garantie de délai réseau).
+            - Mise à niveau additive, sans effacement des données métier.
+
             - `EasyGest_Setup.exe` : installateur Windows (recommandé).
               Raccourci Bureau et menu Démarrer, l'application s'ouvre dans sa
               propre fenêtre, sans navigateur ni fenêtre noire.
@@ -269,3 +283,30 @@ jobs:
           files: |
             dist/EasyGest_Setup_x86.exe
             dist/EasyGest_x86.exe
+
+  verify-release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build, build-x86]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify published release and all eight assets through GitHub API
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = context.ref.replace('refs/tags/', '');
+            const { owner, repo } = context.repo;
+            const { data: release } = await github.rest.repos.getReleaseByTag({ owner, repo, tag });
+            const expected = ['EasyGest.apk', 'EasyGest.exe', 'EasyGestAdmin.exe', 'EasyGestAdmin_Setup.exe', 'EasyGestRecuperation.exe', 'EasyGest_Setup.exe', 'EasyGest_Setup_x86.exe', 'EasyGest_x86.exe'].sort();
+            const assets = release.assets.map(({ name, size, state, browser_download_url }) => ({ name, size, state, browser_download_url })).sort((a, b) => a.name.localeCompare(b.name));
+            const names = assets.map(asset => asset.name).sort();
+            if (release.draft || release.prerelease || !release.published_at || JSON.stringify(names) !== JSON.stringify(expected) || assets.some(asset => asset.size <= 0 || asset.state !== 'uploaded')) {
+              throw new Error('Release non publiée ou liste des huit assets invalide : ' + JSON.stringify({ draft: release.draft, prerelease: release.prerelease, assets }));
+            }
+            let { data: ref } = await github.rest.git.getRef({ owner, repo, ref: 'tags/' + tag });
+            let commit = ref.object;
+            if (commit.type === 'tag') {
+              const { data: annotated } = await github.rest.git.getTag({ owner, repo, tag_sha: commit.sha });
+              commit = annotated.object;
+            }
+            if (commit.type !== 'commit' || commit.sha !== context.sha) throw new Error('Le tag ne correspond pas au commit construit');
+            console.log('GITHUB_API_RELEASE_VERIFIED ' + JSON.stringify({ tag_name: release.tag_name, draft: release.draft, prerelease: release.prerelease, published_at: release.published_at, html_url: release.html_url, commit_sha: commit.sha, asset_count: assets.length, assets }, null, 2));
