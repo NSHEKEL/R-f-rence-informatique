@@ -70,6 +70,8 @@ COLUMNS: dict[str, dict[str, str]] = {
         "wholesale_price": "FLOAT DEFAULT 0",
     },
     "company_settings": {
+        "offline_enabled": f"BOOLEAN NOT NULL DEFAULT {TRUE_LITERAL}",
+        "offline_authorization_hours": "INTEGER NOT NULL DEFAULT 24",
         "receipt_format": "VARCHAR DEFAULT 'A4'",
         "logo": "TEXT DEFAULT ''",
         "printer_name": "VARCHAR DEFAULT ''",
@@ -380,6 +382,8 @@ def migrate() -> None:
     tables = set(insp.get_table_names())
 
     with engine.begin() as conn:
+        for name in ("offline_devices", "offline_grants", "offline_catalogue_snapshots", "offline_sessions", "offline_events"):
+            Product.metadata.tables[name].create(conn, checkfirst=True)
         _fractional_quantities(conn)
         insp = inspect(conn)
         Depot.__table__.create(bind=conn, checkfirst=True)

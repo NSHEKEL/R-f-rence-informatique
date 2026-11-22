@@ -58,7 +58,7 @@ def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-@router.post("/login", response_model=Token)
+@router.post("/login", response_model=Token, response_model_exclude_none=True)
 def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)):
     station = request.client.host if request.client else "?"
     identifier = normalize_identifier(payload.email)
@@ -95,7 +95,10 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
     _attempts.pop(key, None)
     log_event(db, "connexion", user=user, station=station)
     token = create_access_token(user)
-    return Token(access_token=token)
+    from ..offline_auth import issue
+    grant = issue(db, user, payload.offline_device_id, payload.offline_device_public_key,
+                  user.role == "admin" or getattr(request.state, "workstation_status", "") == "approved")
+    return Token(access_token=token, **grant)
 
 
 @router.post("/forgot-password", response_model=ForgotPasswordResult)

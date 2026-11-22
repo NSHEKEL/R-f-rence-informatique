@@ -27,7 +27,7 @@ def check_company_update(db, user, data):
     if not data and user.role != "admin":
         raise HTTPException(status_code=403, detail="Aucun paramètre à modifier")
     for key in data:
-        allowed = user.role == "admin" if key == "network_restrict_workstations" else has_permission(
+        allowed = user.role == "admin" if key in {"network_restrict_workstations", "offline_enabled", "offline_authorization_hours"} else has_permission(
             db, user, f"{category_for_field(key)}_modifier")
         if not allowed:
             raise HTTPException(status_code=403, detail=f"Modification refusée : {key}")

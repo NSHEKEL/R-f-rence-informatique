@@ -47,6 +47,9 @@ class User(Base):
 class CompanySettings(Base):
     __tablename__ = "company_settings"
 
+    offline_enabled = Column(Boolean, default=True, nullable=False, server_default=true())
+    offline_authorization_hours = Column(Integer, default=24, nullable=False, server_default="24")
+
     mobile_money_to_cash = Column(Boolean, default=True, nullable=False, server_default=true())
 
     id = Column(Integer, primary_key=True, index=True)
@@ -1544,3 +1547,57 @@ def reconcile_product_stock(mapper, connection, target):
 def reconcile_legacy_stock_edit(mapper, connection, target):
     if inspect(target).attrs.quantity.history.has_changes():
         reconcile_product_stock(mapper, connection, target)
+
+
+class OfflineDevice(Base):
+    __tablename__ = "offline_devices"
+    id = Column(String(64), primary_key=True)
+    public_key = Column(Text, nullable=False)
+    auth_counter = Column(Integer, nullable=False, default=0)
+    active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=utcnow)
+
+
+class OfflineGrant(Base):
+    __tablename__ = "offline_grants"
+    id = Column(String(64), primary_key=True)
+    device_id = Column(String(64), nullable=False, index=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    token = Column(Text, nullable=False)
+    claims = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=utcnow)
+
+
+class OfflineCatalogue(Base):
+    __tablename__ = "offline_catalogue_snapshots"
+    id = Column(String(64), primary_key=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    payload = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=utcnow)
+
+
+class OfflineSession(Base):
+    __tablename__ = "offline_sessions"
+    id = Column(String(64), primary_key=True)
+    device_id = Column(String(64), nullable=False, index=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    cash_session_id = Column(Integer, nullable=True)
+    status = Column(String, nullable=False, default="pending")
+    opening_event_id = Column(String(64), nullable=False)
+
+
+class OfflineEvent(Base):
+    __tablename__ = "offline_events"
+    __table_args__ = (UniqueConstraint("device_id", "session_id", "sequence", name="uq_offline_event_sequence"),)
+    id = Column(String(64), primary_key=True)
+    device_id = Column(String(64), nullable=False, index=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    session_id = Column(String(64), nullable=False, index=True)
+    sequence = Column(Integer, nullable=False)
+    kind = Column(String, nullable=False)
+    occurred_at = Column(Float, nullable=False)
+    hash = Column(String(64), nullable=False)
+    envelope = Column(Text, nullable=False)
+    state = Column(String, nullable=False, default="received", index=True)
+    result = Column(Text, nullable=False, default="{}")
+    received_at = Column(DateTime, default=utcnow)

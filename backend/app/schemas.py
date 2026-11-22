@@ -10,11 +10,16 @@ from .quantities import Quantity
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    offline_grant: Optional[str] = None
+    offline_public_key: Optional[str] = None
+    server_time: Optional[float] = None
 
 
 class LoginRequest(BaseModel):
     email: str
     password: str
+    offline_device_id: Optional[str] = Field(default=None, max_length=64)
+    offline_device_public_key: Optional[str] = Field(default=None, max_length=4096)
 
 
 class UserOut(BaseModel):
@@ -52,6 +57,8 @@ class UserPhoto(BaseModel):
 
 # ---------- Company settings ----------
 class CompanySettingsOut(BaseModel):
+    offline_enabled: bool = True
+    offline_authorization_hours: int = 24
     mobile_money_to_cash: bool = True
     allow_negative_stock_sale: bool = False
     model_config = ConfigDict(from_attributes=True)
@@ -120,6 +127,8 @@ class CompanySettingsOut(BaseModel):
 
 
 class CompanySettingsUpdate(BaseModel):
+    offline_enabled: Optional[bool] = None
+    offline_authorization_hours: Optional[int] = Field(default=None, ge=1, le=72)
     mobile_money_to_cash: bool = True
     allow_negative_stock_sale: bool = False
     name: Optional[str] = None
