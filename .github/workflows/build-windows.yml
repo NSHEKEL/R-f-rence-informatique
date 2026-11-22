@@ -146,7 +146,17 @@ jobs:
           body: |
             **EasyGest — gestion de vente et de stock.**
 
-            ### Nouveautés 2.18.37
+            ### Nouveautés 2.18.38
+            - Après suppression d'un achat annulé, la dette conservée pour ses
+              reçus annulés est désormais annulée explicitement : solde nul,
+              montant d'origine et reçus conservés, motif et audit lisibles.
+              Elle ne compte plus dans les soldes fournisseurs et la comptabilité.
+            - Annuler/rétablir une modification d'article actualise aussi les
+              prix et le stock sur les autres postes, via le journal existant.
+            - Migration additive : indicateur debts.cancelled, sans effacement
+              des montants et historiques ; paiements actifs toujours protégés.
+
+            ### Optimisations 2.18.37 incluses
             - Chargement accéléré des produits, du POS et des alertes de lots,
               sans changement des prix, stocks, variantes ou conditionnements.
             - Les heartbeats des postes vendeurs ne provoquent plus de
