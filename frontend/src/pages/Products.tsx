@@ -39,7 +39,7 @@ import { StockColumnChooser, StockExtraCells, StockExtraHeaders } from "../compo
 import { useStockColumns } from "../lib/useStockColumns";
 import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
-import { useSyncVersion } from "../context/SyncContext";
+import { useCatalogueVersion } from "../context/SyncContext";
 import { formatQuantity } from "../lib/units";
 import PackagingQuantity from "../components/PackagingQuantity";
 import ProductPackagings from "../components/ProductPackagings";
@@ -123,7 +123,7 @@ export default function Products() {
   const can = (permission: string) => permitted(permission) && !(readOnly && ["produits_gerer", "stocks"].includes(permission));
   const { company, printing } = useCompany();
   const { hasFeature } = useLicense();
-  const version = useSyncVersion();
+  const version = useCatalogueVersion();
   const [sold, setSold] = useState<SoldFilter>("");
   const [state, setState] = useState("active");
   const csvInputRef = useRef<HTMLInputElement>(null);

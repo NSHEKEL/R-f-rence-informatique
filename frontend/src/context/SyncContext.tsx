@@ -15,14 +15,16 @@ const POLL_INTERVAL_MS = 4000;
 interface SyncContextValue {
   /** Revision of the shared database; bumps on every write, anywhere. */
   version: number;
+  catalogueVersion: number;
 }
 
-const SyncContext = createContext<SyncContextValue>({ version: 0 });
+const SyncContext = createContext<SyncContextValue>({ version: 0, catalogueVersion: 0 });
 
 export function SyncProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const { online } = useNetwork();
   const [version, setVersion] = useState(0);
+  const [catalogueVersion, setCatalogueVersion] = useState(0);
   const [localVersion, setLocalVersion] = useState(0);
 
   useEffect(() => {
@@ -37,8 +39,14 @@ export function SyncProvider({ children }: { children: ReactNode }) {
 
     const poll = async () => {
       try {
-        const res = await api.get<{ version: number }>("/sync/version");
-        if (!cancelled) setVersion(res.data.version);
+        const [res, catalogue] = await Promise.all([
+          api.get<{ version: number }>("/sync/version"),
+          api.get<{ version: number }>("/sync/version?scope=catalogue"),
+        ]);
+        if (!cancelled) {
+          setVersion(res.data.version);
+          setCatalogueVersion((previous) => Math.max(previous, catalogue.data.version));
+        }
       } catch {
         /* offline: the network banner already tells the cashier */
       }
@@ -55,7 +63,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   }, [user, online]);
 
   return (
-    <SyncContext.Provider value={{ version: version + localVersion }}>{children}</SyncContext.Provider>
+    <SyncContext.Provider value={{ version: version + localVersion, catalogueVersion: catalogueVersion + localVersion }}>{children}</SyncContext.Provider>
   );
 }
 
@@ -66,4 +74,9 @@ export function SyncProvider({ children }: { children: ReactNode }) {
 // eslint-disable-next-line react-refresh/only-export-components
 export function useSyncVersion(): number {
   return useContext(SyncContext).version;
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function useCatalogueVersion(): number {
+  return useContext(SyncContext).catalogueVersion;
 }

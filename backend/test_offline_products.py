@@ -2,7 +2,9 @@ import unittest
 
 import test_wholesale as wholesale
 from app import stock
-from app.models import PriceHistory, Product, ProductUpdateOperation, StockLot, StockMovement
+from app.models import ChangeLog, CompanySettings, PriceHistory, Product, ProductUpdateOperation, StockLot, StockMovement, Workstation
+from app.database import SessionLocal
+from app.routers import sync
 
 
 class OfflineProductTests(unittest.TestCase):
@@ -10,6 +12,25 @@ class OfflineProductTests(unittest.TestCase):
     call = wholesale.WholesaleTests.call
     open = wholesale.WholesaleTests.open
     grant = wholesale.WholesaleTests.grant
+
+    def test_catalogue_revision_ignores_heartbeats_but_keeps_product_stock_and_price_changes(self):
+        with SessionLocal(bind=self.engine) as db:
+            self.assertEqual(sync.get_version(db, self.user, scope="catalogue").version, 0)
+            db.add(Workstation(ip="192.168.50.9", hostname="Poste"))
+            db.commit()
+            self.assertEqual(db.query(ChangeLog).count(), 0)
+            product = db.get(Product, self.product.id)
+            for field, value in (("sale_price", 125), ("quantity", 17), ("name", "Corrigé")):
+                previous = sync.get_version(db, self.user, scope="catalogue").version
+                setattr(product, field, value)
+                db.commit()
+                self.assertGreater(sync.get_version(db, self.user, scope="catalogue").version, previous)
+            previous = sync.get_version(db, self.user, scope="catalogue").version
+            db.add(ChangeLog(entities="workstations"))
+            db.add(CompanySettings(name="Identité seulement"))
+            db.commit()
+            self.assertEqual(sync.get_version(db, self.user, scope="catalogue").version, previous)
+            self.assertGreater(sync.get_version(db, self.user).version, previous)
 
     def test_offline_update_is_partial_atomic_and_idempotent(self):
         payload = {"operation_id": "10a370fd-b127-4dc0-899f-fc065b211001", "changes": {"sale_price": 120}, "originals": {"sale_price": 100}}

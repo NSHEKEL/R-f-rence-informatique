@@ -76,7 +76,7 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
 import { useNetwork } from "../context/NetworkContext";
-import { useSyncVersion } from "../context/SyncContext";
+import { useCatalogueVersion, useSyncVersion } from "../context/SyncContext";
 
 const PAYMENTS = [
   "Espèces",
@@ -228,7 +228,8 @@ export default function NouvelleVente() {
   const { company, printing } = useCompany();
   const allowNegativeStock = company?.allow_negative_stock_sale === true;
   const { online } = useNetwork();
-  const version = useSyncVersion();
+  const version = useCatalogueVersion();
+  const sharedVersion = useSyncVersion();
   const navigate = useNavigate();
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -349,8 +350,9 @@ export default function NouvelleVente() {
 
   useEffect(() => {
     loadProducts().catch(() => setProducts([]));
-    loadSession();
-  }, [loadProducts, loadSession, version]);
+  }, [loadProducts, version]);
+
+  useEffect(() => { void loadSession(); }, [loadSession, sharedVersion]);
 
   // Customers are looked up on demand: the till never lists the whole file.
   useEffect(() => {

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { formatXOF } from "../api/client";
 import { readOffline } from "../lib/offlineInventory";
-import { useSyncVersion } from "../context/SyncContext";
+import { useCatalogueVersion } from "../context/SyncContext";
 
 interface Expiring {
   quantity: number;
@@ -30,7 +30,7 @@ export default function StockDashboard({
 }: {
   onShowExpired: () => void;
 }) {
-  const version = useSyncVersion();
+  const version = useCatalogueVersion();
   const [stats, setStats] = useState<StockStats | null>(null);
 
   useEffect(() => {

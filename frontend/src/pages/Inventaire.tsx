@@ -21,7 +21,7 @@ import { documentHeader, printSheet } from "../lib/print";
 import { exportCsv, stampedName } from "../lib/exportCsv";
 import { useCompany } from "../context/CompanyContext";
 import { useLicense } from "../context/LicenseContext";
-import { useSyncVersion } from "../context/SyncContext";
+import { useCatalogueVersion } from "../context/SyncContext";
 import PackagingQuantity from "../components/PackagingQuantity";
 import InventorySessions from "../components/InventorySessions";
 import { formatQuantity, quantityHtml } from "../lib/units";
@@ -55,7 +55,7 @@ interface PendingTransfer {
 }
 
 export default function Inventaire() {
-  const version = useSyncVersion();
+  const version = useCatalogueVersion();
   const { company, printing } = useCompany();
   const { hasFeature } = useLicense();
   const [products, setProducts] = useState<Product[]>([]);
