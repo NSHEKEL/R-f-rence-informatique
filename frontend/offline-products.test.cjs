@@ -19,6 +19,40 @@ function setup() {
 }
 const payload = { client_uuid: 'uuid-one', name: 'Riz', sku: 'RIZ', quantity: 7, barcode: '123', qr_code: '', image: 'full image', packagings: [{ name: 'Carton', factor: 6, active: true, barcode: 'PACK' }], barcodes: [{ code: 'VAR', active: true }] };
 
+test('product create and edit refresh only the saved id, with full reload only on refresh failure', async () => {
+  const source = readFileSync(`${__dirname}/src/pages/Products.tsx`, 'utf8');
+  const file = ts.createSourceFile('Products.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let save;
+  function visit(node) { if (ts.isFunctionDeclaration(node) && node.name?.text === 'save') save = node.getText(file); ts.forEachChild(node, visit); }
+  visit(file); assert.ok(save);
+  for (const mode of ['create', 'edit', 'refresh-error', 'save-error', 'invalid']) {
+    const calls = [], refreshed = []; let reloads = 0, error = '';
+    const context = {
+      permitted: () => true, readOnly: false, pendingUuid: null, editing: mode === 'create' ? null : { id: 12 },
+      form: { ...payload, quantity: mode === 'invalid' ? -1 : 0, packaging_unit: '', base_unit: 'pièce', packagings: [],
+        category_id: '', supplier_id: '', min_stock: '', purchase_price: 500, sale_price: 600, wholesale_price: 550,
+        semi_wholesale_min_qty: '', wholesale_min_qty: '', semi_wholesale_price: '', supplier_purchase_price: '', expiry_date: '' },
+      productBarcodes: (value) => value, productTextError: () => '', setSaving() {}, setModalOpen() {}, setNotice() {},
+      setError: (value) => { error = value; }, apiErrorMessage: (value) => String(value), axios: { isAxiosError: () => false },
+      api: Object.fromEntries(['post', 'put'].map((method) => [method, async (url, data) => {
+        calls.push(url); assert.equal(data.purchase_price, 500);
+        if (mode === 'save-error') throw Error('save failed');
+        return { data: { id: 12 } };
+      }])),
+      refreshProducts: async (ids) => { refreshed.push(...ids); if (mode === 'refresh-error') throw Error('refresh failed'); },
+      load: async () => { reloads++; },
+    };
+    vm.createContext(context); vm.runInContext(ts.transpileModule(save, {}).outputText, context);
+    await vm.runInContext('save()', context);
+    if (mode === 'invalid') { assert.equal(calls.length, 0); assert.match(error, /Stock/); }
+    else if (mode === 'save-error') { assert.equal(refreshed.length, 0); assert.match(error, /save failed/); }
+    else { assert.deepEqual(refreshed, [12]); assert.equal(error, ''); }
+    assert.equal(reloads, mode === 'refresh-error' ? 1 : 0);
+    if (mode === 'create') assert.deepEqual(calls, ['/products']);
+    if (mode === 'edit') assert.deepEqual(calls, ['/products/12']);
+  }
+});
+
 test('existing edits overlay the cached catalogue, coalesce and discard without mutating originals', async () => {
   const { lib, api } = setup(); let calls = 0; api.post = async () => { calls++; return { data: {} }; };
   const original = { ...payload, id: 12, sale_price: 100 };
