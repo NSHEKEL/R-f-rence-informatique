@@ -22,7 +22,7 @@ test('opening always displays the original failure even if either session refres
   ]) {
     let message = '', saving, loads = 0, refreshes = 0;
     const open = vm.runInNewContext(ts.transpileModule(`(${opening.getText(source)})`, {}).outputText, {
-      Error, printJob: null, recoveryWarning: '', openingBalance: '170000', note: '', isAdmin: true,
+      Error, printJob: null, recoveryWarning: '', tillReadError: '', openingBalance: '170000', note: '', isAdmin: true,
       api: { post: async () => { if (failure) throw failure; return { data: { id: 17 } }; } },
       load: async () => { loads++; if (loadFails) throw Error('load failed'); },
       refreshTill: async () => { refreshes++; if (refreshFails) throw Error('refresh failed'); },

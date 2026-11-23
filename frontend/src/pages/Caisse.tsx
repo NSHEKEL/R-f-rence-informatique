@@ -29,7 +29,7 @@ export default function Caisse() {
   const canZ = canBalances && (canClosures || can("caisse_z"));
   const canEntry = can("caisse_operations") || can("recette_enregistrer");
   const canExit = can("caisse_operations");
-  const { refresh: refreshTill } = useTill();
+  const { refresh: refreshTill, readError: tillReadError } = useTill();
   const { company, printing } = useCompany();
   const version = useSyncVersion();
 
@@ -100,6 +100,7 @@ export default function Caisse() {
   async function openTill() {
     if (printJob) return;
     if (recoveryWarning) { setError(recoveryWarning); return; }
+    if (tillReadError) { setError(tillReadError); return; }
     setSaving(true);
     setError("");
     try {
@@ -233,7 +234,7 @@ export default function Caisse() {
           <button
             className="btn-primary w-full py-3 text-base sm:w-auto"
             onClick={openTill}
-            disabled={saving}
+            disabled={saving || Boolean(tillReadError)}
           >
             <Unlock size={16} />
             {saving ? "Ouverture..." : "Ouvrir ma caisse"}

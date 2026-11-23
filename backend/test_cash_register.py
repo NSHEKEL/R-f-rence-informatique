@@ -7,7 +7,7 @@ from unittest.mock import patch
 from sqlalchemy import create_engine, inspect, text
 
 import test_treasury_permissions as treasury
-from app.models import BankAccount, BankDeposit, CashMovement, CashSession, Debt, DebtPayment, Product, Sale, SaleReturn
+from app.models import BankAccount, BankDeposit, CashMovement, CashSession, CompanySettings, Debt, DebtPayment, Product, Sale, SaleReturn
 from app.routers import cash, returns, sales
 from app import migrate as migration
 
@@ -94,6 +94,26 @@ class CashRegisterTests(unittest.TestCase):
             self.assertIsNone(self.call("/api/cash-sessions/current"))
             self.assertIsNone(self.call("/api/cash-sessions/today"))
             self.assertNotEqual(self.open()["id"], session["id"])
+
+    def test_nullable_company_print_fields_do_not_hide_or_break_open_till(self):
+        self.grant("soldes_consulter", "clotures_consulter")
+        company = CompanySettings(name="Test caisse")
+        self.db.add(company)
+        self.db.commit()
+        company.address = company.phone = company.phone2 = company.logo = None
+        self.db.commit()
+        session = self.open()
+        self.sale("nullable-company")
+        for endpoint in ("current", "today"):
+            current = self.call("/api/cash-sessions/" + endpoint)
+            self.assertEqual(current["id"], session["id"])
+            self.assertEqual(current["opening_balance"], 500)
+            self.assertEqual(current["sales_count"], 1)
+        report = self.call(f"/api/cash-sessions/{session['id']}/z")
+        for field in ("company_address", "company_phone", "company_logo"):
+            self.assertEqual(report[field], "")
+        self.call("/api/cash-sessions/open", "POST", {"opening_balance": 500}, status=400)
+        self.assertEqual(self.db.query(CashSession).count(), 1)
 
     def test_secondary_workstation_sales_join_same_central_user_session(self):
         session = self.open()

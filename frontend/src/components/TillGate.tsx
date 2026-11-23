@@ -14,7 +14,7 @@ import { useTill } from "../context/TillContext";
  */
 export default function TillGate() {
   const { can, isAdmin, recoveryWarning, retryLocalRecovery } = useAuth();
-  const { session, dayClosed, loading, refresh } = useTill();
+  const { session, dayClosed, loading, readError, refresh } = useTill();
   const [openingBalance, setOpeningBalance] = useState("0");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -27,7 +27,14 @@ export default function TillGate() {
     <button type="button" className="btn-secondary mt-2" onClick={() => void retryLocalRecovery()}>Réessayer la reprise</button>
   </aside>;
 
-  if (loading || session || dayClosed || !can("caisse")) return null;
+  if (loading || !can("caisse")) return null;
+  if (readError) return <aside role="alert" className="fixed bottom-4 right-4 z-50 max-w-lg rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 shadow-lg">
+    <p className="font-semibold">État de la caisse non vérifié</p>
+    <p className="mt-1">{readError}</p>
+    <p className="mt-1">Ne rouvrez pas la caisse et ne ressaisissez pas les ventes.</p>
+    <button type="button" className="btn-secondary mt-2" onClick={() => void refresh()}>Réessayer la lecture</button>
+  </aside>;
+  if (session || dayClosed) return null;
 
   async function openTill() {
     setSaving(true);
@@ -39,7 +46,7 @@ export default function TillGate() {
       });
       await refresh();
     } catch (err) {
-      await refresh();
+      await refresh().catch(() => {});
       if (axios.isAxiosError(err)) {
         setError(apiErrorMessage(err.response?.data, err.message || "Impossible d'ouvrir la caisse") + (err.response?.status ? ` (HTTP ${err.response.status})` : ""));
       } else {

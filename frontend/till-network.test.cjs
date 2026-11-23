@@ -15,7 +15,7 @@ test('seller remains loading until their central till is known; closed till stil
   };
   const api = { get: async () => { await new Promise(done => { resolve.push(done); }); if (failed) throw Error('offline'); return { data: opened }; } };
   const exports = {};
-  vm.runInNewContext(ts.transpileModule(readFileSync(`${__dirname}/src/context/TillContext.tsx`, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText, { exports, require: path => path === 'react' ? react : path === 'react/jsx-runtime' ? { jsx: (_type, props) => { value = props.value; } } : path === '../api/client' ? { __esModule: true, default: api } : { useAuth: () => ({ user, can: () => allowed }) } });
+  vm.runInNewContext(ts.transpileModule(readFileSync(`${__dirname}/src/context/TillContext.tsx`, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText, { exports, require: path => path === 'react' ? react : path === 'react/jsx-runtime' ? { jsx: (_type, props) => { value = props.value; } } : path === '../api/client' ? { __esModule: true, default: api } : path === '../lib/apiErrors' ? { apiErrorMessage: (data, fallback) => data?.detail || fallback } : { useAuth: () => ({ user, can: () => allowed }) } });
   const render = () => { cursor = 0; exports.TillProvider({ children: null }); return value; };
   const complete = async () => { resolve.splice(0).forEach(done => done()); await new Promise(setImmediate); render(); };
   render(); await value.refresh(); render(); assert.equal(value.loading, false);

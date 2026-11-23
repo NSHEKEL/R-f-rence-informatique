@@ -104,7 +104,7 @@ test('a recovery warning does not let the cash page open a second till', async (
   function visit(node) { if (ts.isFunctionDeclaration(node) && node.name?.text === 'openTill') opening = node; ts.forEachChild(node, visit); }
   visit(source);
   const open = vm.runInNewContext(ts.transpileModule(`(${opening.getText(source)})`, options).outputText, {
-    printJob: null, recoveryWarning: 'Reprise à vérifier', setError: value => { error = value; },
+    printJob: null, recoveryWarning: 'Reprise à vérifier', tillReadError: '', setError: value => { error = value; },
     api: { post: () => assert.fail('must not reopen the till') },
   });
   await open();
