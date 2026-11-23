@@ -33,19 +33,11 @@ from dotenv import load_dotenv
 # app.paths is light: import it before the heavy modules so the boot markers
 # can be written even when one of them fails (a crash there used to leave no
 # log at all, which made the frozen selftest undebuggable).
-from app.paths import data_dir
+from app.paths import data_dir, log_path, open_logs_directory
 
 
 def _log_path() -> Path:
-    system = os.getenv("USERNAME", "").upper() == "SYSTEM" or "systemprofile" in str(Path.home()).lower()
-    local = os.getenv("LOCALAPPDATA")
-    directory = Path(local) / "EasyGest" / "Logs" if local and not system else data_dir() / "Logs"
-    try:
-        directory.mkdir(parents=True, exist_ok=True)
-    except OSError:
-        directory = data_dir() / "Logs"
-        directory.mkdir(parents=True, exist_ok=True)
-    return directory / "easygest.log"
+    return log_path()
 
 
 _file_handler = logging.FileHandler(_log_path(), encoding="utf-8")
@@ -274,6 +266,14 @@ class DesktopApi:
                     raise TimeoutError("Nettoyage WebView : délai dépassé")
                 threading.Event().wait(0.05)
             _ = task.Result
+
+    def log_info(self) -> dict:
+        path = log_path()
+        return {"folder": str(path.parent), "file": str(path), "can_open": hasattr(os, "startfile")}
+
+    def open_logs_folder(self, folder: str = "") -> dict:
+        open_logs_directory(folder)
+        return {"opened": True}
 
     def choose_folder(self) -> str:
         """Real Windows folder picker used to select the backup folder."""

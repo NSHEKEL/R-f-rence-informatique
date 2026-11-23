@@ -101,6 +101,30 @@ def data_dir() -> Path:
     return directory
 
 
+def log_path() -> Path:
+    system = os.getenv("USERNAME", "").upper() == "SYSTEM" or "systemprofile" in str(Path.home()).lower()
+    local = os.getenv("LOCALAPPDATA")
+    directory = Path(local) / APP_DIR_NAME / "Logs" if local and not system else data_dir() / "Logs"
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        directory = data_dir() / "Logs"
+        directory.mkdir(parents=True, exist_ok=True)
+    return directory / "easygest.log"
+
+
+def open_logs_directory(folder=None):
+    allowed = {str(path.absolute()).casefold() for path in (
+        log_path().parent, data_dir() / "Logs", Path(os.getenv("PROGRAMDATA", "C:\\ProgramData")) / APP_DIR_NAME / "Logs",
+    )}
+    target = Path(folder) if folder else log_path().parent
+    if str(target).startswith(("\\\\", "//")) or str(target.absolute()).casefold() not in allowed:
+        raise PermissionError("Seuls les dossiers de journaux EasyGest locaux sont autorisés")
+    if not hasattr(os, "startfile"):
+        raise OSError("Ouverture du dossier disponible dans l'application Windows")
+    os.startfile(str(target))
+
+
 def database_file() -> Path:
     """SQLite file of a single-workstation install, legacy name included."""
     directory = data_dir()

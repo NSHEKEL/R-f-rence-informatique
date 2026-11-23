@@ -64,11 +64,13 @@ from .routers import (
 )
 from .seed import seed
 from .version import APP_NAME, APP_VERSION
+from .diagnostics import install_exception_handler
 
 Base.metadata.create_all(bind=engine)
 migrate()
 
 app = FastAPI(title=f"{APP_NAME} — API Vente & Stock")
+install_exception_handler(app)
 
 # Workstations open the app from the server's own address, so private LAN
 # origins are allowed by default; ALLOWED_ORIGINS narrows this in production.

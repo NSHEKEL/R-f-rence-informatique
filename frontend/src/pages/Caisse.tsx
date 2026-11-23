@@ -194,6 +194,8 @@ export default function Caisse() {
 
       {isAdmin && <GlobalCash />}
 
+      {Boolean(today?.data_warnings?.length) && <div role="alert" className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900"><p className="font-semibold">Données de caisse à vérifier — originaux conservés</p><ul className="list-inside list-disc">{today!.data_warnings!.map((warning) => <li key={warning}>{warning}</li>)}</ul></div>}
+
       {!today && (
         <div className="card space-y-4 p-6">
           <div className="flex items-center gap-3">

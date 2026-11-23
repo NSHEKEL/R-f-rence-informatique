@@ -3,6 +3,7 @@ import { formatXOF } from "../api/client";
 import type { CompanySettings, ReceiptFormat } from "../types";
 
 export interface ZReportData {
+  data_warnings?: string[];
   mobile_money_to_cash?: boolean;
   kept_balance?: number | null;
   remitted_amount?: number | null;
@@ -26,7 +27,7 @@ export interface ZReportData {
   payments: Record<string, number>;
   payment_groups?: Record<string, number>;
   refunds_total?: number;
-  refunds?: { reference: string; sale_reference: string; total: number }[];
+  refunds?: { reference: string; sale_reference: string; total: number | null }[];
   advances_total?: number;
   advances?: { reference: string; customer: string; amount: number }[];
   settlements_total?: number;
@@ -105,6 +106,7 @@ export default function ZReport({
       </div>
       <hr className="my-2 border-dashed" />
       <Row label="Caissier" value={report.cashier || "—"} />
+      {Boolean(report.data_warnings?.length) && <div className="my-2 text-xs"><strong>Données à vérifier — originaux conservés</strong><ul>{report.data_warnings!.map((warning) => <li key={warning}>{warning}</li>)}</ul></div>}
       <Row label="Journée" value={report.business_day || "—"} />
       <Row label="Ouverture" value={dt(report.opened_at)} />
       <Row label="Clôture" value={dt(report.closed_at)} />
@@ -140,7 +142,7 @@ export default function ZReport({
             <Row
               key={r.reference}
               label={`${r.reference} (${r.sale_reference})`}
-              value={formatXOF(r.total)}
+              value={r.total == null ? "Non renseigné" : formatXOF(r.total)}
             />
           ))}
           <Row

@@ -146,6 +146,21 @@ jobs:
           body: |
             **EasyGest — gestion de vente et de stock.**
 
+            ### Exclusions mobiles corrigées 2.18.49
+            - La lecture d'une caisse historique tolère les moyens de paiement
+              absents et les règlements orphelins sans inventer leur sens : ces
+              données restent conservées et signalées, jamais ajoutées aux espèces.
+            - Une erreur interne donne son type et son étape ; la trace complète
+              est journalisée. Paramètres affiche les chemins et permet d'ouvrir
+              le dossier des journaux du PC concerné.
+            - Une vente déjà comptabilisée n'est jamais exclue du mobile par le
+              classement d'un rejeu du même UUID, même si le compte a disparu.
+            - Une exclusion est conservée séparément : elle ne crée aucun ticket
+              fictif. Elle s'applique aux ventes reçues avant ou après, aux listes
+              mobiles et à tous les chiffres des magasins dans la console.
+            - Cette version remplace la 2.18.48 ; mise à jour du service central
+              nécessaire pour les exclusions, sans suppression des originaux.
+
             ### Reprise et diagnostic de caisse 2.18.48
             - Une erreur de lecture de caisse affiche son détail et un réessai,
               au lieu de demander une nouvelle ouverture. Les coordonnées société

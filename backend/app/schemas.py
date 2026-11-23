@@ -962,6 +962,7 @@ class CashSessionSaleLine(BaseModel):
 
 
 class CashSessionDetail(CashSessionOut):
+    data_warnings: list[str] = []
     mobile_cash_adjustment: Optional[float] = None
     mobile_money_to_cash: bool = False
     mobile_money_sales: Optional[float] = None
@@ -1932,6 +1933,7 @@ class BankDepositReconcile(BaseModel):
 
 # ---------- Z de caisse ----------
 class CashSessionZ(BaseModel):
+    data_warnings: list[str] = []
     mobile_cash_adjustment: float = 0
     mobile_money_to_cash: bool = False
     mobile_money_sales: float = 0

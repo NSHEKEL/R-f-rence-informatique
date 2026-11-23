@@ -32,7 +32,8 @@ from ..models import (
     User,
 )
 from ..permissions import has_permission, require_permission
-from ..payment_totals import group_payments, physical_expected
+from ..payment_totals import UNKNOWN_PAYMENT, group_payments, payment_method, physical_expected
+from ..diagnostics import diagnosed, mark_step
 from ..schemas import (
     CashSessionClose,
     CashGlobalClose,
@@ -110,21 +111,29 @@ def require_open_till(
     )
 
 
+@diagnosed("cash.detail.metadata")
 def _detail(db: Session, session: CashSession, user: User) -> CashSessionDetail:
+    if session.opened_at is None:
+        raise HTTPException(409, "Date d'ouverture de caisse absente : vérification administrateur nécessaire, original conservé")
+    values = {field: getattr(session, field) for field in CashSessionOut.model_fields}
+    values["note"] = session.note or ""
+    values["business_day"] = session.business_day or ""
+    metadata = CashSessionOut.model_validate(values).model_dump()
     can_closure = has_permission(db, user, "clotures_consulter") or has_permission(db, user, "caisse_z")
     if not has_permission(db, user, "soldes_consulter") or (session.closed_at is not None and not can_closure):
-        out = CashSessionDetail(**CashSessionOut.model_validate(session).model_dump())
+        out = CashSessionDetail(**metadata)
         for field in ("opening_balance", "closing_balance", "expected_balance", "difference"):
             setattr(out, field, None)
         return out
     return CashSessionDetail(
-        **CashSessionOut.model_validate(session).model_dump(),
+        **metadata,
         **session_amounts(db, session).model_dump(include={
             "cash_sales", "other_sales", "sales_count", "deposits_total", "expected_cash",
             "sales", "entries_total", "exits_total", "cash_refunds", "cash_settlements",
             "total_sales", "refunds_total", "net_sales", "expenses_total", "cash_expenses", "expenses",
             "payments", "payment_groups", "mobile_money_to_cash", "mobile_money_sales",
             "mobile_money_refunds", "kept_balance", "remitted_amount", "mobile_cash_adjustment",
+            "data_warnings",
         }),
     )
 
@@ -182,7 +191,8 @@ def _flow_groups(report, settlements=None):
     outflows = group_payments({})
     outflows["cash"] = report.exits_total + report.deposits_total + report.cash_expenses + report.cash_refunds
     legs = report.settlements.items() if settlements is None else (
-        (p.method or CASH_PAYMENT, (p.amount or 0) * (-1 if p.debt.kind == "dette" else 1)) for p in settlements
+        (payment_method(p.method), (p.amount or 0) * (-1 if p.debt.kind == "dette" else 1)) for p in settlements
+        if p.debt is not None and p.debt.kind in {"dette", "creance"}
     )
     for method, amount in legs:
         target = inflows if amount >= 0 else outflows
@@ -534,6 +544,7 @@ def _session_or_404(db: Session, session_id: int) -> CashSession:
     return session
 
 
+@diagnosed("cash.session_amounts")
 def session_amounts(db: Session, session: CashSession) -> CashSessionZ:
     """Build the definitive recap of a till session (État Z)."""
     if session.closed_at is not None and session.z_report:
@@ -547,6 +558,17 @@ def session_amounts(db: Session, session: CashSession) -> CashSessionZ:
             return CashSessionZ(**stored)
         except (ValueError, TypeError, AttributeError):
             raise HTTPException(status_code=409, detail="Clôture historique illisible : restauration nécessaire")
+    if session.opened_at is None or session.opening_balance is None:
+        raise HTTPException(409, "Date ou fonds d'ouverture absent : vérification administrateur nécessaire, aucun montant reconstitué")
+    warnings = []
+
+    def method(value, source):
+        result = payment_method(value)
+        if result == UNKNOWN_PAYMENT:
+            warnings.append(f"{source} : moyen de paiement non renseigné, classé à part et non en espèces")
+        return result
+
+    mark_step("cash.session_amounts.sales")
     sales = (
         db.query(Sale).options(selectinload(Sale.payments)).filter(Sale.cash_session_id == session.id).all()
     )
@@ -568,15 +590,19 @@ def session_amounts(db: Session, session: CashSession) -> CashSessionZ:
         total_sales += s.total or 0
         if s.payments:
             for leg in s.payments:
-                payments[leg.method] = payments.get(leg.method, 0.0) + (
+                if leg.amount is None:
+                    warnings.append(f"Vente #{s.id}, paiement #{leg.id} : montant absent, non inclus dans les sommes ; original conservé")
+                name = method(leg.method, f"Vente #{s.id}, paiement #{leg.id}")
+                payments[name] = payments.get(name, 0.0) + (
                     leg.amount or 0
                 )
         else:
-            method = s.payment_method or CASH_PAYMENT
-            payments[method] = payments.get(method, 0.0) + (s.total or 0)
+            name = method(s.payment_method, f"Vente #{s.id}")
+            payments[name] = payments.get(name, 0.0) + (s.total or 0)
 
     opened_at = session.opened_at
     closed_at = session.closed_at or datetime.now(timezone.utc)
+    mark_step("cash.session_amounts.expenses_deposits")
     expenses = (
         db.query(Expense)
         .filter(
@@ -600,6 +626,7 @@ def session_amounts(db: Session, session: CashSession) -> CashSessionZ:
     company = db.query(CompanySettings).first()
 
     # Credit notes (remboursements / retours) issued inside the session window.
+    mark_step("cash.session_amounts.refunds")
     returns = (
         db.query(SaleReturn)
         .filter(
@@ -609,6 +636,7 @@ def session_amounts(db: Session, session: CashSession) -> CashSessionZ:
     )
     # Client settlements received during the session: cash legs sit in the
     # drawer, the other methods only show up in the breakdown.
+    mark_step("cash.session_amounts.settlements")
     settlements = (
         db.query(DebtPayment)
         .filter(
@@ -624,14 +652,19 @@ def session_amounts(db: Session, session: CashSession) -> CashSessionZ:
     settlement_payments: dict[str, float] = {}
     cash_settlements = 0.0
     for p in settlements:
+        if p.debt is None or p.debt.kind not in {"dette", "creance"}:
+            amount = str(p.amount) if p.amount is not None else "non renseigné"
+            warnings.append(f"Règlement #{p.id}, dette #{p.debt_id}, montant {amount} : sens inconnu, non inclus dans les totaux de caisse ; original conservé")
+            continue
         signed_amount = (p.amount or 0) * (-1 if p.debt.kind == "dette" else 1)
-        method = p.method or CASH_PAYMENT
-        settlement_payments[method] = (
-            settlement_payments.get(method, 0.0) + signed_amount
+        name = method(p.method, f"Règlement #{p.id}")
+        settlement_payments[name] = (
+            settlement_payments.get(name, 0.0) + signed_amount
         )
-        if method == CASH_PAYMENT:
+        if name == CASH_PAYMENT:
             cash_settlements += signed_amount
     # Order deposits (acomptes) booked during the session.
+    mark_step("cash.session_amounts.advances_movements")
     advances = (
         db.query(Order)
         .filter(
@@ -644,6 +677,14 @@ def session_amounts(db: Session, session: CashSession) -> CashSessionZ:
     )
 
     movements = db.query(CashMovement).filter(CashMovement.session_id == session.id).all()
+    for records, label in ((returns, "Retour"), (expenses, "Dépense"), (deposits, "Dépôt")):
+        for row in records:
+            value = row.refund_method if label == "Retour" else row.payment_method if label == "Dépense" else row.method
+            method(value, f"{label} #{row.id}")
+    for records, field, label in ((sales, "total", "Vente"), (returns, "total", "Retour"), (expenses, "amount", "Dépense"), (deposits, "amount", "Dépôt"), (settlements, "amount", "Règlement")):
+        for row in records:
+            if getattr(row, field) is None:
+                warnings.append(f"{label} #{row.id} : montant absent, non inclus dans les sommes ; original conservé")
     entries = sum(m.amount for m in movements if m.type == "in")
     exits = sum(m.amount for m in movements if m.type == "out" and m.return_id is None)
     cash_refunds = sum(r.total or 0 for r in returns if r.refund_method == CASH_PAYMENT)
@@ -662,6 +703,7 @@ def session_amounts(db: Session, session: CashSession) -> CashSessionZ:
         cash_expenses=cash_expenses, mobile_adjustment=mobile_adjustment)
     if session.closed_at is not None and session.expected_balance is not None:
         expected = session.expected_balance
+    mark_step("cash.session_amounts.validation")
     report = CashSessionZ(
         cash_sales=payments.get(CASH_PAYMENT, 0.0),
         other_sales=sum(value for method, value in payments.items() if method != CASH_PAYMENT),
@@ -673,16 +715,16 @@ def session_amounts(db: Session, session: CashSession) -> CashSessionZ:
         remitted_amount=session.remitted_amount,
         net_sales=total_sales - refunds_total, cash_expenses=cash_expenses,
         sales=[{
-            "id": s.id, "reference": s.reference, "total": s.total or 0,
+            "id": s.id, "reference": s.reference or "", "total": s.total or 0,
             "paid_amount": s.paid_amount or 0, "payment_method": s.payment_method or "",
             "status": s.status or "", "date": s.date,
         } for s in sales if s.status != "Annulée" and not s.is_gift],
         session_id=session.id,
-        company=company.name if company else "",
+        company=(company.name or "") if company else "",
         company_address=(company.address or "") if company else "",
         company_phone=(company.phone or company.phone2 or "") if company else "",
         company_logo=(company.logo or "") if company else "",
-        cashier=session.opened_by.name if session.opened_by else "",
+        cashier=(session.opened_by.name or "") if session.opened_by else "",
         opened_at=opened_at,
         closed_at=session.closed_at,
         business_day=session.business_day or "",
@@ -734,7 +776,9 @@ def session_amounts(db: Session, session: CashSession) -> CashSessionZ:
         difference=session.difference,
         note=session.note or "",
         generated_at=datetime.now(timezone.utc),
+        data_warnings=warnings,
     )
+    mark_step("cash.session_amounts.flow_groups")
     report.inflow_groups, report.outflow_groups = _flow_groups(report, settlements)
     return report
 

@@ -735,6 +735,7 @@ export interface CashSessionSaleLine {
 }
 
 export interface CashSessionDetail extends CashSession {
+  data_warnings?: string[];
   mobile_money_to_cash?: boolean;
   mobile_money_sales?: number | null;
   mobile_money_refunds?: number | null;

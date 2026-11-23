@@ -47,6 +47,7 @@ import { useCompany } from "../context/CompanyContext";
 import { canOpenSettingsTab, companyUpdatePayload, TAB_CATEGORIES } from "../lib/settingsAccess";
 import WorkstationSettings from "../components/WorkstationSettings";
 import CatalogPriceSettings from "../components/CatalogPriceSettings";
+import LogDiagnostics from "../components/LogDiagnostics";
 import DepotSettings from "../components/DepotSettings";
 
 type CompanyForm = Omit<CompanySettings, "id"> & { smtp_password?: string };
@@ -583,6 +584,8 @@ export default function Settings() {
           </div>
         </div>
       </div>
+
+      <LogDiagnostics />
 
       <div className="flex flex-wrap gap-2">
         {visibleTabs.map((item) => (
