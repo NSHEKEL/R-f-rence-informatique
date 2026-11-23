@@ -88,8 +88,9 @@ api.interceptors.request.use((config) => {
     const path = (config.url || "").split("?")[0];
     const method = (config.method || "get").toUpperCase();
     const cash = path.startsWith("/cash-sessions");
+    const scan = method === "GET" && path.startsWith("/products/by-code/");
     const cached = ["/auth/me", "/permissions/me", "/settings/company", "/settings/printing", "/settings/pos-display", "/categories", "/license"].includes(path);
-    if (!state.locked && ((cash && (state.journal_session || !state.online)) || (cached && !state.online) || (path === "/accounting/expenses" && method === "POST" && !state.online))) {
+    if (!state.locked && ((cash && (state.journal_session || !state.online)) || ((cached || scan) && !state.online) || (path === "/accounting/expenses" && method === "POST" && !state.online))) {
       config.headers["X-Easygest-Journal"] = "1";
       config.adapter = async () => ({ data: await desktopOffline.command("request", { method, path, data: typeof config.data === "string" ? JSON.parse(config.data) : config.data }), status: 200, statusText: "OK", headers: {}, config });
     }

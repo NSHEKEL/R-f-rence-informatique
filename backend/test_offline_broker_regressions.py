@@ -8,6 +8,29 @@ from app.offline_broker import BrokerError, OfflineBroker
 
 @unittest.skipUnless(sys.platform == "win32", "Journal Windows / DPAPI")
 class OfflineBrokerRegressionTests(unittest.TestCase):
+    def test_scan_uses_active_snapshot_without_network_even_before_outage_is_probed(self):
+        with tempfile.TemporaryDirectory() as root:
+            broker = OfflineBroker(root)
+            broker.online = True
+            broker.identity = {"scope": "shop", "server": "http://server", "user_id": 1}
+            claims, rights = {"iss": "shop", "sub": "1"}, {"caisse", "vente_nouvelle"}
+            with patch.object(broker, "_auth", return_value=({}, claims, rights)), patch.object(broker, "_local_session", return_value={"id": -1}), patch.object(broker, "_session_key", return_value="test"), patch.object(broker, "_remote") as remote:
+                with self.assertRaises(BrokerError) as absent:
+                    broker.request("GET", "/products/by-code/123")
+                self.assertEqual(absent.exception.status, 409)
+                with broker.store.connection() as db:
+                    broker.store.put(db, "active-catalogue:test", "catalogue:shop:1:True")
+                    broker.store.put(db, "catalogue:shop:1:True", {"payload": {"products": [], "company": {}}, "at": 0})
+                with self.assertRaises(BrokerError) as empty:
+                    broker.request("GET", "/products/by-code/123")
+                self.assertEqual(empty.exception.status, 404)
+                for status in (401, 403, 423):
+                    with patch.object(broker, "_auth", side_effect=BrokerError(status, "Compte verrouillé ou non autorisé")):
+                        with self.assertRaises(BrokerError) as denied:
+                            broker.request("GET", "/products/by-code/123")
+                        self.assertEqual(denied.exception.status, status)
+                remote.assert_not_called()
+
     def test_probe_allows_a_slow_lan_response_without_removing_its_timeout(self):
         with tempfile.TemporaryDirectory() as root:
             broker = OfflineBroker(root)

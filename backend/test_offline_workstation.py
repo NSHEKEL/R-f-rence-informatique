@@ -7,6 +7,7 @@ import sys
 import time
 import unittest
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from pathlib import Path
@@ -71,6 +72,51 @@ class WorkstationRestartTests(unittest.TestCase):
 
     def command(self, action, **params):
         return self.http("poste", "/local-offline/command", {"action": action, "params": params})
+
+    def test_offline_scan_resolves_primary_secondary_and_packaging_from_signed_catalogue(self):
+        self.start("server")
+        self.start("poste")
+        server = f"http://127.0.0.1:{self.ports['server']}"
+        admin = self.http("server", "/auth/login", {"email": "admin", "password": "admin123"})["access_token"]
+        identity = self.http("server", "/offline/identity", token=admin)
+        self.command("login", server=server, email="admin", password="admin123", trusted_fingerprint=identity["fingerprint"])
+        self.http("server", "/users", {"email": "scanner@test.invalid", "name": "Vendeur scan", "password": "scanner-test-password", "role": "vendeur"}, admin)
+        codes = ("1234567890123", "VAR/456", "PACK-789")
+        product = self.http("server", "/products", {"name": "Article scan hors ligne", "sku": "SCAN-SKU", "barcode": codes[0], "quantity": 100, "sale_price": 1000,
+            "barcodes": [{"code": codes[1], "label": "Variante", "active": True}, {"code": "INACTIVE-456", "active": False}],
+            "packagings": [{"name": "Carton", "barcode": codes[2], "factor": 6, "price_detail": 5000, "active": True}]}, admin)
+        self.command("login", server=server, email="scanner@test.invalid", password="scanner-test-password", trusted_fingerprint=identity["fingerprint"])
+        snapshot = self.command("catalogue", images=True)
+        cached = next(row for row in snapshot["data"] if row["id"] == product["id"])
+        self.assertEqual(cached["barcode"], codes[0])
+        self.assertTrue(any(row["code"] == codes[1] for row in cached["barcodes"]))
+        self.assertTrue(any(row["barcode"] == codes[2] for row in cached["packagings"]))
+        print("OFFLINE_SCAN_SNAPSHOT primary=True secondary=True packaging=True images_cache_only=True", flush=True)
+        self.stop("server")
+        self.command("sync")
+        with self.assertRaises(urllib.error.HTTPError) as no_till:
+            self.command("request", method="GET", path="/products/by-code/" + codes[0])
+        self.assertEqual(no_till.exception.code, 409)
+        self.command("request", method="POST", path="/cash-sessions/open", data={"opening_balance": 170000})
+        statuses = []
+        for code in codes:
+            try:
+                row = self.command("request", method="GET", path="/products/by-code/" + urllib.parse.quote(code, safe=""))
+                statuses.append(200)
+                self.assertEqual((row["id"], row["scanned_code"]), (product["id"], code))
+                self.assertNotIn("quantity", row)
+                if code == codes[1]:
+                    self.assertEqual(row["scanned_label"], "Variante")
+                if code == codes[2]:
+                    self.assertEqual(row["packaging_id"], cached["packagings"][0]["id"])
+            except urllib.error.HTTPError as error:
+                statuses.append(error.code)
+        print("OFFLINE_SCAN_HTTP " + json.dumps(dict(zip(codes, statuses))), flush=True)
+        self.assertEqual(statuses, [200, 200, 200])
+        for code in ("UNKNOWN-123", "INACTIVE-456"):
+            with self.assertRaises(urllib.error.HTTPError) as missing:
+                self.command("request", method="GET", path="/products/by-code/" + code)
+            self.assertEqual(missing.exception.code, 404)
 
     def test_cold_start_two_sales_restarts_exactly_once_and_revocation(self):
         self.start("server")

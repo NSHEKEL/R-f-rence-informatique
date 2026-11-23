@@ -357,15 +357,17 @@ class OfflineBroker:
             self.store.put(db, "cache:" + self._session_key() + ":" + path, data)
         return {"cached": True}
 
-    def catalogue(self, images=False):
+    def catalogue(self, images=False, cached_only=False):
         with self.store.connection() as db:
             auth, claims, rights = self._auth(db, "vente_nouvelle")
             selected = dict(self.identity)
             key = "catalogue:" + claims["iss"] + ":" + claims["sub"] + ":" + str(bool(images))
+            if cached_only:
+                key = self.store.get(db, "active-catalogue:" + self._session_key(), key)
             cached = self.store.get(db, key)
             server = self.identity["server"]
             pinned = self.store.get(db, "server:" + server)
-        if self.online or cached is None:
+        if not cached_only and (self.online or cached is None):
             try:
                 fresh = self._remote(server, "/offline/catalogue?images=" + str(bool(images)).lower() + "&device_id=" + self.bootstrap()["device_id"], token=auth["access_token"], timeout=6)
                 proof = jwt.decode(fresh["proof"], pinned["public_key"], algorithms=["RS256"], audience="easygest-offline-catalogue", issuer=claims["iss"])
@@ -546,6 +548,23 @@ class OfflineBroker:
     def request(self, method, path, data=None):
         method = method.upper()
         path = path.split("?")[0]
+        if method == "GET" and path.startswith("/products/by-code/"):
+            with self.store.connection() as db:
+                _, claims, rights = self._auth(db, "vente_nouvelle")
+                if "caisse" not in rights:
+                    raise BrokerError(403, "Consultation de caisse non autorisée")
+                if self._local_session(db, claims, adopt=True) is None:
+                    raise BrokerError(409, "Ouvrez votre caisse provisoire")
+            value = urllib.parse.unquote(path.removeprefix("/products/by-code/")).strip()
+            code = value.lower()
+            for product in self.catalogue(cached_only=True)["data"]:
+                if product.get("active") is False:
+                    continue
+                alias = next((row for row in product.get("barcodes", []) if row.get("active", True) and row["code"].strip().lower() == code), None)
+                packaging = next((row for row in product.get("packagings", []) if row.get("active", True) and (row.get("barcode") or "").strip().lower() == code), None)
+                if code and (alias or packaging or any((product.get(field) or "").strip().lower() == code for field in ("barcode", "qr_code", "sku"))):
+                    return {**product, "scanned_code": value, "scanned_label": alias.get("label") if alias else None, "packaging_id": packaging["id"] if packaging else None}
+            raise BrokerError(404, "Article introuvable")
         with self.store.connection() as db:
             auth, claims, rights = self._auth(db)
             if path.startswith("/cash-sessions") and "caisse" not in rights:
