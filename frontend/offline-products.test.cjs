@@ -19,6 +19,32 @@ function setup() {
 }
 const payload = { client_uuid: 'uuid-one', name: 'Riz', sku: 'RIZ', quantity: 7, barcode: '123', qr_code: '', image: 'full image', packagings: [{ name: 'Carton', factor: 6, active: true, barcode: 'PACK' }], barcodes: [{ code: 'VAR', active: true }] };
 
+test('product scanner and manual lookup retain all pending edits before a second edit', async () => {
+  const { lib } = setup();
+  const source = ts.createSourceFile('Products.tsx', readFileSync(`${__dirname}/src/pages/Products.tsx`, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let scanner, lookup;
+  function visit(node) {
+    if (ts.isCallExpression(node) && node.expression.getText(source) === 'useScanner') scanner = node.getText(source);
+    if (ts.isFunctionDeclaration(node) && node.name?.text === 'lookupBarcode') lookup = node.getText(source);
+    ts.forEachChild(node, visit);
+  }
+  visit(source);
+  const original = { ...payload, id: 12, sale_price: 100 };
+  for (const mode of ['scanner', 'lookup']) {
+    lib.queueProductEdit(original, { ...original, sale_price: 120 });
+    let callback, shown;
+    const context = { api: { get: async () => ({ data: original }) }, pendingCatalogue: lib.pendingCatalogue,
+      editing: null, modalOpen: true, form: { barcode: '123' }, setNotice() {}, openEdit: value => { shown = value; },
+      useScanner: value => { callback = value; } };
+    vm.runInNewContext(ts.transpileModule(`${scanner}\n${lookup}\nthis.lookup = lookupBarcode;`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, context);
+    if (mode === 'scanner') await callback(['123']); else await context.lookup('123');
+    assert.equal(shown.sale_price, 120);
+    lib.queueProductEdit(shown, { ...shown, name: 'Riz corrigé' });
+    assert.deepEqual(JSON.parse(JSON.stringify(lib.pendingProducts()[0].changes)), { name: 'Riz corrigé', sale_price: 120 });
+    assert.equal(lib.pendingCatalogue('/products', [original], [])[0].sale_price, 100);
+  }
+});
+
 test('POS catalogue bypasses locked broker, falls back after local auth refusal and retains cache on failure', async () => {
   const { lib, api, load } = setup();
   const desktop = load('desktopOffline').desktopOffline;

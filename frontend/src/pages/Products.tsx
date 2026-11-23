@@ -544,7 +544,7 @@ export default function Products() {
         `/products/by-code/${encodeURIComponent(code)}`
       );
       setNotice(`Article reconnu : ${data.name} — fiche chargée`);
-      openEdit(data);
+      openEdit(pendingCatalogue("/products", [data])[0]);
     } catch (err) {
       if (axios.isAxiosError(err) && err.response?.status === 404) {
         setNotice("Article inconnu — poursuivez l'enregistrement");
@@ -562,7 +562,7 @@ export default function Products() {
       try {
         const { data } = await api.get<Product>(`/products/by-code/${encodeURIComponent(code)}`);
         setNotice(`Article reconnu : ${data.name} — fiche chargée`);
-        openEdit(data);
+        openEdit(pendingCatalogue("/products", [data])[0]);
         return;
       } catch (error) { if (!axios.isAxiosError(error) || error.response?.status !== 404) throw error; }
     }
