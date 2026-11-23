@@ -146,6 +146,27 @@ jobs:
           body: |
             **EasyGest — gestion de vente et de stock.**
 
+            ### Reprise et diagnostic de caisse 2.18.48
+            - Une erreur de lecture de caisse affiche son détail et un réessai,
+              au lieu de demander une nouvelle ouverture. Les coordonnées société
+              historiques vides ne font plus échouer les états de caisse.
+            - Les opérations provisoires rejoignent la caisse serveur compatible,
+              sans créer de caisse superposée ; les sessions provisoires distinctes
+              restent séparées. Une clôture confirme l'identifiant compté et la
+              consolidation attend la récupération des opérations en attente.
+            - Tous les conflits non résolus sont accessibles dans Configuration,
+              même après plus de 200 opérations terminées. Le classement audité
+              d'un compte supprimé garde les originaux et propage l'exclusion par
+              UUID au miroir mobile (service central compatible nécessaire).
+            - Les anciens tickets rejetés ou archivés non ressaisis restent visibles
+              dans une liste à vérifier, séparée des opérations à synchroniser.
+            - Les paiements des ventes sont chargés en lot dans les totaux de caisse :
+              13 requêtes SQL constantes dans le test de 200 ventes, contre jusqu'à
+              214 avant. Aucun changement des calculs comptables.
+            - Sonde réseau portée de 0,8 à 2 secondes : les latences de 650–950 ms
+              du test ne font plus alterner connecté/hors ligne. Les refus de droits,
+              comptes ou signatures ne sont pas contournés.
+
             ### Connexion et diagnostic de caisse 2.18.47
             - Une reprise de journal en conflit ne bloque plus une connexion
               valide. Un avertissement persistant garde les opérations visibles,
