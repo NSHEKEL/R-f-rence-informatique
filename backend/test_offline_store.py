@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from app.offline_crypto import digest, fingerprint, private_key, public_key, sign, verify
-from app.offline_store import OfflineStore
+from app.offline_store import OfflineStore, local_events_pending
 
 
 class OfflineCryptoTests(unittest.TestCase):
@@ -29,6 +29,21 @@ class OfflineStoreTests(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory(prefix="EasyGest-offline-test-", dir=os.environ["LOCALAPPDATA"])
         self.addCleanup(self.directory.cleanup)
         self.store = OfflineStore(self.directory.name)
+
+    def test_local_pending_probe_reads_existing_journal_without_decrypting_or_creating_it(self):
+        with patch.dict(os.environ, EASYGEST_OFFLINE_HOME=self.directory.name), patch("app.offline_store.installation_uid", return_value="shop"):
+            self.assertFalse(local_events_pending())
+            with self.store.connection() as db:
+                self.store.append(db, "shop", 4, "session", "sale", {}, "grant")
+            self.assertTrue(local_events_pending())
+            with self.store.connection() as db:
+                db.execute("UPDATE events SET state='applied'")
+                self.store.append(db, "other-shop", 4, "session", "sale", {}, "grant")
+            self.assertFalse(local_events_pending())
+        missing = str(Path(self.directory.name) / "missing")
+        with patch.dict(os.environ, EASYGEST_OFFLINE_HOME=missing):
+            self.assertFalse(local_events_pending())
+            self.assertFalse(Path(missing).exists())
 
     def test_commit_survives_restart_and_payloads_are_encrypted(self):
         payload = {"reference": "SECRET-RECEIPT", "quantity": 0.5, "amount": 1750}

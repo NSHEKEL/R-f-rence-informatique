@@ -3,6 +3,8 @@ import axios from "axios";
 import api, { formatXOF } from "../api/client";
 import { apiErrorMessage } from "../lib/apiErrors";
 import { useSyncVersion } from "../context/SyncContext";
+import { useAuth } from "../context/AuthContext";
+import { useNetwork } from "../context/NetworkContext";
 import Modal from "./Modal";
 
 const modes = [["cash", "Espèces"], ["mobile_money", "Mobile Money"], ["bank", "Bancaire"], ["credit", "Crédit (non encaissé)"], ["other", "Autres moyens"]] as const;
@@ -41,6 +43,9 @@ interface GlobalReport {
 const localDay = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 
 export default function GlobalCash() {
+  const { recoveryWarning } = useAuth();
+  const { pendingCount } = useNetwork();
+  const recoveryBlocksClose = Boolean(recoveryWarning || pendingCount);
   const [from, setFrom] = useState(localDay);
   const [to, setTo] = useState(localDay);
   const [report, setReport] = useState<GlobalReport | null>(null);
@@ -86,6 +91,7 @@ export default function GlobalCash() {
   }, [load, version]);
   const data = selected || report;
   async function close() {
+    if (recoveryBlocksClose) { setError(recoveryWarning || "Récupérez les opérations hors ligne avant la clôture globale"); return; }
     if (!report) return;
     setSaving(true); setError("");
     try {
@@ -108,6 +114,7 @@ export default function GlobalCash() {
         <option value="">Sessions non consolidées</option>{closures.map((r) => <option key={r.id} value={r.id}>Clôture #{r.id} · {r.date_from} → {r.date_to}</option>)}
       </select>
     </div>
+    {recoveryBlocksClose && <p role="alert" className="text-amber-700">{recoveryWarning || "Opérations hors ligne en attente : synchronisez les postes avant la clôture globale."}</p>}
     {error && <p role="alert" className="text-red-600">{error}</p>}
     {data && <>
       {selected && <h3 className="font-bold">Clôture globale #{selected.id} — récapitulatif figé · {selected.date_from} → {selected.date_to}</h3>}
@@ -137,10 +144,10 @@ export default function GlobalCash() {
       </div>)}</div>}
       {data.note && <p>Justification : {data.note}</p>}
       {!selected && <><p className="text-sm">Avant clôture globale : reconnectez les postes, synchronisez leurs tickets et clôturez chaque caisse individuellement. {data.open_sessions} session(s) encore ouverte(s).</p>
-        <button className="btn-primary" disabled={!data.sessions.length || data.open_sessions > 0 || saving} onClick={() => { setCounted(String(data.counted_cash ?? "")); setNote(""); setClosing(true); }}>Clôturer le montant global</button>
+        <button className="btn-primary" disabled={recoveryBlocksClose || !data.sessions.length || data.open_sessions > 0 || saving} onClick={() => { setCounted(String(data.counted_cash ?? "")); setNote(""); setClosing(true); }}>Clôturer le montant global</button>
       </>}
     </>}
-    <Modal open={closing} onClose={() => setClosing(false)} title="Confirmer la clôture globale" footer={<button className="btn-primary" disabled={saving || !counted.trim() || !Number.isFinite(Number(counted)) || Number(counted) < 0} onClick={close}>Valider la clôture globale</button>}>
+    <Modal open={closing} onClose={() => setClosing(false)} title="Confirmer la clôture globale" footer={<button className="btn-primary" disabled={recoveryBlocksClose || saving || !counted.trim() || !Number.isFinite(Number(counted)) || Number(counted) < 0} onClick={close}>Valider la clôture globale</button>}>
       <p>Espèces théoriques : {formatXOF(report?.expected_cash)} · ventes : {formatXOF(report?.total_sales)}. Cette clôture fige les sessions affichées sans générer de nouvelles ventes.</p>
       <label className="label">Espèces réellement comptées / déclarées<input className="input" type="number" min="0" value={counted} onChange={(e) => setCounted(e.target.value)} /></label>
       <p>Écart espèces : {formatXOF(Number(counted) - (report?.expected_cash || 0))}</p>

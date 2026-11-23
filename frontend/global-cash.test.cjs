@@ -72,6 +72,7 @@ test("seller closure summary and flows render, then global close returns to the 
     axios: { default: { isAxiosError: () => false } },
     "../api/client": { default: { get: async (path) => ({ data: path.endsWith("/closures") ? [{ ...report, id: 9 }] : empty }), post: async () => ({ data: { ...report, id: 9 } }) }, formatXOF: (value) => String(value ?? 0) },
     "../lib/apiErrors": {}, "../context/SyncContext": { useSyncVersion: () => 0 }, "./Modal": { default: () => null },
+    "../context/AuthContext": { useAuth: () => ({ recoveryWarning: '' }) }, "../context/NetworkContext": { useNetwork: () => ({ pendingCount: 0 }) },
   };
   const output = {};
   vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: false } }).outputText, { exports: output, require: (name) => dependencies[name] || require(name) });
@@ -84,4 +85,19 @@ test("seller closure summary and flows render, then global close returns to the 
   const refreshed = renderToStaticMarkup(render());
   assert.doesNotMatch(refreshed, /récapitulatif figé|Clôtures individuelles reçues|Vendeuse/);
   assert.match(refreshed, /0 session\(s\) encore ouverte\(s\)/);
+});
+
+test('global close refuses local recovery warnings or a pending journal before any request', async () => {
+  const close = find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'close');
+  for (const recoveryWarning of ['Journal en conflit', '']) {
+    let error;
+    const run = evaluate(close.getText(file), {
+      recoveryBlocksClose: true, recoveryWarning, setError: value => { error = value; },
+      api: { post() { assert.fail('pending journal must block global close'); } },
+    });
+    await run();
+    assert.match(error, /Journal en conflit|Récupérez les opérations hors ligne/);
+  }
+  assert.match(source, /disabled=\{recoveryBlocksClose \|\| !data.sessions.length/);
+  assert.match(source, /disabled=\{recoveryBlocksClose \|\| saving/);
 });

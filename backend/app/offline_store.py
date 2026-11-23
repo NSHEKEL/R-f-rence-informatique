@@ -15,6 +15,23 @@ from pathlib import Path
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from .offline_crypto import canonical, digest, persistent_secret, private_key, public_key, sign
+from .licensing import installation_uid
+
+
+def local_events_pending():
+    if sys.platform != "win32":
+        return False
+    root = Path(os.environ.get("EASYGEST_OFFLINE_HOME") or Path(os.environ["LOCALAPPDATA"]) / "EasyGest" / "offline")
+    path = root / "journal.sqlite3"
+    try:
+        path.stat()
+    except FileNotFoundError:
+        return False
+    db = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=5)
+    try:
+        return db.execute("SELECT 1 FROM events WHERE scope=? AND state!='applied' LIMIT 1", (installation_uid(),)).fetchone() is not None
+    finally:
+        db.close()
 
 
 class OfflineStore:

@@ -1,4 +1,5 @@
 import json
+import sqlite3
 from datetime import date, datetime, time, timezone
 from typing import Literal
 
@@ -9,7 +10,8 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.exc import IntegrityError
 
 from ..auth import get_current_user, require_admin
-from .. import remote_sales
+from .. import offline_store, remote_sales
+from ..offline_ingest import LOCK
 from ..database import get_db
 from ..models import (
     BankDeposit,
@@ -22,6 +24,8 @@ from ..models import (
     Expense,
     Notification,
     Order,
+    OfflineEvent,
+    OfflineSession,
     Sale,
     SaleReturn,
     StockMovement,
@@ -274,6 +278,19 @@ def global_closures(db: Session = Depends(get_db), user: User = Depends(require_
 
 @router.post("/global/close", status_code=201)
 def close_global(payload: CashGlobalClose, db: Session = Depends(get_db), user: User = Depends(require_admin)):
+    with LOCK:
+        pending = db.query(OfflineEvent.id).filter(OfflineEvent.state != "applied").first()
+        provisional = db.query(OfflineSession.id).filter(or_(OfflineSession.status == "pending", OfflineSession.cash_session_id.is_(None))).first()
+        try:
+            local = offline_store.local_events_pending()
+        except (OSError, sqlite3.Error):
+            raise HTTPException(503, "Journal local illisible : vérifiez la récupération avant la clôture globale") from None
+        if pending or provisional or local:
+            raise HTTPException(409, "Opérations hors ligne en attente ou en conflit : récupérez tous les journaux avant la clôture globale")
+        return _close_global(payload, db, user)
+
+
+def _close_global(payload, db, user):
     ids = set(payload.session_ids)
     sessions = _global_sessions(db, payload.date_from, payload.date_to)
     if not sessions or ids != {s.id for s in sessions} or len(ids) != len(payload.session_ids):

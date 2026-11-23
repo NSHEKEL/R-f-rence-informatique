@@ -1,5 +1,8 @@
 import json
 import unittest
+import sqlite3
+import time
+from unittest.mock import patch
 from datetime import date, timedelta
 
 from sqlalchemy import inspect, text
@@ -7,7 +10,7 @@ from fastapi.testclient import TestClient
 
 import test_cash_register as register
 import test_wholesale as wholesale
-from app.models import BankAccount, BankDeposit, CashClosure, CashSession, Debt, DebtPayment, Sale
+from app.models import BankAccount, BankDeposit, CashClosure, CashSession, Debt, DebtPayment, OfflineEvent, OfflineSession, Sale
 from app.payment_totals import group_payments
 
 
@@ -19,6 +22,9 @@ class CashGlobalTests(unittest.TestCase):
 
     def setUp(self):
         register.CashRegisterTests.setUp(self)
+        local = patch("app.offline_store.local_events_pending", return_value=False)
+        local.start()
+        self.addCleanup(local.stop)
         self.client = TestClient(self.app)
         self.addCleanup(self.client.close)
 
@@ -103,6 +109,34 @@ class CashGlobalTests(unittest.TestCase):
         self.assertEqual(closed["difference"], -10)
         self.call(f"/api/cash-sessions/global?date_from={date.today()}&date_to={date.today() - timedelta(days=1)}", status=400)
         self.call("/api/cash-sessions/global/close", "POST", {"date_from": str(date.today()), "date_to": str(date.today()), "session_ids": [], "closing_balance": 0}, 422)
+
+    def test_unrecovered_events_provisional_sessions_and_local_journal_block_global_close(self):
+        opened = self.prepare()
+        self.close(500)
+        preview = self.call("/api/cash-sessions/global")
+        event = OfflineEvent(id="pending-event", device_id="device", user_id=self.user.id, session_id="provisional",
+                             sequence=1, kind="open", occurred_at=time.time(), hash="hash", envelope="{}")
+        self.db.add(event)
+        for state in ("received", "conflict"):
+            event.state = state
+            self.db.commit()
+            self.global_close(preview, 500, 409)
+            self.assertEqual(self.db.query(CashClosure).count(), 0)
+        event.state = "applied"
+        provisional = OfflineSession(id="provisional", device_id="device", user_id=self.user.id, opening_event_id=event.id)
+        self.db.add(provisional)
+        self.db.commit()
+        self.global_close(preview, 500, 409)
+        provisional.status = "open"
+        provisional.cash_session_id = opened["id"]
+        self.db.commit()
+        with patch("app.offline_store.local_events_pending", return_value=True):
+            self.global_close(preview, 500, 409)
+        with patch("app.offline_store.local_events_pending", side_effect=sqlite3.OperationalError("locked")):
+            self.global_close(preview, 500, 503)
+        self.assertEqual(self.db.query(CashClosure).count(), 0)
+        self.global_close(preview, 500)
+        print("GLOBAL_PENDING_GUARD_OK received=True conflict=True provisional=True local_journal=True unreadable=True recovered_close_once=True")
 
     def test_frozen_z_old_payment_modes_period_scope_and_additive_migration(self):
         opened = self.prepare()
