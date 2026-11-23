@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..operation_locks import lock_operations
 from .. import events, mailer
 from ..database import SessionLocal
 from ..models import (
@@ -195,6 +196,7 @@ def mirror(payload: MirrorRequest, db: Session = Depends(get_db)):
     installation = (
         db.query(Installation)
         .filter(Installation.uid == payload.installation_uid.strip())
+        .with_for_update()
         .first()
     )
     if installation is None:
@@ -203,6 +205,8 @@ def mirror(payload: MirrorRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Installation non autorisée")
     client = installation.client
 
+    lock_operations(db, client.id, installation.uid,
+                    [sale.operation_id for sale in payload.sales] + [str(exclusion.operation_id) for exclusion in payload.offline_exclusions])
     known = {
         row.email: row
         for row in db.query(MirrorUser).filter(MirrorUser.client_id == client.id)

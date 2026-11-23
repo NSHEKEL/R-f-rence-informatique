@@ -277,6 +277,14 @@ class MirrorSale(Base):
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
 
+class MirrorOperationLock(Base):
+    __tablename__ = "mirror_operation_locks"
+
+    client_id = Column(Integer, ForeignKey("clients.id"), primary_key=True)
+    installation_uid = Column(String, primary_key=True)
+    operation_id = Column(String(64), primary_key=True)
+
+
 class MirrorExclusion(Base):
     __tablename__ = "mirror_exclusions"
     __table_args__ = (UniqueConstraint("client_id", "installation_uid", "operation_id", name="uq_mirror_exclusion"),)

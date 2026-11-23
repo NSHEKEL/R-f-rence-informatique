@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from ..offline_auth import AUDIENCE
 from ..offline_crypto import canonical, digest, fingerprint, verify
 from .models import Installation, MirrorExclusion, MirrorSale, OfflineDelegation
+from .operation_locks import lock_operations
 from .security import license_private_key, license_public_key
 
 AUD = "easygest-central-offline-upload"
@@ -73,11 +74,18 @@ def upload(db, payload):
         installation = db.query(Installation).filter_by(uid=delegation.installation_uid).with_for_update().one()
         grant = jwt.decode(delegation.grant, installation.offline_public_key, algorithms=["RS256"], audience=AUDIENCE,
             issuer=installation.uid, options={"verify_exp": False})
+        operation_ids = []
+        for envelope in payload.events:
+            operation_id = envelope["event"]["id"]
+            if not isinstance(operation_id, str) or len(operation_id) > 64:
+                raise ValueError("UUID invalide")
+            uuid.UUID(operation_id)
+            operation_ids.append(operation_id)
+        lock_operations(db, installation.client_id, installation.uid, operation_ids)
         accepted = []
         for envelope in payload.events:
             event = envelope["event"]
             verify(delegation.public_key, event, envelope["signature"])
-            uuid.UUID(event["id"])
             if (event["kind"] != "sale" or event["grant"] != delegation.grant or event["device_id"] != delegation.device_id
                     or event["scope"] != installation.uid or str(event["user_id"]) != grant["sub"]
                     or not grant["auth_at"] - 60 <= float(event["occurred_at"]) <= grant["exp"]

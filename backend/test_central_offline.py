@@ -1,7 +1,13 @@
 import json
+import sqlite3
+import tempfile
+import threading
 import time
 import unittest
 import uuid
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
+from pathlib import Path
 from unittest.mock import patch
 
 from fastapi import FastAPI
@@ -12,14 +18,87 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from app.central.database import Base, get_db
-from app.central.models import Client, Installation, MirrorExclusion, MirrorSale
+from app.central.models import Client, Installation, MirrorExclusion, MirrorOperationLock, MirrorSale
+from app.central import offline_sales, operation_locks
 from app.central.routers import console, mobile, provisioning
+from app.central.schemas import MirrorRequest
 from app.offline_auth import AUDIENCE
 from app.offline_crypto import digest, fingerprint, private_key, public_key, sign
 from types import SimpleNamespace
 
 
 class CentralOfflineTests(unittest.TestCase):
+    def test_concurrent_upload_and_exclusion_serialize_both_commit_orders(self):
+        token = self.delegate().json()["token"]
+        client_id, installation_uid = self.installation.client_id, self.installation.uid
+        self.db.rollback()
+        for first_kind in ("upload", "exclude"):
+            with self.subTest(first=first_kind), tempfile.TemporaryDirectory() as folder:
+                path = Path(folder) / "central.sqlite3"
+                with self.db.get_bind().connect() as source, closing(sqlite3.connect(path)) as target:
+                    source.connection.driver_connection.backup(target)
+                engine = create_engine(f"sqlite:///{path}", connect_args={"check_same_thread": False, "timeout": 10})
+                try:
+                    envelope = self.event()
+                    operation_id = envelope["event"]["id"]
+                    exclusion = {"operation_id": operation_id, "actor_id": 1, "reason": "Original conservé", "reviewed_at": time.time(), "event_hash": digest(envelope["event"])}
+                    acquired, release, attempted, passed = (threading.Event() for _ in range(4))
+                    worker = threading.local()
+                    original = operation_locks.lock_operations
+                    def observed(*args, **kwargs):
+                        if worker.kind == first_kind:
+                            original(*args, **kwargs)
+                            acquired.set()
+                            self.assertTrue(release.wait(10))
+                        else:
+                            attempted.set()
+                            original(*args, **kwargs)
+                            passed.set()
+                    def run(kind):
+                        worker.kind = kind
+                        with Session(engine, autoflush=False) as db:
+                            if kind == "upload":
+                                return offline_sales.upload(db, offline_sales.UploadRequest(token=token, events=[envelope]))
+                            return provisioning.mirror(MirrorRequest(installation_uid=installation_uid, token="installation-test-only", offline_exclusions=[exclusion]), db=db)
+                    with patch.object(offline_sales, "lock_operations", side_effect=observed), patch.object(provisioning, "lock_operations", side_effect=observed), ThreadPoolExecutor(max_workers=2) as pool:
+                        first = pool.submit(run, first_kind)
+                        try:
+                            self.assertTrue(acquired.wait(10))
+                            second = pool.submit(run, "exclude" if first_kind == "upload" else "upload")
+                            self.assertTrue(attempted.wait(10))
+                            self.assertFalse(passed.wait(.15), "second transaction read before the UUID lock was released")
+                        finally:
+                            release.set()
+                        first.result(timeout=15)
+                        second.result(timeout=15)
+                    with Session(engine) as db:
+                        row = db.query(MirrorSale).filter_by(operation_id=operation_id).one()
+                        self.assertTrue(row.excluded)
+                        self.assertEqual((row.total, json.loads(row.offline_original)), (1750, envelope))
+                        self.assertEqual(db.query(MirrorOperationLock).count(), 1)
+                        self.assertEqual(db.query(MirrorExclusion).count(), 1)
+                        shop = db.get(Client, client_id)
+                        self.assertEqual(mobile._visible(db, SimpleNamespace(role="admin"), shop).count(), 0)
+                        stats = console.magasins_stats(client_id, db=db, _=SimpleNamespace())
+                        self.assertEqual(sum(item.chiffre_affaires for item in stats), 0)
+                    print(f"CENTRAL_EXCLUSION_SERIALIZED first={first_kind} second_waited=True rows=1 excluded=True mobile=0 console=0 original_preserved=True")
+                finally:
+                    engine.dispose()
+
+    def test_empty_or_rejected_upload_does_not_leave_uuid_guards(self):
+        token = self.delegate().json()["token"]
+        self.assertEqual(self.client.post("/api/central/public/offline/events", json={"token": token, "events": []}).json()["accepted"], [])
+        envelope = self.event()
+        envelope["signature"] = sign(private_key(), envelope["event"])
+        response = self.client.post("/api/central/public/offline/events", json={"token": token, "events": [envelope]})
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(self.db.query(MirrorOperationLock).count(), 0)
+        envelope["event"]["id"] = "invalid-" * 100
+        with patch.object(offline_sales, "lock_operations") as lock:
+            response = self.client.post("/api/central/public/offline/events", json={"token": token, "events": [envelope]})
+            self.assertEqual(response.status_code, 403)
+            lock.assert_not_called()
+
     def test_exclusion_is_idempotent_before_or_after_receipt_and_survives_canonical_upload(self):
         token = self.delegate().json()["token"]
         for exclude_first in (False, True):
@@ -86,6 +165,7 @@ class CentralOfflineTests(unittest.TestCase):
         with legacy.connect() as conn:
             self.assertEqual(tuple(conn.execute(text("SELECT reference,total,excluded,exclusion FROM mirror_sales")).one()), ("original",1750,0,""))
             self.assertEqual(conn.execute(text("SELECT count(*) FROM mirror_exclusions")).scalar(), 0)
+            self.assertEqual(conn.execute(text("SELECT count(*) FROM mirror_operation_locks")).scalar(), 0)
 
     def setUp(self):
         engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
