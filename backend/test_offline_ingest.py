@@ -3,6 +3,7 @@ import unittest
 import uuid
 import threading
 from contextlib import nullcontext
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -178,6 +179,46 @@ class OfflineIngestTests(unittest.TestCase):
         self.assertEqual(len({row.cash_session_id for row in mappings}), 2)
         self.assertEqual(self.db.query(Sale).count(), 2)
         print("JOURNAL_IDENTITY_GUARD_OK failed_close_preserves_first=True later_open_conflict=True distinct_after_recovery=True")
+
+    def test_admin_can_review_a_deleted_users_conflicts_without_posting_or_losing_them(self):
+        envelopes = [self.event("open", {"opening_balance": 500}), self.sale(quantity=0.5)]
+        self.user.is_active = False
+        self.db.commit()
+        self.assertTrue(all(row["state"] == "conflict" for row in self.submit(*envelopes)))
+        self.user.is_active = True
+        self.user.role = "admin"
+        self.db.commit()
+        event_id = envelopes[0]["event"]["id"]
+        self.call(f"/api/offline/events/{event_id}/resolve", "POST", {"reason": "Vérifié sur pièces", "review": True}, status=409)
+        self.db.delete(self.user)
+        self.user = self.other
+        self.db.commit()
+        self.call(f"/api/offline/events/{event_id}/resolve", "POST", {"reason": "Vérifié sur pièces", "review": True}, status=403)
+        self.user.role = "admin"
+        self.db.commit()
+        self.call(f"/api/offline/events/{event_id}/resolve", "POST", {"reason": "     ", "review": True}, status=400)
+        self.assertTrue(all(row["user_deleted"] for row in self.call("/api/offline/events")))
+        for envelope in envelopes:
+            event_id = envelope["event"]["id"]
+            result = self.call(f"/api/offline/events/{event_id}/resolve", "POST", {"reason": "Vérifié sur pièces", "review": True})
+            self.assertEqual(result["state"], "reviewed")
+            row = self.db.get(OfflineEvent, event_id)
+            self.assertEqual(json.loads(row.envelope), envelope)
+            self.assertEqual(json.loads(row.resolution)[-1]["actor_id"], self.user.id)
+        self.assertTrue(all(row["state"] == "reviewed" for row in self.submit(*envelopes)))
+        self.assertEqual(self.db.query(Sale).count(), 0)
+        self.assertEqual(self.db.query(CashSession).count(), 0)
+        print("ORPHAN_REVIEW_OK admin_only=True live_accounts_rejected=True original_kept=True replay_reviewed=True posted_sales=0")
+
+    def test_reviewed_ack_is_durable_and_no_longer_pending(self):
+        store = OfflineStore(Path(self.temp.name) / "review-journal")
+        with store.connection() as db:
+            envelope = store.append(db, "scope", 999, str(uuid.uuid4()), "open", {"opening_balance": 500}, "grant")
+            event_id = envelope["event"]["id"]
+            from app.offline_crypto import digest
+            store.acknowledge(db, event_id, {"hash": digest(envelope["event"]), "state": "reviewed"})
+            self.assertEqual(store.events(db, "scope", pending=True), [])
+            self.assertEqual(store.events(db, "scope")[0]["envelope"], envelope)
 
     def test_valid_receipts_sync_after_expiry_but_new_out_of_window_receipts_do_not(self):
         from fastapi import HTTPException

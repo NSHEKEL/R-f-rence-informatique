@@ -279,8 +279,8 @@ def global_closures(db: Session = Depends(get_db), user: User = Depends(require_
 @router.post("/global/close", status_code=201)
 def close_global(payload: CashGlobalClose, db: Session = Depends(get_db), user: User = Depends(require_admin)):
     with LOCK:
-        pending = db.query(OfflineEvent.id).filter(OfflineEvent.state != "applied").first()
-        provisional = db.query(OfflineSession.id).filter(or_(OfflineSession.status == "pending", OfflineSession.cash_session_id.is_(None))).first()
+        pending = db.query(OfflineEvent.id).filter(OfflineEvent.state.notin_(["applied", "reviewed"])).first()
+        provisional = db.query(OfflineSession.id).filter(OfflineSession.status != "reviewed", or_(OfflineSession.status == "pending", OfflineSession.cash_session_id.is_(None))).first()
         try:
             local = offline_store.local_events_pending()
         except (OSError, sqlite3.Error):

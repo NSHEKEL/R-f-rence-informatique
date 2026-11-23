@@ -69,6 +69,7 @@ class EventBatch(BaseModel):
 class Resolution(BaseModel):
     reason: str = Field(min_length=5, max_length=1000)
     regularize: bool = False
+    review: bool = False
 
 
 @router.get("/identity")
@@ -154,11 +155,12 @@ def list_events(db: Session = Depends(get_db), user: User = Depends(get_current_
     query = db.query(OfflineEvent)
     if user.role != "admin":
         query = query.filter_by(user_id=user.id)
-    return [{"id": row.id, "user_id": row.user_id, "session_id": row.session_id, "kind": row.kind, "state": row.state,
+    users = {value for (value,) in db.query(User.id).all()}
+    return [{"id": row.id, "user_id": row.user_id, "user_deleted": row.user_id not in users, "session_id": row.session_id, "kind": row.kind, "state": row.state,
              "occurred_at": row.occurred_at, "result": json.loads(row.result), "resolution": json.loads(row.resolution) if row.resolution else None}
             for row in query.order_by(OfflineEvent.received_at.desc()).limit(200).all()]
 
 
 @router.post("/events/{event_id}/resolve")
 def resolve(event_id: str, payload: Resolution, db: Session = Depends(get_db), user: User = Depends(require_admin)):
-    return retry_event(db, event_id, user, payload.reason, payload.regularize)
+    return retry_event(db, event_id, user, payload.reason, payload.regularize, payload.review)

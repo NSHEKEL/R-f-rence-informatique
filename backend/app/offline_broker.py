@@ -193,7 +193,7 @@ class OfflineBroker:
                     with self.store.connection() as journal:
                         self.store.acknowledge(journal, event["id"], result)
                     recovered += int(result["state"] == "applied")
-                    if result["state"] != "applied":
+                    if result["state"] not in {"applied", "reviewed"}:
                         failures.append(str(result.get("reason") or "Rapprochement administrateur nécessaire"))
                 except HTTPException as error:
                     db.rollback()
@@ -315,7 +315,7 @@ class OfflineBroker:
             groups = {}
             for item in entries:
                 event = item["envelope"]["event"]
-                if event["kind"] != "sale" or self.store.get(db, "central-ack:" + event["id"]):
+                if item["state"] == "reviewed" or event["kind"] != "sale" or self.store.get(db, "central-ack:" + event["id"]):
                     continue
                 grant_id = jwt.get_unverified_claims(event["grant"])["jti"]
                 delegated = self.store.get(db, "central:" + grant_id)
@@ -388,7 +388,7 @@ class OfflineBroker:
         quantities = {}
         for item in events:
             event = item["envelope"]["event"]
-            if event["kind"] == "sale" and event["id"] not in covered:
+            if item["state"] != "reviewed" and event["kind"] == "sale" and event["id"] not in covered:
                 for line in event["payload"]["sale"]["items"]:
                     quantities[line["product_id"]] = quantities.get(line["product_id"], 0) + line["quantity"]
         for product in rows:
@@ -504,7 +504,7 @@ class OfflineBroker:
         movements = []
         for item in self.store.events(db, claims["iss"], int(claims["sub"])):
             event = item["envelope"]["event"]
-            if event["session_id"] != session["uuid"] or event["id"] in covered:
+            if item["state"] == "reviewed" or event["session_id"] != session["uuid"] or event["id"] in covered:
                 continue
             payload = event["payload"]
             if event["kind"] == "sale":

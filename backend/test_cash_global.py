@@ -20,6 +20,23 @@ class CashGlobalTests(unittest.TestCase):
     open = register.CashRegisterTests.open
     run_migration = register.CashRegisterTests.run_migration
 
+    def test_reviewed_orphan_conflict_releases_global_close_without_erasing_it(self):
+        from app.routers import offline
+        self.app.include_router(offline.router)
+        till = self.prepare()
+        self.call("/api/cash-sessions/close", "POST", {"cash_session_id": till["id"], "closing_balance": 500})
+        event = OfflineEvent(id="orphan", device_id="device", user_id=99999, session_id="orphan-session", sequence=1, kind="open", occurred_at=time.time(), hash="hash", envelope='{"retained": true}', state="conflict", result="{}")
+        mapping = OfflineSession(id="orphan-session", device_id="device", user_id=99999, opening_event_id="orphan", status="pending")
+        self.db.add_all([event, mapping])
+        self.db.commit()
+        payload = {"date_from": till["business_day"], "date_to": till["business_day"], "session_ids": [till["id"]], "closing_balance": 500}
+        self.call("/api/cash-sessions/global/close", "POST", payload, status=409)
+        result = self.call("/api/offline/events/orphan/resolve", "POST", {"reason": "Pièces vérifiées, compte supprimé", "review": True})
+        self.assertEqual(result["state"], "reviewed")
+        self.call("/api/cash-sessions/global/close", "POST", payload, status=201)
+        self.assertEqual(self.db.get(OfflineEvent, "orphan").envelope, '{"retained": true}')
+        self.assertEqual(self.db.get(OfflineSession, "orphan-session").status, "reviewed")
+
     def setUp(self):
         register.CashRegisterTests.setUp(self)
         local = patch("app.offline_store.local_events_pending", return_value=False)

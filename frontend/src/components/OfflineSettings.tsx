@@ -3,7 +3,7 @@ import api from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { apiErrorMessage } from "../lib/apiErrors";
 
-interface EventRow { id: string; kind: string; state: string; user_id: number; result: { reason?: string }; }
+interface EventRow { id: string; kind: string; state: string; user_id: number; user_deleted?: boolean; result: { reason?: string }; }
 
 export default function OfflineSettings() {
   const { isAdmin } = useAuth();
@@ -36,6 +36,15 @@ export default function OfflineSettings() {
       setEvents((await api.get<EventRow[]>("/offline/events")).data);
     } catch { setMessage("Rapprochement refusé ; l'opération originale reste conservée."); }
   }
+  async function review(row: EventRow) {
+    const reason = window.prompt("Compte supprimé : motif de classement vérifié (minimum 5 caractères). L'original reste conservé ; aucune vente ni écriture ne sera ajoutée.");
+    if (!reason || reason.trim().length < 5 || !window.confirm("Classer ce conflit vérifié sans le comptabiliser ? Vérifiez d'abord les pièces originales.")) return;
+    try {
+      await api.post(`/offline/events/${row.id}/resolve`, { reason, review: true });
+      setMessage("Conflit classé vérifié. Original conservé, aucune opération comptabilisée.");
+      setEvents((await api.get<EventRow[]>("/offline/events")).data);
+    } catch { setMessage("Classement refusé ; l'original reste conservé."); }
+  }
   return <section className="card space-y-4 p-6">
     <h3 className="font-bold">Postes vendeurs hors ligne</h3>
     <label className="flex gap-2 text-sm"><input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />Autoriser le mode hors ligne après connexion serveur</label>
@@ -44,8 +53,8 @@ export default function OfflineSettings() {
     <button className="btn-primary" onClick={save}>Enregistrer la politique hors ligne</button>
     <div className="rounded-xl bg-slate-50 p-3 text-xs"><p className="font-semibold">Empreinte du serveur à comparer lors de la préparation unique d'un poste par l'administrateur</p><code className="break-all">{fingerprint || "Indisponible hors ligne"}</code><p>Le vendeur ne règle rien ensuite : il utilise son identifiant et son mot de passe habituels.</p></div>
     {message && <p className="text-sm" role="status">{message}</p>}
-    <details><summary className="cursor-pointer text-sm font-semibold">Opérations reçues des postes ({events.filter((row) => row.state !== "applied").length} à vérifier)</summary>
-      <ul className="mt-2 max-h-64 space-y-2 overflow-auto text-xs">{events.map((row) => <li key={row.id} className="rounded border p-2">{row.kind} · vendeur {row.user_id} · {row.state}<code className="ml-2 break-all">{row.id}</code>{row.result.reason && <p>{row.result.reason}</p>}{row.state !== "applied" && <button className="btn-secondary mt-1" onClick={() => resolve(row)}>Vérifier et réessayer</button>}</li>)}</ul>
+    <details><summary className="cursor-pointer text-sm font-semibold">Opérations reçues des postes ({events.filter((row) => !["applied", "reviewed"].includes(row.state)).length} à vérifier)</summary>
+      <ul className="mt-2 max-h-64 space-y-2 overflow-auto text-xs">{events.map((row) => <li key={row.id} className="rounded border p-2">{row.kind} · vendeur {row.user_id} · {row.state}<code className="ml-2 break-all">{row.id}</code>{row.result.reason && <p>{row.result.reason}</p>}{!["applied", "reviewed"].includes(row.state) && <><button className="btn-secondary mt-1" onClick={() => resolve(row)}>Vérifier et réessayer</button>{row.user_deleted && <button className="btn-secondary ml-2 mt-1" onClick={() => review(row)}>Classer vérifié (compte supprimé)</button>}</>}</li>)}</ul>
     </details>
   </section>;
 }

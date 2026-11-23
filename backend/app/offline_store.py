@@ -29,7 +29,7 @@ def local_events_pending():
         return False
     db = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=5)
     try:
-        return db.execute("SELECT 1 FROM events WHERE scope=? AND state!='applied' LIMIT 1", (installation_uid(),)).fetchone() is not None
+        return db.execute("SELECT 1 FROM events WHERE scope=? AND state NOT IN ('applied','reviewed') LIMIT 1", (installation_uid(),)).fetchone() is not None
     finally:
         db.close()
 
@@ -124,12 +124,12 @@ class OfflineStore:
             query += " AND user_id=?"
             args.append(user_id)
         if pending:
-            query += " AND state!='applied'"
+            query += " AND state NOT IN ('applied','reviewed')"
         rows = db.execute(query + " ORDER BY rowid", args).fetchall()
         return [{"envelope": self.open(row["body"]), "state": row["state"], "result": self.open(row["result"]) if row["result"] else None} for row in rows]
 
     def acknowledge(self, db, event_id, result):
         row = db.execute("SELECT hash FROM events WHERE id=?", (event_id,)).fetchone()
-        if row is None or result.get("hash") != row["hash"] or result.get("state") not in {"applied", "conflict", "received"}:
+        if row is None or result.get("hash") != row["hash"] or result.get("state") not in {"applied", "conflict", "received", "reviewed"}:
             raise ValueError("Accusé de réception invalide")
         db.execute("UPDATE events SET state=?,result=? WHERE id=?", (result["state"], self.seal(result), event_id))

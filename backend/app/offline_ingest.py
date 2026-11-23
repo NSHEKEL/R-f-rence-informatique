@@ -57,7 +57,7 @@ def ingest(db, envelope):
         if row is not None:
             if row.device_id != event["device_id"] or row.user_id != event["user_id"] or row.hash != digest(event):
                 raise HTTPException(409, "UUID déjà utilisé avec un autre contenu ou propriétaire")
-            if row.state == "applied":
+            if row.state in {"applied", "reviewed"}:
                 db.commit()
                 return _ack(row)
         else:
@@ -85,7 +85,7 @@ def _attempt(db, event_id, claims, admin=None, regularize=False):
     from .routers import cash, sales
 
     row = db.query(OfflineEvent).filter_by(id=event_id).with_for_update().one()
-    if row.state == "applied":
+    if row.state in {"applied", "reviewed"}:
         return _ack(row)
     try:
         event = json.loads(row.envelope)["event"]
@@ -248,18 +248,32 @@ def _attempt(db, event_id, claims, admin=None, regularize=False):
         return _ack(row)
 
 
-def retry_event(db, event_id, admin, reason, regularize=False):
+def retry_event(db, event_id, admin, reason, regularize=False, review=False):
     with LOCK:
         row = db.get(OfflineEvent, event_id)
         if row is None:
             raise HTTPException(404, "Événement introuvable")
-        if row.state == "applied":
+        if row.state in {"applied", "reviewed"}:
             return _ack(row)
-        _, claims = _validate(db, json.loads(row.envelope))
+        if review and (regularize or len(reason.strip()) < 5):
+            raise HTTPException(400, "Le classement vérifié exige un motif explicite, sans régularisation comptable")
+        if review and db.get(User, row.user_id) is not None:
+            raise HTTPException(409, "Un compte existant doit être rapproché ; seul un conflit de compte supprimé peut être classé vérifié")
+        claims = None
+        if not review:
+            _, claims = _validate(db, json.loads(row.envelope))
         history = json.loads(row.resolution) if row.resolution else []
-        history.append({"actor_id": admin.id, "reason": reason, "regularize": regularize, "at": time.time()})
+        history.append({"actor_id": admin.id, "reason": reason, "regularize": regularize, "review": review, "at": time.time()})
         row.resolution = json.dumps(history, ensure_ascii=False)
         db.add(SecurityLog(event="offline_resolution", user_id=admin.id, identifier=admin.email,
                            detail=f"Événement {row.id} : {reason}", success=True))
+        if review:
+            row.state = "reviewed"
+            row.result = json.dumps({"reason": "Compte supprimé : conflit vérifié, original conservé, aucune opération comptabilisée", "reviewed_by_id": admin.id}, ensure_ascii=False)
+            remaining = db.query(OfflineEvent.id).filter(OfflineEvent.session_id == row.session_id, OfflineEvent.device_id == row.device_id, OfflineEvent.id != row.id, OfflineEvent.state.notin_(["applied", "reviewed"])).first()
+            if remaining is None:
+                db.query(OfflineSession).filter_by(id=row.session_id, device_id=row.device_id, user_id=row.user_id).filter(OfflineSession.cash_session_id.is_(None)).update({"status": "reviewed"})
         db.commit()
+        if review:
+            return _ack(row)
         return _attempt(db, row.id, claims, admin=admin, regularize=regularize)
