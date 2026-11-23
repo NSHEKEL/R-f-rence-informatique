@@ -7,6 +7,7 @@ calls out, and the phone reads the copy through the central API.
 Nothing is ever read back from the central copy into the shop database.
 """
 
+import json
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -16,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from . import licensing
 from .database import SessionLocal
-from .models import CompanySettings, Expense, Sale, SaleReturn, SupportRequest, User
+from .models import CompanySettings, Expense, OfflineEvent, Sale, SaleReturn, SupportRequest, User
 from .permissions import has_permission
 
 # Window of sales kept on the central server for the phone.
@@ -213,13 +214,22 @@ def push(db: Session) -> dict:
         mobile_ops.process_pending(db)
     except Exception as exc:  # noqa: BLE001 - best effort, never blocks sync
         print(f"Opérations mobiles : {exc}")
-    return licensing._post(  # noqa: SLF001 - same module family
+    exclusions = []
+    for event in db.query(OfflineEvent).filter_by(state="reviewed", kind="sale").order_by(OfflineEvent.received_at).all():
+        result = json.loads(event.result)
+        if not result.get("central_exclusion_acked"):
+            review = json.loads(event.resolution)[-1]
+            exclusions.append((event, {"operation_id": event.id, "actor_id": review["actor_id"], "reason": review["reason"], "reviewed_at": review["at"], "event_hash": event.hash}))
+            if len(exclusions) == 200:
+                break
+    answer = licensing._post(  # noqa: SLF001 - same module family
         f"{base}/api/central/public/mirror",
         {
             "installation_uid": row.installation_uid,
             "token": row.token,
             "users": _users(db),
             "sales": _sales(db),
+            "offline_exclusions": [payload for _, payload in exclusions],
             "returns": _returns(db),
             "expenses": _expenses(db),
             "support_requests": _support_requests(db),
@@ -230,6 +240,15 @@ def push(db: Session) -> dict:
             "address": (company.address if company else "") or "",
         },
     )
+    accepted = answer.get("excluded_operations", [])
+    for event, _ in exclusions:
+        if event.id in accepted:
+            result = json.loads(event.result)
+            result["central_exclusion_acked"] = True
+            event.result = json.dumps(result, ensure_ascii=False)
+    if exclusions:
+        db.commit()
+    return answer
 
 
 def push_quietly(db: Session) -> None:

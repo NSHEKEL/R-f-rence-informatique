@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from typing import Optional
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -391,6 +392,14 @@ class MirrorCashBalancesIn(BaseModel):
     sessions: list[MirrorCashSessionIn] = []
 
 
+class MirrorExclusionIn(BaseModel):
+    operation_id: UUID
+    actor_id: int = Field(gt=0)
+    reason: str = Field(min_length=5, max_length=1000)
+    reviewed_at: float = Field(ge=0, allow_inf_nan=False)
+    event_hash: str = Field(pattern="^[0-9a-f]{64}$")
+
+
 class MirrorRequest(BaseModel):
     """Copy a shop pushes so its sales can be read from a phone."""
 
@@ -398,6 +407,7 @@ class MirrorRequest(BaseModel):
     token: str
     users: list[MirrorUserIn] = []
     sales: list[MirrorSaleIn] = []
+    offline_exclusions: list[MirrorExclusionIn] = Field(default_factory=list, max_length=200)
     returns: list[MirrorReturnIn] = []
     expenses: list[MirrorExpenseIn] = []
     support_requests: list[MirrorSupportRequestIn] = []

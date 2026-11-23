@@ -233,6 +233,33 @@ class OfflineIngestTests(unittest.TestCase):
         self.assertEqual(rows[0]["id"], old.id)
         self.assertEqual(rows[0]["state"], "conflict")
 
+    def test_reviewed_sale_exclusion_retries_until_central_acknowledges_the_same_uuid(self):
+        from app import remote_sales
+        from app.offline_crypto import digest
+        envelope = self.sale(quantity=0.5)
+        event = envelope["event"]
+        row = OfflineEvent(id=event["id"], device_id=self.device, user_id=self.user.id, session_id=self.session, sequence=event["sequence"], kind="sale", occurred_at=event["occurred_at"], hash=digest(event), envelope=json.dumps(envelope), state="reviewed", result='{"reason":"original conservé"}', resolution=json.dumps([{"actor_id":self.other.id,"reason":"Pièces vérifiées","at":event["occurred_at"],"review":True}]))
+        self.db.add(row)
+        self.db.commit()
+        state = SimpleNamespace(token="installation-test", installation_uid="offline-test-shop", central_url="https://central.test")
+        with patch("app.licensing.state", return_value=state), patch("app.licensing._post") as post, patch("app.mobile_ops.process_pending"):
+            post.side_effect = ConnectionError("network unavailable")
+            with self.assertRaises(ConnectionError):
+                remote_sales.push(self.db)
+            self.assertNotIn("central_exclusion_acked", json.loads(row.result))
+            post.side_effect = None
+            post.return_value = {"status":"ok"}
+            remote_sales.push(self.db)
+            self.assertEqual(post.call_args.args[1]["offline_exclusions"][0]["operation_id"], row.id)
+            self.assertNotIn("central_exclusion_acked", json.loads(row.result))
+            post.return_value = {"excluded_operations":[row.id]}
+            remote_sales.push(self.db)
+            self.assertTrue(json.loads(row.result)["central_exclusion_acked"])
+            remote_sales.push(self.db)
+            self.assertEqual(post.call_args.args[1]["offline_exclusions"], [])
+        self.assertEqual(json.loads(row.envelope), envelope)
+        self.assertEqual(self.db.query(Sale).count(), 0)
+
     def test_valid_receipts_sync_after_expiry_but_new_out_of_window_receipts_do_not(self):
         from fastapi import HTTPException
         from app.offline_auth import current_account

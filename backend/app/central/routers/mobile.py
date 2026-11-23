@@ -133,7 +133,7 @@ def login(payload: MobileLogin, db: Session = Depends(get_db)):
 
 
 def _visible(db: Session, user: MirrorUser, client: Client):
-    query = db.query(MirrorSale).filter(MirrorSale.client_id == client.id)
+    query = db.query(MirrorSale).filter(MirrorSale.client_id == client.id, MirrorSale.excluded.isnot(True))
     if (user.role or "").lower() not in FULL_VIEW_ROLES:
         query = query.filter(MirrorSale.seller_email == user.email)
     return query
@@ -253,7 +253,7 @@ def team(
     user, client = session
     if (user.role or "").lower() not in FULL_VIEW_ROLES:
         raise HTTPException(status_code=403, detail="Accès réservé à la direction")
-    sales = db.query(MirrorSale).filter(MirrorSale.client_id == client.id).all()
+    sales = db.query(MirrorSale).filter(MirrorSale.client_id == client.id, MirrorSale.excluded.isnot(True)).all()
     rows = (
         db.query(MirrorUser)
         .filter(MirrorUser.client_id == client.id)

@@ -7,18 +7,61 @@ from unittest.mock import patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from jose import jwt
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from app.central.database import Base, get_db
 from app.central.models import Client, Installation, MirrorSale
-from app.central.routers import provisioning
+from app.central.routers import mobile, provisioning
 from app.offline_auth import AUDIENCE
-from app.offline_crypto import fingerprint, private_key, public_key, sign
+from app.offline_crypto import digest, fingerprint, private_key, public_key, sign
+from types import SimpleNamespace
 
 
 class CentralOfflineTests(unittest.TestCase):
+    def test_exclusion_is_idempotent_before_or_after_receipt_and_survives_canonical_upload(self):
+        token = self.delegate().json()["token"]
+        for exclude_first in (False, True):
+            with self.subTest(exclude_first=exclude_first):
+                envelope = self.event()
+                operation_id = envelope["event"]["id"]
+                upload = {"token": token, "events": [envelope]}
+                exclusion = {"operation_id": operation_id, "actor_id": 1, "reason": "Pièces vérifiées, compte supprimé", "reviewed_at": time.time(), "event_hash": digest(envelope["event"])}
+                body = {"installation_uid": self.installation.uid, "token": "installation-test-only", "offline_exclusions": [exclusion]}
+                if not exclude_first:
+                    self.assertEqual(self.client.post("/api/central/public/offline/events", json=upload).status_code, 200)
+                    forbidden = self.client.post("/api/central/public/mirror", json={**body, "token": "wrong"})
+                    self.assertEqual(forbidden.status_code, 401)
+                for _ in range(2):
+                    result = self.client.post("/api/central/public/mirror", json=body)
+                    self.assertEqual(result.status_code, 200, result.text)
+                    self.assertEqual(result.json()["excluded_operations"], [operation_id])
+                self.assertEqual(self.client.post("/api/central/public/offline/events", json=upload).status_code, 200)
+                canonical = {"installation_uid": self.installation.uid, "token": "installation-test-only", "sales": [{"reference": "VNT-"+operation_id, "operation_id": operation_id, "total": 1750, "status": "Payée"}]}
+                self.assertEqual(self.client.post("/api/central/public/mirror", json=canonical).status_code, 200)
+                self.db.expire_all()
+                row = self.db.query(MirrorSale).filter_by(operation_id=operation_id).one()
+                self.assertTrue(row.excluded)
+                self.assertEqual(row.total, 1750)
+                self.assertEqual(json.loads(row.offline_original), envelope)
+                self.assertEqual(json.loads(row.exclusion)["event_hash"], exclusion["event_hash"])
+                self.assertEqual(mobile._visible(self.db, SimpleNamespace(role="admin"), self.installation.client).count(), 0)
+        print("CENTRAL_REVIEW_EXCLUSION_OK before_or_after_receipt=True replay_idempotent=True canonical_cannot_restore=True originals_retained=True mobile_visible=0")
+
+    def test_exclusion_migration_is_additive_and_repeatable(self):
+        from app.central import seed
+        legacy = create_engine("sqlite://")
+        self.addCleanup(legacy.dispose)
+        with legacy.begin() as conn:
+            conn.execute(text("CREATE TABLE mirror_sales (id INTEGER PRIMARY KEY, client_id INTEGER, reference VARCHAR, total FLOAT)"))
+            conn.execute(text("INSERT INTO mirror_sales (id,client_id,reference,total) VALUES (1,1,'original',1750)"))
+        with patch.object(seed, "engine", legacy):
+            seed._add_missing_columns()
+            seed._add_missing_columns()
+        with legacy.connect() as conn:
+            self.assertEqual(tuple(conn.execute(text("SELECT reference,total,excluded,exclusion FROM mirror_sales")).one()), ("original",1750,0,""))
+
     def setUp(self):
         engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
         self.addCleanup(engine.dispose)

@@ -275,5 +275,6 @@ def retry_event(db, event_id, admin, reason, regularize=False, review=False):
                 db.query(OfflineSession).filter_by(id=row.session_id, device_id=row.device_id, user_id=row.user_id).filter(OfflineSession.cash_session_id.is_(None)).update({"status": "reviewed"})
         db.commit()
         if review:
+            remote_sales.schedule()
             return _ack(row)
         return _attempt(db, row.id, claims, admin=admin, regularize=regularize)

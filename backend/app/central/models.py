@@ -272,6 +272,8 @@ class MirrorSale(Base):
     operation_id = Column(String(64), nullable=True)
     provisional = Column(Boolean, default=False)
     offline_original = Column(Text, default="")
+    excluded = Column(Boolean, default=False)
+    exclusion = Column(Text, default="")
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
 

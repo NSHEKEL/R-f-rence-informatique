@@ -154,7 +154,7 @@ ADDED_COLUMNS: dict[str, dict[str, str]] = {
         "manager": "VARCHAR DEFAULT ''",
         "is_active": "BOOLEAN DEFAULT TRUE",
     },
-    "mirror_sales": {"installation_uid": "VARCHAR DEFAULT ''", "operation_id": "VARCHAR(64)", "provisional": "BOOLEAN DEFAULT FALSE", "offline_original": "TEXT DEFAULT ''"},
+    "mirror_sales": {"installation_uid": "VARCHAR DEFAULT ''", "operation_id": "VARCHAR(64)", "provisional": "BOOLEAN DEFAULT FALSE", "offline_original": "TEXT DEFAULT ''", "excluded": "BOOLEAN DEFAULT FALSE", "exclusion": "TEXT DEFAULT ''"},
     "mirror_returns": {"installation_uid": "VARCHAR DEFAULT ''"},
     "mirror_users": {"cash_permissions": "TEXT DEFAULT '[]'"},
 }
