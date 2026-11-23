@@ -215,7 +215,9 @@ def push(db: Session) -> dict:
     except Exception as exc:  # noqa: BLE001 - best effort, never blocks sync
         print(f"Opérations mobiles : {exc}")
     exclusions = []
-    for event in db.query(OfflineEvent).filter_by(state="reviewed", kind="sale").order_by(OfflineEvent.received_at).all():
+    for event in db.query(OfflineEvent).filter_by(state="reviewed", kind="sale").filter(
+        ~db.query(Sale.id).filter(Sale.client_id == OfflineEvent.id).exists()
+    ).order_by(OfflineEvent.received_at).all():
         result = json.loads(event.result)
         if not result.get("central_exclusion_acked"):
             review = json.loads(event.resolution)[-1]

@@ -260,6 +260,26 @@ class OfflineIngestTests(unittest.TestCase):
         self.assertEqual(json.loads(row.envelope), envelope)
         self.assertEqual(self.db.query(Sale).count(), 0)
 
+    def test_reviewed_duplicate_replay_never_excludes_a_booked_sale(self):
+        from app import remote_sales
+        from app.offline_crypto import digest
+        self.call("/api/cash-sessions/open", "POST", {"opening_balance": 500}, 201)
+        envelope = self.sale(quantity=0.5)
+        event = envelope["event"]
+        self.call("/api/sales", "POST", {"client_id": event["id"], "payment_method": "Espèces", "items": [{"product_id": self.product.id, "quantity": 0.5, "unit_price": 100}]}, 201)
+        row = OfflineEvent(id=event["id"], device_id=self.device, user_id=987654, session_id=self.session, sequence=event["sequence"], kind="sale", occurred_at=event["occurred_at"], hash=digest(event), envelope=json.dumps(envelope), state="reviewed", result="{}", resolution=json.dumps([{"actor_id":self.other.id,"reason":"Compte supprimé, doublon conservé","at":event["occurred_at"],"review":True}]))
+        self.db.add(row)
+        self.db.commit()
+        state = SimpleNamespace(token="installation-test", installation_uid="offline-test-shop", central_url="https://central.test")
+        with patch("app.licensing.state", return_value=state), patch("app.licensing._post", return_value={"status":"ok"}) as post, patch("app.mobile_ops.process_pending"):
+            remote_sales.push(self.db)
+            self.assertEqual(post.call_args.args[1]["offline_exclusions"], [])
+            self.assertTrue(any(sale["operation_id"] == event["id"] for sale in post.call_args.args[1]["sales"]))
+        self.assertEqual(self.db.query(Sale).count(), 1)
+        self.assertEqual(json.loads(row.envelope), envelope)
+        self.assertNotIn("central_exclusion_acked", json.loads(row.result))
+        print("BOOKED_REPLAY_REVIEW_OK booked_sale_kept=True mobile_exclusion_sent=False original_kept=True")
+
     def test_valid_receipts_sync_after_expiry_but_new_out_of_window_receipts_do_not(self):
         from fastapi import HTTPException
         from app.offline_auth import current_account
