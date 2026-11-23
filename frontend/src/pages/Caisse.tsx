@@ -129,6 +129,7 @@ export default function Caisse() {
   }
 
   async function closeTill() {
+    if (recoveryWarning) { setError(recoveryWarning); return; }
     if (printJob) { setError("Attendez la fin de l'impression avant de fermer la caisse."); return; }
     setSaving(true);
     setError("");
@@ -283,6 +284,7 @@ export default function Caisse() {
                   {can("caisse_fermer") && (
                     <button
                       className="btn-ghost"
+                      disabled={Boolean(recoveryWarning)}
                       onClick={() => {
                         setCountedBalance(today.expected_cash == null ? "" : String(today.expected_cash));
                         setCloseNote("");
@@ -524,7 +526,7 @@ export default function Caisse() {
             <button
               className="btn-primary"
               onClick={closeTill}
-              disabled={saving}
+              disabled={saving || Boolean(recoveryWarning)}
             >
               <Lock size={16} /> Fermer ma caisse
             </button>
