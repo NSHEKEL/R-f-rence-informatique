@@ -15,6 +15,7 @@ export interface JournalState {
   checking: boolean;
   journal_session: boolean;
   pending: { id: string; kind: string; state: string; reference: string; reason: string }[];
+  to_review?: { id: string; kind: string; state: string; reference: string; reason: string }[];
   last_synced: string | null;
   revoked?: boolean;
   synced?: number;

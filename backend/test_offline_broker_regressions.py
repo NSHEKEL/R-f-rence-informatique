@@ -34,12 +34,16 @@ class OfflineBrokerRegressionTests(unittest.TestCase):
                 self.assertEqual(broker.state()["pending"], [])
                 broker.import_legacy(entries)
                 self.assertEqual(broker.state()["pending"], [])
+                self.assertEqual({row["reference"] for row in broker.state()["to_review"]}, {"archived", "rejected", "reviewed", "rejected_at", "archived_at"})
+                settled = [{"scope": "http://server:1", "state": "reentered", "snapshot": {"reference": "reentered"}}, {"scope": "http://server:1", "reentered_at": "date", "snapshot": {"reference": "reentered-at"}}]
+                broker.import_legacy(settled)
+                self.assertEqual(len(broker.state()["to_review"]), 5)
                 active = {"scope": "http://server:1", "snapshot": {"reference": "live pending"}}
                 broker.import_legacy([active])
                 self.assertEqual([row["reference"] for row in broker.state()["pending"]], ["live pending"])
             with broker.store.connection() as db:
                 retained = [broker.store.get(db, key) for key in broker.store.get(db, "legacy-index")]
-                self.assertEqual(retained, [*entries, active])
+                self.assertEqual(retained, [*entries, *settled, active])
 
     def test_close_matches_the_confirmed_local_or_adopted_id_before_journaling(self):
         with tempfile.TemporaryDirectory() as root:

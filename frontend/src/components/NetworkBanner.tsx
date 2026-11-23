@@ -87,6 +87,11 @@ export default function NetworkBanner() {
         <ul className="mt-2 max-h-40 space-y-1 overflow-auto">{journal.pending.map((row) => <li key={row.id}>{row.reference} — {row.state === "conflict" ? "À vérifier" : "En attente"}{row.reason ? ` : ${row.reason}` : ""}</li>)}</ul>
         <p className="mt-2 text-slate-500">Ne ressaisissez pas un ticket en attente : son identifiant empêche les doublons.</p>
       </details>}
+      {Boolean(journal?.to_review?.length) && <details className="rounded-xl border border-amber-200 px-4 py-2 text-xs">
+        <summary className="cursor-pointer">{journal!.to_review!.length} ancien(s) ticket(s) à vérifier — hors file de synchronisation</summary>
+        <p>Ces rejets restent conservés. Vérifiez les pièces et une éventuelle ressaisie avant toute nouvelle vente ; ils ne bloquent pas la consolidation.</p>
+        <ul className="mt-2 max-h-40 space-y-1 overflow-auto">{journal!.to_review!.map((row) => <li key={row.id}>{row.reference} — {row.reason}</li>)}</ul>
+      </details>}
     </div>
   );
 }

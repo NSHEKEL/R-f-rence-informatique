@@ -653,15 +653,20 @@ class OfflineBroker:
                         "reference": event["payload"].get("snapshot", {}).get("reference", event["kind"]) if visible else "Opération conservée",
                         "reason": (item["result"] or {}).get("reason", "") if visible else ""})
             local = self.store.get(db, self._session_key()) if current else None
+            to_review = []
             for key in self.store.get(db, "legacy-index", []):
                 entry = self.store.get(db, key)
-                if entry.get("state") in {"archived", "rejected", "synced", "applied", "reviewed"} or entry.get("rejected_at") or entry.get("archived_at") or entry.get("synced_at"):
+                if entry.get("state") in {"synced", "applied", "reentered"} or entry.get("synced_at") or entry.get("reentered_at") or entry.get("reentered") is True or entry.get("synced") is True:
                     continue
                 visible = current and entry.get("scope") == current["server"] + ":" + str(current["user_id"])
-                entries.append({"id": key, "kind": "sale", "state": "conflict", "reference": entry.get("snapshot", {}).get("reference", "Ancien ticket") if visible else "Ancien ticket conservé", "reason": "Ancienne file sans preuve signée : rapprochement administrateur nécessaire, ne pas ressaisir"})
+                ticket = {"id": key, "kind": "sale", "state": "conflict", "reference": entry.get("snapshot", {}).get("reference", "Ancien ticket") if visible else "Ancien ticket conservé", "reason": "Ancienne file sans preuve signée : vérifiez l'original et son éventuelle ressaisie"}
+                if entry.get("state") in {"archived", "rejected", "reviewed"} or entry.get("rejected_at") or entry.get("archived_at"):
+                    to_review.append(ticket)
+                else:
+                    entries.append(ticket)
             close = db.execute("SELECT state FROM events WHERE id=?", (local.get("closing_event_id"),)).fetchone() if local and local.get("closed_at") else None
         return {"online": self.online, "locked": current is None, "checking": self.checking,
-                "pending": entries, "last_synced": self.last_synced, "journal_session": bool(local and (not local.get("closed_at") or not close or close["state"] != "applied"))}
+                "pending": entries, "to_review": to_review, "last_synced": self.last_synced, "journal_session": bool(local and (not local.get("closed_at") or not close or close["state"] != "applied"))}
 
     def sync(self, wait=False):
         if not self.sync_lock.acquire(blocking=wait):
