@@ -150,6 +150,35 @@ class OfflineIngestTests(unittest.TestCase):
             broker.recover_local(self.db, self.claims["iss"], self.user.id)
         self.assertEqual(mixed.exception.status, 409)
 
+    def test_failed_close_does_not_merge_a_later_journal_session(self):
+        first_open = self.event("open", {"opening_balance": 500})
+        first_sale = self.sale(quantity=21)
+        first_close = self.event("close", {"closing_balance": 2600})
+        self.assertEqual([row["state"] for row in self.submit(first_open, first_sale, first_close)], ["applied", "conflict", "conflict"])
+        first_id = self.call("/api/cash-sessions/current")["id"]
+        self.session = str(uuid.uuid4())
+        self.sequence = 0
+        second_open = self.event("open", {"opening_balance": 200})
+        second_sale = self.sale(quantity=0.5)
+        second_close = self.event("close", {"closing_balance": 250})
+        self.assertEqual([row["state"] for row in self.submit(second_open, second_sale, second_close)], ["conflict"] * 3)
+        for envelope in (first_close, second_open, second_sale, second_close):
+            self.assertEqual(json.loads(self.db.get(OfflineEvent, envelope["event"]["id"]).envelope), envelope)
+        current = self.call("/api/cash-sessions/current")
+        self.assertEqual(current["id"], first_id)
+        self.assertIsNone(current["closed_at"])
+        self.assertEqual(current["sales_count"], 0)
+        self.assertEqual(self.db.query(OfflineSession).count(), 1)
+        self.db.get(Product, self.product.id).quantity = 30
+        self.db.commit()
+        self.assertTrue(all(row["state"] == "applied" for row in self.submit(first_sale, first_close)))
+        self.assertTrue(all(row["state"] == "applied" for row in self.submit(second_open, second_sale, second_close)))
+        self.db.expire_all()
+        mappings = self.db.query(OfflineSession).all()
+        self.assertEqual(len({row.cash_session_id for row in mappings}), 2)
+        self.assertEqual(self.db.query(Sale).count(), 2)
+        print("JOURNAL_IDENTITY_GUARD_OK failed_close_preserves_first=True later_open_conflict=True distinct_after_recovery=True")
+
     def test_valid_receipts_sync_after_expiry_but_new_out_of_window_receipts_do_not(self):
         from fastapi import HTTPException
         from app.offline_auth import current_account

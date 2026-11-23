@@ -117,6 +117,9 @@ def _attempt(db, event_id, claims, admin=None, regularize=False):
                 if not regularize and (source or current is not None):
                     if current is None or (source and current.id != source) or current.workstation != row.device_id or current.global_closure_id is not None:
                         raise HTTPException(409, "Caisse d'origine fermée, consolidée ou ouverte sur un autre poste")
+                    other = db.query(OfflineSession).filter(OfflineSession.cash_session_id == current.id, OfflineSession.id != row.session_id).first()
+                    if other is not None:
+                        raise HTTPException(409, "Cette caisse appartient déjà à une autre session provisoire : récupérez sa clôture avant la session suivante")
                     session = current
                     if session.offline_mobile_money_to_cash is not None and session.offline_mobile_money_to_cash != claims["mobile_money_to_cash"]:
                         raise HTTPException(409, "Règle Mobile Money différente : rapprochement administrateur nécessaire")
