@@ -38,8 +38,10 @@ function remoteApi() {
 export class DesktopOfflineError extends Error {
   isAxiosError = true;
   response: { status: number; data: { detail: string } };
-  constructor(status: number, message: string) {
+  closeSessionId: number | null;
+  constructor(status: number, message: string, closeSessionId: number | null = null) {
     super(message);
+    this.closeSessionId = closeSessionId;
     this.response = { status, data: { detail: message } };
   }
 }
@@ -74,7 +76,9 @@ export const desktopOffline = {
       method: "POST", headers: { "Content-Type": "application/json", "X-Easygest-Offline": nonce, Authorization: "Bearer " + token },
     });
     const result = await response.json();
-    if (!response.ok) throw new DesktopOfflineError(response.status, typeof result.detail === "string" ? result.detail : "Récupération du journal local impossible : ne rouvrez pas la caisse");
+    if (!response.ok) throw new DesktopOfflineError(response.status,
+      typeof result.detail === "string" ? result.detail : result.detail?.message || "Récupération du journal local impossible : ne rouvrez pas la caisse",
+      Number.isSafeInteger(result.detail?.close_session_id) && result.detail.close_session_id > 0 ? result.detail.close_session_id : null);
   },
   async command<T>(action: string, params: Record<string, unknown> = {}): Promise<T> {
     if (!ready) throw new DesktopOfflineError(507, "Journal durable indisponible sur ce poste : vente hors ligne non validée");

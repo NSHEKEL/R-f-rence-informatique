@@ -15,6 +15,7 @@ interface AuthContextValue {
   user: User | null;
   loading: boolean;
   recoveryWarning: string;
+  recoveryCloseSessionId: number | null;
   retryLocalRecovery: () => Promise<void>;
   isAdmin: boolean;
   /** Administrators and stock managers: catalogue, stock and purchases. */
@@ -36,8 +37,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [desktopBound, setDesktopBound] = useState(false);
   const [recoveryWarning, setRecoveryWarning] = useState("");
+  const [recoveryCloseSessionId, setRecoveryCloseSessionId] = useState<number | null>(null);
 
   async function recoverLocalJournal(token: string) {
+    setRecoveryCloseSessionId(null);
     try {
       await desktopOffline.recoverLocal(token);
       if (localStorage.getItem("ri_token") === token) setRecoveryWarning("");
@@ -45,6 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (localStorage.getItem("ri_token") !== token) return;
       const message = error && typeof error === "object" && "message" in error && typeof error.message === "string" ? error.message : "Reprise locale impossible ; les opérations restent conservées";
       setRecoveryWarning(message);
+      if (error && typeof error === "object" && "closeSessionId" in error && typeof error.closeSessionId === "number" && Number.isSafeInteger(error.closeSessionId) && error.closeSessionId > 0) setRecoveryCloseSessionId(error.closeSessionId);
     }
   }
 
@@ -191,6 +195,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   function logout() {
     setRecoveryWarning("");
+    setRecoveryCloseSessionId(null);
     if (desktopOffline.available()) void desktopOffline.command("logout").then(() => desktopOffline.refresh());
     setDesktopBound(false);
     clearAuthCache();
@@ -205,6 +210,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         loading,
         recoveryWarning,
+        recoveryCloseSessionId,
         retryLocalRecovery,
         isAdmin: user?.role === "admin",
         isStockManager: user?.role === "admin" || user?.role === "gestionnaire",

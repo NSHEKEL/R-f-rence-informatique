@@ -45,3 +45,26 @@ test('local server login never prepares a workstation; remote seller preparation
     assert.equal(recoveries, !scenario.remote && !scenario.denied && !scenario.unsupported ? 1 : 0, scenario.server);
   }
 });
+
+test('local recovery carries only a positive structured safe-to-close session id, never text guesses', async () => {
+  for (const [detail, expected] of [
+    [{ message: 'Autre caisse ouverte', close_session_id: 17 }, 17],
+    [{ message: 'Autre caisse ouverte', close_session_id: -17 }, null],
+    [{ message: 'Autre caisse ouverte', close_session_id: '17' }, null],
+    ['Une autre caisse est ouverte pour ce vendeur', null],
+  ]) {
+    const exports = {};
+    vm.runInNewContext(ts.transpileModule(readFileSync(`${__dirname}/src/lib/desktopOffline.ts`, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, {
+      exports, window: { location: { origin: 'http://127.0.0.1:8000', hostname: '127.0.0.1' } },
+      localStorage: { getItem() {}, setItem() {} }, URL, AbortSignal,
+      fetch: async path => ({ ok: !path.endsWith('/recover'), status: path.endsWith('/recover') ? 409 : 200,
+        json: async () => path.endsWith('/recover') ? { detail } : { supported: true, nonce: 'test', locked: true } }),
+    });
+    await exports.initializeDesktopOffline();
+    await assert.rejects(exports.desktopOffline.recoverLocal('token'), error => {
+      assert.equal(error.closeSessionId, expected);
+      assert.equal(error.message, typeof detail === 'string' ? detail : detail.message);
+      return true;
+    });
+  }
+});

@@ -87,6 +87,7 @@ def _attempt(db, event_id, claims, admin=None, regularize=False):
     row = db.query(OfflineEvent).filter_by(id=event_id).with_for_update().one()
     if row.state == "applied":
         return _ack(row)
+    conflict = {}
     try:
         event = json.loads(row.envelope)["event"]
         if admin is None:
@@ -123,6 +124,7 @@ def _attempt(db, event_id, claims, admin=None, regularize=False):
                     session.offline_mobile_money_to_cash = claims["mobile_money_to_cash"]
                 else:
                     if current is not None:
+                        conflict = {"conflict_code": "separate_open_session", "blocking_session_id": current.id}
                         raise HTTPException(409, "Une autre caisse est ouverte pour ce vendeur ; ne pas fusionner automatiquement")
                     session = CashSession(opened_by_id=user.id, workstation=row.device_id, opening_balance=data.opening_balance,
                                           opened_at=datetime.now(timezone.utc) if regularize else occurred,
@@ -137,6 +139,7 @@ def _attempt(db, event_id, claims, admin=None, regularize=False):
             result = {"cash_session_id": mapping.cash_session_id, "session_id": mapping.id}
         else:
             if mapping is None or mapping.cash_session_id is None:
+                conflict = {"conflict_code": "opening_pending"}
                 raise HTTPException(409, "Ouverture provisoire pas encore rapprochée")
             session = db.query(CashSession).filter_by(id=mapping.cash_session_id).with_for_update().one()
             if session.closed_at is not None or session.global_closure_id is not None:
@@ -231,7 +234,7 @@ def _attempt(db, event_id, claims, admin=None, regularize=False):
             return _ack(row)
         reason = error.detail if isinstance(error, HTTPException) else "Données de l'événement invalides : vérification administrateur nécessaire"
         row.state = "conflict"
-        row.result = json.dumps({"reason": reason}, ensure_ascii=False)
+        row.result = json.dumps({"reason": reason, **conflict}, ensure_ascii=False)
         db.commit()
         return _ack(row)
     except IntegrityError:

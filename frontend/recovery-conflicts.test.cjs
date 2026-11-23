@@ -60,6 +60,20 @@ test('token startup also authenticates despite a recovery conflict', async () =>
   assert.equal(account.loading, false);
 });
 
+test('only a structured separate-session conflict allows that server till to close; retry clears the exception', async () => {
+  const failure = Object.assign(Error('Une autre caisse bloque la reprise'), { closeSessionId: 17 });
+  const scenario = auth(failure);
+  await scenario.render().login('hawa', 'password');
+  assert.equal(scenario.render().recoveryCloseSessionId, 17);
+  scenario.native.recoverLocal = async () => { throw Error('Journal indisponible'); };
+  await scenario.render().retryLocalRecovery();
+  assert.equal(scenario.render().recoveryCloseSessionId, null);
+  scenario.native.recoverLocal = async () => {};
+  await scenario.render().retryLocalRecovery();
+  assert.equal(scenario.render().recoveryCloseSessionId, null);
+  assert.equal(scenario.render().recoveryWarning, '');
+});
+
 test('recovery warning leaves Configuration reachable instead of trapping the admin in the opening modal', () => {
   const React = require('react');
   const { renderToStaticMarkup } = require('react-dom/server');

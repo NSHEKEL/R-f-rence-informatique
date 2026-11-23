@@ -1,6 +1,8 @@
 import json
 import unittest
 import uuid
+import threading
+from contextlib import nullcontext
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -11,6 +13,7 @@ from app.offline_crypto import sign
 from app.offline_store import OfflineStore
 from app.offline_crypto import private_key, public_key
 from app.routers import offline
+from app.offline_broker import BrokerError, OfflineBroker
 
 
 class OfflineIngestTests(unittest.TestCase):
@@ -89,6 +92,65 @@ class OfflineIngestTests(unittest.TestCase):
         with self.sessions() as db:
             self.assertEqual(db.query(Sale).one().total, 50)
             self.assertEqual(db.get(Product, self.product.id).sale_price, 200)
+
+    def recovery_broker(self, *envelopes):
+        results = {}
+        broker = OfflineBroker.__new__(OfflineBroker)
+        broker.sync_lock = threading.Lock()
+        broker.store = SimpleNamespace(
+            connection=lambda: nullcontext(None),
+            events=lambda *args, **kwargs: [{"envelope": envelope} for envelope in envelopes if results.get(envelope["event"]["id"], {}).get("state") != "applied"],
+            acknowledge=lambda db, event_id, result: results.update({event_id: result}),
+        )
+        return broker
+
+    def test_separate_server_till_can_close_then_provisional_opening_and_sale_recover_once(self):
+        original = self.call("/api/cash-sessions/open", "POST", {"opening_balance": 1000}, status=201)
+        opening, sale = self.event("open", {"opening_balance": 500}), self.sale(quantity=0.5)
+        broker = self.recovery_broker(opening, sale)
+        with self.assertRaises(BrokerError) as conflict:
+            broker.recover_local(self.db, self.claims["iss"], self.user.id)
+        self.assertEqual(conflict.exception.close_session_id, original["id"])
+        self.assertEqual(self.db.query(Sale).count(), 0)
+        closed = self.call("/api/cash-sessions/close", "POST", {"closing_balance": 1000})
+        self.assertIsNotNone(closed["closed_at"])
+        self.db.expire_all()
+        frozen = self.db.get(CashSession, original["id"]).z_report
+        self.assertEqual(json.loads(frozen)["sales_count"], 0)
+        self.assertEqual(broker.recover_local(self.db, self.claims["iss"], self.user.id), {"recovered": 2})
+        self.assertEqual(broker.recover_local(self.db, self.claims["iss"], self.user.id), {"recovered": 0})
+        current = self.call("/api/cash-sessions/current")
+        self.assertNotEqual(current["id"], original["id"])
+        self.assertEqual(current["opening_balance"], 500)
+        self.assertEqual(current["sales_count"], 1)
+        self.assertEqual(current["total_sales"], 50)
+        self.db.expire_all()
+        self.assertEqual(self.db.get(CashSession, original["id"]).z_report, frozen)
+        self.assertEqual(self.db.query(CashSession).count(), 2)
+        print("SEPARATE_TILL_RECOVERY_OK close_allowed=True provisional_imported_after_close=True opening_float=500 sales=1 replayed_once=True original_Z_unchanged=True")
+
+    def test_same_till_or_mixed_recovery_errors_never_allow_closing(self):
+        self.submit(self.event("open", {"opening_balance": 500}))
+        self.db.get(Product, self.product.id).quantity = 0
+        self.db.commit()
+        broker = self.recovery_broker(self.sale())
+        with self.assertRaises(BrokerError) as stock:
+            broker.recover_local(self.db, self.claims["iss"], self.user.id)
+        self.assertIsNone(stock.exception.close_session_id)
+        bad_sale = self.sale()
+        bad_sale["signature"] = "invalid"
+        broker = self.recovery_broker(bad_sale)
+        with self.assertRaises(BrokerError) as conflict:
+            broker.recover_local(self.db, self.claims["iss"], self.user.id)
+        self.assertIsNone(conflict.exception.close_session_id)
+        self.assertIsNone(self.call("/api/cash-sessions/current")["closed_at"])
+        self.session = str(uuid.uuid4())
+        self.sequence = 0
+        opening = self.event("open", {"opening_balance": 500})
+        broker = self.recovery_broker(opening, bad_sale)
+        with self.assertRaises(BrokerError) as mixed:
+            broker.recover_local(self.db, self.claims["iss"], self.user.id)
+        self.assertIsNone(mixed.exception.close_session_id)
 
     def test_valid_receipts_sync_after_expiry_but_new_out_of_window_receipts_do_not(self):
         from fastapi import HTTPException
