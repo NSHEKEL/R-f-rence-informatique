@@ -34,6 +34,7 @@ class CashGlobalTests(unittest.TestCase):
         result = self.call("/api/offline/events/orphan/resolve", "POST", {"reason": "Pièces vérifiées, compte supprimé", "review": True})
         self.assertEqual(result["state"], "reviewed")
         self.call("/api/cash-sessions/global/close", "POST", payload, status=201)
+        self.db.expire_all()
         self.assertEqual(self.db.get(OfflineEvent, "orphan").envelope, '{"retained": true}')
         self.assertEqual(self.db.get(OfflineSession, "orphan-session").status, "reviewed")
 
