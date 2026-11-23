@@ -222,10 +222,11 @@ def _global_totals(db, sessions, user):
               "settlements_total", "deposits_total", "expected_cash", "advances_total",
               "mobile_money_sales", "mobile_money_refunds", "kept_balance", "remitted_amount", "mobile_cash_adjustment")
     totals = {field: 0 for field in fields}
-    payments, rows = {}, []
+    payments, rows, warnings = {}, [], []
     inflows, outflows = group_payments({}), group_payments({})
     for session in sessions:
         report = session_amounts(db, session)
+        warnings.extend(f"Caisse #{session.id} ({report.cashier}) : {warning}" for warning in report.data_warnings)
         session_in, session_out = _flow_groups(report)
         for key in inflows:
             inflows[key] += session_in[key]
@@ -260,7 +261,7 @@ def _global_totals(db, sessions, user):
     for field in ("kept_balance", "remitted_amount"):
         if any(row[field] is None for row in rows):
             totals[field] = None
-    return {**totals, "payments": payments, "payment_groups": group_payments(payments),
+    return {**totals, "payments": payments, "payment_groups": group_payments(payments), "data_warnings": warnings,
             "inflow_groups": inflows, "outflow_groups": outflows,
             "sessions": rows, "cashiers": list(by_cashier.values()), "counted_cash": counted,
             "difference": counted - totals["expected_cash"] if counted is not None else None,

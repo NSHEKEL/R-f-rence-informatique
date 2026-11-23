@@ -10,6 +10,7 @@ import Modal from "./Modal";
 const modes = [["cash", "Espèces"], ["mobile_money", "Mobile Money"], ["bank", "Bancaire"], ["credit", "Crédit (non encaissé)"], ["other", "Autres moyens"]] as const;
 type Groups = Record<string, number>;
 interface GlobalReport {
+  data_warnings?: string[];
   mobile_cash_adjustment?: number;
   kept_balance?: number | null;
   remitted_amount?: number | null;
@@ -93,6 +94,7 @@ export default function GlobalCash() {
   async function close() {
     if (recoveryBlocksClose) { setError(recoveryWarning || "Récupérez les opérations hors ligne avant la clôture globale"); return; }
     if (!report) return;
+    if (report.data_warnings?.length && !window.confirm("Des anomalies ont été signalées. Confirmez avoir vérifié les avertissements avant d'archiver cette clôture globale.\n\n" + report.data_warnings.join("\n"))) return;
     setSaving(true); setError("");
     try {
       await api.post<GlobalReport>("/cash-sessions/global/close", { date_from: from, date_to: to,
@@ -117,6 +119,7 @@ export default function GlobalCash() {
     {recoveryBlocksClose && <p role="alert" className="text-amber-700">{recoveryWarning || "Opérations hors ligne en attente : synchronisez les postes avant la clôture globale."}</p>}
     {error && <p role="alert" className="text-red-600">{error}</p>}
     {data && <>
+      {data.data_warnings && data.data_warnings.length > 0 && <div role="alert" className="rounded border border-amber-400 bg-amber-50 p-3 text-amber-900"><p className="font-semibold">Anomalies conservées — à vérifier avant l'archivage</p><ul className="list-disc pl-5">{data.data_warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div>}
       {selected && <h3 className="font-bold">Clôture globale #{selected.id} — récapitulatif figé · {selected.date_from} → {selected.date_to}</h3>}
       <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr><th className="text-left">Mode de paiement</th><th>Moi (administrateur)</th><th>Autres caissiers</th><th>Total global</th></tr></thead><tbody>
         {modes.map(([key, label]) => { const own = data.cashiers.filter((c) => c.own).reduce((sum, c) => sum + (c.payment_groups[key] || 0), 0); return <tr key={key}><td>{label}</td><td className="text-center">{formatXOF(own)}</td><td className="text-center">{formatXOF((data.payment_groups[key] || 0) - own)}</td><td className="text-center font-bold">{formatXOF(data.payment_groups[key] || 0)}</td></tr>; })}
