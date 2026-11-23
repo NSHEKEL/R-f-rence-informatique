@@ -277,6 +277,17 @@ class MirrorSale(Base):
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
 
+class MirrorExclusion(Base):
+    __tablename__ = "mirror_exclusions"
+    __table_args__ = (UniqueConstraint("client_id", "installation_uid", "operation_id", name="uq_mirror_exclusion"),)
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    installation_uid = Column(String, nullable=False)
+    operation_id = Column(String(64), nullable=False)
+    payload = Column(Text, nullable=False)
+
+
 class OfflineDelegation(Base):
     __tablename__ = "offline_delegations"
     id = Column(String(64), primary_key=True)

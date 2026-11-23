@@ -21,6 +21,7 @@ from ..models import (
     MirrorReturn,
     MirrorExpense,
     MirrorSale,
+    MirrorExclusion,
     MirrorSupportRequest,
     PendingTransfer,
     MirrorUser,
@@ -229,21 +230,20 @@ def mirror(payload: MirrorRequest, db: Session = Depends(get_db)):
         for row in db.query(MirrorSale).filter(MirrorSale.client_id == client.id)
     }
     by_operation = {(row.installation_uid, row.operation_id): row for row in stored.values() if row.operation_id}
+    exclusions = {row.operation_id: row for row in db.query(MirrorExclusion).filter_by(client_id=client.id, installation_uid=installation.uid)}
     excluded_operations = []
     for exclusion in payload.offline_exclusions:
         operation_id = str(exclusion.operation_id)
+        record = exclusions.get(operation_id)
+        if record is None:
+            record = MirrorExclusion(client_id=client.id, installation_uid=installation.uid, operation_id=operation_id, payload=exclusion.model_dump_json())
+            db.add(record)
+            exclusions[operation_id] = record
         row = by_operation.get((installation.uid, operation_id))
-        if row is None:
-            reference = "HL-" + operation_id
-            if reference in stored:
-                raise HTTPException(409, "Référence déjà liée à une autre opération ; copie originale conservée")
-            row = MirrorSale(client_id=client.id, installation_uid=installation.uid, operation_id=operation_id, reference=reference, provisional=True)
-            db.add(row)
-            stored[reference] = row
-            by_operation[(installation.uid, operation_id)] = row
-        if not row.excluded:
-            row.exclusion = exclusion.model_dump_json()
-        row.excluded = True
+        if row is not None:
+            if not row.excluded:
+                row.exclusion = record.payload
+            row.excluded = True
         excluded_operations.append(operation_id)
     new_sales = []
     for sale in payload.sales:
@@ -254,9 +254,14 @@ def mirror(payload: MirrorRequest, db: Session = Depends(get_db)):
         if row is None:
             row = MirrorSale(client_id=client.id, reference=sale.reference)
             db.add(row)
-            new_sales.append(sale)
+            if sale.operation_id not in exclusions:
+                new_sales.append(sale)
         row.installation_uid = installation.uid
         row.operation_id = sale.operation_id or row.operation_id
+        exclusion = exclusions.get(row.operation_id)
+        if exclusion is not None:
+            row.excluded = True
+            row.exclusion = exclusion.payload
         row.provisional = False
         row.reference = sale.reference
         row.date = _naive(sale.date)

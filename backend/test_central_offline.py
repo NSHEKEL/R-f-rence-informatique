@@ -12,8 +12,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from app.central.database import Base, get_db
-from app.central.models import Client, Installation, MirrorSale
-from app.central.routers import mobile, provisioning
+from app.central.models import Client, Installation, MirrorExclusion, MirrorSale
+from app.central.routers import console, mobile, provisioning
 from app.offline_auth import AUDIENCE
 from app.offline_crypto import digest, fingerprint, private_key, public_key, sign
 from types import SimpleNamespace
@@ -37,6 +37,9 @@ class CentralOfflineTests(unittest.TestCase):
                     result = self.client.post("/api/central/public/mirror", json=body)
                     self.assertEqual(result.status_code, 200, result.text)
                     self.assertEqual(result.json()["excluded_operations"], [operation_id])
+                if exclude_first:
+                    self.assertEqual(self.db.query(MirrorSale).filter_by(operation_id=operation_id).count(), 0)
+                self.assertEqual(self.db.query(MirrorExclusion).filter_by(operation_id=operation_id).count(), 1)
                 self.assertEqual(self.client.post("/api/central/public/offline/events", json=upload).status_code, 200)
                 canonical = {"installation_uid": self.installation.uid, "token": "installation-test-only", "sales": [{"reference": "VNT-"+operation_id, "operation_id": operation_id, "total": 1750, "status": "Payée"}]}
                 self.assertEqual(self.client.post("/api/central/public/mirror", json=canonical).status_code, 200)
@@ -47,7 +50,26 @@ class CentralOfflineTests(unittest.TestCase):
                 self.assertEqual(json.loads(row.offline_original), envelope)
                 self.assertEqual(json.loads(row.exclusion)["event_hash"], exclusion["event_hash"])
                 self.assertEqual(mobile._visible(self.db, SimpleNamespace(role="admin"), self.installation.client).count(), 0)
-        print("CENTRAL_REVIEW_EXCLUSION_OK before_or_after_receipt=True replay_idempotent=True canonical_cannot_restore=True originals_retained=True mobile_visible=0")
+                stats = console.magasins_stats(self.installation.client_id, db=self.db, _=SimpleNamespace())
+                self.assertEqual(len(stats), 1)
+                self.assertEqual((stats[0].ventes, stats[0].chiffre_affaires, stats[0].ventes_jour, stats[0].ca_jour, stats[0].top_produits, stats[0].derniere_vente), (0,0,0,0,[],None))
+        print("CENTRAL_REVIEW_EXCLUSION_OK no_fabricated_sale=True before_or_after_receipt=True replay_idempotent=True canonical_cannot_restore=True originals_retained=True mobile_visible=0 console_revenue=0")
+
+    def test_exclusion_without_receipt_is_not_a_sale_and_other_sales_stay_visible(self):
+        operation_id = str(uuid.uuid4())
+        exclusion = {"operation_id":operation_id,"actor_id":1,"reason":"Ticket jamais reçu","reviewed_at":time.time(),"event_hash":"a"*64}
+        body = {"installation_uid":self.installation.uid,"token":"installation-test-only","offline_exclusions":[exclusion,exclusion]}
+        result = self.client.post("/api/central/public/mirror", json=body)
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(self.db.query(MirrorSale).count(), 0)
+        self.assertEqual(self.db.query(MirrorExclusion).count(), 1)
+        stats = console.magasins_stats(self.installation.client_id, db=self.db, _=SimpleNamespace())[0]
+        self.assertEqual((stats.ventes,stats.chiffre_affaires), (0,0))
+        normal = {"reference":"REELLE","operation_id":str(uuid.uuid4()),"total":1750,"status":"Payée","items":[{"name":"Lait","quantity":0.5}]}
+        self.assertEqual(self.client.post("/api/central/public/mirror", json={**body,"offline_exclusions":[],"sales":[normal]}).status_code, 200)
+        stats = console.magasins_stats(self.installation.client_id, db=self.db, _=SimpleNamespace())[0]
+        self.assertEqual((stats.ventes,stats.chiffre_affaires,stats.top_produits), (1,1750,[{"name":"Lait","quantity":0.5}]))
+        self.assertEqual(mobile._visible(self.db, SimpleNamespace(role="admin"), self.installation.client).count(), 1)
 
     def test_exclusion_migration_is_additive_and_repeatable(self):
         from app.central import seed
@@ -59,8 +81,11 @@ class CentralOfflineTests(unittest.TestCase):
         with patch.object(seed, "engine", legacy):
             seed._add_missing_columns()
             seed._add_missing_columns()
+        Base.metadata.create_all(legacy)
+        Base.metadata.create_all(legacy)
         with legacy.connect() as conn:
             self.assertEqual(tuple(conn.execute(text("SELECT reference,total,excluded,exclusion FROM mirror_sales")).one()), ("original",1750,0,""))
+            self.assertEqual(conn.execute(text("SELECT count(*) FROM mirror_exclusions")).scalar(), 0)
 
     def setUp(self):
         engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)

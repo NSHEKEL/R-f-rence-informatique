@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 
 from ..offline_auth import AUDIENCE
 from ..offline_crypto import canonical, digest, fingerprint, verify
-from .models import Installation, MirrorSale, OfflineDelegation
+from .models import Installation, MirrorExclusion, MirrorSale, OfflineDelegation
 from .security import license_private_key, license_public_key
 
 AUD = "easygest-central-offline-upload"
@@ -99,6 +99,10 @@ def upload(db, payload):
                     seller=grant["user"]["name"], seller_email=delegation.seller_email, customer=str(receipt.get("customer_name") or ""),
                     items=json.dumps(receipt.get("items") or [], ensure_ascii=False), provisional=True)
                 db.add(row)
+            exclusion = db.query(MirrorExclusion).filter_by(client_id=installation.client_id, installation_uid=installation.uid, operation_id=event["id"]).first()
+            if exclusion is not None:
+                row.excluded = True
+                row.exclusion = exclusion.payload
             if not row.offline_original:
                 row.offline_original = original
             accepted.append({"id": event["id"], "hash": digest(event)})

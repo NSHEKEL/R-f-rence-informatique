@@ -903,7 +903,7 @@ def magasins_stats(
     installations = (
         db.query(Installation).filter(Installation.client_id == client.id).all()
     )
-    sales_query = db.query(MirrorSale).filter(MirrorSale.client_id == client.id)
+    sales_query = db.query(MirrorSale).filter(MirrorSale.client_id == client.id, MirrorSale.excluded.isnot(True))
     if date_from:
         sales_query = sales_query.filter(MirrorSale.date >= date_from)
     if date_to:
