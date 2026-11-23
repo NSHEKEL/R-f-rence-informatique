@@ -607,7 +607,7 @@ class OfflineBroker:
             elif method == "POST" and path == "/cash-sessions/close":
                 if "caisse_fermer" not in rights:
                     raise BrokerError(403, "Clôture non autorisée")
-                if data.get("cash_session_id") is None or data["cash_session_id"] not in {session["id"], session.get("server_session_id"), session.get("baseline", {}).get("id")}:
+                if data.get("cash_session_id") is not None and data["cash_session_id"] not in {session["id"], session.get("server_session_id"), session.get("baseline", {}).get("id")}:
                     raise BrokerError(409, "La caisse a changé depuis votre confirmation. Actualisez puis recomptez la caisse courante.")
                 payload = CashSessionClose.model_validate(data)
                 detail = self._detail(db, session, claims, rights)

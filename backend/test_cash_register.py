@@ -13,12 +13,11 @@ from app import migrate as migration
 
 
 class CashRegisterTests(unittest.TestCase):
-    def test_close_requires_the_confirmed_till_and_rejects_replacement_without_mutation(self):
+    def test_close_supports_legacy_clients_but_checks_a_confirmed_till_before_mutation(self):
         self.grant("soldes_consulter", "clotures_consulter")
         first = self.open()
         code, _ = asyncio.run(treasury.request(self.app, "/api/cash-sessions/close", "POST", {"closing_balance": 500}))
-        self.assertEqual(code, 422)
-        self.call("/api/cash-sessions/close", "POST", {"cash_session_id": first["id"], "closing_balance": 500})
+        self.assertEqual(code, 200)
         replacement = self.open()
         result = self.call("/api/cash-sessions/close", "POST", {"cash_session_id": first["id"], "closing_balance": 500}, status=409)
         self.assertIn("a changé", result["detail"])
@@ -27,7 +26,7 @@ class CashRegisterTests(unittest.TestCase):
         self.assertIsNone(current["closed_at"])
         self.assertEqual(current["opening_balance"], 500)
         self.call("/api/cash-sessions/close", "POST", {"cash_session_id": replacement["id"], "closing_balance": 500})
-        print("CONFIRMED_TILL_GUARD_OK missing_id_http=422 replaced_till_http=409 replacement_untouched=True exact_id_closes=True")
+        print("CONFIRMED_TILL_GUARD_OK legacy_missing_id_http=200 replaced_till_http=409 replacement_untouched=True exact_id_closes=True")
 
     call = treasury.TreasuryPermissionsTests.call
     grant = treasury.TreasuryPermissionsTests.grant
