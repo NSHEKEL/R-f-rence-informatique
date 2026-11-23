@@ -73,7 +73,7 @@ class NetworkSalesDashboardTests(unittest.TestCase):
         first = self.open()
         body = {"client_id": "offline-bound", "cash_session_id": first["id"], "items": [{"product_id": self.product.id, "quantity": 1}]}
         saved = self.call("/api/sales", "POST", body, 201)
-        self.call("/api/cash-sessions/close", "POST", {"closing_balance": 600})
+        self.call("/api/cash-sessions/close", "POST", {"cash_session_id": self.call("/api/cash-sessions/current")["id"], "closing_balance": 600})
         second = self.call(f"/api/cash-sessions/{first['id']}/reopen", "POST")
         self.assertEqual(self.call("/api/sales", "POST", body, 201)["id"], saved["id"])
         refused = self.call("/api/sales", "POST", {**body, "client_id": "not-yet-sent"}, 409)

@@ -45,6 +45,7 @@ export default function Caisse() {
   const [movementReason, setMovementReason] = useState("");
 
   const [closeOpen, setCloseOpen] = useState(false);
+  const [closeSessionId, setCloseSessionId] = useState<number | null>(null);
   const [countedBalance, setCountedBalance] = useState("0");
   const [closeNote, setCloseNote] = useState("");
   const [keptBalance, setKeptBalance] = useState("0");
@@ -130,11 +131,13 @@ export default function Caisse() {
 
   async function closeTill() {
     if (recoveryWarning) { setError(recoveryWarning); return; }
+    if (closeSessionId == null) { setError("Actualisez la caisse avant de confirmer sa clôture."); return; }
     if (printJob) { setError("Attendez la fin de l'impression avant de fermer la caisse."); return; }
     setSaving(true);
     setError("");
     try {
       const res = await api.post<CashSessionDetail>("/cash-sessions/close", {
+        cash_session_id: closeSessionId,
         closing_balance: Number(countedBalance) || 0,
         kept_balance: Number(keptBalance) || 0,
         note: closeNote,
@@ -286,6 +289,7 @@ export default function Caisse() {
                       className="btn-ghost"
                       disabled={Boolean(recoveryWarning)}
                       onClick={() => {
+                        setCloseSessionId(today.id);
                         setCountedBalance(today.expected_cash == null ? "" : String(today.expected_cash));
                         setCloseNote("");
                         setCloseOpen(true);

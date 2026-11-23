@@ -479,6 +479,10 @@ def close_session(
         raise HTTPException(
             status_code=400, detail="Aucune caisse ouverte à votre nom"
         )
+    if payload.cash_session_id is None:
+        raise HTTPException(422, "Identifiant de la caisse confirmée obligatoire")
+    if payload.cash_session_id != session.id:
+        raise HTTPException(409, "La caisse a changé depuis votre confirmation. Actualisez puis recomptez la caisse courante.")
     _close_session(db, session, payload, current_user)
     db.commit()
     db.refresh(session)

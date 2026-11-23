@@ -46,7 +46,7 @@ class CashTotalsTests(unittest.TestCase):
             self.assertEqual(report["expenses"][0]["note"], "Fret livré")
             self.assertEqual(report["expenses"][0]["user"], self.user.name)
             self.assertTrue(report["expenses"][0]["date"])
-        closed = self.call("/api/cash-sessions/close", "POST", {"closing_balance": 125000})
+        closed = self.call("/api/cash-sessions/close", "POST", {"cash_session_id": self.call("/api/cash-sessions/current")["id"], "closing_balance": 125000})
         self.assertEqual(closed["difference"], 0)
         self.db.get(Expense, expense["id"]).amount = 99999
         self.db.commit()

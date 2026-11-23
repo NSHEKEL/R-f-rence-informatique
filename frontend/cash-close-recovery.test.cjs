@@ -14,7 +14,7 @@ test('unrecovered local operations block closing an open till before any HTTP re
     for (const failure of [false, true]) {
       let calls = 0, tickets = 0, error = '', saving = false;
       const close = vm.runInNewContext(ts.transpileModule(`(${closing.getText(source)})`, {}).outputText, {
-        recoveryWarning: warning, printJob: null, countedBalance: '175250', keptBalance: '170000', closeNote: '',
+        recoveryWarning: warning, closeSessionId: 17, printJob: null, countedBalance: '175250', keptBalance: '170000', closeNote: '',
         api: { post: async () => { calls++; if (failure) throw { response: { data: { detail: 'Accès refusé' } } }; return { data: { id: 17, closed_at: '2026-11-23' } }; } },
         setError: value => { error = value; }, setSaving: value => { saving = value; },
         setCloseOpen() {}, setCloseNote() {}, setToday() {}, setClosedChoice() {},
@@ -31,4 +31,22 @@ test('unrecovered local operations block closing an open till before any HTTP re
   }
   assert.match(source.text, /className="btn-ghost"\s+disabled=\{Boolean\(recoveryWarning\)\}/);
   assert.match(source.text, /onClick=\{closeTill\}\s+disabled=\{saving \|\| Boolean\(recoveryWarning\)\}/);
+});
+
+test('confirmation keeps its session id even if the live till changes before submission', async () => {
+  const source = ts.createSourceFile('Caisse.tsx', readFileSync(`${__dirname}/src/pages/Caisse.tsx`, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let fn;
+  function visit(node) { if (ts.isFunctionDeclaration(node) && node.name?.text === 'closeTill') fn = node; ts.forEachChild(node, visit); }
+  visit(source);
+  let posted, error;
+  const close = vm.runInNewContext(ts.transpileModule(`(${fn.getText(source)})`, {}).outputText, {
+    recoveryWarning: '', closeSessionId: 17, today: { id: 18 }, printJob: null,
+    countedBalance: '500', keptBalance: '0', closeNote: '', setSaving() {}, setError: value => { error = value; },
+    api: { post: async (_url, payload) => { posted = payload; throw { response: { data: { detail: 'La caisse a changé' } } }; } },
+    axios: { isAxiosError: () => true }, apiErrorMessage: value => value,
+  });
+  await close();
+  assert.equal(posted.cash_session_id, 17);
+  assert.equal(error, 'La caisse a changé');
+  assert.match(source.text, /setCloseSessionId\(today.id\)/);
 });

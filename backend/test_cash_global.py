@@ -38,7 +38,7 @@ class CashGlobalTests(unittest.TestCase):
             "items": [{"product_id": self.product.id, "quantity": quantity}], "payments": payments}, 201)
 
     def close(self, counted):
-        return self.call("/api/cash-sessions/close", "POST", {"closing_balance": counted, "note": "Comptage"})
+        return self.call("/api/cash-sessions/close", "POST", {"cash_session_id": self.call("/api/cash-sessions/current")["id"], "closing_balance": counted, "note": "Comptage"})
 
     def global_close(self, preview, counted, status=201, **changes):
         return self.call("/api/cash-sessions/global/close", "POST", {

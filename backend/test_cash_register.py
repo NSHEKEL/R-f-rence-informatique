@@ -13,6 +13,22 @@ from app import migrate as migration
 
 
 class CashRegisterTests(unittest.TestCase):
+    def test_close_requires_the_confirmed_till_and_rejects_replacement_without_mutation(self):
+        self.grant("soldes_consulter", "clotures_consulter")
+        first = self.open()
+        code, _ = asyncio.run(treasury.request(self.app, "/api/cash-sessions/close", "POST", {"closing_balance": 500}))
+        self.assertEqual(code, 422)
+        self.call("/api/cash-sessions/close", "POST", {"cash_session_id": first["id"], "closing_balance": 500})
+        replacement = self.open()
+        result = self.call("/api/cash-sessions/close", "POST", {"cash_session_id": first["id"], "closing_balance": 500}, status=409)
+        self.assertIn("a changé", result["detail"])
+        current = self.call("/api/cash-sessions/current")
+        self.assertEqual(current["id"], replacement["id"])
+        self.assertIsNone(current["closed_at"])
+        self.assertEqual(current["opening_balance"], 500)
+        self.call("/api/cash-sessions/close", "POST", {"cash_session_id": replacement["id"], "closing_balance": 500})
+        print("CONFIRMED_TILL_GUARD_OK missing_id_http=422 replaced_till_http=409 replacement_untouched=True exact_id_closes=True")
+
     call = treasury.TreasuryPermissionsTests.call
     grant = treasury.TreasuryPermissionsTests.grant
     open = treasury.TreasuryPermissionsTests.open
@@ -40,7 +56,7 @@ class CashRegisterTests(unittest.TestCase):
     def test_close_blocks_new_sale_and_offline_replay_but_existing_id_succeeds(self):
         first_session = self.open()
         recorded = self.sale("recorded")
-        self.call("/api/cash-sessions/close", "POST", {"closing_balance": 600, "note": "Comptage"})
+        self.call("/api/cash-sessions/close", "POST", {"cash_session_id": self.call("/api/cash-sessions/current")["id"], "closing_balance": 600, "note": "Comptage"})
         for client in (("127.0.0.1", 1234), ("192.168.1.42", 1234)):
             self.sale("pending-offline", client, status=400)
             self.assertEqual(self.sale("recorded", client)["id"], recorded["id"])
@@ -72,7 +88,7 @@ class CashRegisterTests(unittest.TestCase):
             self.sale("previous-day-sale")
             self.assertEqual(self.db.query(Sale).one().cash_session_id, session["id"])
             self.call("/api/cash-sessions/open", "POST", {"opening_balance": 0}, status=400)
-            closed = self.call("/api/cash-sessions/close", "POST", {"closing_balance": 600, "note": "Clôture différée"})
+            closed = self.call("/api/cash-sessions/close", "POST", {"cash_session_id": self.call("/api/cash-sessions/current")["id"], "closing_balance": 600, "note": "Clôture différée"})
             self.assertEqual(closed["id"], session["id"])
             self.assertIsNotNone(closed["closed_at"])
             self.assertIsNone(self.call("/api/cash-sessions/current"))
@@ -117,7 +133,7 @@ class CashRegisterTests(unittest.TestCase):
         self.assertEqual(current["expected_cash"], 560)  # 500 + 100 + 40 + 30 - 10 - 100
         self.assertEqual(z["expected_cash"], current["expected_cash"])
         self.assertEqual(z["cash_refunds"], 100)
-        closed = self.call("/api/cash-sessions/close", "POST", {"closing_balance": 560})
+        closed = self.call("/api/cash-sessions/close", "POST", {"cash_session_id": self.call("/api/cash-sessions/current")["id"], "closing_balance": 560})
         self.assertEqual(closed["difference"], 0)
         self.assertEqual(closed["expected_balance"], z["expected_cash"])
         self.assertEqual(self.call(f"/api/cash-sessions/{session['id']}/z")["expected_cash"], 560)
@@ -139,7 +155,7 @@ class CashRegisterTests(unittest.TestCase):
         self.assertTrue(all(row["amount"] is None for row in rows))
         self.grant("soldes_consulter")
         self.assertEqual(sum(row["amount"] for row in self.call(f"/api/cash-sessions/{session['id']}/movements")), 15)
-        self.call("/api/cash-sessions/close", "POST", {"closing_balance": 505})
+        self.call("/api/cash-sessions/close", "POST", {"cash_session_id": self.call("/api/cash-sessions/current")["id"], "closing_balance": 505})
         self.call("/api/cash-sessions/movements", "POST", {"type": "in", "amount": 1, "reason": "Test"}, status=400)
 
     def test_debt_payment_endpoint_binds_the_cashiers_current_session(self):

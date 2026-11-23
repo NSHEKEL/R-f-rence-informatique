@@ -8,6 +8,25 @@ from app.offline_broker import BrokerError, OfflineBroker
 
 @unittest.skipUnless(sys.platform == "win32", "Journal Windows / DPAPI")
 class OfflineBrokerRegressionTests(unittest.TestCase):
+    def test_close_matches_the_confirmed_local_or_adopted_id_before_journaling(self):
+        with tempfile.TemporaryDirectory() as root:
+            broker = OfflineBroker(root)
+            rights = {"caisse", "caisse_fermer", "soldes_consulter"}
+            for confirmed in (None, 99, -1, 42, 77):
+                session = {"id": -1, "uuid": "session", "server_session_id": 77, "baseline": {"id": 42}}
+                with patch.object(broker, "_auth", return_value=({"grant": "test"}, {"iss": "shop", "sub": "1"}, rights)), patch.object(broker, "_local_session", return_value=session), patch.object(broker, "_session_key", return_value="test"), patch.object(broker, "_detail", return_value={"expected_cash": 0}), patch.object(broker.store, "append", return_value={"event": {"id": "closing-event"}}) as append:
+                    payload = {"cash_session_id": confirmed, "closing_balance": 0}
+                    if confirmed in (None, 99):
+                        with self.assertRaises(BrokerError) as error:
+                            broker.request("POST", "/cash-sessions/close", payload)
+                        self.assertEqual(error.exception.status, 409)
+                        self.assertNotIn("closed_at", session)
+                        append.assert_not_called()
+                    else:
+                        broker.request("POST", "/cash-sessions/close", payload)
+                        append.assert_called_once()
+                        self.assertEqual(append.call_args.args[5]["cash_session_id"], confirmed)
+
     def test_adopted_server_till_id_is_normalized_but_another_till_is_rejected(self):
         with tempfile.TemporaryDirectory() as root:
             broker = OfflineBroker(root)

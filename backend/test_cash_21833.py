@@ -29,7 +29,7 @@ class Cash21833Tests(unittest.TestCase):
         return self.call("/api/cash-sessions/current")
 
     def close(self, counted, kept=0):
-        return self.call("/api/cash-sessions/close", "POST", {"closing_balance": counted, "kept_balance": kept, "note": "Test"})
+        return self.call("/api/cash-sessions/close", "POST", {"cash_session_id": self.call("/api/cash-sessions/current")["id"], "closing_balance": counted, "kept_balance": kept, "note": "Test"})
 
     def refund(self, sale, method="Espèces"):
         return self.call("/api/returns", "POST", {"sale_reference": sale["reference"], "refund_method": method,
@@ -46,8 +46,8 @@ class Cash21833Tests(unittest.TestCase):
         current = self.current()
         self.assertEqual(current["expected_cash"], 439000)
         self.assertEqual(current["mobile_money_sales"], 14000)
-        self.call("/api/cash-sessions/close", "POST", {"closing_balance": 439000, "kept_balance": 440000}, 400)
-        self.call("/api/cash-sessions/close", "POST", {"closing_balance": 439000, "kept_balance": -1}, 422)
+        self.call("/api/cash-sessions/close", "POST", {"cash_session_id": self.call("/api/cash-sessions/current")["id"], "closing_balance": 439000, "kept_balance": 440000}, 400)
+        self.call("/api/cash-sessions/close", "POST", {"cash_session_id": self.call("/api/cash-sessions/current")["id"], "closing_balance": 439000, "kept_balance": -1}, 422)
         closed = self.close(439000, 10000)
         self.assertEqual((closed["remitted_amount"], closed["kept_balance"], closed["difference"]), (429000, 10000, 0))
         self.db.expire_all()

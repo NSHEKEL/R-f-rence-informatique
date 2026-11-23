@@ -123,7 +123,7 @@ class OfflineIngestTests(unittest.TestCase):
         self.assertEqual(current["expected_cash"], 1045)
         self.assertEqual(self.db.query(CashSession).count(), 1)
         self.assertEqual(self.db.query(OfflineSession).one().cash_session_id, original["id"])
-        closed = self.call("/api/cash-sessions/close", "POST", {"closing_balance": 1045})
+        closed = self.call("/api/cash-sessions/close", "POST", {"cash_session_id": self.call("/api/cash-sessions/current")["id"], "closing_balance": 1045})
         self.assertEqual(closed["cash_expenses"], 5)
         print("PROVISIONAL_ADOPTION_OK forced_close=False sessions=1 server_float=1000 expenses_deducted_once=5 sales=1 replayed_once=True")
 

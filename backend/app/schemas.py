@@ -918,6 +918,7 @@ class CashSessionOpen(BaseModel):
 
 
 class CashSessionClose(BaseModel):
+    cash_session_id: Optional[int] = None
     kept_balance: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     closing_balance: float = 0
     note: str = ""

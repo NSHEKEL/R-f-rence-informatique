@@ -93,7 +93,7 @@ class Review21835Tests(unittest.TestCase):
             before = self.call("/api/cash-sessions/current")
             snapshot = None
             if frozen:
-                self.call("/api/cash-sessions/close", "POST", {"closing_balance": before["expected_cash"]})
+                self.call("/api/cash-sessions/close", "POST", {"cash_session_id": self.call("/api/cash-sessions/current")["id"], "closing_balance": before["expected_cash"]})
                 self.db.expire_all()
                 snapshot = self.db.get(CashSession, before["id"]).z_report
             self.call(f"/api/sales/{sale['id']}", "DELETE", status=204)
