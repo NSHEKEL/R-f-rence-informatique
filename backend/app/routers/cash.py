@@ -6,7 +6,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import and_, or_, update
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy.exc import IntegrityError
 
 from ..auth import get_current_user, require_admin
@@ -548,7 +548,7 @@ def session_amounts(db: Session, session: CashSession) -> CashSessionZ:
         except (ValueError, TypeError, AttributeError):
             raise HTTPException(status_code=409, detail="Clôture historique illisible : restauration nécessaire")
     sales = (
-        db.query(Sale).filter(Sale.cash_session_id == session.id).all()
+        db.query(Sale).options(selectinload(Sale.payments)).filter(Sale.cash_session_id == session.id).all()
     )
     payments: dict[str, float] = {}
     total_sales = 0.0

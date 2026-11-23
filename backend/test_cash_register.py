@@ -4,15 +4,36 @@ import unittest
 from datetime import datetime, timezone
 from unittest.mock import patch
 
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, event, inspect, text
 
 import test_treasury_permissions as treasury
-from app.models import BankAccount, BankDeposit, CashMovement, CashSession, CompanySettings, Debt, DebtPayment, Product, Sale, SaleReturn
+from app.models import BankAccount, BankDeposit, CashMovement, CashSession, CompanySettings, Debt, DebtPayment, Product, Sale, SalePayment, SaleReturn
 from app.routers import cash, returns, sales
 from app import migrate as migration
 
 
 class CashRegisterTests(unittest.TestCase):
+    def test_live_totals_load_two_hundred_sale_payments_in_one_query(self):
+        opened = self.open()
+        for index in range(200):
+            self.db.add(Sale(reference=f"PERF-{index}", cash_session_id=opened["id"], total=100, paid_amount=100, status="Payée", payment_method="Espèces", payments=[SalePayment(method="Espèces", amount=100)]))
+        self.db.commit()
+        self.db.expunge_all()
+        queries = []
+        def record(conn, cursor, statement, parameters, context, executemany):
+            if "FROM sale_payments" in statement:
+                queries.append(statement)
+        event.listen(self.engine, "before_cursor_execute", record)
+        try:
+            report = cash.session_amounts(self.db, self.db.get(CashSession, opened["id"]))
+        finally:
+            event.remove(self.engine, "before_cursor_execute", record)
+        self.assertEqual(len(queries), 1)
+        self.assertEqual(report.sales_count, 200)
+        self.assertEqual(report.total_sales, 20000)
+        self.assertEqual(report.expected_cash, 20500)
+        print("LIVE_TILL_TOTALS_BATCHED_OK sales=200 payment_queries=1 total=20000 expected_cash=20500")
+
     def test_close_supports_legacy_clients_but_checks_a_confirmed_till_before_mutation(self):
         self.grant("soldes_consulter", "clotures_consulter")
         first = self.open()
