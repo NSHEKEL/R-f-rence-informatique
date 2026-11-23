@@ -3,6 +3,7 @@ import unittest
 import uuid
 import threading
 from contextlib import nullcontext
+from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -223,8 +224,8 @@ class OfflineIngestTests(unittest.TestCase):
     def test_settings_keep_old_unresolved_conflicts_visible_beyond_terminal_history(self):
         self.assertEqual(self.call("/api/offline/events"), [])
         for index in range(205):
-            self.db.add(OfflineEvent(id=str(uuid.uuid4()), device_id=self.device, user_id=self.user.id, session_id="history", sequence=index+1, kind="sale", occurred_at=self.claims["auth_at"], received_at=index+1, hash="hash", envelope="{}", state="reviewed", result="{}"))
-        old = OfflineEvent(id="old-conflict", device_id=self.device, user_id=self.user.id, session_id="old", sequence=1, kind="sale", occurred_at=self.claims["auth_at"], received_at=0, hash="hash", envelope="{}", state="conflict", result="{}")
+            self.db.add(OfflineEvent(id=str(uuid.uuid4()), device_id=self.device, user_id=self.user.id, session_id="history", sequence=index+1, kind="sale", occurred_at=self.claims["auth_at"], received_at=datetime(2020, 1, 1) + timedelta(seconds=index+1), hash="hash", envelope="{}", state="reviewed", result="{}"))
+        old = OfflineEvent(id="old-conflict", device_id=self.device, user_id=self.user.id, session_id="old", sequence=1, kind="sale", occurred_at=self.claims["auth_at"], received_at=datetime(2020, 1, 1), hash="hash", envelope="{}", state="conflict", result="{}")
         self.db.add(old)
         self.db.commit()
         rows = self.call("/api/offline/events")
