@@ -155,10 +155,12 @@ def list_events(db: Session = Depends(get_db), user: User = Depends(get_current_
     query = db.query(OfflineEvent)
     if user.role != "admin":
         query = query.filter_by(user_id=user.id)
+    unresolved = query.filter(OfflineEvent.state.notin_(["applied", "reviewed"])).order_by(OfflineEvent.received_at.desc()).all()
+    recent = query.filter(OfflineEvent.state.in_(["applied", "reviewed"])).order_by(OfflineEvent.received_at.desc()).limit(200).all()
     users = {value for (value,) in db.query(User.id).all()}
     return [{"id": row.id, "user_id": row.user_id, "user_deleted": row.user_id not in users, "session_id": row.session_id, "kind": row.kind, "state": row.state,
              "occurred_at": row.occurred_at, "result": json.loads(row.result), "resolution": json.loads(row.resolution) if row.resolution else None}
-            for row in query.order_by(OfflineEvent.received_at.desc()).limit(200).all()]
+            for row in [*unresolved, *recent]]
 
 
 @router.post("/events/{event_id}/resolve")
