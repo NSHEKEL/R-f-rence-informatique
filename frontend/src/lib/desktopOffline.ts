@@ -106,7 +106,8 @@ export const desktopOffline = {
       try {
         const entries = JSON.parse(raw);
         if (!Array.isArray(entries) || entries.length === 0) continue;
-        const result = await this.command<{ stored: number }>("import_legacy", { entries });
+        const stored = key === "ri_rejected_sales" ? entries.map((entry) => ({ ...entry, state: "rejected" })) : entries;
+        const result = await this.command<{ stored: number }>("import_legacy", { entries: stored });
         if (result.stored === entries.length && localStorage.getItem(key) === raw) localStorage.removeItem(key);
       } catch { /* original file remains untouched until the durable import succeeds */ }
     }

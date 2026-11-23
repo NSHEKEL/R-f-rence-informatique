@@ -655,6 +655,8 @@ class OfflineBroker:
             local = self.store.get(db, self._session_key()) if current else None
             for key in self.store.get(db, "legacy-index", []):
                 entry = self.store.get(db, key)
+                if entry.get("state") in {"archived", "rejected", "synced", "applied", "reviewed"} or entry.get("rejected_at") or entry.get("archived_at") or entry.get("synced_at"):
+                    continue
                 visible = current and entry.get("scope") == current["server"] + ":" + str(current["user_id"])
                 entries.append({"id": key, "kind": "sale", "state": "conflict", "reference": entry.get("snapshot", {}).get("reference", "Ancien ticket") if visible else "Ancien ticket conservé", "reason": "Ancienne file sans preuve signée : rapprochement administrateur nécessaire, ne pas ressaisir"})
             close = db.execute("SELECT state FROM events WHERE id=?", (local.get("closing_event_id"),)).fetchone() if local and local.get("closed_at") else None

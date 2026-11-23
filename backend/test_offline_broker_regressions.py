@@ -8,6 +8,26 @@ from app.offline_broker import BrokerError, OfflineBroker
 
 @unittest.skipUnless(sys.platform == "win32", "Journal Windows / DPAPI")
 class OfflineBrokerRegressionTests(unittest.TestCase):
+    def test_legacy_archives_remain_stored_but_do_not_count_as_pending(self):
+        with tempfile.TemporaryDirectory() as root:
+            broker = OfflineBroker(root)
+            broker.identity = {"scope": "shop", "server": "http://server", "user_id": 1}
+            entries = [{"scope": "http://server:1", "state": state, "snapshot": {"reference": state}} for state in ("archived", "rejected", "synced", "applied", "reviewed")]
+            entries += [{"scope": "http://server:1", marker: "date", "snapshot": {"reference": marker}} for marker in ("rejected_at", "archived_at", "synced_at")]
+            with broker.store.connection() as db:
+                broker.store.put(db, "servers", ["http://server"])
+                broker.store.put(db, "server:http://server", {"shop_id": "shop"})
+            with patch.object(broker, "_auth", return_value=({}, {}, set())):
+                self.assertEqual(broker.state()["pending"], [])
+                broker.import_legacy(entries)
+                self.assertEqual(broker.state()["pending"], [])
+                active = {"scope": "http://server:1", "snapshot": {"reference": "live pending"}}
+                broker.import_legacy([active])
+                self.assertEqual([row["reference"] for row in broker.state()["pending"]], ["live pending"])
+            with broker.store.connection() as db:
+                retained = [broker.store.get(db, key) for key in broker.store.get(db, "legacy-index")]
+                self.assertEqual(retained, [*entries, active])
+
     def test_close_matches_the_confirmed_local_or_adopted_id_before_journaling(self):
         with tempfile.TemporaryDirectory() as root:
             broker = OfflineBroker(root)
