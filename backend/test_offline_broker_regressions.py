@@ -8,6 +8,19 @@ from app.offline_broker import BrokerError, OfflineBroker
 
 @unittest.skipUnless(sys.platform == "win32", "Journal Windows / DPAPI")
 class OfflineBrokerRegressionTests(unittest.TestCase):
+    def test_probe_allows_a_slow_lan_response_without_removing_its_timeout(self):
+        with tempfile.TemporaryDirectory() as root:
+            broker = OfflineBroker(root)
+            with broker.store.connection() as db:
+                broker.store.put(db, "servers", ["http://server"])
+                broker.store.put(db, "server:http://server", {"shop_id": "shop"})
+            with patch.object(broker, "_remote", return_value={"status": "ok", "app": "EasyGest"}) as remote:
+                broker.sync()
+                remote.assert_called_once_with("http://server", "/health", timeout=2)
+            with patch.object(broker, "_remote", side_effect=ConnectionError("timeout")) as remote:
+                broker.sync()
+                remote.assert_called_once_with("http://server", "/health", timeout=2)
+
     def test_legacy_archives_remain_stored_but_do_not_count_as_pending(self):
         with tempfile.TemporaryDirectory() as root:
             broker = OfflineBroker(root)

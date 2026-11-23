@@ -673,7 +673,7 @@ class OfflineBroker:
                 servers = self.store.get(db, "servers", [])
             for server in servers:
                 try:
-                    health = self._remote(server, "/health", timeout=0.8)
+                    health = self._remote(server, "/health", timeout=2)
                     if health.get("status") != "ok" or health.get("app") != "EasyGest":
                         continue
                 except (ConnectionError, BrokerError):
