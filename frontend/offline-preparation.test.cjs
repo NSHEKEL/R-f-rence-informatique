@@ -46,13 +46,8 @@ test('local server login never prepares a workstation; remote seller preparation
   }
 });
 
-test('local recovery carries only a positive structured safe-to-close session id, never text guesses', async () => {
-  for (const [detail, expected] of [
-    [{ message: 'Autre caisse ouverte', close_session_id: 17 }, 17],
-    [{ message: 'Autre caisse ouverte', close_session_id: -17 }, null],
-    [{ message: 'Autre caisse ouverte', close_session_id: '17' }, null],
-    ['Une autre caisse est ouverte pour ce vendeur', null],
-  ]) {
+test('local recovery failures never grant an exception to closing protection', async () => {
+  for (const detail of [{ message: 'Autre caisse ouverte', close_session_id: 17 }, 'Une autre caisse est ouverte pour ce vendeur']) {
     const exports = {};
     vm.runInNewContext(ts.transpileModule(readFileSync(`${__dirname}/src/lib/desktopOffline.ts`, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, {
       exports, window: { location: { origin: 'http://127.0.0.1:8000', hostname: '127.0.0.1' } },
@@ -62,8 +57,8 @@ test('local recovery carries only a positive structured safe-to-close session id
     });
     await exports.initializeDesktopOffline();
     await assert.rejects(exports.desktopOffline.recoverLocal('token'), error => {
-      assert.equal(error.closeSessionId, expected);
-      assert.equal(error.message, typeof detail === 'string' ? detail : detail.message);
+      assert.equal(error.closeSessionId, undefined);
+      assert.equal(error.message, typeof detail === 'string' ? detail : 'Récupération du journal local impossible : ne rouvrez pas la caisse');
       return true;
     });
   }

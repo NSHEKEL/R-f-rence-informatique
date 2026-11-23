@@ -23,7 +23,7 @@ import { useSyncVersion } from "../context/SyncContext";
  * Selling happens on the dedicated POS screen.
  */
 export default function Caisse() {
-  const { user, isAdmin, can, logout, recoveryWarning, recoveryCloseSessionId } = useAuth();
+  const { user, isAdmin, can, logout, recoveryWarning } = useAuth();
   const canBalances = can("soldes_consulter");
   const canClosures = can("clotures_consulter");
   const canZ = canBalances && (canClosures || can("caisse_z"));
@@ -34,7 +34,6 @@ export default function Caisse() {
   const version = useSyncVersion();
 
   const [today, setToday] = useState<CashSessionDetail | null>(null);
-  const recoveryBlocksClose = Boolean(recoveryWarning && today?.id !== recoveryCloseSessionId);
   const [history, setHistory] = useState<CashSession[]>([]);
   const [openingBalance, setOpeningBalance] = useState("0");
   const [note, setNote] = useState("");
@@ -130,7 +129,7 @@ export default function Caisse() {
   }
 
   async function closeTill() {
-    if (recoveryBlocksClose) { setError(recoveryWarning); return; }
+    if (recoveryWarning) { setError(recoveryWarning); return; }
     if (printJob) { setError("Attendez la fin de l'impression avant de fermer la caisse."); return; }
     setSaving(true);
     setError("");
@@ -285,7 +284,7 @@ export default function Caisse() {
                   {can("caisse_fermer") && (
                     <button
                       className="btn-ghost"
-                      disabled={recoveryBlocksClose}
+                      disabled={Boolean(recoveryWarning)}
                       onClick={() => {
                         setCountedBalance(today.expected_cash == null ? "" : String(today.expected_cash));
                         setCloseNote("");
@@ -527,7 +526,7 @@ export default function Caisse() {
             <button
               className="btn-primary"
               onClick={closeTill}
-              disabled={saving || recoveryBlocksClose}
+              disabled={saving || Boolean(recoveryWarning)}
             >
               <Lock size={16} /> Fermer ma caisse
             </button>

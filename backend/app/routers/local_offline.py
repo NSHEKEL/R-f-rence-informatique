@@ -73,8 +73,6 @@ def recover(request: Request, x_easygest_offline: str = Header(default=""), db=D
     try:
         return broker().recover_local(db, installation_uid(), user.id)
     except BrokerError as error:
-        if error.close_session_id is not None:
-            raise HTTPException(error.status, {"message": error.message, "close_session_id": error.close_session_id}) from None
         raise HTTPException(error.status, error.message) from None
     except OSError:
         raise HTTPException(507, "Récupération interrompue : journal conservé, ne rouvrez pas la caisse et vérifiez le disque") from None

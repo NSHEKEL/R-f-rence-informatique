@@ -24,10 +24,9 @@ from .units import base_quantity, cached_packaging, quote_line
 
 
 class BrokerError(Exception):
-    def __init__(self, status, message, close_session_id=None):
+    def __init__(self, status, message):
         self.status = status
         self.message = message
-        self.close_session_id = close_session_id
         super().__init__(message)
 
 
@@ -187,7 +186,6 @@ class OfflineBroker:
             with self.store.connection() as journal:
                 entries = self.store.events(journal, scope, user_id, pending=True)
             failures = []
-            conflicts = []
             for item in entries:
                 event = item["envelope"]["event"]
                 try:
@@ -197,21 +195,11 @@ class OfflineBroker:
                     recovered += int(result["state"] == "applied")
                     if result["state"] != "applied":
                         failures.append(str(result.get("reason") or "Rapprochement administrateur nécessaire"))
-                        conflicts.append((event, result))
                 except HTTPException as error:
                     db.rollback()
                     failures.append(str(error.detail))
-                    conflicts.append((event, {}))
             if failures:
-                blocked = {event["session_id"]: result["blocking_session_id"] for event, result in conflicts
-                           if event["kind"] == "open" and result.get("conflict_code") == "separate_open_session"}
-                close_session_id = None
-                if blocked and len(set(blocked.values())) == 1 and all(
-                    event["session_id"] in blocked and result.get("conflict_code") in {"separate_open_session", "opening_pending"}
-                    for event, result in conflicts
-                ):
-                    close_session_id = next(iter(blocked.values()))
-                raise BrokerError(409, "Opérations locales conservées, ne rouvrez pas la caisse : " + "; ".join(dict.fromkeys(failures)), close_session_id)
+                raise BrokerError(409, "Opérations locales conservées, ne rouvrez pas la caisse : " + "; ".join(dict.fromkeys(failures)))
         return {"recovered": recovered}
 
     def _deny(self, server, email, reason):
