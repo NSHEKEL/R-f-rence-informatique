@@ -1379,9 +1379,8 @@ export default function Settings() {
           </h3>
         </div>
         <p className="mb-4 text-sm text-slate-500">
-          L'application vérifie la dernière version publiée, la télécharge et
-          redémarre toute seule. La mise à jour concerne cet ordinateur : à
-          lancer sur chaque poste.
+          Les mises à jour automatiques au démarrage sont désactivées par défaut.
+          Recherchez puis lancez manuellement la mise à jour sur chaque poste.
         </p>
         <div className="flex flex-wrap items-center gap-3">
           <button className="btn-ghost" onClick={checkUpdate}>

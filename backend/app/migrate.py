@@ -7,8 +7,9 @@ shared PostgreSQL server.
 """
 
 import logging
+import re
 
-from sqlalchemy import inspect, select, text
+from sqlalchemy import inspect, literal, select, text
 from sqlalchemy.orm import Session
 
 from .accounting_ledger import seed_accounts
@@ -17,13 +18,13 @@ from .database import engine
 from .models import AppMigration, CashClosure, CashMovement, Delivery, Depot, DepotStock, DepotTransfer, DepotTransferItem, Product, RolePermission, User, Workstation
 from .stock import default_id, reconcile
 from .permissions import CONFIGURABLE_ROLES, DEFAULTS, PERMISSIONS
+from .paths import log_path
 
 TRUE_LITERAL = "1" if engine.dialect.name == "sqlite" else "TRUE"
 FALSE_LITERAL = "0" if engine.dialect.name == "sqlite" else "FALSE"
 
 # table -> column -> SQL type/default appended to "ALTER TABLE ... ADD COLUMN".
 COLUMNS: dict[str, dict[str, str]] = {
-    "cash_sessions": {"offline_mobile_money_to_cash": "BOOLEAN"},
     "offline_devices": {"workstation_ip": "VARCHAR NOT NULL DEFAULT ''", "last_seen": "TIMESTAMP"},
     "offline_events": {"resolution": "TEXT NOT NULL DEFAULT ''"},
     "change_log": {"product_ids": "TEXT"},
@@ -183,6 +184,7 @@ COLUMNS: dict[str, dict[str, str]] = {
         "cancelled_by_id": "INTEGER",
     },
     "cash_sessions": {
+        "offline_mobile_money_to_cash": "BOOLEAN",
         "kept_balance": "FLOAT",
         "remitted_amount": "FLOAT",
         "global_closure_id": "INTEGER",
@@ -380,70 +382,131 @@ def _fractional_quantities(conn):
                 conn.execute(text(f"ALTER TABLE {quote(table.name)} ALTER COLUMN {name} TYPE NUMERIC(24,6) USING {name}::NUMERIC(24,6)"))
 
 
-def migrate() -> None:
-    insp = inspect(engine)
-    tables = set(insp.get_table_names())
+def configure_logging():
+    logger = logging.getLogger(__name__)
+    target = str(log_path().resolve())
+    if not any(getattr(handler, "baseFilename", None) == target for handler in logger.handlers):
+        handler = logging.FileHandler(target, encoding="utf-8")
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+        logger.addHandler(handler)
+    logger.setLevel(logging.WARNING)
+    logger.propagate = False
 
-    with engine.begin() as conn:
-        for name in ("offline_devices", "offline_grants", "offline_catalogue_snapshots", "offline_sessions", "offline_events"):
-            Product.metadata.tables[name].create(conn, checkfirst=True)
-        _fractional_quantities(conn)
-        insp = inspect(conn)
-        Depot.__table__.create(bind=conn, checkfirst=True)
-        Workstation.__table__.create(bind=conn, checkfirst=True)
-        if "cash_sessions" in tables:
-            CashClosure.__table__.create(bind=conn, checkfirst=True)
-            CashMovement.__table__.create(bind=conn, checkfirst=True)
-        for table, columns in COLUMNS.items():
-            if table not in tables:
+
+def migrate() -> None:
+    for table in Product.metadata.sorted_tables:
+        _migration_step(f"table {table.name}", lambda conn, table=table: table.create(conn, checkfirst=True))
+    for table, columns in COLUMNS.items():
+        for column, definition in columns.items():
+            _add_column(table, column, definition)
+    _repair_model_columns()
+    _migration_step("fractional quantities", _fractional_quantities)
+    for statement in INDEXES + [
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_cash_movements_client_id ON cash_movements (client_id)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_debts_purchase_id ON debts (purchase_id)",
+        "CREATE INDEX IF NOT EXISTS ix_stock_movements_date ON stock_movements (date)",
+        "CREATE INDEX IF NOT EXISTS ix_products_active_name ON products (active, name)",
+        "CREATE INDEX IF NOT EXISTS ix_stock_movements_product_date_id ON stock_movements (product_id, date, id)",
+        "CREATE INDEX IF NOT EXISTS ix_sale_items_product_id ON sale_items (product_id)",
+        "CREATE INDEX IF NOT EXISTS ix_sale_items_sale_id ON sale_items (sale_id)",
+    ]:
+        _migration_step(statement, lambda conn, statement=statement: _create_index(conn, statement))
+    for name, step in (
+        ("delivery order", lambda conn: _relax_delivery_order(conn, inspect(conn))),
+        ("treasury permissions", _treasury_permissions),
+        ("inventory permissions", _inventory_permissions),
+        ("company name", lambda conn: conn.execute(text("UPDATE company_settings SET name=:new WHERE name=:old"), {"new": NEW_COMPANY_NAME, "old": OLD_COMPANY_NAME})),
+        ("accounting accounts", seed_accounts),
+        ("default depot", default_id),
+        ("lot costs", _lot_costs),
+        ("depot initialization", _initialize_depots),
+    ):
+        _migration_step(name, step)
+    try:
+        _packaging_retail_from_wholesale()
+    except Exception:
+        logging.getLogger(__name__).exception("Migration packaging retail failed; original data retained, retry at next startup")
+
+
+def _migration_step(name, action):
+    try:
+        with engine.begin() as conn:
+            action(conn)
+        return True
+    except Exception:
+        logging.getLogger(__name__).exception("Migration %s failed; original data retained, retry at next startup", name)
+        return False
+
+
+def _add_column(table, column, definition):
+    logger = logging.getLogger(__name__)
+    try:
+        with engine.begin() as conn:
+            inspector = inspect(conn)
+            if table not in inspector.get_table_names() or column in _columns(inspector, table):
+                return
+            quote = conn.dialect.identifier_preparer.quote
+            conn.execute(text(f"ALTER TABLE {quote(table)} ADD COLUMN {quote(column)} {definition}"))
+        logger.warning("Schema repaired: added %s.%s", table, column)
+    except Exception:
+        with engine.connect() as conn:
+            inspector = inspect(conn)
+            if table in inspector.get_table_names() and column in _columns(inspector, table):
+                return
+        logger.exception("Schema repair failed: %s.%s; retry at next startup", table, column)
+
+
+def _repair_model_columns():
+    with engine.connect() as conn:
+        inspector = inspect(conn)
+        actual = {table: _columns(inspector, table) for table in inspector.get_table_names()}
+    for table in Product.metadata.sorted_tables:
+        for column in table.columns:
+            if column.name in actual.get(table.name, set()):
                 continue
-            existing = _columns(insp, table)
-            for column, definition in columns.items():
-                if column in existing:
+            if column.primary_key:
+                logging.getLogger(__name__).error("Schema repair requires manual recovery: %s.%s is a missing primary key", table.name, column.name)
+                continue
+            definition = str(column.type.compile(dialect=engine.dialect))
+            if not column.nullable:
+                if column.server_default is not None:
+                    default = engine.dialect.ddl_compiler(engine.dialect, None).get_column_default_string(column)
+                elif column.default is not None and column.default.is_scalar:
+                    default = str(literal(column.default.arg, type_=column.type).compile(dialect=engine.dialect, compile_kwargs={"literal_binds": True}))
+                else:
+                    default = None
+                if default is None or not re.fullmatch(r"(?:'([^']|'')*'|[-+]?\d+(?:\.\d+)?|TRUE|FALSE)", default, re.I):
+                    logging.getLogger(__name__).error("Schema repair requires manual recovery: %s.%s has no safe default", table.name, column.name)
                     continue
-                conn.execute(
-                    text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
-                )
-        if "sales" in tables:
-            for statement in INDEXES:
-                conn.execute(text(statement))
-        if "cash_movements" in tables:
-            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_cash_movements_client_id ON cash_movements (client_id)"))
-        if "deliveries" in tables:
-            _relax_delivery_order(conn, inspect(conn))
-        if "role_permissions" in tables:
-            _treasury_permissions(conn)
-            _inventory_permissions(conn)
-        if "company_settings" in tables:
-            conn.execute(
-                text(
-                    "UPDATE company_settings SET name = :new "
-                    "WHERE name = :old"
-                ),
-                {"new": NEW_COMPANY_NAME, "old": OLD_COMPANY_NAME},
-            )
-        if "debts" in tables:
-            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ux_debts_purchase_id ON debts (purchase_id)"))
-        seed_accounts(conn)
-        Depot.metadata.create_all(bind=conn, tables=[Depot.__table__, DepotStock.__table__, DepotTransfer.__table__, DepotTransferItem.__table__])
-        default_id(conn)
-        cost_marker = "stock_lot_cost_snapshot_v1"
-        if "stock_movements" in tables and "date" in _columns(inspect(conn), "stock_movements"):
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_stock_movements_date ON stock_movements (date)"))
-        for table, name, columns in (
-            ("products", "ix_products_active_name", ("active", "name")),
-            ("stock_movements", "ix_stock_movements_product_date_id", ("product_id", "date", "id")),
-            ("sale_items", "ix_sale_items_product_id", ("product_id",)),
-            ("sale_items", "ix_sale_items_sale_id", ("sale_id",)),
-        ):
-            if table in tables and set(columns).issubset(_columns(inspect(conn), table)):
-                conn.execute(text(f"CREATE INDEX IF NOT EXISTS {name} ON {table} ({', '.join(columns)})"))
-        if {"products", "stock_lots"}.issubset(tables) and "purchase_price" in _columns(inspect(conn), "products") and not conn.execute(select(AppMigration.name).where(AppMigration.name == cost_marker)).first():
-            conn.execute(text("UPDATE stock_lots SET unit_cost = COALESCE((SELECT purchase_price FROM products WHERE products.id = stock_lots.product_id), 0) WHERE unit_cost IS NULL"))
-            conn.execute(AppMigration.__table__.insert().values(name=cost_marker))
-        marker = "depot_stock_initialization_v1"
-        if "products" in tables and not conn.execute(select(AppMigration.name).where(AppMigration.name == marker)).first():
-            for row in conn.execute(select(Product.id, Product.quantity)):
-                reconcile(conn, row.id, row.quantity or 0)
-            conn.execute(AppMigration.__table__.insert().values(name=marker))
-    _packaging_retail_from_wholesale()
+                definition += f" NOT NULL DEFAULT {default}"
+            _add_column(table.name, column.name, definition)
+
+
+def _create_index(conn, statement):
+    match = re.search(r"CREATE UNIQUE INDEX IF NOT EXISTS (\w+) ON (\w+) \(([^)]+)\)", statement)
+    if match:
+        name, table, columns = match.groups()
+        if name not in {index["name"] for index in inspect(conn).get_indexes(table)}:
+            columns = [column.strip() for column in columns.split(",")]
+            groups = conn.execute(text(f"SELECT {', '.join(columns)} FROM {table} WHERE {' AND '.join(column + ' IS NOT NULL' for column in columns)} GROUP BY {', '.join(columns)} HAVING COUNT(*) > 1")).all()
+            for group in groups:
+                params = {f"key{i}": value for i, value in enumerate(group)}
+                where = " AND ".join(f"{column}=:key{i}" for i, column in enumerate(columns))
+                ids = list(conn.execute(text(f"SELECT id FROM {table} WHERE {where} ORDER BY id"), params).scalars())
+                logging.getLogger(__name__).error("Unique index %s conflicts: %s row ids=%s; rows retained", name, table, ids)
+    conn.execute(text(statement))
+
+
+def _lot_costs(conn):
+    marker = "stock_lot_cost_snapshot_v1"
+    if not conn.execute(select(AppMigration.name).where(AppMigration.name == marker)).first():
+        conn.execute(text("UPDATE stock_lots SET unit_cost = COALESCE((SELECT purchase_price FROM products WHERE products.id = stock_lots.product_id), 0) WHERE unit_cost IS NULL"))
+        conn.execute(AppMigration.__table__.insert().values(name=marker))
+
+
+def _initialize_depots(conn):
+    marker = "depot_stock_initialization_v1"
+    if not conn.execute(select(AppMigration.name).where(AppMigration.name == marker)).first():
+        for row in conn.execute(select(Product.id, Product.quantity)):
+            reconcile(conn, row.id, row.quantity or 0)
+        conn.execute(AppMigration.__table__.insert().values(name=marker))

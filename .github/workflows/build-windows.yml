@@ -146,6 +146,17 @@ jobs:
           body: |
             **EasyGest — gestion de vente et de stock.**
 
+            ### Réparation des caisses historiques 2.18.50
+            - Les bases anciennes récupèrent automatiquement les colonnes absentes,
+              notamment cash_sessions.offline_mobile_money_to_cash. Fonds et ventes
+              existants sont conservés ; aucune réouverture de caisse n'est nécessaire.
+            - Chaque ajout est validé indépendamment. Un index impossible est signalé
+              avec les identifiants en conflit et sa trace, sans supprimer de lignes
+              ni empêcher les autres étapes de réparation.
+            - Les mises à jour et téléchargements automatiques au démarrage sont
+              désactivés par défaut, même pour un installeur déjà préparé. La recherche
+              et l'installation manuelles restent disponibles dans Paramètres.
+
             ### Exclusions mobiles corrigées 2.18.49
             - La lecture d'une caisse historique tolère les moyens de paiement
               absents et les règlements orphelins sans inventer leur sens : ces

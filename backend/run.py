@@ -758,11 +758,9 @@ def _selftest(url: str) -> None:
 
 
 def _auto_update() -> None:
-    """Install a version downloaded earlier, then keep preparing the next one.
-
-    Nothing is asked and nothing is shown: the workstation of a seller or of a
-    stock manager updates itself at start like the administrator's one.
-    """
+    """Automatic installation is opt-in, including already staged versions."""
+    if os.getenv("EASYGEST_AUTO_UPDATE", "0") != "1":
+        return
     from app import updater
 
     try:

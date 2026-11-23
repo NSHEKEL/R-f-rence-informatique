@@ -10,8 +10,8 @@ android {
         applicationId "ci.easygest.mobile"
         minSdk 24
         targetSdk 34
-        versionCode 21849
-        versionName "2.18.49"
+        versionCode 21850
+        versionName "2.18.50"
     }
 
     buildFeatures {

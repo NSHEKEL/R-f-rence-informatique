@@ -51,7 +51,6 @@ import { ADMIN_FEATURE, PLAN_FEATURE } from "../lib/planFeatures";
 import { isFullscreen, leaveFullscreen, toggleFullscreen } from "../lib/fullscreen";
 import LicenseBanner from "./LicenseBanner";
 import NetworkBanner from "./NetworkBanner";
-import UpdateBanner from "./UpdateBanner";
 import NotificationBell from "./NotificationBell";
 import GlobalSearch from "./GlobalSearch";
 import UndoRedo from "./UndoRedo";
@@ -775,7 +774,6 @@ export default function Layout() {
           </div>
         </header>
 
-        <UpdateBanner />
         <LicenseBanner />
         <NetworkBanner />
 

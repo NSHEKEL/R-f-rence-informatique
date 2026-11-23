@@ -17,10 +17,10 @@ from starlette.concurrency import run_in_threadpool
 from . import backup, clients, history, licensing, network as shop_network, remote_sales
 from .auth import ALGORITHM, SECRET_KEY, get_current_user, require_admin
 from . import lifetime
-from .database import Base, SessionLocal, engine, get_db
+from .database import SessionLocal, engine, get_db
 from .purchase_links import repair
 from .local_peripherals import private_network_discovery
-from .migrate import migrate
+from .migrate import configure_logging, migrate
 from .models import User
 from .routers import (
     accounting,
@@ -66,7 +66,7 @@ from .seed import seed
 from .version import APP_NAME, APP_VERSION
 from .diagnostics import install_exception_handler
 
-Base.metadata.create_all(bind=engine)
+configure_logging()
 migrate()
 
 app = FastAPI(title=f"{APP_NAME} — API Vente & Stock")
