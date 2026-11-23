@@ -252,12 +252,11 @@ def _columns(insp, table: str) -> set[str]:
     return {c["name"] for c in insp.get_columns(table)}
 
 
-def _relax_delivery_order(conn, insp) -> None:
+def _relax_delivery_order(conn, insp, columns=None) -> None:
     """Delivery notes may now stand alone, so ``order_id`` accepts NULL."""
-    column = next(
-        (c for c in insp.get_columns("deliveries") if c["name"] == "order_id"),
-        None,
-    )
+    if columns is None:
+        columns = {column["name"]: column for column in insp.get_columns("deliveries")}
+    column = columns.get("order_id")
     if column is None or column["nullable"]:
         return
     if engine.dialect.name != "sqlite":
@@ -265,7 +264,7 @@ def _relax_delivery_order(conn, insp) -> None:
             text("ALTER TABLE deliveries ALTER COLUMN order_id DROP NOT NULL")
         )
         return
-    names = [c["name"] for c in insp.get_columns("deliveries")]
+    names = list(columns)
     columns = ", ".join(names)
     # SQLite index names stay global and follow the renamed table, so they are
     # dropped before the new table recreates them.
@@ -366,16 +365,21 @@ def _packaging_retail_from_wholesale() -> None:
         logging.getLogger(__name__).warning("%s: %s conditionnements mis à jour", marker, result.rowcount)
 
 
-def _fractional_quantities(conn):
+def _schema_columns(conn):
+    inspector = inspect(conn)
+    return {table: {column["name"]: column for column in inspector.get_columns(table)}
+            for table in inspector.get_table_names()}
+
+
+def _fractional_quantities(conn, columns=None):
     if conn.dialect.name != "postgresql":
         return
-    insp = inspect(conn)
-    tables = set(insp.get_table_names())
+    columns = _schema_columns(conn) if columns is None else columns
     quote = conn.dialect.identifier_preparer.quote
     for table in Product.metadata.tables.values():
-        if table.name not in tables:
+        if table.name not in columns:
             continue
-        existing = {column["name"]: column["type"] for column in insp.get_columns(table.name)}
+        existing = {name: column["type"] for name, column in columns[table.name].items()}
         for column in table.columns:
             if getattr(column.type, "scale", None) == 6 and str(existing.get(column.name, "")).upper() in ("INTEGER", "BIGINT", "SMALLINT"):
                 name = quote(column.name)
@@ -394,13 +398,17 @@ def configure_logging():
 
 
 def migrate() -> None:
+    tables = set(inspect(engine).get_table_names())
     for table in Product.metadata.sorted_tables:
-        _migration_step(f"table {table.name}", lambda conn, table=table: table.create(conn, checkfirst=True))
-    for table, columns in COLUMNS.items():
-        for column, definition in columns.items():
-            _add_column(table, column, definition)
-    _repair_model_columns()
-    _migration_step("fractional quantities", _fractional_quantities)
+        if table.name not in tables:
+            _migration_step(f"table {table.name}", lambda conn, table=table: table.create(conn, checkfirst=True))
+    with engine.connect() as conn:
+        columns = _schema_columns(conn)
+    for table, definitions in COLUMNS.items():
+        for column, definition in definitions.items():
+            _add_column(table, column, definition, columns)
+    _repair_model_columns(columns)
+    _migration_step("fractional quantities", lambda conn: _fractional_quantities(conn, columns))
     for statement in INDEXES + [
         "CREATE UNIQUE INDEX IF NOT EXISTS ix_cash_movements_client_id ON cash_movements (client_id)",
         "CREATE UNIQUE INDEX IF NOT EXISTS ux_debts_purchase_id ON debts (purchase_id)",
@@ -412,7 +420,7 @@ def migrate() -> None:
     ]:
         _migration_step(statement, lambda conn, statement=statement: _create_index(conn, statement))
     for name, step in (
-        ("delivery order", lambda conn: _relax_delivery_order(conn, inspect(conn))),
+        ("delivery order", lambda conn: _relax_delivery_order(conn, inspect(conn), columns.get("deliveries", {}))),
         ("treasury permissions", _treasury_permissions),
         ("inventory permissions", _inventory_permissions),
         ("company name", lambda conn: conn.execute(text("UPDATE company_settings SET name=:new WHERE name=:old"), {"new": NEW_COMPANY_NAME, "old": OLD_COMPANY_NAME})),
@@ -438,28 +446,37 @@ def _migration_step(name, action):
         return False
 
 
-def _add_column(table, column, definition):
+def _add_column(table, column, definition, columns=None):
     logger = logging.getLogger(__name__)
+    if columns is not None and (table not in columns or column in columns[table]):
+        return
     try:
         with engine.begin() as conn:
-            inspector = inspect(conn)
-            if table not in inspector.get_table_names() or column in _columns(inspector, table):
-                return
+            if columns is None:
+                inspector = inspect(conn)
+                if table not in inspector.get_table_names() or column in _columns(inspector, table):
+                    return
             quote = conn.dialect.identifier_preparer.quote
             conn.execute(text(f"ALTER TABLE {quote(table)} ADD COLUMN {quote(column)} {definition}"))
+        if columns is not None:
+            columns[table][column] = {"name": column, "type": definition.split()[0], "nullable": "NOT NULL" not in definition.upper()}
         logger.warning("Schema repaired: added %s.%s", table, column)
     except Exception:
         with engine.connect() as conn:
             inspector = inspect(conn)
-            if table in inspector.get_table_names() and column in _columns(inspector, table):
-                return
+            if table in inspector.get_table_names():
+                existing = {item["name"]: item for item in inspector.get_columns(table)}
+                if column in existing:
+                    if columns is not None:
+                        columns[table][column] = existing[column]
+                    return
         logger.exception("Schema repair failed: %s.%s; retry at next startup", table, column)
 
 
-def _repair_model_columns():
-    with engine.connect() as conn:
-        inspector = inspect(conn)
-        actual = {table: _columns(inspector, table) for table in inspector.get_table_names()}
+def _repair_model_columns(actual=None):
+    if actual is None:
+        with engine.connect() as conn:
+            actual = _schema_columns(conn)
     for table in Product.metadata.sorted_tables:
         for column in table.columns:
             if column.name in actual.get(table.name, set()):
@@ -479,7 +496,7 @@ def _repair_model_columns():
                     logging.getLogger(__name__).error("Schema repair requires manual recovery: %s.%s has no safe default", table.name, column.name)
                     continue
                 definition += f" NOT NULL DEFAULT {default}"
-            _add_column(table.name, column.name, definition)
+            _add_column(table.name, column.name, definition, actual)
 
 
 def _create_index(conn, statement):

@@ -6,11 +6,12 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from threading import Barrier
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, inspect, select, text
+from sqlalchemy.dialects.postgresql import dialect as postgresql_dialect
 from sqlalchemy.orm import Session
 
 from app import migrate as migration
@@ -102,6 +103,33 @@ class SchemaRepairTests(unittest.TestCase):
     def test_registry_keeps_offline_override_with_other_cash_columns(self):
         self.assertEqual(migration.COLUMNS["cash_sessions"]["offline_mobile_money_to_cash"], "BOOLEAN")
         self.assertIn("z_report", migration.COLUMNS["cash_sessions"])
+
+    def test_startup_reflects_each_table_once_and_reuses_the_snapshot_for_repairs(self):
+        counts = {}
+        original = migration.inspect
+        class CountingInspector:
+            def __init__(self, target):
+                self.delegate = original(target)
+            def get_columns(self, table):
+                counts[table] = counts.get(table, 0) + 1
+                return self.delegate.get_columns(table)
+            def __getattr__(self, name):
+                return getattr(self.delegate, name)
+        with patch.object(migration, "inspect", side_effect=CountingInspector):
+            migration.migrate()
+        self.assertEqual(set(counts), set(Base.metadata.tables))
+        self.assertEqual(set(counts.values()), {1})
+        self.assert_reads()
+        print(f"SCHEMA_CATALOG_CACHE_OK tables={len(counts)} max_get_columns_per_table={max(counts.values())} missing_offline_column_repaired=True")
+
+    def test_postgresql_fractional_step_uses_cached_types_even_for_new_integer_columns(self):
+        conn = Mock(dialect=postgresql_dialect())
+        with patch.object(migration, "inspect", side_effect=AssertionError("unexpected catalog query")):
+            migration._fractional_quantities(conn, {})
+            conn.execute.assert_not_called()
+            migration._fractional_quantities(conn, {"products": {"quantity": {"type": "INTEGER"}}})
+        self.assertEqual(conn.execute.call_count, 1)
+        self.assertIn("ALTER COLUMN quantity TYPE NUMERIC(24,6)", str(conn.execute.call_args.args[0]))
 
     def test_migration_failure_traceback_is_written_to_discoverable_log(self):
         target = self.folder / "easygest.log"
