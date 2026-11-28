@@ -20,7 +20,7 @@ from .offline_crypto import canonical, digest, fingerprint, sign
 from .offline_store import OfflineStore
 from .payment_totals import group_payments, physical_expected
 from .product_codes import catalogue_scanned_product
-from .schemas import CashMovementCreate, CashSessionClose, CashSessionOpen, ExpenseCreate, SaleCreate
+from .schemas import CashMovementCreate, CashSessionClose, CashSessionOpen, ExpenseCreate, ProductPackagingInput, SaleCreate
 from .units import base_quantity, cached_packaging, quote_line
 
 
@@ -563,6 +563,7 @@ class OfflineBroker:
             except ValueError as error:
                 raise BrokerError(409, str(error)) from None
             if product:
+                product["packagings"] = [ProductPackagingInput.model_validate(row).model_dump(mode="json") for row in product.get("packagings", [])]
                 return product
             raise BrokerError(404, "Article introuvable")
         with self.store.connection() as db:

@@ -73,6 +73,36 @@ class WorkstationRestartTests(unittest.TestCase):
     def command(self, action, **params):
         return self.http("poste", "/local-offline/command", {"action": action, "params": params})
 
+    def test_scanned_packaging_originals_round_trip_without_false_offline_edit_conflict(self):
+        self.start("server")
+        self.start("poste")
+        server = f"http://127.0.0.1:{self.ports['server']}"
+        admin = self.http("server", "/auth/login", {"email": "admin", "password": "admin123"})["access_token"]
+        identity = self.http("server", "/offline/identity", token=admin)
+        self.command("login", server=server, email="admin", password="admin123", trusted_fingerprint=identity["fingerprint"])
+        product = self.http("server", "/products", {"name": "Conditionnement nullable", "sku": "PACK-NULL", "quantity": 20, "sale_price": 1000,
+            "packagings": [{"name": "Carton", "barcode": "PACK-NULL-CODE", "factor": 6, "price_detail": 5000}]}, admin)
+        self.command("catalogue", images=True)
+        self.stop("server")
+        self.command("sync", wait=True)
+        self.command("request", method="POST", path="/cash-sessions/open", data={"opening_balance": 170000})
+        lookup = self.command("request", method="GET", path="/products/by-code/PACK-NULL-CODE")
+        self.assertEqual(lookup["packagings"], product["packagings"])
+        self.assertIsNone(lookup["packagings"][0]["price_gros"])
+        self.assertIsNone(lookup["packagings"][0]["purchase_price"])
+        self.start("server")
+        payload = {"operation_id": str(uuid.uuid4()), "originals": {"packagings": lookup["packagings"]},
+            "changes": {"packagings": [{**row, "price_detail": 5500} for row in lookup["packagings"]]}}
+        path = f"/products/{product['id']}/offline-update"
+        updated = self.http("server", path, payload, admin)
+        self.assertEqual(updated["packagings"][0]["price_detail"], 5500)
+        self.assertEqual(self.http("server", path, payload, admin), updated)
+        payload["operation_id"] = str(uuid.uuid4())
+        with self.assertRaises(urllib.error.HTTPError) as stale:
+            self.http("server", path, payload, admin)
+        self.assertEqual(stale.exception.code, 409)
+        print("OFFLINE_SCAN_PACKAGING_EDIT_OK explicit_nulls=True reconnect_http=200 replay_idempotent=True real_conflict_http=409")
+
     def test_offline_scan_resolves_primary_secondary_and_packaging_from_signed_catalogue(self):
         self.start("server")
         self.start("poste")
