@@ -219,12 +219,23 @@ class WorkstationRestartTests(unittest.TestCase):
             db.execute("UPDATE users SET is_active=0 WHERE email=?", ("offline-seller@test.invalid",))
             db.commit()
         self.start("server")
-        result = self.command("sync")
+        result = self.command("sync", wait=True)
         self.assertTrue(result["locked"])
+        self.assertFalse(result["checking"])
+        for action, params in (("account", {}), ("request", {"method": "GET", "path": "/products/by-code/UNKNOWN"})):
+            with self.assertRaises(urllib.error.HTTPError) as locked:
+                self.command(action, **params)
+            self.assertEqual(locked.exception.code, 401)
         self.assertTrue(any(row["id"] == third_id for row in result["pending"]))
         with sqlite3.connect(self.root / "server" / "business.sqlite3") as db:
             self.assertEqual(db.execute("SELECT count(*) FROM sales WHERE client_id=?", (third_id,)).fetchone()[0], 0)
             self.assertEqual(db.execute("SELECT state FROM offline_events WHERE id=?", (third_id,)).fetchone()[0], "conflict")
+        self.stop("server")
+        with self.assertRaises(urllib.error.HTTPError) as denied:
+            self.command("login", server=server.replace("127.0.0.1", "localhost"), email="offline-seller@test.invalid", password="offline-test-password")
+        self.assertEqual(denied.exception.code, 403)
+        self.assertTrue(self.command("state")["locked"])
+        print("OFFLINE_REVOCATION_OK waited_for_sync=True disabled_account_locked=True account_and_scan_http=401 offline_relogin_http=403 pending_preserved=True")
         print("REAL_POSTE_COLD_START_OK server_off_during_entire_launch=True durable_sales=2 replay_count=3 final_sales=2 stock=8.5 provisional_sessions_reconciled=1 opening_float_preserved=500 no_reopen_prompt=True same_provisional_identity=True disabled_account_locked=True pending_sale_preserved=True")
         print("SCENARIO_EVIDENCE=" + str(self.root))
 
