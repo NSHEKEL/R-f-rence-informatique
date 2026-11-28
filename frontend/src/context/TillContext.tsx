@@ -4,11 +4,13 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import api from "../api/client";
 import type { CashSessionDetail } from "../types";
 import { useAuth } from "./AuthContext";
+import { apiErrorMessage } from "../lib/apiErrors";
 
 /**
  * State of the cashier's till.
@@ -22,6 +24,7 @@ interface TillState {
   session: CashSessionDetail | null;
   dayClosed: boolean;
   loading: boolean;
+  readError: string;
   /** Sales screens are usable: till open, or the user is not a seller. */
   selling: boolean;
   refresh: () => Promise<void>;
@@ -31,6 +34,7 @@ const TillContext = createContext<TillState>({
   session: null,
   dayClosed: false,
   loading: true,
+  readError: "",
   selling: false,
   refresh: async () => undefined,
 });
@@ -50,12 +54,21 @@ export function TillProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<CashSessionDetail | null>(null);
   const [dayClosed, setDayClosed] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [readError, setReadError] = useState("");
+  const sessionAccount = useRef<string | null>(null);
+  const accountKey = `${user?.id ?? ""}:${can("caisse")}`;
+  const account = useRef(accountKey);
+  account.current = accountKey;
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!user || !can("caisse")) {
       setSession(null);
       setDayClosed(false);
       setLoading(false);
+      setLoadedFor(accountKey);
+      setReadError("");
+      sessionAccount.current = accountKey;
       return;
     }
     try {
@@ -63,30 +76,38 @@ export function TillProvider({ children }: { children: React.ReactNode }) {
         api.get<CashSessionDetail | null>("/cash-sessions/current"),
         api.get<CashSessionDetail | null>("/cash-sessions/today"),
       ]);
+      if (account.current !== accountKey) return;
       setSession(open.data ?? null);
       setDayClosed(Boolean(today.data && today.data.closed_at));
-    } catch {
-      // Offline or server restarting: keep the last known state.
+      setReadError("");
+      sessionAccount.current = accountKey;
+    } catch (error) {
+      if (account.current !== accountKey) return;
+      const failure = error as { message?: string; response?: { data?: unknown; status?: number } };
+      setReadError(apiErrorMessage(failure?.response?.data, failure?.message || "Lecture de la caisse impossible") + (failure?.response?.status ? ` (HTTP ${failure.response.status})` : ""));
     } finally {
-      setLoading(false);
+      if (account.current === accountKey) { setLoading(false); setLoadedFor(accountKey); }
     }
-  }, [user, can]);
+  }, [user, can, accountKey]);
 
   useEffect(() => {
     void refresh();
     const timer = window.setInterval(() => void refresh(), 60000);
-    return () => window.clearInterval(timer);
+    const changed = () => void refresh();
+    window.addEventListener("ri:offline-state", changed);
+    return () => { window.clearInterval(timer); window.removeEventListener("ri:offline-state", changed); };
   }, [refresh]);
 
   const value = useMemo<TillState>(
     () => ({
-      session,
-      dayClosed,
-      loading,
-      selling: user?.role !== "vendeur" || session !== null,
+      session: sessionAccount.current === accountKey ? session : null,
+      dayClosed: sessionAccount.current === accountKey && dayClosed,
+      loading: loading || loadedFor !== accountKey,
+      readError,
+      selling: user?.role !== "vendeur" || (sessionAccount.current === accountKey && session !== null),
       refresh,
     }),
-    [session, dayClosed, loading, user, refresh]
+    [session, dayClosed, loading, readError, loadedFor, accountKey, user, refresh]
   );
 
   return <TillContext.Provider value={value}>{children}</TillContext.Provider>;

@@ -1,5 +1,5 @@
 import { apiErrorMessage } from "../lib/apiErrors";
-import { productBarcodes, productTextError } from "../lib/productForm";
+import { followPurchasePrice, piecePurchasePrice, purchaseFactor, productBarcodes, productTextError } from "../lib/productForm";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import axios from "axios";
@@ -33,23 +33,23 @@ import { stockBadge } from "../components/badges";
 import DepotStock from "../components/DepotStock";
 import ProductDetails from "../components/ProductDetails";
 import ProductStockEntry from "../components/ProductStockEntry";
-import { readProductSort, saveProductSort, sortProducts } from "../lib/productSort";
-import type { ProductSort } from "../lib/productSort";
+import { matchesStock, readProductSort, saveProductSort, sortProducts } from "../lib/productSort";
+import type { ProductSort, ProductStockFilter } from "../lib/productSort";
 import { StockColumnChooser, StockExtraCells, StockExtraHeaders } from "../components/StockColumns";
 import { useStockColumns } from "../lib/useStockColumns";
 import { useAuth } from "../context/AuthContext";
 import { useCompany } from "../context/CompanyContext";
-import { useSyncVersion } from "../context/SyncContext";
+import { useCatalogueChanges } from "../context/SyncContext";
 import { formatQuantity } from "../lib/units";
 import PackagingQuantity from "../components/PackagingQuantity";
 import ProductPackagings from "../components/ProductPackagings";
 import { useScanner } from "../lib/useScanner";
 import { scanCandidates } from "../lib/scanCapture";
 import type { ProductBarcode } from "../types";
-import { readOffline } from "../lib/offlineInventory";
+import { mergeCatalogueProducts, patchCatalogue, readOffline } from "../lib/offlineInventory";
 import { useOnline } from "../lib/useOnline";
 import OfflineBanner from "../components/OfflineBanner";
-import { discardPendingProduct, flushPendingProducts, newProductUuid, pendingProducts, pendingProductMatches, queueProduct, type PendingProduct } from "../lib/offline";
+import { discardPendingProduct, flushPendingProducts, newProductUuid, pendingCatalogue, pendingProducts, pendingProductMatches, queueProduct, queueProductEdit, retryPendingProduct, type PendingProduct } from "../lib/offline";
 import { useNetwork } from "../context/NetworkContext";
 
 const empty = {
@@ -123,12 +123,13 @@ export default function Products() {
   const can = (permission: string) => permitted(permission) && !(readOnly && ["produits_gerer", "stocks"].includes(permission));
   const { company, printing } = useCompany();
   const { hasFeature } = useLicense();
-  const version = useSyncVersion();
+  const { version, productIds } = useCatalogueChanges();
   const [sold, setSold] = useState<SoldFilter>("");
   const [state, setState] = useState("active");
   const csvInputRef = useRef<HTMLInputElement>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [sort, setSort] = useState<ProductSort>(readProductSort);
+  const [stockFilter, setStockFilter] = useState<ProductStockFilter>("all");
   const stockColumns = useStockColumns(products, "products");
   const [categories, setCategories] = useState<Category[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -140,6 +141,22 @@ export default function Products() {
   const [viewProductId, setViewProductId] = useState<number | null>(null);
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState({ ...empty });
+  const [factoryPurchaseTotal, setFactoryPurchaseTotal] = useState<number | "">("");
+  const manualPurchase = useRef(false);
+  const previousPurchase = useRef<number | null>(null);
+  const calculatedPurchase = piecePurchasePrice(factoryPurchaseTotal, purchaseFactor(form));
+  useEffect(() => {
+    if (previousPurchase.current === calculatedPurchase) return;
+    previousPurchase.current = calculatedPurchase;
+    setForm((current) => {
+      const price = followPurchasePrice(current.purchase_price, calculatedPurchase, manualPurchase.current);
+      return price === current.purchase_price ? current : { ...current, purchase_price: price };
+    });
+  }, [calculatedPurchase]);
+  const packagingCalculator = <label className="label">Prix usine du conditionnement (FCFA)
+    <input className="input" type="number" min="0" placeholder="Ex. 6000 pour 6 pièces" value={factoryPurchaseTotal} onChange={(e) => setFactoryPurchaseTotal(e.target.value === "" ? "" : Number(e.target.value))} />
+    <span className="mt-1 block text-xs text-slate-500">Calculateur non enregistré · {purchaseFactor(form) ? `facteur ${purchaseFactor(form)} : total ÷ facteur → prix d'achat pièce` : "renseignez un conditionnement actif et son facteur"}.</span>
+  </label>;
   const autoSku = useRef("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -159,22 +176,62 @@ export default function Products() {
   const [lotError, setLotError] = useState("");
   const imageInput = useRef<HTMLInputElement>(null);
   const pageSize = 8;
+  const catalogueScope = useRef("");
+  catalogueScope.current = `${sold}:${state}`;
+  const catalogueQueue = useRef<Promise<void>>(Promise.resolve());
+  const enqueueCatalogue = useCallback((work: () => Promise<void>) => {
+    const next = catalogueQueue.current.catch(() => undefined).then(work);
+    catalogueQueue.current = next;
+    return next;
+  }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(() => enqueueCatalogue(async () => {
+    const scope = `${sold}:${state}`;
+    if (catalogueScope.current !== scope) return;
+    const owner = `${localStorage.getItem("ri_server_url")}:${localStorage.getItem("ri_token")}`;
     const p = await readOffline<Product[]>(`/products?${new URLSearchParams({ sold, state })}`, `products:${sold || "all"}:${state}`);
     const [c, s] = await Promise.all([
       readOffline<Category[]>("/categories", "categories").catch(() => ({ data: p.data.flatMap((product) => product.category ? [product.category] : []) })),
       readOffline<Supplier[]>("/suppliers", "suppliers").catch(() => ({ data: p.data.flatMap((product) => product.supplier ? [product.supplier] : []) })),
     ]);
+    if (catalogueScope.current !== scope || owner !== `${localStorage.getItem("ri_server_url")}:${localStorage.getItem("ri_token")}`) return;
     setProducts(p.data);
     setCategories(c.data);
     setSuppliers(s.data);
     setCached(p.fromCache); setSavedAt(p.savedAt);
-  }, [sold, state]);
+  }), [sold, state, enqueueCatalogue]);
+
+  const refreshProducts = useCallback((ids: number[]) => {
+    if (!ids.length) return Promise.resolve();
+    if (ids.length > 200) return load();
+    return enqueueCatalogue(async () => {
+      const scope = `${sold}:${state}`;
+      if (catalogueScope.current !== scope) return;
+      const owner = `${localStorage.getItem("ri_server_url")}:${localStorage.getItem("ri_token")}`;
+      const params = new URLSearchParams({ sold, state });
+      ids.forEach((id) => params.append("ids", String(id)));
+      const { data } = await api.get<Product[]>(`/products?${params}`);
+      if (catalogueScope.current !== scope || owner !== `${localStorage.getItem("ri_server_url")}:${localStorage.getItem("ri_token")}`) return;
+      const savedAt = await patchCatalogue(`products:${sold || "all"}:${state}`, ids, data, sold === "top");
+      if (catalogueScope.current !== scope || owner !== `${localStorage.getItem("ri_server_url")}:${localStorage.getItem("ri_token")}`) return;
+      setProducts((previous) => mergeCatalogueProducts(previous, ids, data, sold === "top"));
+      setCached(false); setSavedAt(savedAt);
+    });
+  }, [sold, state, load, enqueueCatalogue]);
+
+  const loadedCatalogue = useRef("");
 
   useEffect(() => {
-    void load().catch(() => setError("Catalogue indisponible : ouvrez cette page en ligne pour préparer le cache."));
-  }, [load, version, online]);
+    const key = `${sold}:${state}:${online}`;
+    const update = async () => {
+      if (loadedCatalogue.current === key && online && productIds !== null) {
+        try { await refreshProducts(productIds); return; } catch { /* full catalogue fallback */ }
+      }
+      await load();
+      loadedCatalogue.current = key;
+    };
+    void update().catch(() => setError("Catalogue indisponible : ouvrez cette page en ligne pour préparer le cache."));
+  }, [load, refreshProducts, version, online, sold, state, productIds]);
 
   useEffect(() => {
     const update = () => setPending(pendingProducts());
@@ -184,7 +241,7 @@ export default function Products() {
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
-    return sortProducts(products.filter(
+    return sortProducts(pendingCatalogue("/products", products, pending).filter((p) => matchesStock(p, stockFilter)).filter(
       (p) =>
         p.name.toLowerCase().includes(q) ||
         p.sku.toLowerCase().includes(q) ||
@@ -193,7 +250,7 @@ export default function Products() {
         (p.barcodes || []).some((code) => code.active && code.code.toLowerCase().includes(q)) ||
         (p.packagings || []).some((packaging) => packaging.active && packaging.barcode?.toLowerCase().includes(q))
     ), sort);
-  }, [products, query, sort]);
+  }, [products, query, sort, pending, stockFilter]);
 
   function exportExcel() {
     exportCsv(
@@ -282,6 +339,9 @@ export default function Products() {
   const selection = useSelection(paged);
 
   function openCreate() {
+    setFactoryPurchaseTotal("");
+    manualPurchase.current = false;
+    previousPurchase.current = null;
     setPendingUuid(null);
     autoSku.current = "";
     setEditing(null);
@@ -291,9 +351,12 @@ export default function Products() {
   }
 
   function openEdit(p: Product, entry?: PendingProduct) {
-    if (readOnly && !entry) return;
+    entry = entry || pending.find((item) => item.product_id === p.id);
+    setFactoryPurchaseTotal("");
+    manualPurchase.current = false;
+    previousPurchase.current = null;
     setPendingUuid(entry?.payload.client_uuid ?? null);
-    setEditing(entry ? null : p);
+    setEditing(entry && entry.product_id == null ? null : p);
     setForm({
       packagings: p.packagings || [],
       barcodes: p.barcodes || [],
@@ -328,7 +391,7 @@ export default function Products() {
   }
 
   async function save() {
-    if (!permitted("produits_gerer") || (readOnly && editing)) return;
+    if (!permitted("produits_gerer")) return;
     setError("");
     const barcodes = productBarcodes(form.barcodes);
     const textError = productTextError({ ...form, barcodes });
@@ -336,8 +399,8 @@ export default function Products() {
       setError(textError);
       return;
     }
-    if (!Number.isInteger(form.quantity) || form.quantity < 0 || (form.packaging_unit.trim() && (!Number.isInteger(form.units_per_packaging) || form.units_per_packaging < 1))) {
-      setError("Stock et facteur doivent être des nombres entiers valides.");
+    if (!Number.isFinite(form.quantity) || form.quantity < 0 || Math.abs(form.quantity - Math.round(form.quantity * 1e6) / 1e6) > 1e-10 || (form.packaging_unit.trim() && (!Number.isInteger(form.units_per_packaging) || form.units_per_packaging < 1))) {
+      setError("Stock positif ou nul, six décimales au maximum ; facteur entier positif requis.");
       return;
     }
     if (form.packagings.some((p) => !p.name.trim() || !Number.isInteger(p.factor) || p.factor < 1 || p.factor > 2147483647 || !Number.isInteger(p.sort_order) || [p.price_detail, p.price_semi_gros, p.price_gros, p.purchase_price].some((price) => price != null && (!Number.isFinite(price) || price < 0))) ||
@@ -369,16 +432,19 @@ export default function Products() {
     };
     try {
       if (pendingUuid || readOnly) {
-        queueProduct({ ...payload, client_uuid: pendingUuid || newProductUuid(), initial_expiry_date: form.expiry_date || null });
+        if (editing) queueProductEdit(editing, { ...payload, client_uuid: pendingUuid || newProductUuid() });
+        else queueProduct({ ...payload, client_uuid: pendingUuid || newProductUuid(), initial_expiry_date: form.expiry_date || null });
         setModalOpen(false);
         setNotice("Produit enregistré sur ce poste — en attente de synchronisation.");
-        if (online) { await flushPendingProducts(); window.dispatchEvent(new Event("ri:synced")); await load(); }
+        if (online) { await flushPendingProducts(); window.dispatchEvent(new Event("ri:synced")); }
         return;
       }
+      let saved: Product;
       if (editing) {
-        await api.put(`/products/${editing.id}`, payload);
+        saved = (await api.put<Product>(`/products/${editing.id}`, payload)).data;
       } else {
         const res = await api.post<Product>("/products", payload);
+        saved = res.data;
         // Date de péremption saisie → le stock initial devient un lot
         // périssable (les ventes le consommeront en FEFO).
         if (form.expiry_date && Number(form.quantity) > 0) {
@@ -396,7 +462,7 @@ export default function Products() {
         }
       }
       setModalOpen(false);
-      await load();
+      try { await refreshProducts([saved.id]); } catch { await load(); }
     } catch (err) {
       setError(apiErrorMessage(axios.isAxiosError(err) ? err.response?.data?.detail : err instanceof Error ? err.message : err, "Erreur lors de l'enregistrement"));
     } finally {
@@ -478,7 +544,7 @@ export default function Products() {
         `/products/by-code/${encodeURIComponent(code)}`
       );
       setNotice(`Article reconnu : ${data.name} — fiche chargée`);
-      openEdit(data);
+      openEdit(pendingCatalogue("/products", [data])[0]);
     } catch (err) {
       if (axios.isAxiosError(err) && err.response?.status === 404) {
         setNotice("Article inconnu — poursuivez l'enregistrement");
@@ -496,7 +562,7 @@ export default function Products() {
       try {
         const { data } = await api.get<Product>(`/products/by-code/${encodeURIComponent(code)}`);
         setNotice(`Article reconnu : ${data.name} — fiche chargée`);
-        openEdit(data);
+        openEdit(pendingCatalogue("/products", [data])[0]);
         return;
       } catch (error) { if (!axios.isAxiosError(error) || error.response?.status !== 404) throw error; }
     }
@@ -563,7 +629,7 @@ export default function Products() {
   return (
     <div className="space-y-5">
       <OfflineBanner visible={readOnly} since={savedAt} allowCreate={permitted("produits_gerer")} />
-      {readOnly && permitted("produits_gerer") && <p className="text-sm text-amber-800">La création reste disponible hors ligne. Les produits existants restent en lecture seule ; les nouveaux produits seront synchronisés au retour du réseau.</p>}
+      {readOnly && permitted("produits_gerer") && <p className="text-sm text-amber-800">Création et modification disponibles hors ligne. Les changements restent en attente sur ce poste jusqu'au retour du réseau ; les conflits nécessitent votre décision. Suppression et stock indisponibles hors ligne.</p>}
       <StockDashboard onShowExpired={() => setPerimesOpen(true)} />
       {perimesOpen && <Perimes onClose={() => setPerimesOpen(false)} />}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -595,6 +661,10 @@ export default function Products() {
             <option value="created_desc">Date de création — décroissant</option>
             <option value="name_asc">Nom — croissant</option>
             <option value="name_desc">Nom — décroissant</option>
+            {([['code', 'Référence / code-barres'], ['quantity', 'Quantité en stock'], ['purchase', "Prix d'achat"], ['sale', 'Prix de vente'], ['expiry', 'Péremption']] as const).map(([key, label]) => <optgroup key={key} label={label}><option value={`${key}_asc`}>{label} — croissant</option><option value={`${key}_desc`}>{label} — décroissant</option></optgroup>)}
+          </select>
+          <select className="input sm:w-52" aria-label="Filtrer le stock" value={stockFilter} onChange={(e) => { setStockFilter(e.target.value as ProductStockFilter); setPage(1); selection.clear(); }}>
+            <option value="all">Tous les stocks</option><option value="available">Disponibles en stock</option><option value="empty">En rupture</option><option value="low">Stock faible (hors rupture)</option><option value="sufficient">Stock suffisant</option><option value="soon">Périment sous 30 jours</option><option value="expired">Déjà périmés</option>
           </select>
           <select className="input sm:w-44" aria-label="État des articles" value={state} onChange={(e) => { setState(e.target.value); setPage(1); selection.clear(); }}>
             <option value="active">Actifs</option>
@@ -655,14 +725,15 @@ export default function Products() {
         <h3 className="font-semibold">Produits en attente de synchronisation ({pending.length})</h3>
         {pending.filter((entry) => pendingProductMatches(entry, query)).map((entry) => <div key={entry.payload.client_uuid} className="rounded-xl border border-amber-300 p-3">
           <p className="font-semibold">{entry.payload.name} — {entry.payload.sku}</p>
-          <p className="text-sm">Stock initial : {entry.payload.quantity} {entry.payload.base_unit || "pièce"}</p>
+          <p className="text-sm">{entry.product_id != null ? "Modification du produit existant" : `Stock initial : ${entry.payload.quantity} ${entry.payload.base_unit || "pièce"}`}</p>
           <p className="text-sm text-amber-700">En attente de synchronisation{entry.reason ? " — erreur" : ""}</p>
           {entry.reason && <p role="alert" className="text-sm text-red-700">{entry.reason}</p>}
-          {entry.attempted && !entry.reason && <p className="text-sm">Envoi tenté : réessayez sans modifier pour confirmer la création.</p>}
+          {entry.attempted && !entry.reason && <p className="text-sm">Envoi tenté : réessayez sans modifier pour confirmer l'enregistrement.</p>}
           <div className="mt-2 flex gap-2">
-            <button className="btn-ghost" disabled={entry.attempted && !entry.reason} onClick={() => openEdit({ ...entry.payload, id: -1, created_at: entry.updated_at, sold_quantity: 0, last_sold_at: null }, entry)}>Modifier le produit en attente</button>
-            <button className="btn-ghost" disabled={!online} onClick={async () => { try { queueProduct(entry.payload); await flushPendingProducts(); window.dispatchEvent(new Event("ri:synced")); await load(); } catch (err) { setError(apiErrorMessage(err instanceof Error ? err.message : err)); } }}>Réessayer</button>
-            <button className="btn-ghost" onClick={() => { if (entry.attempted && !entry.reason && !confirm("Cette demande a pu atteindre le serveur. Supprimer la copie locale n'annule pas un produit déjà créé. Continuer ?")) return; try { discardPendingProduct(entry.payload.client_uuid); } catch (err) { setError(apiErrorMessage(err instanceof Error ? err.message : err)); } }}>Supprimer le produit en attente</button>
+            <button className="btn-ghost" disabled={entry.attempted && !entry.reason} onClick={() => openEdit({ ...entry.payload, id: entry.product_id ?? -1, created_at: entry.updated_at, sold_quantity: 0, last_sold_at: null }, entry)}>Modifier le produit en attente</button>
+            <button className="btn-ghost" disabled={!online} onClick={async () => { try { retryPendingProduct(entry.payload.client_uuid); await flushPendingProducts(); window.dispatchEvent(new Event("ri:synced")); await load(); } catch (err) { setError(apiErrorMessage(err instanceof Error ? err.message : err)); } }}>Réessayer</button>
+            {entry.product_id != null && entry.reason && <button className="btn-secondary" disabled={!online} onClick={async () => { if (!confirm("Remplacer les champs modifiés sur le serveur par votre modification locale ?")) return; try { retryPendingProduct(entry.payload.client_uuid, true); await flushPendingProducts(); window.dispatchEvent(new Event("ri:synced")); await load(); } catch (err) { setError(apiErrorMessage(err instanceof Error ? err.message : err)); } }}>Forcer</button>}
+            <button className="btn-ghost" onClick={() => { if (entry.attempted && !entry.reason && !confirm("Cette demande a pu atteindre le serveur. Abandonner la copie locale n'annule pas un enregistrement déjà effectué. Continuer ?")) return; try { discardPendingProduct(entry.payload.client_uuid); void load(); } catch (err) { setError(apiErrorMessage(err instanceof Error ? err.message : err)); } }}>Abandonner</button>
           </div>
         </div>)}
       </section>}
@@ -748,7 +819,7 @@ export default function Products() {
                         </span>
                       )}
                       <div>
-                        <p className="font-semibold text-slate-800">{p.name} {p.active === false && <span className="text-xs font-normal text-amber-700">Désactivé</span>}</p>
+                        <p className="font-semibold text-slate-800">{p.name} {pending.some((entry) => entry.product_id === p.id) && <span className="badge bg-amber-100 text-amber-800">en attente</span>} {p.active === false && <span className="text-xs font-normal text-amber-700">Désactivé</span>}</p>
                       </div>
                     </div>
                   </td>}
@@ -816,7 +887,7 @@ export default function Products() {
                           <Boxes size={16} />
                         </button>
                       )}
-                      {can("produits_gerer") && (
+                      {permitted("produits_gerer") && (
                         <>
                           <button
                             onClick={() => openEdit(p)}
@@ -827,6 +898,7 @@ export default function Products() {
                           </button>
                           <button
                             onClick={() => remove(p)}
+                            disabled={readOnly}
                             title={p.active === false ? "Réactiver l'article" : "Désactiver l'article"} aria-label={p.active === false ? "Réactiver l'article" : "Désactiver l'article"}
                             className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
                           >
@@ -877,7 +949,7 @@ export default function Products() {
         </div>
       </div>
 
-      {viewProductId != null && <ProductDetails readOnly={readOnly} key={viewProductId} products={filtered} productId={viewProductId} onNavigate={setViewProductId} onClose={() => setViewProductId(null)} onEdit={(product) => { setViewProductId(null); openEdit(product); }} />}
+      {viewProductId != null && <ProductDetails key={viewProductId} products={filtered} productId={viewProductId} onNavigate={setViewProductId} onClose={() => setViewProductId(null)} onEdit={(product) => { setViewProductId(null); openEdit(product); }} />}
       {stockEntryOpen && editing && <ProductStockEntry disabled={readOnly} product={editing} onClose={() => { setStockEntryOpen(false); setModalOpen(true); }} onSaved={async (product) => {
         setEditing(product); setForm((previous) => ({ ...previous, quantity: product.quantity }));
         await load().catch(() => setError("Entrée enregistrée. Actualisez la liste des produits."));
@@ -895,7 +967,7 @@ export default function Products() {
             <button className="btn-ghost" onClick={() => setModalOpen(false)}>
               Annuler
             </button>
-            <button className="btn-primary" onClick={save} disabled={saving || (readOnly && !!editing) || !permitted("produits_gerer")}>
+            <button className="btn-primary" onClick={save} disabled={saving || !permitted("produits_gerer")}>
               {saving ? "Enregistrement..." : "Enregistrer"}
             </button>
           </>
@@ -961,13 +1033,16 @@ export default function Products() {
             />
           </div>
 <div>
-            <label className="label">Prix d'achat usine (coût pour le bénéfice, FCFA)</label>
+            <label className="label">Prix d'achat usine pièce (coût pour le bénéfice, FCFA)</label>
             <input
               type="number"
               className="input"
               value={form.purchase_price || ""}
-              onChange={(e) => setForm({ ...form, purchase_price: Number(e.target.value) })}
+              placeholder="Calculé depuis le prix usine, ou saisie libre"
+              onChange={(e) => { manualPurchase.current = true; setForm({ ...form, purchase_price: Number(e.target.value) }); }}
             />
+            <button type="button" className="btn-ghost mt-2" disabled={calculatedPurchase === null} onClick={() => { manualPurchase.current = false; setForm((current) => ({ ...current, purchase_price: followPurchasePrice(current.purchase_price, calculatedPurchase, false) })); }}>Recalculer</button>
+            <p className="mt-1 text-xs text-slate-500">{manualPurchase.current ? "Saisie manuelle conservée jusqu'au recalcul." : "Calcul automatique, arrondi au FCFA. La saisie reste libre."}</p>
           </div>
 <div>
             <label className="label">Prix détail pièce (FCFA)</label>
@@ -978,7 +1053,7 @@ export default function Products() {
               onChange={(e) => setForm({ ...form, sale_price: Number(e.target.value) })}
             />
           </div>
-<div>
+<fieldset disabled={!!editing && readOnly}>
             <label className="label">Stock en unités de base (stock initial à la création)</label>
             <input
               type="number"
@@ -988,7 +1063,7 @@ export default function Products() {
             />
             <p className="text-xs text-slate-500">{formatQuantity(form, form.quantity)}</p>
             {form.packaging_unit && <PackagingQuantity blankZero product={form} value={form.quantity} onChange={(quantity) => setForm({ ...form, quantity })} />}
-          </div>
+          </fieldset>
 <div className="col-span-full">
             <label className="label">
               Code-barres de l'article (chiffres imprimés sur l'emballage)
@@ -1037,11 +1112,11 @@ export default function Products() {
 <div className="col-span-full space-y-2">
             <h3 className="font-semibold">Codes supplémentaires / variantes</h3>
             {form.barcodes.map((barcode, index) => <div className="flex flex-wrap gap-2" key={barcode.id || `new-${index}`}>
-              <input aria-label="Code variante" className="input flex-1" disabled={!!barcode.id} value={barcode.code} onChange={(e) => setForm({ ...form, barcodes: form.barcodes.map((b, i) => i === index ? { ...b, code: e.target.value } : b) })} />
-              <input aria-label="Libellé variante" className="input flex-1" value={barcode.label} onChange={(e) => setForm({ ...form, barcodes: form.barcodes.map((b, i) => i === index ? { ...b, label: e.target.value } : b) })} />
-              <button type="button" className="btn-ghost" onClick={() => setForm({ ...form, barcodes: barcode.id ? form.barcodes.map((b, i) => i === index ? { ...b, active: !b.active } : b) : form.barcodes.filter((_, i) => i !== index) })}>{barcode.active ? "Retirer" : "Réactiver"}</button>
+              <label className="label flex-1">Code variante<input aria-label="Code variante" placeholder="Scanner ou saisir le code supplémentaire" className="input" value={barcode.code} onChange={(e) => setForm({ ...form, barcodes: form.barcodes.map((b, i) => i === index ? { ...b, code: e.target.value } : b) })} /></label>
+              <label className="label flex-1">Libellé variante<input aria-label="Libellé variante" placeholder="Ex. parfum, taille ou fournisseur" className="input" value={barcode.label} onChange={(e) => setForm({ ...form, barcodes: form.barcodes.map((b, i) => i === index ? { ...b, label: e.target.value } : b) })} /></label>
+              <button type="button" className={barcode.active ? "btn-danger" : "btn-secondary"} onClick={() => setForm({ ...form, barcodes: barcode.id ? form.barcodes.map((b, i) => i === index ? { ...b, active: !b.active } : b) : form.barcodes.filter((_, i) => i !== index) })}>{barcode.active ? <Trash2 size={16} /> : <Plus size={16} />}{barcode.active ? "Retirer" : "Réactiver"}</button>
             </div>)}
-            <button type="button" className="btn-ghost" onClick={() => setForm({ ...form, barcodes: [...form.barcodes, { code: "", label: "", active: true }] })}>Ajouter un code</button>
+            <button type="button" className="btn-secondary" onClick={() => setForm({ ...form, barcodes: [...form.barcodes, { code: "", label: "", active: true }] })}><Plus size={18} />Ajouter un code</button>
           </div>
 {!editing && (
             <div>
@@ -1064,15 +1139,16 @@ export default function Products() {
           )}
 <div><label className="label">Unité de base</label><input className="input" value={form.base_unit} placeholder="pièce, kg, litre…" onChange={(e) => setForm({ ...form, base_unit: e.target.value })} /></div>
 <div><label className="label">Conditionnement (facultatif)</label><input className="input" value={form.packaging_unit} placeholder="carton, paquet, boîte, sac…" onChange={(e) => setForm({ ...form, packaging_unit: e.target.value })} /></div>
-{form.packaging_unit && <>
+{form.packaging_unit.trim() && <>
             <div><label className="label">Pièces par carton</label><input className="input" type="number" min="1" step="1" value={form.units_per_packaging} onChange={(e) => setForm({ ...form, units_per_packaging: Number(e.target.value) })} /></div>
+            {packagingCalculator}
             <div><label className="label">Prix détail carton (vide = pièces × prix détail pièce)</label><input className="input" type="number" min="0" value={form.packaging_sale_price} onChange={(e) => setForm({ ...form, packaging_sale_price: e.target.value === "" ? "" : Number(e.target.value) })} /></div>
           </>}
 <div>
             <label className="label">Prix gros carton (FCFA, vide = calcul automatique)</label>
             <input type="number" min={0} className="input" value={form.wholesale_packaging_price} onChange={(e) => setForm({ ...form, wholesale_packaging_price: e.target.value === "" ? "" : Number(e.target.value) })} />
           </div>
-<ProductPackagings value={form.packagings} stock={form.quantity} baseUnit={form.base_unit} onChange={(packagings) => setForm({ ...form, packagings })} />
+<ProductPackagings value={form.packagings} stock={form.quantity} baseUnit={form.base_unit} factorCalculator={!form.packaging_unit.trim() ? packagingCalculator : undefined} onChange={(packagings) => setForm({ ...form, packagings })} />
 {form.packaging_unit && form.units_per_packaging > 0 && <p className="col-span-full text-xs text-slate-500">Disponible : {Math.floor(form.quantity / form.units_per_packaging)} {form.packaging_unit} + {form.quantity - Math.floor(form.quantity / form.units_per_packaging) * form.units_per_packaging} {form.base_unit || "pièce"}</p>}
 </section>
 <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">

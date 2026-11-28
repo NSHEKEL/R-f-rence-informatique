@@ -15,6 +15,7 @@ import {
 import api, { formatDateTime } from "../api/client";
 import type { Customer, Delivery, Order, Product } from "../types";
 import Modal from "../components/Modal";
+import ProductSearch from "../components/ProductSearch";
 import {
   deliveryDocumentHtml,
   printCommercialDocument,
@@ -579,6 +580,9 @@ export default function Livraisons() {
             </div>
           </div>
 
+          {!selectedOrder && <ProductSearch products={products} onPick={(product) => setLines((previous) => [...previous, {
+            product_id: product.id, product_name: product.name, quantity: 1, ordered: 0, delivered: 0, unit: product.base_unit || "u", observation: "",
+          }])} />}
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>

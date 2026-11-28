@@ -4,9 +4,9 @@ from unittest.mock import patch
 from sqlalchemy import create_engine, inspect, text
 
 import test_cash_register as cash_tests
-from app import migrate as migration
+from app import accounting_ledger, migrate as migration
 from app.models import Product, StockLot, StockMovement
-from app.routers import inventory, products, purchases, transfers
+from app.routers import inventory, inventory_sessions, products, purchases, transfers
 
 
 class PackagingTests(unittest.TestCase):
@@ -91,6 +91,25 @@ class PackagingTests(unittest.TestCase):
         self.assertEqual(self.stock(), 212)
         self.call(f"/api/purchases/{purchase['id']}/receive", "POST", {})
         self.assertEqual(self.stock(), 224)
+
+    def test_carton_receipt_and_all_stock_views_use_piece_cost(self):
+        self.product.quantity = 0
+        self.product.purchase_price = 500
+        self.product.supplier_purchase_price = 450
+        self.product.sale_price = 1200
+        self.db.commit()
+        purchase = self.call("/api/purchases", "POST", {"supplier_name": "Usine", "items": [{"product_id": self.product.id, "packaging_quantity": 2, "packaging_unit_cost": 6000}]}, 201)
+        self.assertEqual((purchase["items"][0]["quantity"], purchase["items"][0]["unit_cost"], purchase["total"]), (24, 500, 12000))
+        self.call(f"/api/purchases/{purchase['id']}/receive", "POST", {"update_cost": True})
+        self.assertEqual(self.stock(), 24)
+        self.assertEqual(self.db.get(Product, self.product.id).purchase_price, 500)
+        self.assertEqual(self.db.get(Product, self.product.id).supplier_purchase_price, 450)
+        self.assertEqual(self.call("/api/dashboard")["total_stock_value"], 12000)
+        self.assertEqual(self.call("/api/products")[0]["stock_value"], 12000)
+        self.assertEqual(self.call("/api/products/stock/dashboard")["cost_value"], 12000)
+        self.assertEqual(accounting_ledger.report(self.db, "stock", "2026-01-01", "2026-12-31")["summary"]["Valeur totale du stock"], 12000)
+        session = inventory_sessions.create(inventory_sessions.SessionCreate(name="Coût pièce"), self.db, self.user)
+        self.assertEqual(session["stats"]["theoretical_value"], 12000)
 
     def test_inventory_mixed_count_and_transfer(self):
         moves = self.call("/api/inventory/apply", "POST", {"lines": [{"product_id": self.product.id, "packaging_quantity": 2, "piece_quantity": 3}]})

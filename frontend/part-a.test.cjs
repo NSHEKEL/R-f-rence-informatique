@@ -5,6 +5,7 @@ const vm = require("node:vm");
 const ts = require("typescript");
 
 function load(path, imports = {}, globals = {}, source) {
+  imports = { "./desktopOffline": { desktopOffline: { available: () => false } }, ...imports };
   const exports = {};
   const code = ts.transpileModule(source ?? readFileSync(`${__dirname}/src/${path}`, "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
@@ -12,7 +13,7 @@ function load(path, imports = {}, globals = {}, source) {
   vm.runInNewContext(code, { exports, require: (name) => {
     assert.ok(name in imports, `unexpected import ${name}`);
     return { __esModule: true, ...imports[name] };
-  }, ...globals });
+  }, crypto: require("node:crypto").webcrypto, ...globals });
   return exports;
 }
 

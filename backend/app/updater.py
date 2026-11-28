@@ -464,12 +464,8 @@ def apply_pending() -> bool:
 
 
 def stage_in_background(delay: float = 20.0) -> None:
-    """Prepare the next version quietly, whoever is signed in.
-
-    Sellers and stock managers never see an update message, but their
-    workstation still updates itself at the following start.
-    """
-    if not is_packaged() or os.getenv("EASYGEST_AUTO_UPDATE") == "0":
+    """Prepare a version only when automatic updates were explicitly enabled."""
+    if not is_packaged() or os.getenv("EASYGEST_AUTO_UPDATE", "0") != "1":
         return
 
     def run() -> None:

@@ -3,16 +3,24 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from .quantities import Quantity
+
 
 # ---------- Auth ----------
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    offline_grant: Optional[str] = None
+    offline_public_key: Optional[str] = None
+    server_time: Optional[float] = None
 
 
 class LoginRequest(BaseModel):
     email: str
     password: str
+    offline_device_id: Optional[str] = Field(default=None, max_length=64)
+    offline_device_public_key: Optional[str] = Field(default=None, max_length=4096)
+    offline_nonce: Optional[str] = Field(default=None, max_length=128)
 
 
 class UserOut(BaseModel):
@@ -50,6 +58,9 @@ class UserPhoto(BaseModel):
 
 # ---------- Company settings ----------
 class CompanySettingsOut(BaseModel):
+    offline_enabled: bool = True
+    offline_authorization_hours: int = 24
+    mobile_money_to_cash: bool = True
     allow_negative_stock_sale: bool = False
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -117,6 +128,9 @@ class CompanySettingsOut(BaseModel):
 
 
 class CompanySettingsUpdate(BaseModel):
+    offline_enabled: Optional[bool] = None
+    offline_authorization_hours: Optional[int] = Field(default=None, ge=1, le=8760)
+    mobile_money_to_cash: bool = True
     allow_negative_stock_sale: bool = False
     name: Optional[str] = None
     slogan: Optional[str] = None
@@ -413,7 +427,7 @@ class UnitSnapshotOut(BaseModel):
 
 class PackagingQuantities(BaseModel):
     packaging_quantity: Optional[int] = Field(default=None, ge=0)
-    piece_quantity: Optional[int] = Field(default=None, ge=0)
+    piece_quantity: Optional[Quantity] = Field(default=None, ge=0)
 
 
 class ProductPackagingInput(BaseModel):
@@ -460,7 +474,7 @@ class ProductBase(BaseModel):
     purchase_price: float = 0
     sale_price: float = 0
     wholesale_price: float = 0
-    quantity: int = 0
+    quantity: Quantity = 0
     min_stock: int = 5
     qr_code: str = ""
     barcode: str = ""
@@ -485,7 +499,7 @@ class ProductOut(ProductBase):
     scanned_code: Optional[str] = None
     scanned_label: Optional[str] = None
     packaging_id: Optional[int] = None
-    quantity: Optional[int] = None
+    quantity: Optional[Quantity] = None
     min_stock: Optional[int] = None
     quantity_label: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
@@ -494,7 +508,7 @@ class ProductOut(ProductBase):
     category: Optional[CategoryOut] = None
     supplier: Optional[SupplierOut] = None
     # Filled by the "jamais vendu / plus vendus" filters.
-    sold_quantity: int = 0
+    sold_quantity: Quantity = 0
     last_sold_at: Optional[datetime] = None
 
 
@@ -512,20 +526,23 @@ class PriceHistoryOut(BaseModel):
 
 # ---------- Sales ----------
 class SaleItemCreate(PackagingQuantities):
+    packaging_divisor: Optional[int] = Field(default=None, ge=2, le=2147483647)
     scanned_code: Optional[str] = Field(default=None, max_length=200)
     packaging_id: Optional[int] = Field(default=None, ge=1)
     price_tier: Optional[Literal["detail", "semi_gros", "gros", "auto"]] = None
     expected_units_per_packaging: Optional[int] = Field(default=None, ge=1)
     product_id: int
-    quantity: int = 0
+    quantity: Quantity = 0
     # Price agreed at the counter; ignored unless the seller holds the right
-    # to change a price, and never written back to the product sheet.
+    # to change a price.
     unit_price: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    price_edited: bool = False
     # Discount granted on this line only, in currency units (not %).
     discount: float = Field(default=0, ge=0, allow_inf_nan=False)
 
 
 class SaleCreate(BaseModel):
+    cash_session_id: Optional[int] = Field(default=None, ge=1)
     customer_id: Optional[int] = None
     payment_method: str = "Espèces"
     status: str = "Payée"
@@ -566,6 +583,7 @@ class SalePaymentOut(BaseModel):
 
 
 class SaleItemOut(UnitSnapshotOut):
+    packaging_divisor: Optional[int] = None
     scanned_code: Optional[str] = None
     scanned_label: Optional[str] = None
     packaging_id: Optional[int] = None
@@ -578,19 +596,19 @@ class SaleItemOut(UnitSnapshotOut):
     margin: Optional[float] = None
     sold_unit: Optional[str] = None
     packaging_quantity: Optional[int] = None
-    piece_quantity: Optional[int] = None
-    base_quantity: Optional[int] = None
+    piece_quantity: Optional[Quantity] = None
+    base_quantity: Optional[Quantity] = None
     base_unit_price: Optional[float] = None
     packaging_sale_price: Optional[float] = None
     model_config = ConfigDict(from_attributes=True)
     id: int
     product_id: Optional[int]
     product_name: str
-    quantity: int
+    quantity: Quantity
     unit_price: float
     discount: float = 0
     subtotal: float
-    returned_quantity: int = 0
+    returned_quantity: Quantity = 0
 
 
 class SaleOut(BaseModel):
@@ -624,13 +642,13 @@ class SaleOut(BaseModel):
 class ReturnLine(PackagingQuantities):
     sale_item_id: Optional[int] = None
     product_id: int
-    quantity: int = 0
+    quantity: Quantity = 0
 
 
 class ReturnCreate(BaseModel):
     sale_reference: str
     reason: str = ""
-    refund_method: Literal["Avoir", "Espèces"] = "Avoir"
+    refund_method: Literal["Avoir", "Espèces", "Mobile Money"] = "Avoir"
     lines: List[ReturnLine]
 
 
@@ -639,7 +657,7 @@ class ReturnItemOut(UnitSnapshotOut):
     id: int
     product_id: Optional[int]
     product_name: str
-    quantity: int
+    quantity: Quantity
     unit_price: float
     subtotal: float
 
@@ -662,7 +680,7 @@ class ProformaItemCreate(BaseModel):
     product_id: Optional[int] = None
     product_name: str = ""
     unit: str = "u"
-    quantity: int = 1
+    quantity: Quantity = 1
     unit_price: float = 0
     discount: float = 0
 
@@ -703,7 +721,7 @@ class ProformaItemOut(UnitSnapshotOut):
     product_name: str
     reference: str = ""
     unit: str = "u"
-    quantity: int
+    quantity: Quantity
     unit_price: float
     discount: float = 0
     subtotal: float
@@ -837,17 +855,22 @@ class MonthlyRevenue(BaseModel):
 
 class TopProduct(BaseModel):
     name: str
-    quantity: int
+    quantity: Quantity
     revenue: float
 
 
 class TopSeller(BaseModel):
+    user_id: Optional[int] = None
     name: str
     sales_count: int
     revenue: float
+    collected: float = 0
+    payments: dict[str, float] = {}
 
 
 class DashboardStats(BaseModel):
+    total_collected: float = 0
+    payments: dict[str, float] = {}
     total_products: int
     total_stock_value: float
     low_stock_count: int
@@ -872,6 +895,7 @@ class DashboardStats(BaseModel):
 class SyncVersion(BaseModel):
     version: int
     entities: str = ""
+    product_ids: Optional[List[int]] = None
 
 
 # ---------- Notifications ----------
@@ -894,11 +918,23 @@ class CashSessionOpen(BaseModel):
 
 
 class CashSessionClose(BaseModel):
+    cash_session_id: Optional[int] = None
+    kept_balance: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     closing_balance: float = 0
     note: str = ""
 
 
+class CashGlobalClose(BaseModel):
+    date_from: date
+    date_to: date
+    session_ids: list[int] = Field(min_length=1)
+    closing_balance: float = Field(ge=0, allow_inf_nan=False)
+    note: str = Field(default="", max_length=5000)
+
+
 class CashSessionOut(BaseModel):
+    global_closure_id: Optional[int] = None
+    workstation: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
     id: int
     opened_at: datetime
@@ -926,9 +962,18 @@ class CashSessionSaleLine(BaseModel):
 
 
 class CashSessionDetail(CashSessionOut):
+    data_warnings: list[str] = []
+    mobile_cash_adjustment: Optional[float] = None
+    mobile_money_to_cash: bool = False
+    mobile_money_sales: Optional[float] = None
+    mobile_money_refunds: Optional[float] = None
+    kept_balance: Optional[float] = None
+    remitted_amount: Optional[float] = None
     """Open session enriched with live totals."""
 
     cash_sales: Optional[float] = None
+    payments: dict[str, float] = {}
+    payment_groups: dict[str, float] = {}
     other_sales: Optional[float] = None
     sales_count: Optional[int] = None
     deposits_total: Optional[float] = None
@@ -947,12 +992,14 @@ class CashSessionDetail(CashSessionOut):
 
 
 class CashMovementCreate(BaseModel):
+    return_id: Optional[int] = None
     type: Literal["in", "out"]
     amount: float = Field(gt=0, allow_inf_nan=False)
     reason: str = Field(min_length=1, max_length=1000)
 
 
 class CashMovementOut(BaseModel):
+    return_id: Optional[int] = None
     model_config = ConfigDict(from_attributes=True)
     id: int
     session_id: int
@@ -992,7 +1039,7 @@ class ExpenseOut(BaseModel):
 class InventoryLine(PackagingQuantities):
     product_id: int
     packaging_id: Optional[int] = Field(default=None, ge=1)
-    counted_quantity: int = 0
+    counted_quantity: Quantity = 0
 
 
 class InventoryApply(BaseModel):
@@ -1004,17 +1051,17 @@ class StockLotCreate(BaseModel):
     depot_id: Optional[int] = Field(default=None, ge=1)
     lot_number: str = ""
     expiry_date: Optional[datetime] = None
-    quantity: int
+    quantity: Quantity
 
 
 class ProductStockEntryLine(BaseModel):
     packaging_id: Optional[int] = Field(default=None, ge=1)
-    quantity: int = Field(ge=0, le=2147483647, strict=True)
+    quantity: Quantity = Field(ge=0, le=2147483647, strict=True)
     unit: Literal["base", "packaging"] = "base"
 
 
 class ProductStockEntry(BaseModel):
-    quantity: Optional[int] = Field(default=None, gt=0, le=2147483647, strict=True)
+    quantity: Optional[Quantity] = Field(default=None, gt=0, le=2147483647, strict=True)
     lines: Optional[List[ProductStockEntryLine]] = Field(default=None, min_length=1, max_length=1000)
     unit: Literal["base", "packaging"] = "base"
     packaging_id: Optional[int] = Field(default=None, ge=1)
@@ -1041,7 +1088,7 @@ class StockLotOut(BaseModel):
     product_id: int
     lot_number: str
     expiry_date: Optional[datetime] = None
-    quantity: int
+    quantity: Quantity
     created_at: datetime
     product_name: str = ""
     days_left: Optional[int] = None
@@ -1049,7 +1096,7 @@ class StockLotOut(BaseModel):
 
 class StockTransferItemCreate(PackagingQuantities):
     product_id: int
-    quantity: int = 0
+    quantity: Quantity = 0
 
 
 class StockTransferCreate(BaseModel):
@@ -1064,7 +1111,7 @@ class StockTransferItemOut(UnitSnapshotOut):
     id: int
     product_id: Optional[int]
     product_name: str
-    quantity: int
+    quantity: Quantity
 
 
 class StockTransferOut(BaseModel):
@@ -1086,9 +1133,9 @@ class StockMovementOut(UnitSnapshotOut):
     product_id: Optional[int]
     product_name: str
     kind: str
-    quantity: int
-    stock_before: int
-    stock_after: int
+    quantity: Quantity
+    stock_before: Quantity
+    stock_after: Quantity
     reason: str = ""
     date: datetime
     created_by: Optional[UserOut] = None
@@ -1134,7 +1181,7 @@ class UpdateInstallResult(BaseModel):
 # ---------- Orders and deliveries ----------
 class OrderItemCreate(BaseModel):
     product_id: int
-    quantity: int
+    quantity: Quantity
     unit_price: Optional[float] = None
     unit: str = "u"
     discount: float = 0
@@ -1177,9 +1224,9 @@ class OrderItemOut(UnitSnapshotOut):
     product_name: str
     reference: str = ""
     unit: str = "u"
-    quantity: int
-    delivered_quantity: int = 0
-    remaining_quantity: int = 0
+    quantity: Quantity
+    delivered_quantity: Quantity = 0
+    remaining_quantity: Quantity = 0
     unit_price: float
     discount: float = 0
     subtotal: float
@@ -1203,7 +1250,7 @@ class DeliveryUpdate(BaseModel):
 
 class DeliveryItemCreate(BaseModel):
     product_id: int
-    quantity: int
+    quantity: Quantity
     unit: str = "u"
     observation: str = ""
     unit_price: Optional[float] = None
@@ -1244,9 +1291,9 @@ class DeliveryItemOut(UnitSnapshotOut):
     product_name: str = ""
     reference: str = ""
     unit: str = "u"
-    ordered_quantity: int = 0
-    previously_delivered: int = 0
-    quantity: int = 0
+    ordered_quantity: Quantity = 0
+    previously_delivered: Quantity = 0
+    quantity: Quantity = 0
     unit_price: float = 0
     subtotal: float = 0
     observation: str = ""
@@ -1353,7 +1400,7 @@ class PurchaseItemCreate(PackagingQuantities):
     packaging_id: Optional[int] = Field(default=None, ge=1)
     packaging_unit_cost: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     product_id: int
-    quantity: int = 0
+    quantity: Quantity = 0
     unit_cost: Optional[float] = None
 
 
@@ -1382,7 +1429,7 @@ class PurchaseUpdate(BaseModel):
 
 class PurchaseReceiveItem(PackagingQuantities):
     item_id: int
-    quantity: int = 0
+    quantity: Quantity = 0
 
 
 class CataloguePriceChange(BaseModel):
@@ -1412,8 +1459,8 @@ class PurchaseItemOut(UnitSnapshotOut):
     id: int
     product_id: Optional[int] = None
     product_name: str
-    quantity: int
-    received_quantity: int = 0
+    quantity: Quantity
+    received_quantity: Quantity = 0
     unit_cost: float
     subtotal: float
 
@@ -1547,6 +1594,7 @@ class SettlementOut(DebtPaymentOut):
 
 
 class DebtCreate(BaseModel):
+    purchase_id: Optional[int] = None
     kind: str = "creance"  # creance (client) or dette (fournisseur)
     party: str = ""
     customer_id: Optional[int] = None
@@ -1565,8 +1613,11 @@ class DebtOut(BaseModel):
     customer_id: Optional[int] = None
     supplier_id: Optional[int] = None
     sale_id: Optional[int] = None
+    purchase_id: Optional[int] = None
+    purchase_reference: Optional[str] = None
     reference: str
     amount: float
+    cancelled: bool = False
     due_date: Optional[datetime] = None
     note: str
     created_at: datetime
@@ -1882,6 +1933,13 @@ class BankDepositReconcile(BaseModel):
 
 # ---------- Z de caisse ----------
 class CashSessionZ(BaseModel):
+    data_warnings: list[str] = []
+    mobile_cash_adjustment: float = 0
+    mobile_money_to_cash: bool = False
+    mobile_money_sales: float = 0
+    mobile_money_refunds: float = 0
+    kept_balance: Optional[float] = None
+    remitted_amount: Optional[float] = None
     """État Z de caisse: definitive recap of a till session."""
 
     session_id: int
@@ -1902,6 +1960,9 @@ class CashSessionZ(BaseModel):
     cancelled_count: int = 0
     gift_total: float = 0
     payments: dict[str, float] = {}  # per payment method
+    payment_groups: dict[str, float] = {}
+    inflow_groups: dict[str, float] = {}
+    outflow_groups: dict[str, float] = {}
     refunds_total: float = 0
     refunds: list[dict] = []
     advances_total: float = 0  # acomptes de commandes encaissés

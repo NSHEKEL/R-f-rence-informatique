@@ -46,7 +46,7 @@ def _rows(
             label=label,
             amount=amount,
             quantity=(quantities or {}).get(label, 0),
-            quantity_label=(quantity_label(int((quantities or {}).get(label, 0)), *next(iter(units[label]))) if len(units[label]) == 1 else f"{int((quantities or {}).get(label, 0))} unités de base (conditionnements variables)") if units and label in units else None,
+            quantity_label=(quantity_label((quantities or {}).get(label, 0), *next(iter(units[label]))) if len(units[label]) == 1 else f"{(quantities or {}).get(label, 0):g} unités de base (conditionnements variables)") if units and label in units else None,
         )
         for label, amount in sorted(
             amounts.items(), key=lambda pair: pair[1], reverse=True

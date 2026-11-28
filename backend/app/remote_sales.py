@@ -7,6 +7,7 @@ calls out, and the phone reads the copy through the central API.
 Nothing is ever read back from the central copy into the shop database.
 """
 
+import json
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -16,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from . import licensing
 from .database import SessionLocal
-from .models import CompanySettings, Expense, Sale, SaleReturn, SupportRequest, User
+from .models import CompanySettings, Expense, OfflineEvent, Sale, SaleReturn, SupportRequest, User
 from .permissions import has_permission
 
 # Window of sales kept on the central server for the phone.
@@ -48,6 +49,7 @@ def _sales(db: Session) -> list[dict]:
         copies.append(
             {
                 "reference": sale.reference,
+                "operation_id": sale.client_id,
                 "date": sale.date.isoformat() if sale.date else None,
                 "total": sale.total or 0,
                 "status": sale.status or "",
@@ -158,13 +160,21 @@ def _cash_balances(db: Session) -> dict:
         if session is None:
             continue
         try:
-            expected = cash.session_amounts(db, session).expected_cash
+            report = cash.session_amounts(db, session)
+            expected = report.expected_cash
         except (HTTPException, ValueError, TypeError):
             expected = None
+            report = None
         sessions.append({
             "key": f"{user.email.lower()}:{session.id}:{session.opened_at.isoformat()}",
             "seller_email": user.email.lower(), "closed": session.closed_at is not None,
             "expected_cash": expected,
+            "kept_balance": report.kept_balance if report else None,
+            "remitted_amount": report.remitted_amount if report else None,
+            "mobile_money_to_cash": report.mobile_money_to_cash if report else False,
+            **{field: getattr(report, field) if report else None for field in (
+                "cash_sales", "mobile_money_sales", "expenses_total", "refunds_total", "entries_total", "exits_total")},
+            "other_sales": report.other_sales - report.mobile_money_sales if report else None,
         })
     return {"day": now.date().isoformat(), "generated_at": now.isoformat(), "sessions": sessions}
 
@@ -204,13 +214,24 @@ def push(db: Session) -> dict:
         mobile_ops.process_pending(db)
     except Exception as exc:  # noqa: BLE001 - best effort, never blocks sync
         print(f"Opérations mobiles : {exc}")
-    return licensing._post(  # noqa: SLF001 - same module family
+    exclusions = []
+    for event in db.query(OfflineEvent).filter_by(state="reviewed", kind="sale").filter(
+        ~db.query(Sale.id).filter(Sale.client_id == OfflineEvent.id).exists()
+    ).order_by(OfflineEvent.received_at).all():
+        result = json.loads(event.result)
+        if not result.get("central_exclusion_acked"):
+            review = json.loads(event.resolution)[-1]
+            exclusions.append((event, {"operation_id": event.id, "actor_id": review["actor_id"], "reason": review["reason"], "reviewed_at": review["at"], "event_hash": event.hash}))
+            if len(exclusions) == 200:
+                break
+    answer = licensing._post(  # noqa: SLF001 - same module family
         f"{base}/api/central/public/mirror",
         {
             "installation_uid": row.installation_uid,
             "token": row.token,
             "users": _users(db),
             "sales": _sales(db),
+            "offline_exclusions": [payload for _, payload in exclusions],
             "returns": _returns(db),
             "expenses": _expenses(db),
             "support_requests": _support_requests(db),
@@ -221,6 +242,15 @@ def push(db: Session) -> dict:
             "address": (company.address if company else "") or "",
         },
     )
+    accepted = answer.get("excluded_operations", [])
+    for event, _ in exclusions:
+        if event.id in accepted:
+            result = json.loads(event.result)
+            result["central_exclusion_acked"] = True
+            event.result = json.dumps(result, ensure_ascii=False)
+    if exclusions:
+        db.commit()
+    return answer
 
 
 def push_quietly(db: Session) -> None:

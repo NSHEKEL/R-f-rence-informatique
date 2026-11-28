@@ -30,8 +30,8 @@ export default function ProductStockEntry({ product, onClose, onSaved, disabled 
 
   async function saveEntry() {
     if (disabled) { setError("Connexion requise pour ajouter du stock."); return; }
-    if (units.some((item) => !Number.isInteger(Number(quantities[item.key] || 0)) || Number(quantities[item.key] || 0) < 0) || !Number.isSafeInteger(total) || total <= 0 || total > 2147483647) {
-      setError("Quantités entières positives ou nulles requises, dont au moins une strictement positive (maximum 2147483647 unités de base)."); return;
+    if (units.some((item) => !Number.isFinite(Number(quantities[item.key] || 0)) || Number(quantities[item.key] || 0) < 0) || !Number.isFinite(total) || total <= 0 || total > 2147483647) {
+      setError("Quantités positives ou nulles requises, dont au moins une strictement positive (maximum 2147483647 unités de base)."); return;
     }
     setBusy(true); setError("");
     try {
@@ -52,7 +52,7 @@ export default function ProductStockEntry({ product, onClose, onSaved, disabled 
     <div className="space-y-3">
       <p className="text-sm font-semibold">{product.name} · Stock actuel : {product.quantity}</p>
       {(error || depotError) && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-600">{error || depotError}</p>}
-      {units.map((item) => <label key={item.key} className="label">{item.name}{item.key !== "base" && ` (×${item.factor})`}<input className="input" aria-label={item.name} type="number" min={0} max={2147483647} step={1} value={quantities[item.key] ?? ""} onChange={(e) => setQuantities((previous) => ({ ...previous, [item.key]: e.target.value === "" ? "" : Number(e.target.value) }))} /></label>)}
+      {units.map((item) => <label key={item.key} className="label">{item.name}{item.key !== "base" && ` (×${item.factor})`}<input className="input" aria-label={item.name} type="number" min={0} max={2147483647} step={0.000001} value={quantities[item.key] ?? ""} onChange={(e) => setQuantities((previous) => ({ ...previous, [item.key]: e.target.value === "" ? "" : Number(e.target.value) }))} /></label>)}
       {activeDepots.length > 1 && <label className="label">Dépôt de réception<select className="input" value={depot} onChange={(e) => setDepot(e.target.value)}>
         <option value="">{activeDepots.find((item) => item.is_default)?.name || "Dépôt principal"} (par défaut)</option>
         {activeDepots.filter((item) => !item.is_default).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}

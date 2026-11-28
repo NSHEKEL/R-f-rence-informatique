@@ -2,8 +2,9 @@
 
 from datetime import datetime
 from typing import Optional
+from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AdminLogin(BaseModel):
@@ -325,6 +326,7 @@ class MirrorUserIn(BaseModel):
 
 class MirrorSaleIn(BaseModel):
     reference: str
+    operation_id: Optional[str] = Field(default=None, max_length=64)
     date: Optional[datetime] = None
     total: float = 0
     status: str = ""
@@ -368,6 +370,16 @@ class MirrorExpenseIn(BaseModel):
 
 
 class MirrorCashSessionIn(BaseModel):
+    cash_sales: Optional[float] = None
+    mobile_money_sales: Optional[float] = None
+    other_sales: Optional[float] = None
+    expenses_total: Optional[float] = None
+    refunds_total: Optional[float] = None
+    entries_total: Optional[float] = None
+    exits_total: Optional[float] = None
+    kept_balance: Optional[float] = None
+    remitted_amount: Optional[float] = None
+    mobile_money_to_cash: bool = False
     key: str
     seller_email: str
     expected_cash: Optional[float] = None
@@ -380,6 +392,14 @@ class MirrorCashBalancesIn(BaseModel):
     sessions: list[MirrorCashSessionIn] = []
 
 
+class MirrorExclusionIn(BaseModel):
+    operation_id: UUID
+    actor_id: int = Field(gt=0)
+    reason: str = Field(min_length=5, max_length=1000)
+    reviewed_at: float = Field(ge=0, allow_inf_nan=False)
+    event_hash: str = Field(pattern="^[0-9a-f]{64}$")
+
+
 class MirrorRequest(BaseModel):
     """Copy a shop pushes so its sales can be read from a phone."""
 
@@ -387,6 +407,7 @@ class MirrorRequest(BaseModel):
     token: str
     users: list[MirrorUserIn] = []
     sales: list[MirrorSaleIn] = []
+    offline_exclusions: list[MirrorExclusionIn] = Field(default_factory=list, max_length=200)
     returns: list[MirrorReturnIn] = []
     expenses: list[MirrorExpenseIn] = []
     support_requests: list[MirrorSupportRequestIn] = []
@@ -458,7 +479,7 @@ class MagasinStats(BaseModel):
 # ---------- Relais de transferts inter-magasins ----------
 class TransferItemIn(BaseModel):
     product_name: str
-    quantity: int
+    quantity: float = Field(gt=0, allow_inf_nan=False)
 
 
 class TransferPushIn(BaseModel):

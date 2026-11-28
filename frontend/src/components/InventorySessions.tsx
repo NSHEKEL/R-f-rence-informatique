@@ -9,6 +9,8 @@ import { depotScope, useDepots } from "../lib/depots";
 import { lastSession, readOffline, readSession, rememberSession, syncCounts } from "../lib/offlineInventory";
 import { useOnline } from "../lib/useOnline";
 import OfflineBanner from "./OfflineBanner";
+import axios from "axios";
+import { apiErrorMessage } from "../lib/apiErrors";
 
 const STATUS: Record<string, string> = { draft: "Brouillon", in_progress: "En cours", validated: "Validé", cancelled: "Annulé" };
 const SCOPES: Record<string, string> = { general: "Général", category: "Catégorie", rayon: "Rayon", emplacement: "Emplacement", selection: "Sélection d'articles", depot: "Dépôt" };
@@ -30,6 +32,11 @@ export default function InventorySessions() {
   const selected = useRef(false);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirmation, setConfirmation] = useState<InventoryReport | null>(null);
+  const confirmationRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (confirmation) { confirmationRef.current?.scrollIntoView({ block: "center" }); confirmationRef.current?.focus(); }
+  }, [confirmation]);
   const queue = useRef<Promise<void>>(Promise.resolve());
   const loadHistory = useCallback(async () => {
     try { const { data } = await readOffline<InventoryHeader[]>(`/inventory/sessions?${new URLSearchParams(Object.fromEntries(Object.entries(filter).filter(([, value]) => value)))}`, `sessions:${JSON.stringify(filter)}`); setHistory(data); }
@@ -64,7 +71,7 @@ export default function InventorySessions() {
       await rememberSession(data); setCached(false); setSavedAt(new Date().toISOString());
       setCurrent((previous) => previous?.id === data.id ? data : previous);
     });
-    queue.current = operation;
+    queue.current = operation.catch(() => {});
     return operation;
   }
   async function create() {
@@ -75,24 +82,28 @@ export default function InventorySessions() {
     catch { setMessage("Création impossible : vérifiez le nom et le périmètre (non vide)."); }
     finally { setBusy(false); }
   }
-  async function transition(action: string) {
-    if (!current) return;
+  async function transition(action: string, confirmed = false) {
+    if (!current) { setMessage("Sélectionnez une session avant de continuer."); return; }
     if (offline) { setMessage("Connexion au serveur requise pour démarrer, annuler ou valider une session."); return; }
+    if (action !== "start" && !can("inventaire_valider")) { setMessage("Permission « Valider les inventaires » requise."); return; }
     (document.activeElement as HTMLElement | null)?.blur();
-    setBusy(true); setMessage("");
+    setBusy(true); setMessage("Enregistrement et synchronisation des comptages en cours…");
     try {
       await grid.current?.flush();
       const synced = await syncCounts(current.id);
-      if (synced.pending) throw new Error("Comptages en attente de synchronisation");
+      if (synced.pending) throw new Error(synced.error || "Comptages en attente de synchronisation : enregistrez les lignes en erreur puis réessayez.");
       await queue.current;
       if (action === "validate") {
         const { data } = await api.get<InventoryReport>(`/inventory/sessions/${current.id}/report`);
         setCurrent(data);
-        if (!window.confirm(`Valider définitivement ?\n${data.stats.counted} articles comptés ; ${data.stats.not_counted} non comptés.\n${data.theoretical_visible ? `Valeur totale des écarts : ${data.stats.variance_value}\n` : ""}Les non comptés resteront inchangés ; les mouvements intermédiaires seront préservés.`)) return;
+        if (!data.stats.counted) throw new Error("Aucun article compté : saisissez au moins une quantité (0 est un comptage).");
+        if (!confirmed) { setConfirmation(data); setMessage(""); return; }
       } else if (action === "cancel" && !window.confirm("Annuler définitivement cette session ?")) return;
       await enqueue(`/inventory/sessions/${current.id}/${action}`, {});
+      setConfirmation(null);
+      setMessage(action === "validate" ? "Inventaire validé : les écarts comptés ont été appliqués au stock." : "Session mise à jour.");
       await loadHistory();
-    } catch { setMessage("Action refusée : droits, session déjà clôturée ou stock insuffisant. Rechargez pour vérifier."); }
+    } catch (error) { setConfirmation(null); setMessage(apiErrorMessage(axios.isAxiosError(error) ? error.response?.data?.detail || error.message : error, "Action impossible : vérifiez la connexion. Vos comptages sont conservés.")); }
     finally { setBusy(false); }
   }
   async function output(kind: string) {
@@ -170,9 +181,19 @@ export default function InventorySessions() {
         {open && <label className="btn-secondary">Importer la grille<input className="hidden" type="file" accept=".xlsx,.xls,.csv" disabled={busy || offline} onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void importGrid(file); }} /></label>}
       </div>
       {!open && <p role="status" className="rounded border border-amber-500 bg-amber-50 p-3 text-amber-800">Session {STATUS[current.status].toLowerCase()} : consultation uniquement. Créez une nouvelle session ci-dessus pour saisir un nouveau comptage.</p>}
+      <div className="rounded-xl border border-slate-300 p-3" role="status" aria-live="polite">
+        {busy ? "Traitement en cours : enregistrement et synchronisation…" : offline ? "Validation indisponible : connexion au serveur requise." : !can("inventaire_valider") ? "Validation indisponible : permission « Valider les inventaires » requise." : message || "Avant validation, les saisies seront enregistrées et un récapitulatif sera affiché."}
+      </div>
+      {confirmation?.id === current.id && <div data-inventory-confirm ref={confirmationRef} tabIndex={-1} className="rounded-xl border-2 border-brand-500 bg-brand-50 p-4 dark:bg-slate-800" role="group" aria-label="Confirmation de validation">
+        <h4 className="font-bold">Confirmer la validation définitive</h4>
+        <p>{confirmation.stats.counted} articles comptés ; {confirmation.stats.not_counted} non comptés.</p>
+        {confirmation.theoretical_visible && <p>Valeur totale des écarts : {confirmation.stats.variance_value} FCFA.</p>}
+        <p>Les articles non comptés resteront inchangés. Les mouvements intermédiaires seront préservés.</p>
+        <div className="mt-3 flex gap-2"><button className="btn-ghost" disabled={busy} onClick={() => { setConfirmation(null); setMessage("Validation non confirmée : aucun stock modifié."); }}>Revenir au comptage</button><button className="btn-primary" disabled={busy || offline} onClick={() => void transition("validate", true)}>Confirmer la validation</button></div>
+      </div>}
       {current.status === "draft" && <p className="text-sm">Saisissez directement les quantités : la première sauvegarde démarre le comptage. Hors ligne, démarrez d'abord la session en étant connecté au serveur.</p>}
       {open && <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); grid.current?.scan(code); setCode(""); }}><input className="input" aria-label="Scanner inventaire" placeholder="Code produit / variante / conditionnement + Entrée" value={code} onChange={(event) => setCode(event.target.value)} /><button className="btn-secondary">Trouver le comptage</button></form>}
-      <InventoryGrid key={current.id} ref={grid} report={current} editable={!!open && (current.status !== "draft" || !offline) && !busy} onSaved={(row, status) => setCurrent((previous) => previous?.id === current.id ? { ...previous, status, rows: previous.rows.map((old) => old.product_id === row.product_id ? row : old) } : previous)} />
+      <InventoryGrid key={current.id} ref={grid} report={current} editable={!!open && (current.status !== "draft" || !offline) && !busy && confirmation?.id !== current.id} onSaved={(row, status) => setCurrent((previous) => previous?.id === current.id ? { ...previous, status, rows: previous.rows.map((old) => old.product_id === row.product_id ? row : old) } : previous)} />
     </div>}
     <p role="status">{message}</p>
   </section>;

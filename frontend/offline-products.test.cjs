@@ -15,9 +15,153 @@ function setup() {
       exports, require: (path) => path === '../api/client' ? { __esModule: true, default: api } : load(path.slice(2)), localStorage, window: { dispatchEvent() {} }, Event,
     }); return exports;
   }
-  return { lib: load('offline'), api, localStorage, quota: () => { quota = true; } };
+  return { lib: load('offline'), api, localStorage, load, quota: () => { quota = true; } };
 }
 const payload = { client_uuid: 'uuid-one', name: 'Riz', sku: 'RIZ', quantity: 7, barcode: '123', qr_code: '', image: 'full image', packagings: [{ name: 'Carton', factor: 6, active: true, barcode: 'PACK' }], barcodes: [{ code: 'VAR', active: true }] };
+
+test('product scanner and manual lookup retain all pending edits before a second edit', async () => {
+  const { lib } = setup();
+  const source = ts.createSourceFile('Products.tsx', readFileSync(`${__dirname}/src/pages/Products.tsx`, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let scanner, lookup;
+  function visit(node) {
+    if (ts.isCallExpression(node) && node.expression.getText(source) === 'useScanner') scanner = node.getText(source);
+    if (ts.isFunctionDeclaration(node) && node.name?.text === 'lookupBarcode') lookup = node.getText(source);
+    ts.forEachChild(node, visit);
+  }
+  visit(source);
+  const original = { ...payload, id: 12, sale_price: 100 };
+  for (const mode of ['scanner', 'lookup']) {
+    lib.queueProductEdit(original, { ...original, sale_price: 120 });
+    let callback, shown;
+    const context = { api: { get: async () => ({ data: original }) }, pendingCatalogue: lib.pendingCatalogue,
+      editing: null, modalOpen: true, form: { barcode: '123' }, setNotice() {}, openEdit: value => { shown = value; },
+      useScanner: value => { callback = value; } };
+    vm.runInNewContext(ts.transpileModule(`${scanner}\n${lookup}\nthis.lookup = lookupBarcode;`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, context);
+    if (mode === 'scanner') await callback(['123']); else await context.lookup('123');
+    assert.equal(shown.sale_price, 120);
+    lib.queueProductEdit(shown, { ...shown, name: 'Riz corrigé' });
+    assert.deepEqual(JSON.parse(JSON.stringify(lib.pendingProducts()[0].changes)), { name: 'Riz corrigé', sale_price: 120 });
+    assert.equal(lib.pendingCatalogue('/products', [original], [])[0].sale_price, 100);
+  }
+});
+
+test('POS catalogue bypasses locked broker, falls back after local auth refusal and retains cache on failure', async () => {
+  const { lib, api, load } = setup();
+  const desktop = load('desktopOffline').desktopOffline;
+  desktop.available = () => true;
+  desktop.state = () => ({ locked: true });
+  let localCalls = 0, serverCalls = 0;
+  desktop.catalogue = async () => { localCalls++; throw { response: { status: 401 } }; };
+  api.get = async () => { serverCalls++; return { data: [{ id: 42, active: true }] }; };
+  assert.equal((await lib.fetchCached('/products/pos', 'catalogue')).data[0].id, 42);
+  assert.equal(localCalls, 0);
+  desktop.state = () => ({ locked: false });
+  assert.equal((await lib.fetchCached('/products/pos', 'catalogue')).data[0].id, 42);
+  assert.equal(localCalls, 1);
+  assert.equal(serverCalls, 2);
+  api.get = async () => { throw Error('network'); };
+  const cached = await lib.fetchCached('/products/pos', 'catalogue');
+  assert.equal(cached.data[0].id, 42);
+  assert.equal(cached.fromCache, true);
+  api.get = async () => ({ data: [] });
+  assert.equal((await lib.fetchCached('/products/pos', 'catalogue')).data.length, 0);
+  assert.doesNotMatch(readFileSync(`${__dirname}/src/pages/NouvelleVente.tsx`, 'utf8'), /loadProducts\(\)\.catch\(\(\) => setProducts\(\[\]\)\)/);
+});
+
+test('product create and edit refresh only the saved id, with full reload only on refresh failure', async () => {
+  const source = readFileSync(`${__dirname}/src/pages/Products.tsx`, 'utf8');
+  const file = ts.createSourceFile('Products.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let save;
+  function visit(node) { if (ts.isFunctionDeclaration(node) && node.name?.text === 'save') save = node.getText(file); ts.forEachChild(node, visit); }
+  visit(file); assert.ok(save);
+  for (const mode of ['create', 'edit', 'refresh-error', 'save-error', 'invalid']) {
+    const calls = [], refreshed = []; let reloads = 0, error = '';
+    const context = {
+      permitted: () => true, readOnly: false, pendingUuid: null, editing: mode === 'create' ? null : { id: 12 },
+      form: { ...payload, quantity: mode === 'invalid' ? -1 : 0, packaging_unit: '', base_unit: 'pièce', packagings: [],
+        category_id: '', supplier_id: '', min_stock: '', purchase_price: 500, sale_price: 600, wholesale_price: 550,
+        semi_wholesale_min_qty: '', wholesale_min_qty: '', semi_wholesale_price: '', supplier_purchase_price: '', expiry_date: '' },
+      productBarcodes: (value) => value, productTextError: () => '', setSaving() {}, setModalOpen() {}, setNotice() {},
+      setError: (value) => { error = value; }, apiErrorMessage: (value) => String(value), axios: { isAxiosError: () => false },
+      api: Object.fromEntries(['post', 'put'].map((method) => [method, async (url, data) => {
+        calls.push(url); assert.equal(data.purchase_price, 500);
+        if (mode === 'save-error') throw Error('save failed');
+        return { data: { id: 12 } };
+      }])),
+      refreshProducts: async (ids) => { refreshed.push(...ids); if (mode === 'refresh-error') throw Error('refresh failed'); },
+      load: async () => { reloads++; },
+    };
+    vm.createContext(context); vm.runInContext(ts.transpileModule(save, {}).outputText, context);
+    await vm.runInContext('save()', context);
+    if (mode === 'invalid') { assert.equal(calls.length, 0); assert.match(error, /Stock/); }
+    else if (mode === 'save-error') { assert.equal(refreshed.length, 0); assert.match(error, /save failed/); }
+    else { assert.deepEqual(refreshed, [12]); assert.equal(error, ''); }
+    assert.equal(reloads, mode === 'refresh-error' ? 1 : 0);
+    if (mode === 'create') assert.deepEqual(calls, ['/products']);
+    if (mode === 'edit') assert.deepEqual(calls, ['/products/12']);
+  }
+});
+
+test('existing edits overlay the cached catalogue, coalesce and discard without mutating originals', async () => {
+  const { lib, api } = setup(); let calls = 0; api.post = async () => { calls++; return { data: {} }; };
+  const original = { ...payload, id: 12, sale_price: 100 };
+  lib.queueProductEdit(original, { ...payload, sale_price: 100 });
+  assert.equal(lib.pendingProducts().length, 0);
+  assert.equal((await lib.flushPendingProducts()).synced, 0); assert.equal(calls, 0);
+  lib.queueProductEdit(original, { ...payload, sale_price: 120 });
+  const shown = lib.pendingCatalogue('/products', [original])[0];
+  assert.equal(shown.sale_price, 120); assert.equal(original.sale_price, 100);
+  lib.queueProductEdit(shown, { ...payload, sale_price: 130 });
+  const entry = lib.pendingProducts()[0];
+  assert.equal(lib.pendingProducts().length, 1); assert.equal(entry.originals.sale_price, 100); assert.equal(entry.changes.sale_price, 130);
+  assert.equal(Object.keys(entry.changes).join(','), 'sale_price');
+  lib.discardPendingProduct(entry.payload.client_uuid);
+  assert.equal(lib.pendingCatalogue('/products/pos', [original])[0].sale_price, 100);
+});
+
+test('offline edits with form-only expiry_date sync and legacy queued form fields are stripped', async () => {
+  const { lib, api, localStorage } = setup(); const requests = [];
+  api.post = async (_url, body) => {
+    assert.equal('expiry_date' in body.changes, false); assert.equal('expiry_date' in body.originals, false);
+    assert.equal('id' in body.changes, false); assert.equal('client_uuid' in body.changes, false);
+    requests.push(body); return { data: {} };
+  };
+  const original = { ...payload, id: 12 };
+  lib.queueProductEdit(original, { ...payload, id: 12, name: 'Riz corrigé', expiry_date: '' });
+  assert.equal('expiry_date' in lib.pendingProducts()[0].changes, false);
+  await lib.flushPendingProducts(); assert.equal(requests.length, 1); assert.equal(lib.pendingProducts().length, 0);
+  lib.queueProductEdit(original, { ...payload, name: 'Riz corrigé encore', expiry_date: '' });
+  const legacy = lib.pendingProducts()[0]; legacy.changes.expiry_date = ''; legacy.originals.expiry_date = null;
+  localStorage.setItem('ri_pending_products:local:local', JSON.stringify([legacy]));
+  await lib.flushPendingProducts(); assert.equal(requests.length, 2); assert.equal(lib.pendingProducts().length, 0);
+  localStorage.setItem('ri_pending_products:local:local', JSON.stringify([{ ...legacy, changes: { expiry_date: '' }, originals: { expiry_date: null } }]));
+  await lib.flushPendingProducts(); assert.equal(requests.length, 2); assert.equal(lib.pendingProducts().length, 0);
+});
+
+test('edit conflicts remain readable, retry keeps its id, explicit force gets a fresh id', async () => {
+  const { lib, api } = setup(); const requests = [];
+  api.post = async (url, body) => { requests.push({ url, body }); if (!body.force) throw { response: { status: 409, data: { detail: 'Conflit : prix modifié sur le serveur' } } }; return { data: {} }; };
+  lib.queueProductEdit({ ...payload, id: 12, sale_price: 100 }, { ...payload, sale_price: 120 });
+  const uuid = lib.pendingProducts()[0].payload.client_uuid;
+  await lib.flushPendingProducts(); assert.match(lib.pendingProducts()[0].reason, /Conflit/);
+  await lib.flushPendingProducts(); assert.equal(requests.length, 1);
+  lib.retryPendingProduct(uuid); await lib.flushPendingProducts();
+  assert.equal(requests[1].body.operation_id, uuid); assert.equal(requests[1].body.force, false);
+  lib.retryPendingProduct(uuid, true); await lib.flushPendingProducts();
+  assert.equal(requests[2].url, '/products/12/offline-update'); assert.notEqual(requests[2].body.operation_id, uuid);
+  assert.equal(requests[2].body.force, true); assert.equal(lib.pendingProducts().length, 0);
+});
+
+test('unknown update result replays the exact operation and cannot be silently edited', async () => {
+  const { lib, api } = setup(); const requests = []; let fail = true;
+  api.post = async (_url, body) => { requests.push(JSON.stringify(body)); if (fail) throw Error('connection lost'); return { data: {} }; };
+  const original = { ...payload, id: 12, sale_price: 100 };
+  lib.queueProductEdit(original, { ...payload, sale_price: 120 });
+  await lib.flushPendingProducts(); assert.equal(lib.pendingProducts()[0].attempted, true);
+  assert.throws(() => lib.queueProductEdit(original, { ...payload, sale_price: 130 }), /Envoi déjà tenté/);
+  fail = false; await lib.flushPendingProducts();
+  assert.equal(requests[0], requests[1]); assert.equal(lib.pendingProducts().length, 0);
+});
 
 test('offline full product payload is persistent, scoped and searchable by name/SKU/all codes', () => {
   const { lib, localStorage } = setup(); lib.queueProduct(payload);

@@ -41,6 +41,7 @@ interface Session {
 }
 
 interface MobileSale {
+  provisional?: boolean;
   reference: string;
   date: string;
   total: number;
@@ -78,6 +79,9 @@ interface Summary {
   today_returns_total?: number;
   today_returns_count?: number;
   today_expected_cash?: number | null;
+  today_remaining_cash?: number | null;
+  today_remitted_cash?: number | null;
+  today_cash_detail?: Record<string, number | null>;
   month_total: number;
   month_count: number;
   month_returns_total?: number;
@@ -146,6 +150,13 @@ const api = axios.create({ baseURL: "/api/central/mobile" });
 
 function money(value: number): string {
   return new Intl.NumberFormat("fr-FR").format(Math.round(value || 0));
+}
+
+function CashDetails({ details }: { details?: Record<string, number | null> }) {
+  if (!details) return null;
+  const labels = { cash_sales: "Ventes espèces", mobile_money_sales: "Ventes Mobile Money", other_sales: "Autres modes",
+    expenses_total: "Dépenses", refunds_total: "Retours / remboursements", entries_total: "Apports", exits_total: "Retraits / remises déjà effectuées" };
+  return <div className="text-xs text-slate-600 dark:text-slate-300">{Object.entries(labels).map(([key, label]) => <p key={key}>{label} : {details[key] == null ? "—" : money(details[key])}</p>)}{Boolean(details.mobile_money_to_cash) && <p>Mobile Money converti en espèces</p>}</div>;
 }
 
 function initials(value: string): string {
@@ -657,7 +668,8 @@ export default function Mobile() {
                     {summary.today_count} vente(s) · Net après retours
                   </p>
                   <p className="text-xs text-red-700 dark:text-red-300">Retours : −{money(summary.today_returns_total ?? 0)} ({summary.today_returns_count ?? 0})</p>
-                  <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">Solde attendu : {summary.today_expected_cash == null ? "non disponible (synchronisation / droits)" : money(summary.today_expected_cash)} · dernière synchronisation</p>
+                  <CashDetails details={summary.today_cash_detail} />
+                  <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">Solde physique attendu avant remise : {summary.today_expected_cash == null ? "non disponible (synchronisation / droits)" : money(summary.today_expected_cash)} · remis au patron : {summary.today_remitted_cash == null ? "—" : money(summary.today_remitted_cash)} · restant en caisse : {summary.today_remaining_cash == null ? "—" : money(summary.today_remaining_cash)}</p>
                 </div>
                 <div className="rounded-xl bg-white p-3 shadow-sm dark:bg-slate-900">
                   <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -691,7 +703,8 @@ export default function Mobile() {
                     {summary.today_count} vente(s) · Net après retours
                   </p>
                   <p className="text-xs text-red-700 dark:text-red-300">Retours : −{money(summary.today_returns_total ?? 0)} ({summary.today_returns_count ?? 0})</p>
-                  <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">Solde attendu : {summary.today_expected_cash == null ? "non disponible (synchronisation / droits)" : money(summary.today_expected_cash)} · dernière synchronisation</p>
+                  <CashDetails details={summary.today_cash_detail} />
+                  <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">Solde physique attendu avant remise : {summary.today_expected_cash == null ? "non disponible (synchronisation / droits)" : money(summary.today_expected_cash)} · remis au patron : {summary.today_remitted_cash == null ? "—" : money(summary.today_remitted_cash)} · restant en caisse : {summary.today_remaining_cash == null ? "—" : money(summary.today_remaining_cash)}</p>
                 </div>
                 <div className="rounded-xl bg-white p-3 shadow-sm dark:bg-slate-900">
                   <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -794,7 +807,7 @@ export default function Mobile() {
                       className="w-full rounded-xl bg-white p-3 text-left shadow-sm dark:bg-slate-900"
                     >
                       <div className="flex items-center justify-between">
-                        <span className="font-medium">{sale.reference}</span>
+                        <span className="font-medium">{sale.reference}{sale.provisional && <small className="ml-2 rounded bg-amber-100 px-2 py-1 text-amber-900">Hors ligne · provisoire</small>}</span>
                         <span className="font-semibold">
                           {money(sale.total)}
                         </span>

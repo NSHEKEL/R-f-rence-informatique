@@ -1,4 +1,5 @@
 import axios from "axios";
+import { desktopOffline } from "../lib/desktopOffline";
 
 const SERVER_URL_KEY = "ri_server_url";
 
@@ -72,16 +73,50 @@ const api = axios.create();
 // Resolved per request so a new server address applies without a reload.
 api.interceptors.request.use((config) => {
   config.baseURL = `${getServerUrl()}/api`;
+  let workstation = localStorage.getItem("ri_workstation_id");
+  if (!workstation) {
+    workstation = `poste-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    localStorage.setItem("ri_workstation_id", workstation);
+  }
+  config.headers["X-Workstation-Name"] = workstation;
   const token = localStorage.getItem("ri_token");
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+  }
+  if (desktopOffline.available()) {
+    const state = desktopOffline.state();
+    const path = (config.url || "").split("?")[0];
+    const method = (config.method || "get").toUpperCase();
+    const cash = path.startsWith("/cash-sessions");
+    const scan = method === "GET" && path.startsWith("/products/by-code/");
+    const cached = ["/auth/me", "/permissions/me", "/settings/company", "/settings/printing", "/settings/pos-display", "/categories", "/license"].includes(path);
+    if (!state.locked && ((cash && (state.journal_session || !state.online)) || ((cached || scan) && !state.online) || (path === "/accounting/expenses" && method === "POST" && !state.online))) {
+      config.headers["X-Easygest-Journal"] = "1";
+      config.adapter = async () => ({ data: await desktopOffline.command("request", { method, path, data: typeof config.data === "string" ? JSON.parse(config.data) : config.data }), status: 200, statusText: "OK", headers: {}, config });
+    }
+    if (state.locked && !state.online && ["/auth/me", "/permissions/me"].includes(path)) {
+      config.timeout = 800;
+    } else if (!state.online) config.timeout = Math.min(config.timeout || 1500, 1500);
   }
   return config;
 });
 
 api.interceptors.response.use(
-  (response) => response,
-  (error) => {
+  async (response) => {
+    if (desktopOffline.available() && !desktopOffline.state().locked && response.config.method === "get" && response.config.headers["X-Easygest-Journal"] !== "1") {
+      await desktopOffline.command("remember", { path: response.config.url || "", data: response.data, access_token: String(response.config.headers.Authorization || "").replace(/^Bearer /, "") }).catch(() => {});
+    }
+    return response;
+  },
+  async (error) => {
+    if (desktopOffline.available() && !error.response && !desktopOffline.state().locked) {
+      const path = error.config?.url || "";
+      if (path.startsWith("/cash-sessions") || ((error.config?.method || "get").toLowerCase() === "get")) {
+        const data = await desktopOffline.command("request", { method: (error.config?.method || "get").toUpperCase(), path, data: error.config?.data ? JSON.parse(error.config.data) : undefined });
+        await desktopOffline.refresh();
+        return { data, status: 200, statusText: "OK", headers: {}, config: error.config };
+      }
+    }
     if (error.response?.status === 401) {
       localStorage.removeItem("ri_token");
       if (window.location.pathname !== "/login") {
@@ -107,12 +142,13 @@ export const localApi = axios.create();
  */
 export function localBaseUrl(): string {
   const { hostname, origin, port } = window.location;
-  if (["127.0.0.1", "::1", "localhost"].includes(hostname)) return `${origin}/api`;
+  if (["127.0.0.1", "::1", "[::1]", "localhost"].includes(hostname)) return `${origin}/api`;
   return `http://127.0.0.1:${port || DEFAULT_PORT}/api`;
 }
 
 localApi.interceptors.request.use((config) => {
   config.baseURL = localBaseUrl();
+  if (["/settings/printers", "/settings/printers/diagnose"].includes(config.url || "")) config.timeout = 5000;
   const token = localStorage.getItem("ri_token");
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;

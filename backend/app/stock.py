@@ -32,7 +32,7 @@ def resolve(db, depot_id=None, *, active=True):
 
 def quantity(db, product_id, depot_id=None):
     depot_id = resolve(db, depot_id, active=False)
-    return int(db.execute(select(DepotStock.quantity).where(DepotStock.product_id == product_id, DepotStock.depot_id == depot_id)).scalar_one_or_none() or 0)
+    return float(db.execute(select(DepotStock.quantity).where(DepotStock.product_id == product_id, DepotStock.depot_id == depot_id)).scalar_one_or_none() or 0)
 
 
 def reconcile(connection, product_id, total):
@@ -41,12 +41,13 @@ def reconcile(connection, product_id, total):
     stocks = DepotStock.__table__
     current = connection.execute(select(func.coalesce(func.sum(stocks.c.quantity), 0)).where(stocks.c.product_id == product_id)).scalar_one()
     _insert(connection, stocks, {"depot_id": depot_id, "product_id": product_id, "quantity": 0}, ["depot_id", "product_id"])
-    delta = int(total) - int(current)
+    delta = round(float(total) - float(current), 6)
     if delta:
-        connection.execute(stocks.update().where(stocks.c.product_id == product_id, stocks.c.depot_id == depot_id).values(quantity=stocks.c.quantity + delta))
+        connection.execute(stocks.update().where(stocks.c.product_id == product_id, stocks.c.depot_id == depot_id).values(quantity=func.round(stocks.c.quantity + delta, 6)))
 
 
 def adjust(db, product, delta, depot_id=None, *, allow_negative=True, active=True, check_total=False):
+    delta = round(float(delta), 6)
     depot_id = resolve(db, depot_id, active=active)
     db.flush()
     # Lock the compatibility row first, serializing every depot mutation of it.
@@ -55,33 +56,33 @@ def adjust(db, product, delta, depot_id=None, *, allow_negative=True, active=Tru
         raise HTTPException(409, "Article introuvable")
     db.refresh(product, ["quantity"])
     total = product.quantity or 0
-    if check_total and total + int(delta) < 0:
+    if check_total and total + delta < 0:
         raise HTTPException(400, f"Stock insuffisant pour {product.name}")
     stocks = DepotStock.__table__
     _insert(db.connection(), stocks, {"depot_id": depot_id, "product_id": product.id, "quantity": 0}, ["depot_id", "product_id"])
     statement = stocks.update().where(stocks.c.product_id == product.id, stocks.c.depot_id == depot_id)
     if not allow_negative:
-        statement = statement.where(stocks.c.quantity + int(delta) >= 0)
-    after = db.execute(statement.values(quantity=stocks.c.quantity + int(delta)).returning(stocks.c.quantity)).scalar_one_or_none()
+        statement = statement.where(stocks.c.quantity + delta >= 0)
+    after = db.execute(statement.values(quantity=stocks.c.quantity + delta).returning(stocks.c.quantity)).scalar_one_or_none()
     if after is None:
         raise HTTPException(400, f"Stock insuffisant dans ce dépôt pour {product.name}")
-    product.quantity = total + int(delta)
+    product.quantity = round(total + delta, 6)
     db.flush()
     db.refresh(product)
-    return after - int(delta), after
+    return round(after - delta, 6), after
 
 
 def set_total(db, product, total):
     db.flush()
     db.execute(update(Product).where(Product.id == product.id).values(quantity=Product.quantity))
     db.refresh(product, ["quantity"])
-    return adjust(db, product, int(total) - (product.quantity or 0))
+    return adjust(db, product, round(float(total) - (product.quantity or 0), 6))
 
 
 def create_product(db, **values):
     total = values.pop("quantity", 0)
     product = Product(**values)
-    product.quantity = int(total)
+    product.quantity = round(float(total), 6)
     db.add(product)
     db.flush()
     return product
@@ -118,4 +119,4 @@ def delete_product(db, product):
 
 def inconsistencies(db):
     totals = select(DepotStock.product_id, func.sum(DepotStock.quantity).label("total")).group_by(DepotStock.product_id).subquery()
-    return [{"product_id": row.id, "quantity": row.quantity, "depot_total": int(row.total or 0)} for row in db.execute(select(Product.id, Product.quantity, totals.c.total).outerjoin(totals, totals.c.product_id == Product.id).where(Product.quantity != func.coalesce(totals.c.total, 0)))]
+    return [{"product_id": row.id, "quantity": row.quantity, "depot_total": round(float(row.total or 0), 6)} for row in db.execute(select(Product.id, Product.quantity, totals.c.total).outerjoin(totals, totals.c.product_id == Product.id).where(func.round(Product.quantity - func.coalesce(totals.c.total, 0), 6) != 0))]

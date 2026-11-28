@@ -1,8 +1,12 @@
+import json
 import unittest
+from unittest.mock import patch
 
 import test_wholesale as wholesale
-from app import stock
-from app.models import Product, StockLot, StockMovement
+from app import history, stock
+from app.models import ActionLog, Category, ChangeLog, CompanySettings, PriceHistory, Product, ProductPackaging, ProductUpdateOperation, StockLot, StockMovement, Workstation
+from app.database import SessionLocal
+from app.routers import sync
 
 
 class OfflineProductTests(unittest.TestCase):
@@ -10,6 +14,114 @@ class OfflineProductTests(unittest.TestCase):
     call = wholesale.WholesaleTests.call
     open = wholesale.WholesaleTests.open
     grant = wholesale.WholesaleTests.grant
+
+    def test_catalogue_undo_and_redo_bump_revision_and_invalidate_prices_and_stock(self):
+        stock.reconcile(self.db.connection(), self.product.id, self.product.quantity)
+        self.db.commit()
+        before = history._snapshot(self.db.get(Product, self.product.id))
+        stock.set_total(self.db, self.db.get(Product, self.product.id), 220)
+        self.db.get(Product, self.product.id).sale_price = 150
+        self.db.commit()
+        after = history._snapshot(self.db.get(Product, self.product.id))
+        self.db.add(ActionLog(label="Modification d'un article", user_id=self.user.id,
+            entries=json.dumps([{"table": "products", "before": before, "after": after}])))
+        self.db.add(ChangeLog(entities="products", product_ids=json.dumps([self.product.id])))
+        self.db.commit()
+        with self.sessions() as db, patch.object(history, "engine", self.engine):
+            version = sync.get_version(db, self.user, scope="catalogue").version
+            for replay, price, quantity in ((history.undo_last, 100, 200), (history.redo_last, 150, 220)):
+                self.assertIsNotNone(replay(db))
+                delta = sync.get_version(db, self.user, scope="catalogue", since=version)
+                self.assertGreater(delta.version, version)
+                self.assertIsNone(delta.product_ids)
+                rows = self.call("/api/products/pos")
+                self.assertEqual((rows[0]["sale_price"], rows[0]["quantity"]), (price, quantity))
+                self.assertEqual(stock.inconsistencies(db), [])
+                version = delta.version
+            history._apply([], undo=True)
+            history._apply([{"table": "unknown", "before": None, "after": None}], undo=True)
+            self.assertEqual(sync.get_version(db, self.user, scope="catalogue").version, version)
+            with patch.object(stock, "replay_product", side_effect=ValueError("replay failed")):
+                with self.assertRaisesRegex(ValueError, "replay failed"):
+                    history.undo_last(db)
+            self.assertEqual(sync.get_version(db, self.user, scope="catalogue").version, version)
+
+    def test_catalogue_revision_ignores_heartbeats_but_keeps_product_stock_and_price_changes(self):
+        with SessionLocal(bind=self.engine) as db:
+            self.assertEqual(sync.get_version(db, self.user, scope="catalogue").version, 0)
+            db.add(Workstation(ip="192.168.50.9", hostname="Poste"))
+            db.commit()
+            self.assertEqual(db.query(ChangeLog).count(), 0)
+            product = db.get(Product, self.product.id)
+            for field, value in (("sale_price", 125), ("quantity", 17), ("name", "Corrigé")):
+                previous = sync.get_version(db, self.user, scope="catalogue").version
+                setattr(product, field, value)
+                db.commit()
+                self.assertGreater(sync.get_version(db, self.user, scope="catalogue").version, previous)
+            previous = sync.get_version(db, self.user, scope="catalogue").version
+            db.add(ChangeLog(entities="workstations"))
+            db.add(CompanySettings(name="Identité seulement"))
+            db.commit()
+            self.assertEqual(sync.get_version(db, self.user, scope="catalogue").version, previous)
+            self.assertGreater(sync.get_version(db, self.user).version, previous)
+
+    def test_catalogue_delta_has_created_ids_and_falls_back_for_metadata_or_legacy_changes(self):
+        with SessionLocal(bind=self.engine) as db:
+            product = db.get(Product, self.product.id)
+            product.sale_price = 110
+            db.commit()
+            cursor = sync.get_version(db, self.user, scope="catalogue").version
+            db.add(ProductPackaging(product_id=product.id, name="Carton", factor=12))
+            created = Product(name="Créé", sku="DELTA-CREATED", quantity=1)
+            db.add(created)
+            db.commit()
+            delta = sync.get_version(db, self.user, scope="catalogue", since=cursor)
+            self.assertEqual(delta.product_ids, sorted([product.id, created.id]))
+            self.assertEqual(sync.get_version(db, self.user, scope="catalogue", since=delta.version).product_ids, [])
+            db.add(Category(name="Nouvelle catégorie"))
+            db.commit()
+            self.assertIsNone(sync.get_version(db, self.user, scope="catalogue", since=delta.version).product_ids)
+            self.assertIsNone(sync.get_version(db, self.user, scope="catalogue", since=999999).product_ids)
+            db.add(ChangeLog(entities="products", product_ids="invalid JSON"))
+            db.commit()
+            self.assertIsNone(sync.get_version(db, self.user, scope="catalogue", since=delta.version).product_ids)
+        full = self.call("/api/products")
+        for product in full:
+            self.assertEqual(self.call(f"/api/products?ids={product['id']}&state=active"), [product])
+        self.assertEqual(self.call("/api/products?ids=999999"), [])
+        self.call("/api/products?ids=invalid", status=422)
+
+    def test_offline_update_is_partial_atomic_and_idempotent(self):
+        payload = {"operation_id": "10a370fd-b127-4dc0-899f-fc065b211001", "changes": {"sale_price": 120}, "originals": {"sale_price": 100}}
+        path = f"/api/products/{self.product.id}/offline-update"
+        result = self.call(path, "POST", payload)
+        self.assertEqual((result["sale_price"], result["quantity"]), (120, 200))
+        with self.sessions() as db:
+            db.query(Product).filter_by(id=self.product.id).update({"sale_price": 140, "name": "Autre poste"})
+            db.commit()
+        replay = self.call(path, "POST", payload)
+        self.assertEqual((replay["sale_price"], replay["name"]), (140, "Autre poste"))
+        with self.sessions() as db:
+            self.assertEqual(db.query(ProductUpdateOperation).count(), 1)
+            history = db.query(PriceHistory).filter_by(product_id=self.product.id, field="sale_price").all()
+            self.assertEqual([(row.old_value, row.new_value) for row in history], [(100, 120)])
+            self.assertEqual(db.query(StockMovement).filter_by(product_id=self.product.id).count(), 0)
+        self.call(path, "POST", {**payload, "changes": {"sale_price": 999}}, 409)
+
+    def test_offline_update_conflict_force_invalid_and_permissions(self):
+        path = f"/api/products/{self.product.id}/offline-update"
+        payload = {"operation_id": "10a370fd-b127-4dc0-899f-fc065b211002", "changes": {"sale_price": 120}, "originals": {"sale_price": 80}}
+        refused = self.call(path, "POST", payload, 409)
+        self.assertIn("sale_price", refused["detail"])
+        with self.sessions() as db:
+            self.assertEqual(db.get(Product, self.product.id).sale_price, 100)
+            self.assertEqual(db.query(ProductUpdateOperation).count(), 0)
+        for invalid in ({"changes": {}}, {"originals": {}}, {"changes": {"active": False}, "originals": {"active": True}}, {"changes": {"semi_wholesale_price": -1}, "originals": {"semi_wholesale_price": None}}):
+            self.call(path, "POST", {**payload, **invalid}, 422)
+        result = self.call(path, "POST", {**payload, "force": True})
+        self.assertEqual(result["sale_price"], 120)
+        self.user.role = "vendeur"
+        self.call(path, "POST", {**payload, "force": True}, 403)
 
     def test_same_uuid_creates_one_product_one_initial_movement_and_lot(self):
         payload = {"name": "Article hors ligne", "sku": "OFFLINE-ONE", "client_uuid": "10a370fd-b127-4dc0-899f-fc065b211000",

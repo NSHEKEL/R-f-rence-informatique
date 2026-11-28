@@ -35,6 +35,7 @@ import type {
 import { documentHeader, readDocumentLayout } from "../lib/print";
 import GoogleDriveSettings from "../components/GoogleDriveSettings";
 import NetworkSettings from "../components/NetworkSettings";
+import OfflineSettings from "../components/OfflineSettings";
 import type { DocumentLayout } from "../lib/print";
 import { useAuth } from "../context/AuthContext";
 import PhotoPicker from "../components/PhotoPicker";
@@ -46,6 +47,7 @@ import { useCompany } from "../context/CompanyContext";
 import { canOpenSettingsTab, companyUpdatePayload, TAB_CATEGORIES } from "../lib/settingsAccess";
 import WorkstationSettings from "../components/WorkstationSettings";
 import CatalogPriceSettings from "../components/CatalogPriceSettings";
+import LogDiagnostics from "../components/LogDiagnostics";
 import DepotSettings from "../components/DepotSettings";
 
 type CompanyForm = Omit<CompanySettings, "id"> & { smtp_password?: string };
@@ -583,6 +585,8 @@ export default function Settings() {
         </div>
       </div>
 
+      <LogDiagnostics />
+
       <div className="flex flex-wrap gap-2">
         {visibleTabs.map((item) => (
           <button
@@ -604,9 +608,11 @@ export default function Settings() {
       <fieldset disabled={!tabEditable} className="min-w-0 space-y-6">
       {tab === "depots" && <DepotSettings />}
       {tab === "poste" && <WorkstationSettings />}
+      {tab === "reseau" && <OfflineSettings />}
       {tab === "tarifs" && <CatalogPriceSettings />}
       {(["articles", "fiscalite", "peripheriques", "caisse"] as string[]).includes(tab || "") && <div className="card space-y-4 p-6">
         <h3 className="font-bold">{visibleTabs.find((item) => item.key === tab)?.label}</h3>
+        {tab === "caisse" && <label className="flex items-center gap-3 text-sm"><input type="checkbox" checked={company.mobile_money_to_cash ?? true} disabled={!can("caisse_modifier")} onChange={(e) => update({ mobile_money_to_cash: e.target.checked })} />Mobile Money converti en espèces à la clôture</label>}
         {(tab === "articles" ? ["expiry_critical_days", "expiry_alert_days", "expiry_watch_days"] : tab === "fiscalite" ? ["tax_id", "rccm", "ncc", "capital_social", "regime_fiscal", "vat_rate"] : tab === "peripheriques" ? ["drawer_enabled", "drawer_port", "drawer_code"] : ["auto_print_cash", "drawer_open_after_sale"]).map((field) => {
           const key = field as keyof CompanyForm;
           return <label className="label" key={key}>{SETTING_LABELS[key] || key}{typeof company[key] === "boolean" ? <input type="checkbox" checked={Boolean(company[key])} onChange={(e) => update({ [key]: e.target.checked })} /> : <input className="input" type={typeof company[key] === "number" ? "number" : "text"} min={0} value={String(company[key] ?? "")} onChange={(e) => update({ [key]: typeof company[key] === "number" ? Number(e.target.value) : e.target.value })} />}</label>;
@@ -1373,9 +1379,8 @@ export default function Settings() {
           </h3>
         </div>
         <p className="mb-4 text-sm text-slate-500">
-          L'application vérifie la dernière version publiée, la télécharge et
-          redémarre toute seule. La mise à jour concerne cet ordinateur : à
-          lancer sur chaque poste.
+          Les mises à jour automatiques au démarrage sont désactivées par défaut.
+          Recherchez puis lancez manuellement la mise à jour sur chaque poste.
         </p>
         <div className="flex flex-wrap items-center gap-3">
           <button className="btn-ghost" onClick={checkUpdate}>

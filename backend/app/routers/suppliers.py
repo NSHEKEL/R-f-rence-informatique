@@ -1,9 +1,11 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
 from ..database import get_db
-from ..models import Product, Supplier, User
+from ..models import Debt, DebtPayment, Product, Purchase, SecurityLog, Supplier, User
 from ..permissions import require_permission
 from ..schemas import SupplierCreate, SupplierOut
 
@@ -49,13 +51,19 @@ def update_supplier(
 def delete_supplier(
     supplier_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("fournisseurs_gerer")),
+    user: User = Depends(require_permission("fournisseurs_gerer")),
 ):
-    supplier = db.query(Supplier).get(supplier_id)
+    supplier = db.query(Supplier).filter_by(id=supplier_id).with_for_update().first()
     if not supplier:
         raise HTTPException(status_code=404, detail="Fournisseur introuvable")
-    db.query(Product).filter(Product.supplier_id == supplier_id).update(
-        {Product.supplier_id: None}
-    )
+    sources = {"supplier": {col.name: getattr(supplier, col.name) for col in Supplier.__table__.columns},
+        "products": [row[0] for row in db.query(Product.id).filter_by(supplier_id=supplier_id)],
+        "purchases": [row[0] for row in db.query(Purchase.id).filter_by(supplier_id=supplier_id)],
+        "debts": [row[0] for row in db.query(Debt.id).filter_by(supplier_id=supplier_id)],
+        "payments": [row[0] for row in db.query(DebtPayment.id).join(Debt).filter(Debt.supplier_id == supplier_id)]}
+    for model in (Product, Purchase, Debt):
+        db.query(model).filter(model.supplier_id == supplier_id).update({model.supplier_id: None}, synchronize_session="fetch")
+    db.add(SecurityLog(event="suppression_fournisseur", user_id=user.id, identifier=user.email,
+        success=True, detail=json.dumps(sources, ensure_ascii=False, default=str)))
     db.delete(supplier)
     db.commit()

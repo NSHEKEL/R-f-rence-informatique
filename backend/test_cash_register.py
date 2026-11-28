@@ -4,15 +4,51 @@ import unittest
 from datetime import datetime, timezone
 from unittest.mock import patch
 
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, event, inspect, text
 
 import test_treasury_permissions as treasury
-from app.models import BankAccount, BankDeposit, CashMovement, CashSession, Debt, DebtPayment, Product, Sale, SaleReturn
+from app.models import BankAccount, BankDeposit, CashMovement, CashSession, CompanySettings, Debt, DebtPayment, Product, Sale, SalePayment, SaleReturn
 from app.routers import cash, returns, sales
 from app import migrate as migration
 
 
 class CashRegisterTests(unittest.TestCase):
+    def test_live_totals_load_two_hundred_sale_payments_in_one_query(self):
+        opened = self.open()
+        for index in range(200):
+            self.db.add(Sale(reference=f"PERF-{index}", cash_session_id=opened["id"], total=100, paid_amount=100, status="Payée", payment_method="Espèces", payments=[SalePayment(method="Espèces", amount=100)]))
+        self.db.commit()
+        self.db.expunge_all()
+        queries = []
+        def record(conn, cursor, statement, parameters, context, executemany):
+            if "FROM sale_payments" in statement:
+                queries.append(statement)
+        event.listen(self.engine, "before_cursor_execute", record)
+        try:
+            report = cash.session_amounts(self.db, self.db.get(CashSession, opened["id"]))
+        finally:
+            event.remove(self.engine, "before_cursor_execute", record)
+        self.assertEqual(len(queries), 1)
+        self.assertEqual(report.sales_count, 200)
+        self.assertEqual(report.total_sales, 20000)
+        self.assertEqual(report.expected_cash, 20500)
+        print("LIVE_TILL_TOTALS_BATCHED_OK sales=200 payment_queries=1 total=20000 expected_cash=20500")
+
+    def test_close_supports_legacy_clients_but_checks_a_confirmed_till_before_mutation(self):
+        self.grant("soldes_consulter", "clotures_consulter")
+        first = self.open()
+        code, _ = asyncio.run(treasury.request(self.app, "/api/cash-sessions/close", "POST", {"closing_balance": 500}))
+        self.assertEqual(code, 200)
+        replacement = self.open()
+        result = self.call("/api/cash-sessions/close", "POST", {"cash_session_id": first["id"], "closing_balance": 500}, status=409)
+        self.assertIn("a changé", result["detail"])
+        current = self.call("/api/cash-sessions/current")
+        self.assertEqual(current["id"], replacement["id"])
+        self.assertIsNone(current["closed_at"])
+        self.assertEqual(current["opening_balance"], 500)
+        self.call("/api/cash-sessions/close", "POST", {"cash_session_id": replacement["id"], "closing_balance": 500})
+        print("CONFIRMED_TILL_GUARD_OK legacy_missing_id_http=200 replaced_till_http=409 replacement_untouched=True exact_id_closes=True")
+
     call = treasury.TreasuryPermissionsTests.call
     grant = treasury.TreasuryPermissionsTests.grant
     open = treasury.TreasuryPermissionsTests.open
@@ -40,7 +76,7 @@ class CashRegisterTests(unittest.TestCase):
     def test_close_blocks_new_sale_and_offline_replay_but_existing_id_succeeds(self):
         first_session = self.open()
         recorded = self.sale("recorded")
-        self.call("/api/cash-sessions/close", "POST", {"closing_balance": 600, "note": "Comptage"})
+        self.call("/api/cash-sessions/close", "POST", {"cash_session_id": self.call("/api/cash-sessions/current")["id"], "closing_balance": 600, "note": "Comptage"})
         for client in (("127.0.0.1", 1234), ("192.168.1.42", 1234)):
             self.sale("pending-offline", client, status=400)
             self.assertEqual(self.sale("recorded", client)["id"], recorded["id"])
@@ -72,12 +108,32 @@ class CashRegisterTests(unittest.TestCase):
             self.sale("previous-day-sale")
             self.assertEqual(self.db.query(Sale).one().cash_session_id, session["id"])
             self.call("/api/cash-sessions/open", "POST", {"opening_balance": 0}, status=400)
-            closed = self.call("/api/cash-sessions/close", "POST", {"closing_balance": 600, "note": "Clôture différée"})
+            closed = self.call("/api/cash-sessions/close", "POST", {"cash_session_id": self.call("/api/cash-sessions/current")["id"], "closing_balance": 600, "note": "Clôture différée"})
             self.assertEqual(closed["id"], session["id"])
             self.assertIsNotNone(closed["closed_at"])
             self.assertIsNone(self.call("/api/cash-sessions/current"))
             self.assertIsNone(self.call("/api/cash-sessions/today"))
             self.assertNotEqual(self.open()["id"], session["id"])
+
+    def test_nullable_company_print_fields_do_not_hide_or_break_open_till(self):
+        self.grant("soldes_consulter", "clotures_consulter")
+        company = CompanySettings(name="Test caisse")
+        self.db.add(company)
+        self.db.commit()
+        company.address = company.phone = company.phone2 = company.logo = None
+        self.db.commit()
+        session = self.open()
+        self.sale("nullable-company")
+        for endpoint in ("current", "today"):
+            current = self.call("/api/cash-sessions/" + endpoint)
+            self.assertEqual(current["id"], session["id"])
+            self.assertEqual(current["opening_balance"], 500)
+            self.assertEqual(current["sales_count"], 1)
+        report = self.call(f"/api/cash-sessions/{session['id']}/z")
+        for field in ("company_address", "company_phone", "company_logo"):
+            self.assertEqual(report[field], "")
+        self.call("/api/cash-sessions/open", "POST", {"opening_balance": 500}, status=400)
+        self.assertEqual(self.db.query(CashSession).count(), 1)
 
     def test_secondary_workstation_sales_join_same_central_user_session(self):
         session = self.open()
@@ -117,7 +173,7 @@ class CashRegisterTests(unittest.TestCase):
         self.assertEqual(current["expected_cash"], 560)  # 500 + 100 + 40 + 30 - 10 - 100
         self.assertEqual(z["expected_cash"], current["expected_cash"])
         self.assertEqual(z["cash_refunds"], 100)
-        closed = self.call("/api/cash-sessions/close", "POST", {"closing_balance": 560})
+        closed = self.call("/api/cash-sessions/close", "POST", {"cash_session_id": self.call("/api/cash-sessions/current")["id"], "closing_balance": 560})
         self.assertEqual(closed["difference"], 0)
         self.assertEqual(closed["expected_balance"], z["expected_cash"])
         self.assertEqual(self.call(f"/api/cash-sessions/{session['id']}/z")["expected_cash"], 560)
@@ -139,7 +195,7 @@ class CashRegisterTests(unittest.TestCase):
         self.assertTrue(all(row["amount"] is None for row in rows))
         self.grant("soldes_consulter")
         self.assertEqual(sum(row["amount"] for row in self.call(f"/api/cash-sessions/{session['id']}/movements")), 15)
-        self.call("/api/cash-sessions/close", "POST", {"closing_balance": 505})
+        self.call("/api/cash-sessions/close", "POST", {"cash_session_id": self.call("/api/cash-sessions/current")["id"], "closing_balance": 505})
         self.call("/api/cash-sessions/movements", "POST", {"type": "in", "amount": 1, "reason": "Test"}, status=400)
 
     def test_debt_payment_endpoint_binds_the_cashiers_current_session(self):
@@ -170,18 +226,22 @@ class CashRegisterTests(unittest.TestCase):
         engine = create_engine("sqlite:///:memory:")
         self.addCleanup(engine.dispose)
         with engine.begin() as conn:
-            for table in ("users", "cash_sessions", "sale_returns", "debt_payments"):
+            for table in ("users", "company_settings", "cash_sessions", "sale_returns", "debt_payments"):
                 conn.execute(text(f"CREATE TABLE {table} (id INTEGER PRIMARY KEY)"))
                 conn.execute(text(f"INSERT INTO {table} (id) VALUES (1)"))
+            conn.execute(text("ALTER TABLE company_settings ADD COLUMN name VARCHAR DEFAULT 'Ancien magasin'"))
         with patch.object(migration, "engine", engine):
             migration.migrate()
             migration.migrate()
         inspector = inspect(engine)
         self.assertIn("cash_movements", inspector.get_table_names())
+        self.assertIn("return_id", {col["name"] for col in inspector.get_columns("cash_movements")})
         for table in ("sale_returns", "debt_payments"):
             self.assertIn("cash_session_id", {col["name"] for col in inspector.get_columns(table)})
         with engine.connect() as conn:
             self.assertEqual(conn.execute(text("SELECT id, refund_method FROM sale_returns")).one(), (1, "Avoir"))
+            self.assertEqual(conn.execute(text("SELECT mobile_money_to_cash FROM company_settings WHERE id=1")).scalar(), 1)
+            self.assertEqual(conn.execute(text("SELECT kept_balance, remitted_amount FROM cash_sessions WHERE id=1")).one(), (None, None))
             self.assertEqual(conn.execute(text("SELECT COUNT(*) FROM debt_payments")).scalar(), 1)
 
     def test_corrupt_legacy_snapshot_is_not_overwritten(self):

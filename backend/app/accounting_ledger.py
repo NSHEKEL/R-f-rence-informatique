@@ -67,7 +67,7 @@ def configuration(db):
         "expense_categories": sorted({e.category or "Divers" for e in db.query(Expense)} | {"Achat marchandise", "Salaires", "Loyer", "Électricité / Eau", "Transport", "Divers"}),
         "payroll_deductions": sorted({line.label for line in db.query(PayslipLine).filter(PayslipLine.kind == "retenue")}),
         "purchases": [{"id": p.id, "reference": p.reference, "supplier": p.supplier_name} for p in db.query(Purchase).filter(Purchase.status != "Annulé")],
-        "debts": [{"id": d.id, "reference": d.reference, "party": d.party, "purchase_id": d.purchase_id, "amount": d.amount} for d in db.query(Debt).filter(Debt.kind == "dette")],
+        "debts": [{"id": d.id, "reference": d.reference, "party": d.party, "purchase_id": d.purchase_id, "amount": d.amount} for d in db.query(Debt).filter(Debt.kind == "dette", Debt.cancelled.is_not(True))],
         "users": [{"id": u.id, "name": u.name} for u in db.query(User)]}
 
 
@@ -187,7 +187,7 @@ def derive(db):
 
     for settlement in db.query(DebtPayment).options(joinedload(DebtPayment.debt).joinedload(Debt.sale)).filter(DebtPayment.cancelled.is_(False)):
         debt = settlement.debt
-        if debt.sale and debt.sale.status == "Annulée":
+        if debt.cancelled or debt.sale and debt.sale.status == "Annulée":
             continue
         def build_settlement(s=settlement, d=debt):
             if d.kind == "dette" and not d.purchase_id:
@@ -203,7 +203,7 @@ def derive(db):
             f"client:{debt.customer_id}" if debt.kind == "creance" else f"supplier:{debt.supplier_id}")
 
     for debt in db.query(Debt):
-        if debt.sale_id or debt.purchase_id:
+        if debt.cancelled or debt.sale_id or debt.purchase_id:
             continue
         def missing_principal():
             raise ValueError("Dette ou créance sans pièce d'origine liée : aucun solde initial n'est supposé")
@@ -211,7 +211,7 @@ def derive(db):
     for expense in db.query(Expense):
         operation("expense", expense, expense.date, "CA" if expense.payment_method == "Espèces" else "BQ",
             lambda e=expense: [(account(f"depense:{e.category or 'Divers'}"), money(e.amount), 0), (payment(e.payment_method, e.bank_account_id), 0, money(e.amount))])
-    for movement in db.query(CashMovement):
+    for movement in db.query(CashMovement).filter(CashMovement.return_id.is_(None)):
         def build_movement(m=movement):
             cash, counterpart, amount = account("caisse"), account(f"mouvement:{m.type}"), money(m.amount)
             return [(cash, amount, 0), (counterpart, 0, amount)] if m.type == "in" else [(counterpart, amount, 0), (cash, 0, amount)]
@@ -278,6 +278,8 @@ def report(db, kind, start, end, account_filter=None, user_id=None, operation_ty
         headers = ["Type", "Tiers", "Pièce", "Source", "Date", "Échéance", "Montant", "Réglé à date", "Reste à date"]
         rows = []
         for debt in db.query(Debt).options(selectinload(Debt.payments), joinedload(Debt.sale)):
+            if debt.cancelled:
+                continue
             if kind == "customers" and debt.kind != "creance" or kind == "suppliers" and debt.kind != "dette":
                 continue
             if debt.created_at.date().isoformat() > end or user_id and debt.created_by_id != user_id:

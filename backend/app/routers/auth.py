@@ -22,6 +22,7 @@ from ..licensing import installation_uid
 from ..mailer import is_configured, send_mail
 from ..models import CompanySettings, PasswordResetToken, RecoveryKey, User
 from ..rescue import RescueError, read_key
+from ..offline_auth import issue
 from ..schemas import (
     ChangePasswordRequest,
     ForgotPasswordRequest,
@@ -58,7 +59,7 @@ def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-@router.post("/login", response_model=Token)
+@router.post("/login", response_model=Token, response_model_exclude_none=True)
 def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)):
     station = request.client.host if request.client else "?"
     identifier = normalize_identifier(payload.email)
@@ -95,7 +96,9 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
     _attempts.pop(key, None)
     log_event(db, "connexion", user=user, station=station)
     token = create_access_token(user)
-    return Token(access_token=token)
+    grant = issue(db, user, payload.offline_device_id, payload.offline_device_public_key,
+                  user.role == "admin" or not getattr(request.state, "network_restricted", False) or getattr(request.state, "workstation_status", "") == "approved", workstation_ip=station, nonce=payload.offline_nonce)
+    return Token(access_token=token, **grant)
 
 
 @router.post("/forgot-password", response_model=ForgotPasswordResult)

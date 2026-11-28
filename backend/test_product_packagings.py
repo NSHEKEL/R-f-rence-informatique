@@ -1,11 +1,11 @@
 import unittest
 from unittest.mock import patch
 
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, event, inspect, text
 
 from app.database import Base
 from app import migrate as migration
-from app.models import PriceHistory, ProductPackaging
+from app.models import PriceHistory, Product, ProductBarcode, ProductPackaging, StockLot, utcnow
 import test_wholesale as wholesale_tests
 
 
@@ -17,6 +17,59 @@ class ProductPackagingsTests(unittest.TestCase):
     open = wholesale_tests.WholesaleTests.open
     grant = wholesale_tests.WholesaleTests.grant
     balances = wholesale_tests.WholesaleTests.balances
+
+    def test_catalogue_and_lot_queries_are_batched_without_losing_variants(self):
+        for index in range(24):
+            product = Product(name=f"Batch {index}", sku=f"BATCH-{index}", quantity=12)
+            self.db.add(product)
+            self.db.flush()
+            self.db.add_all([ProductPackaging(product_id=product.id, name="Carton", factor=12),
+                ProductBarcode(product_id=product.id, code=f"BATCH-VAR-{index}"),
+                StockLot(product_id=product.id, quantity=12, expiry_date=utcnow())])
+        self.db.commit()
+        statements = []
+        def count(_conn, _cursor, statement, _parameters, _context, _many):
+            statements.append(statement)
+        event.listen(self.engine, "before_cursor_execute", count)
+        try:
+            for path in ("/api/products", "/api/products/pos"):
+                statements.clear()
+                rows = self.call(path)
+                self.assertEqual(len(rows), 25)
+                self.assertLess(len(statements), 20)
+                batch = next(row for row in rows if row["sku"] == "BATCH-0")
+                self.assertEqual(batch["packagings"][0]["factor"], 12)
+                self.assertEqual(batch["barcodes"][0]["code"], "BATCH-VAR-0")
+            statements.clear()
+            lots = self.call("/api/products/lots/alertes?days=90")
+            self.assertEqual(len(lots), 24)
+            self.assertLess(len(statements), 5)
+            self.assertTrue(all(row["product_name"].startswith("Batch") for row in lots))
+        finally:
+            event.remove(self.engine, "before_cursor_execute", count)
+
+    def test_catalogue_indexes_and_delta_column_are_additive_and_idempotent(self):
+        old = create_engine("sqlite:///:memory:")
+        self.addCleanup(old.dispose)
+        with old.begin() as conn:
+            conn.execute(text("CREATE TABLE change_log (id INTEGER PRIMARY KEY, entities VARCHAR, at TIMESTAMP)"))
+            conn.execute(text("INSERT INTO change_log (id, entities) VALUES (1, 'products')"))
+        with patch.object(migration, "engine", old):
+            migration.migrate()
+            migration.migrate()
+        with old.connect() as conn:
+            self.assertEqual(conn.execute(text("SELECT id, entities, product_ids FROM change_log")).one(), (1, "products", None))
+        before = self.call(f"/api/products/{self.product.id}")
+        with patch.object(migration, "engine", self.engine):
+            migration.migrate()
+            migration.migrate()
+        self.assertEqual(self.call(f"/api/products/{self.product.id}"), before)
+        inspector = inspect(self.engine)
+        self.assertIn("product_ids", {column["name"] for column in inspector.get_columns("change_log")})
+        for table, expected in (("products", {"ix_products_active_name"}),
+            ("stock_movements", {"ix_stock_movements_product_date_id"}),
+            ("sale_items", {"ix_sale_items_product_id", "ix_sale_items_sale_id"})):
+            self.assertTrue(expected.issubset({index["name"] for index in inspector.get_indexes(table)}))
 
     def update(self, **changes):
         payload = self.call(f"/api/products/{self.product.id}")
@@ -41,14 +94,14 @@ class ProductPackagingsTests(unittest.TestCase):
         sale = self.sell([{"packaging_id": packaging["id"], "packaging_quantity": 2}])
         self.assertEqual(sale["items"][0]["quantity"], 48)
         self.assertEqual(sale["items"][0]["packaging_unit"], "Colis")
-        self.balances(4200, 1920, 392)
+        self.balances(3000, 1920, 392)
         self.sell([{"quantity": 5}])
-        self.balances(4700, 2120, 387)
+        self.balances(3500, 2120, 387)
         mixed = self.sell([{"packaging_id": packaging["id"], "packaging_quantity": 2,
                             "piece_quantity": 3, "price_tier": "gros"}])
         self.assertEqual(mixed["items"][0]["quantity"], 51)
         self.assertEqual(mixed["total"], 3240)
-        self.balances(7940, 4160, 336)
+        self.balances(6740, 4160, 336)
 
     def test_tiers_thresholds_and_fallbacks(self):
         packaging = self.configure()

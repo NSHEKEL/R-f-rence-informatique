@@ -82,7 +82,8 @@ class MobileSummaryReturnsTests(unittest.TestCase):
                 self.assertEqual(result["month_returns_count"], 4)
                 self.assertEqual(result, summary())
                 cash_snapshot = {"day": now.date().isoformat(), "generated_at": now.isoformat(), "sessions": [
-                    {"key": "session-1", "seller_email": user.email, "expected_cash": 185, "closed": False},
+                    {"key": "session-1", "seller_email": user.email, "expected_cash": 185, "closed": False,
+                     "kept_balance": 10, "remitted_amount": 175, "cash_sales": 100, "mobile_money_sales": 85, "mobile_money_to_cash": True},
                     {"key": "session-2", "seller_email": "other@test.invalid", "expected_cash": 50, "closed": False},
                 ]}
                 payload = {"installation_uid": installation.uid, "token": installation.token,
@@ -91,6 +92,9 @@ class MobileSummaryReturnsTests(unittest.TestCase):
                 response = client.post("/api/central/public/mirror", json=payload)
                 self.assertEqual(response.status_code, 200, response.text)
                 self.assertEqual(summary()["today_expected_cash"], 185)
+                self.assertEqual(summary()["today_remaining_cash"], 10)
+                self.assertEqual(summary()["today_remitted_cash"], 175)
+                self.assertEqual(summary()["today_cash_detail"]["mobile_money_sales"], 85)
                 duplicate = Installation(client_id=shop.id, uid="shop-copy", token="unused",
                                          cash_balances=json.dumps(cash_snapshot))
                 db.add(duplicate)

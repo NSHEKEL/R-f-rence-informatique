@@ -71,22 +71,23 @@ test("Products save strips barcode drafts, handles a 422 as text and keeps inval
   const start = source.indexOf("  async function save()");
   const end = source.indexOf("\n  /** Opens the price history", start);
   const code = ts.transpileModule(source.slice(start, end) + "\nexports.run = save;", { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
-  for (const mode of ["success", "422", "long"]) {
+  for (const mode of ["success", "422", "long", "fractional"]) {
     let payload, error = "", closed = false, saving;
-    const form = { ...empty, name: "Article", sku: "SKU", quantity: 0, units_per_packaging: 1,
+    const form = { ...empty, name: "Article", sku: "SKU", quantity: mode === "fractional" ? 0.5 : 0, units_per_packaging: 1,
       semi_wholesale_price: "", supplier_purchase_price: "", semi_wholesale_min_qty: "", wholesale_min_qty: "",
       packaging_sale_price: "", wholesale_packaging_price: "", barcodes: [{ code: "", label: "", active: true }],
       ...(mode === "long" ? { base_unit: "x".repeat(41) } : {}) };
     const exports = {};
-    vm.runInNewContext(code, { exports, form, editing: null, readOnly: false, pendingUuid: null, permitted: () => true, productBarcodes, productTextError, apiErrorMessage,
+    vm.runInNewContext(code, { exports, form, editing: mode === "fractional" ? { id: 1 } : null, readOnly: false, pendingUuid: null, permitted: () => true, productBarcodes, productTextError, apiErrorMessage,
       axios: { isAxiosError: () => true }, setError: (value) => { error = value; }, setSaving: (value) => { saving = value; },
       setModalOpen: (value) => { closed = !value; }, load: async () => {},
-      api: { post: async (_, body) => { payload = body; if (mode === "422") throw { response: { data: { detail: [requiredCode] } } }; return { data: { id: 1 } }; } },
+      api: { put: async (_, body) => { payload = body; return { data: { id: 1, ...body } }; }, post: async (_, body) => { payload = body; if (mode === "422") throw { response: { data: { detail: [requiredCode] } } }; return { data: { id: 1 } }; } },
     });
     await exports.run();
     if (mode === "long") { assert.equal(payload, undefined); assert.match(error, /40 caractères maximum/); }
     else { assert.equal(payload.barcodes.length, 0); assert.equal(saving, false); }
-    assert.equal(closed, mode === "success");
+    assert.equal(closed, mode === "success" || mode === "fractional");
+    if (mode === "fractional") assert.equal(payload.quantity, 0.5);
     if (mode === "422") { assert.equal(error, "Code-barres 1 : au moins 1 caractère requis"); assert.doesNotThrow(() => renderToStaticMarkup(React.createElement("div", null, error))); }
   }
 });

@@ -213,10 +213,10 @@ def receive_pending(
         note=str(payload.get("note") or ""),
         items=[
             StockTransferItemCreate(
-                product_id=int(i["product_id"]), quantity=int(i["quantity"])
+                product_id=int(i["product_id"]), quantity=float(i["quantity"])
             )
             for i in items_payload
-            if i.get("product_id") and int(i.get("quantity") or 0) > 0
+            if i.get("product_id") and float(i.get("quantity") or 0) > 0
         ],
     )
     result = create_transfer(local, db=db, current_user=current_user)

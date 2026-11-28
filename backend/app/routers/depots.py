@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from ..quantities import Quantity
 from .. import stock
 from ..auth import get_current_user
 from ..database import get_db
@@ -23,7 +24,7 @@ class DepotInput(BaseModel):
 
 class TransferLine(BaseModel):
     product_id: int = Field(ge=1)
-    quantity: int = Field(gt=0, le=2147483647, strict=True)
+    quantity: Quantity = Field(gt=0, le=2147483647, strict=True)
 
 
 class TransferInput(BaseModel):

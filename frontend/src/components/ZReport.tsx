@@ -3,6 +3,10 @@ import { formatXOF } from "../api/client";
 import type { CompanySettings, ReceiptFormat } from "../types";
 
 export interface ZReportData {
+  data_warnings?: string[];
+  mobile_money_to_cash?: boolean;
+  kept_balance?: number | null;
+  remitted_amount?: number | null;
   session_id: number;
   company: string;
   company_address?: string;
@@ -21,8 +25,9 @@ export interface ZReportData {
   cancelled_count: number;
   gift_total: number;
   payments: Record<string, number>;
+  payment_groups?: Record<string, number>;
   refunds_total?: number;
-  refunds?: { reference: string; sale_reference: string; total: number }[];
+  refunds?: { reference: string; sale_reference: string; total: number | null }[];
   advances_total?: number;
   advances?: { reference: string; customer: string; amount: number }[];
   settlements_total?: number;
@@ -55,7 +60,7 @@ function dt(value: string | null): string {
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex justify-between py-0.5 text-xs">
+    <div className="receipt-meta py-0.5 text-xs">
       <span>{label}</span>
       <span className="font-semibold">{value}</span>
     </div>
@@ -67,10 +72,12 @@ export default function ZReport({
   report,
   company,
   format,
+  inline = false,
 }: {
   report: ZReportData;
   company: CompanySettings | null;
   format: ReceiptFormat;
+  inline?: boolean;
 }) {
   const methods = Object.entries(report.payments ?? {});
   const body = (
@@ -80,25 +87,26 @@ export default function ZReport({
           <img
             src={company?.logo || report.company_logo}
             alt=""
-            className="mx-auto mb-1 max-h-14 object-contain"
+            className="receipt-logo mx-auto mb-1 max-h-14 object-contain"
           />
         )}
-        <p className="text-sm font-bold">{company?.name || report.company}</p>
+        <p className="receipt-company text-sm font-bold">{company?.name || report.company}</p>
         {(company?.address || report.company_address) && (
-          <p className="text-[10px]">
+          <p className="receipt-footer text-[10px]">
             {company?.address || report.company_address}
           </p>
         )}
         {(company?.phone || report.company_phone) && (
-          <p className="text-[10px]">
+          <p className="receipt-footer text-[10px]">
             {company?.phone || report.company_phone}
           </p>
         )}
-        <p className="text-xs font-bold">ÉTAT Z DE CAISSE</p>
-        <p className="text-[10px]">Session #{report.session_id}</p>
+        <p className="receipt-title text-xs font-bold">ÉTAT Z DE CAISSE</p>
+        <p className="receipt-footer text-[10px]">Session #{report.session_id}</p>
       </div>
       <hr className="my-2 border-dashed" />
       <Row label="Caissier" value={report.cashier || "—"} />
+      {Boolean(report.data_warnings?.length) && <div className="my-2 text-xs"><strong>Données à vérifier — originaux conservés</strong><ul>{report.data_warnings!.map((warning) => <li key={warning}>{warning}</li>)}</ul></div>}
       <Row label="Journée" value={report.business_day || "—"} />
       <Row label="Ouverture" value={dt(report.opened_at)} />
       <Row label="Clôture" value={dt(report.closed_at)} />
@@ -118,7 +126,8 @@ export default function ZReport({
         <Row label="Ventes cadeaux" value={formatXOF(report.gift_total)} />
       )}
       <hr className="my-2 border-dashed" />
-      <p className="text-[10px] font-bold uppercase">Encaissements par mode</p>
+      <p className="receipt-title text-[10px] font-bold uppercase">Encaissements par mode</p>
+      {report.payment_groups && ([['cash', 'Espèces'], ['mobile_money', 'Mobile Money'], ['bank', 'Bancaire'], ['credit', 'Crédit (non encaissé)'], ['other', 'Autres moyens']] as const).map(([key, label]) => <Row key={key} label={label} value={formatXOF(report.payment_groups?.[key] || 0)} />)}
       {methods.map(([method, amount]) => (
         <Row key={method} label={method} value={formatXOF(amount)} />
       ))}
@@ -126,14 +135,14 @@ export default function ZReport({
       {(report.refunds?.length ?? 0) > 0 && (
         <>
           <hr className="my-2 border-dashed" />
-          <p className="text-[10px] font-bold uppercase">
+          <p className="receipt-title text-[10px] font-bold uppercase">
             Remboursements / retours
           </p>
           {report.refunds!.map((r) => (
             <Row
               key={r.reference}
               label={`${r.reference} (${r.sale_reference})`}
-              value={formatXOF(r.total)}
+              value={r.total == null ? "Non renseigné" : formatXOF(r.total)}
             />
           ))}
           <Row
@@ -145,7 +154,7 @@ export default function ZReport({
       {(report.advances?.length ?? 0) > 0 && (
         <>
           <hr className="my-2 border-dashed" />
-          <p className="text-[10px] font-bold uppercase">Acomptes reçus</p>
+          <p className="receipt-title text-[10px] font-bold uppercase">Acomptes reçus</p>
           {report.advances!.map((a) => (
             <Row
               key={a.reference}
@@ -163,7 +172,7 @@ export default function ZReport({
         Object.keys(report.settlements).length > 0 && (
           <>
             <hr className="my-2 border-dashed" />
-            <p className="text-[10px] font-bold uppercase">
+            <p className="receipt-title text-[10px] font-bold uppercase">
               Règlements de créances
             </p>
             {Object.entries(report.settlements).map(([method, amount]) => (
@@ -178,7 +187,7 @@ export default function ZReport({
       {report.expenses.length > 0 && (
         <>
           <hr className="my-2 border-dashed" />
-          <p className="text-[10px] font-bold uppercase">Dépenses de caisse</p>
+          <p className="receipt-title text-[10px] font-bold uppercase">Dépenses de caisse</p>
           {report.expenses.map((e, i) => (
             <Row key={i} label={e.label} value={formatXOF(e.amount)} />
           ))}
@@ -188,7 +197,7 @@ export default function ZReport({
       {report.deposits.length > 0 && (
         <>
           <hr className="my-2 border-dashed" />
-          <p className="text-[10px] font-bold uppercase">Versements bancaires</p>
+          <p className="receipt-title text-[10px] font-bold uppercase">Versements bancaires</p>
           {report.deposits.map((d) => (
             <Row
               key={d.id}
@@ -204,6 +213,11 @@ export default function ZReport({
       )}
       <hr className="my-2 border-dashed" />
       <Row label="Montant théorique" value={formatXOF(report.expected_cash)} />
+      <Row label="Dépenses (tous modes)" value={formatXOF(report.expenses_total)} />
+      <Row label="Retours / remboursements (tous modes)" value={formatXOF(report.refunds_total ?? 0)} />
+      {report.mobile_money_to_cash && <Row label="Mobile Money" value="converti en espèces" />}
+      {report.remitted_amount != null && <Row label="Montant remis au patron" value={formatXOF(report.remitted_amount)} />}
+      {report.kept_balance != null && <Row label="Montant restant en caisse" value={formatXOF(report.kept_balance)} />}
       <Row label="Recettes de caisse" value={formatXOF(report.entries_total)} />
       <Row label="Sorties de caisse" value={formatXOF(report.exits_total)} />
       <Row label="Remboursements espèces" value={formatXOF(report.cash_refunds)} />
@@ -221,14 +235,15 @@ export default function ZReport({
         }
       />
       {report.note && (
-        <p className="mt-1 text-[10px]">Note : {report.note}</p>
+        <p className="receipt-footer mt-1 text-[10px]">Note : {report.note}</p>
       )}
       <hr className="my-2 border-dashed" />
-      <p className="text-center text-[10px]">
+      <p className="receipt-footer text-center text-[10px]">
         Généré le {dt(report.generated_at)} — EasyGest
       </p>
     </div>
   );
+  if (inline) return body;
   // Same double render as Receipt: a preview inside the modal, and a
   // print-only copy portaled to <body> — the print stylesheet only keeps
   // #receipt-print-root among body's children, so a copy left inside the

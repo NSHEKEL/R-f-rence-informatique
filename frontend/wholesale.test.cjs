@@ -9,7 +9,7 @@ test("POS cart keeps units and tiers separate and edits only the selected line",
   vm.runInNewContext(ts.transpileModule(readFileSync(`${__dirname}/src/lib/units.ts`, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports: units });
   const source = readFileSync(`${__dirname}/src/pages/NouvelleVente.tsx`, "utf8");
   const file = ts.createSourceFile("NouvelleVente.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  const names = new Set(["setQuantity", "setUnitMode", "setLinePrice", "setLineDiscount", "linePrice", "cartParts"]);
+  const names = new Set(["setQuantity", "setUnitMode", "setLinePrice", "setLineDiscount", "linePrice", "cartParts", "priceWillBeSaved"]);
   const functions = [];
   function visit(node) {
     if (ts.isFunctionDeclaration(node) && names.has(node.name?.text)) functions.push(node.getText(file));
@@ -41,6 +41,14 @@ test("POS cart keeps units and tiers separate and edits only the selected line",
   assert.equal(state.cart[1].discount, 10);
   assert.equal(run('linePrice(cart[2], "detail")'), 80);
   assert.equal(state.cart[0].price, undefined);
+  assert.equal(run('priceWillBeSaved(cart[0])'), false);
+  assert.equal(run('priceWillBeSaved(cart[1])'), true);
+  run('setLinePrice(1, ""); setLineDiscount(1, "15");');
+  assert.equal(run('priceWillBeSaved(cart[1])'), false);
+  run('setLinePrice(1, "0");');
+  assert.equal(run('priceWillBeSaved(cart[1])'), true);
+  assert.match(source, /price_edited: priceWillBeSaved\(l\)/);
+  assert.match(source, /Prix enregistré à la validation/);
   assert.equal(state.cart[2].discount, undefined);
   run("setQuantity(1, 0);");
   assert.deepEqual(Array.from(state.cart, (line) => line.quantity), [24, 2]);

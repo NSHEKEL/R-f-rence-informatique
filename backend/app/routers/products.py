@@ -1,15 +1,18 @@
 import math
+import json
 import random
 import re
 import unicodedata
 from calendar import monthrange
 from datetime import date, datetime, time, timedelta
 from typing import Literal
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, defer
+from sqlalchemy.orm import Session, defer, joinedload, selectinload
 
 from ..database import get_db
 from ..catalogue_import import read_catalogue
@@ -24,6 +27,7 @@ from ..models import (
     Product,
     ProductBarcode,
     ProductPackaging,
+    ProductUpdateOperation,
     Sale,
     SaleItem,
     StockLot,
@@ -50,6 +54,11 @@ from .cash import require_open_till
 router = APIRouter(prefix="/api/products", tags=["products"])
 
 
+def _catalogue_loading():
+    return (selectinload(Product.packagings), selectinload(Product.barcodes),
+            selectinload(Product.category), selectinload(Product.supplier))
+
+
 def _stock_allowed(db, user):
     return has_permission(db, user, 'produits') or has_permission(db, user, 'inventaire')
 
@@ -72,7 +81,7 @@ def pos_products(images: bool = False, db: Session = Depends(get_db), user: User
     config = read_display(settings) if settings else None
     include_images = bool(images and config and config.images and config.mode.startswith('image+'))
     stock_visible = _stock_allowed(db, user)
-    query = db.query(Product).filter(Product.active.is_(True))
+    query = db.query(Product).options(*_catalogue_loading()).filter(Product.active.is_(True))
     if not (settings and settings.allow_negative_stock_sale):
         query = query.filter(Product.quantity > 0)
     query = query.order_by(Product.name)
@@ -142,14 +151,17 @@ def _save_barcodes(db, product, rows, user):
         record = db.get(ProductBarcode, row.id) if row.id else None
         if row.id and (not record or record.product_id != product.id):
             raise HTTPException(400, "Code invalide")
-        if record and record.code.lower() != code.lower():
-            raise HTTPException(400, "Désactivez l'ancien code et ajoutez le nouveau")
+        collision = db.query(ProductBarcode).filter(func.lower(ProductBarcode.code) == code.lower())
+        if record:
+            collision = collision.filter(ProductBarcode.id != record.id)
+        if record and collision.first():
+            raise HTTPException(400, "Code déjà utilisé par une autre variante")
         if record is None:
             record = db.query(ProductBarcode).filter(ProductBarcode.product_id == product.id, func.lower(ProductBarcode.code) == code.lower()).first()
         if record is None:
             record = ProductBarcode(product_id=product.id, code=code, created_by_id=user.id)
             db.add(record)
-        record.label, record.active = row.label.strip(), row.active
+        record.code, record.label, record.active = code, row.label.strip(), row.active
         db.flush()
     for record in db.query(ProductBarcode).filter_by(product_id=product.id):
         if record.code.lower() not in seen:
@@ -175,7 +187,10 @@ def _save_packagings(db, product, rows, user):
         if packaging is None:
             packaging = ProductPackaging(product_id=product.id)
             db.add(packaging)
-        for key, value in row.model_dump(exclude={"id"}).items():
+        values = row.model_dump(exclude={"id"})
+        if row.price_gros is not None and row.price_gros > 0:
+            values["price_detail"] = row.price_gros
+        for key, value in values.items():
             if key in {"price_detail", "price_semi_gros", "price_gros", "purchase_price"} and packaging.id and getattr(packaging, key) != value:
                 db.add(PriceHistory(product_id=product.id, field=f"packaging:{packaging.id}:{key}",
                                     old_value=getattr(packaging, key), new_value=value, changed_by_id=user.id))
@@ -195,7 +210,7 @@ def next_barcode(
     return {"barcode": _generate_barcode(db)}
 
 
-@router.get("/by-code/{code}", response_model=ProductOut)
+@router.get("/by-code/{code:path}", response_model=ProductOut)
 def get_product_by_code(
     code: str,
     db: Session = Depends(get_db),
@@ -207,9 +222,9 @@ def get_product_by_code(
     return _product_out(product, _stock_allowed(db, user)).model_copy(update={"packaging_id": packaging.id if packaging else None, "scanned_code": value, "scanned_label": alias.label if alias else None})
 
 
-def _sales_stats(db: Session) -> dict[int, tuple[int, object]]:
+def _sales_stats(db: Session, product_ids=None) -> dict[int, tuple[int, object]]:
     """Units sold and last sale date per product, cancelled tickets aside."""
-    rows = (
+    query = (
         db.query(
             SaleItem.product_id,
             func.sum(SaleItem.quantity).label("sold"),
@@ -218,9 +233,11 @@ def _sales_stats(db: Session) -> dict[int, tuple[int, object]]:
         .join(Sale, Sale.id == SaleItem.sale_id)
         .filter(Sale.status != "Annulée", SaleItem.product_id.isnot(None))
         .group_by(SaleItem.product_id)
-        .all()
     )
-    return {row.product_id: (int(row.sold or 0), row.last_sold) for row in rows}
+    if product_ids is not None:
+        query = query.filter(SaleItem.product_id.in_(product_ids))
+    rows = query.all()
+    return {row.product_id: (float(row.sold or 0), row.last_sold) for row in rows}
 
 
 @router.get("", response_model=list[ProductOut])
@@ -229,21 +246,27 @@ def list_products(
     state: Literal["active", "inactive", "all"] = "active",
     db: Session = Depends(get_db),
     user: User = Depends(require_open_till),
+    ids: list[int] | None = Query(default=None, max_length=200),
 ):
     """Catalogue, optionally filtered on sales history.
 
     ``sold=jamais`` keeps the articles never sold, ``sold=top`` the ones sold
     the most (best first); anything else returns the whole catalogue.
     """
-    stats = _sales_stats(db)
+    stats = _sales_stats(db, ids)
     stock_visible = _stock_allowed(db, user)
-    query = db.query(Product)
+    query = db.query(Product).options(*_catalogue_loading())
+    if ids is not None:
+        query = query.filter(Product.id.in_(ids))
     if state != "active" and not (has_permission(db, user, "produits") or has_permission(db, user, "inventaire")):
         raise HTTPException(403, "Le droit de consulter les articles est requis")
     if state != "all":
         query = query.filter(Product.active.is_(state == "active"))
     products = query.order_by(Product.name).all()
-    expiries = dict(db.query(StockLot.product_id, func.min(StockLot.expiry_date)).filter(StockLot.quantity > 0, StockLot.expiry_date.isnot(None)).group_by(StockLot.product_id).all())
+    expiry_query = db.query(StockLot.product_id, func.min(StockLot.expiry_date)).filter(StockLot.quantity > 0, StockLot.expiry_date.isnot(None))
+    if ids is not None:
+        expiry_query = expiry_query.filter(StockLot.product_id.in_(ids))
+    expiries = dict(expiry_query.group_by(StockLot.product_id).all())
     cost_visible = stock_visible and has_permission(db, user, "rapports_financiers")
     for product in products:
         product.stock_purchase_price = product.purchase_price if cost_visible else None
@@ -286,7 +309,7 @@ def best_sellers(
     if not order:
         return []
     products = (
-        db.query(Product).options(defer(Product.image)).filter(Product.active.is_(True), Product.id.in_(list(order))).all()
+        db.query(Product).options(defer(Product.image), *_catalogue_loading()).filter(Product.active.is_(True), Product.id.in_(list(order))).all()
     )
     stock_visible = _stock_allowed(db, user)
     return [_product_out(p, stock_visible, False) for p in sorted(products, key=lambda p: order[p.id])]
@@ -425,7 +448,9 @@ def _import_quantity(fields, present, product, packagings):
     field = "quantity" if "quantity" in present else "initial_quantity" if product is None and "initial_quantity" in present else None
     if field is None:
         return None
-    quantity = _to_int(fields.get(field, ""))
+    quantity = _to_float(fields.get(field, ""))
+    if not math.isfinite(quantity) or round(quantity, 6) != quantity:
+        raise ValueError("Quantité invalide : six décimales au maximum")
     unit = _import_name(fields.get("quantity_unit", ""))
     base = (fields.get("base_unit") or product.base_unit) if product else fields.get("base_unit", "pièce")
     if not unit or unit in {_import_name(base or ""), "piece", "pieces", "unite"}:
@@ -660,12 +685,13 @@ def create_product(
 _PRICE_FIELDS = ("sale_price", "purchase_price", "wholesale_price", "wholesale_packaging_price", "packaging_sale_price", "semi_wholesale_price", "supplier_purchase_price")
 
 
-@router.put("/{product_id}", response_model=ProductOut)
-def update_product(
+def _update_product(
     product_id: int,
     payload: ProductUpdate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_permission("produits_gerer")),
+    db: Session,
+    current_user: User,
+    fields: set[str] | None = None,
+    commit: bool = True,
 ):
     product = db.query(Product).get(product_id)
     if not product:
@@ -675,6 +701,8 @@ def update_product(
         raise HTTPException(status_code=400, detail="Cette référence (SKU) existe déjà")
     _check_barcode(db, payload, product_id)
     for key, value in payload.model_dump(exclude={"packagings", "barcodes"}).items():
+        if fields is not None and key not in fields:
+            continue
         if key in {"rayon", "emplacement", "semi_wholesale_price", "supplier_purchase_price", "semi_wholesale_min_qty", "wholesale_min_qty"} and key not in payload.model_fields_set:
             continue
         if key in {"base_unit", "packaging_unit", "units_per_packaging", "packaging_sale_price", "wholesale_packaging_price"} and key not in payload.model_fields_set:
@@ -694,10 +722,58 @@ def update_product(
         else:
             setattr(product, key, value)
     db.flush()
-    _save_packagings(db, product, payload.packagings, current_user)
-    _save_barcodes(db, product, payload.barcodes, current_user)
-    db.commit()
+    if fields is None or "packagings" in fields:
+        _save_packagings(db, product, payload.packagings, current_user)
+    if fields is None or "barcodes" in fields:
+        _save_barcodes(db, product, payload.barcodes, current_user)
+    if commit:
+        db.commit()
     db.refresh(product)
+    return product
+
+
+@router.put("/{product_id}", response_model=ProductOut)
+def update_product(product_id: int, payload: ProductUpdate, db: Session = Depends(get_db), current_user: User = Depends(require_permission("produits_gerer"))):
+    return _update_product(product_id, payload, db, current_user)
+
+
+class OfflineProductUpdate(BaseModel):
+    operation_id: UUID
+    changes: dict = Field(min_length=1)
+    originals: dict
+    force: bool = False
+
+
+@router.post("/{product_id}/offline-update", response_model=ProductOut)
+def offline_update_product(product_id: int, payload: OfflineProductUpdate, db: Session = Depends(get_db), current_user: User = Depends(require_permission("produits_gerer"))):
+    fields = set(payload.changes)
+    if not fields <= set(ProductUpdate.model_fields) or set(payload.originals) != fields:
+        raise HTTPException(status_code=422, detail="Champs modifiés ou valeurs d'origine invalides")
+    if not db.query(Product).filter(Product.id == product_id).update({Product.name: Product.name}, synchronize_session=False):
+        raise HTTPException(status_code=404, detail="Produit introuvable")
+    product = db.query(Product).filter_by(id=product_id).populate_existing().one()
+    operation_id = str(payload.operation_id)
+    fingerprint = json.dumps(payload.model_dump(mode="json"), sort_keys=True)
+    previous = db.get(ProductUpdateOperation, operation_id)
+    if previous:
+        if previous.product_id != product_id or previous.user_id != current_user.id or previous.payload != fingerprint:
+            raise HTTPException(status_code=409, detail="Identifiant d'opération déjà utilisé pour une autre modification")
+        return product
+    current = ProductUpdate.model_validate(product, from_attributes=True).model_dump(mode="json")
+    conflicts = [field for field in fields if current[field] != payload.originals[field]]
+    if conflicts and not payload.force:
+        raise HTTPException(status_code=409, detail="Conflit : le produit a changé sur le serveur (" + ", ".join(sorted(conflicts)) + "). Réessayez après vérification, forcez explicitement ou abandonnez la modification locale.")
+    try:
+        merged = ProductUpdate.model_validate({**current, **payload.changes})
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors(include_context=False))
+    db.add(ProductUpdateOperation(id=operation_id, product_id=product_id, user_id=current_user.id, payload=fingerprint))
+    try:
+        product = _update_product(product_id, merged, db, current_user, fields=fields, commit=False)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Modification concurrente ou référence déjà utilisée ; vérifiez le produit puis réessayez.")
     return product
 
 
@@ -764,7 +840,7 @@ def lot_alerts(
     """Lots expiring within `days` (or already expired), soonest first."""
     horizon = datetime.now().date() + timedelta(days=max(days, 0))
     lots = (
-        db.query(StockLot)
+        db.query(StockLot).options(joinedload(StockLot.product))
         .filter(StockLot.quantity > 0, StockLot.expiry_date.isnot(None))
         .order_by(StockLot.expiry_date.asc())
         .all()
@@ -861,7 +937,7 @@ def create_lot(
         .filter((StockLot.depot_id == depot_id) | (StockLot.depot_id.is_(None) & (depot_id == stock.resolve(db))))
         .scalar()
     )
-    untagged = stock.quantity(db, product_id, depot_id) - int(tagged)
+    untagged = round(stock.quantity(db, product_id, depot_id) - float(tagged), 6)
     if payload.quantity > untagged:
         raise HTTPException(
             status_code=400,
@@ -904,7 +980,7 @@ def _expired_map(db: Session, today) -> dict[int, int]:
         .group_by(StockLot.product_id)
         .all()
     )
-    return {pid: int(qty or 0) for pid, qty in rows}
+    return {pid: float(qty or 0) for pid, qty in rows}
 
 
 @router.get("/stock/dashboard")
@@ -1092,8 +1168,8 @@ def write_off_lot(
     product = db.query(Product).get(lot.product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Produit introuvable")
-    quantity = int(payload.get("quantity") or lot.quantity)
-    if quantity <= 0 or quantity > lot.quantity:
+    quantity = float(payload.get("quantity", lot.quantity))
+    if not math.isfinite(quantity) or round(quantity, 6) != quantity or quantity <= 0 or quantity > lot.quantity:
         raise HTTPException(status_code=400, detail="Quantité invalide")
 
     depot_id = stock.resolve(db, lot.depot_id, active=False)

@@ -1,5 +1,23 @@
 import type { Product } from "../types";
-import { withPackaging, type PriceTier } from "./units";
+import { catalogPrices, withPackaging, type PriceTier } from "./units";
+
+export function dividePackaging(product: Product, divisor: number, tier: PriceTier, soldQuantity?: number) {
+  const factor = product.units_per_packaging || 1;
+  if (!product.packaging_unit || !Number.isInteger(divisor) || divisor < 2 || factor % divisor !== 0) {
+    throw new Error("Division impossible : choisissez au moins 2 parts contenant chacune un nombre entier d'unités de base.");
+  }
+  const quantity = factor / divisor;
+  const total = Math.round(catalogPrices(product, tier, soldQuantity ?? quantity).carton / divisor);
+  return { quantity, total, unitPrice: total / quantity };
+}
+
+export function fractionalBasePrice(product: Product, quantity: number, tier: PriceTier) {
+  if (!Number.isFinite(quantity) || quantity <= 0 || quantity > 2147483647 || Math.abs(quantity - Math.round(quantity * 1e6) / 1e6) > 1e-10) {
+    throw new Error("Quantité positive requise, avec six décimales au maximum.");
+  }
+  const total = Math.round(catalogPrices(product, tier, quantity).piece * quantity);
+  return { quantity, total, unitPrice: total / quantity };
+}
 
 export function packagingChoices(product: Product) {
   return [{ key: "base", label: product.base_unit || "Pièce" },

@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..operation_locks import lock_operations
 from .. import events, mailer
 from ..database import SessionLocal
 from ..models import (
@@ -21,6 +22,7 @@ from ..models import (
     MirrorReturn,
     MirrorExpense,
     MirrorSale,
+    MirrorExclusion,
     MirrorSupportRequest,
     PendingTransfer,
     MirrorUser,
@@ -49,8 +51,19 @@ from ..service import (
 )
 
 from .mobile import mobile_code
+from .. import offline_sales
 
 router = APIRouter(prefix="/api/central/public", tags=["central-public"])
+
+
+@router.post("/offline/delegate")
+def delegate_offline(payload: offline_sales.DelegateRequest, db: Session = Depends(get_db)):
+    return offline_sales.delegate(db, payload)
+
+
+@router.post("/offline/events")
+def offline_events(payload: offline_sales.UploadRequest, db: Session = Depends(get_db)):
+    return offline_sales.upload(db, payload)
 
 
 def _naive(value: datetime | None) -> datetime | None:
@@ -183,6 +196,7 @@ def mirror(payload: MirrorRequest, db: Session = Depends(get_db)):
     installation = (
         db.query(Installation)
         .filter(Installation.uid == payload.installation_uid.strip())
+        .with_for_update()
         .first()
     )
     if installation is None:
@@ -191,6 +205,8 @@ def mirror(payload: MirrorRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Installation non autorisée")
     client = installation.client
 
+    lock_operations(db, client.id, installation.uid,
+                    [sale.operation_id for sale in payload.sales] + [str(exclusion.operation_id) for exclusion in payload.offline_exclusions])
     known = {
         row.email: row
         for row in db.query(MirrorUser).filter(MirrorUser.client_id == client.id)
@@ -217,14 +233,41 @@ def mirror(payload: MirrorRequest, db: Session = Depends(get_db)):
         row.reference: row
         for row in db.query(MirrorSale).filter(MirrorSale.client_id == client.id)
     }
+    by_operation = {(row.installation_uid, row.operation_id): row for row in stored.values() if row.operation_id}
+    exclusions = {row.operation_id: row for row in db.query(MirrorExclusion).filter_by(client_id=client.id, installation_uid=installation.uid)}
+    excluded_operations = []
+    for exclusion in payload.offline_exclusions:
+        operation_id = str(exclusion.operation_id)
+        record = exclusions.get(operation_id)
+        if record is None:
+            record = MirrorExclusion(client_id=client.id, installation_uid=installation.uid, operation_id=operation_id, payload=exclusion.model_dump_json())
+            db.add(record)
+            exclusions[operation_id] = record
+        row = by_operation.get((installation.uid, operation_id))
+        if row is not None:
+            if not row.excluded:
+                row.exclusion = record.payload
+            row.excluded = True
+        excluded_operations.append(operation_id)
     new_sales = []
     for sale in payload.sales:
-        row = stored.get(sale.reference)
+        row = by_operation.get((installation.uid, sale.operation_id)) if sale.operation_id else None
+        row = row or stored.get(sale.reference)
+        if row and row.operation_id and sale.operation_id and (row.operation_id != sale.operation_id or row.installation_uid != installation.uid):
+            raise HTTPException(409, "Référence déjà liée à une autre opération ; copie originale conservée")
         if row is None:
             row = MirrorSale(client_id=client.id, reference=sale.reference)
             db.add(row)
-            new_sales.append(sale)
+            if sale.operation_id not in exclusions:
+                new_sales.append(sale)
         row.installation_uid = installation.uid
+        row.operation_id = sale.operation_id or row.operation_id
+        exclusion = exclusions.get(row.operation_id)
+        if exclusion is not None:
+            row.excluded = True
+            row.exclusion = exclusion.payload
+        row.provisional = False
+        row.reference = sale.reference
         row.date = _naive(sale.date)
         row.total = sale.total
         row.status = sale.status
@@ -233,6 +276,9 @@ def mirror(payload: MirrorRequest, db: Session = Depends(get_db)):
         row.seller = sale.seller
         row.seller_email = sale.seller_email.strip().lower()
         row.items = json.dumps(sale.items, ensure_ascii=False)
+        stored[sale.reference] = row
+        if row.operation_id:
+            by_operation[(installation.uid, row.operation_id)] = row
 
     credits = {
         row.reference: row
@@ -340,7 +386,7 @@ def mirror(payload: MirrorRequest, db: Session = Depends(get_db)):
             },
         )
     _alert_support_requests(db, client, installation, new_requests)
-    return {"status": "ok", "code": mobile_code(db, client), "sales": len(payload.sales)}
+    return {"status": "ok", "code": mobile_code(db, client), "sales": len(payload.sales), "excluded_operations": excluded_operations}
 
 
 def _alert_support_requests(db, client, installation, requests) -> None:

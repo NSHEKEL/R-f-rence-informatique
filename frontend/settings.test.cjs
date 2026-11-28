@@ -24,10 +24,11 @@ test("settings route and tabs require consult; modify alone grants no navigation
 });
 
 test("company edits cannot smuggle tax, printer, cash, backup or network fields", () => {
-  const company = { name: "Shop", smtp_password: "new-password", vat_rate: 18, receipt_header: "Ticket", drawer_port: "COM2", auto_print_cash: true, backup_dir: "copy", expiry_alert_days: 30, network_restrict_workstations: false };
+  const company = { name: "Shop", smtp_password: "new-password", vat_rate: 18, receipt_header: "Ticket", drawer_port: "COM2", auto_print_cash: true, mobile_money_to_cash: false, backup_dir: "copy", expiry_alert_days: 30, network_restrict_workstations: false };
   const data = access.companyUpdatePayload(company, can("generaux_modifier"), false);
   assert.equal(JSON.stringify(data), JSON.stringify({ name: "Shop", smtp_password: "new-password" }));
   assert.equal(JSON.stringify(access.companyUpdatePayload(company, can(), false)), "{}");
+  assert.equal(JSON.stringify(access.companyUpdatePayload(company, can("caisse_modifier"), false)), JSON.stringify({ auto_print_cash: true, mobile_money_to_cash: false }));
   assert.equal(Object.keys(access.companyUpdatePayload(company, () => true, true)).length, Object.keys(company).length);
 });
 

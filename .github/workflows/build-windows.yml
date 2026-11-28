@@ -146,6 +146,186 @@ jobs:
           body: |
             **EasyGest — gestion de vente et de stock.**
 
+            ### Réparation des caisses historiques 2.18.50
+            - Les bases anciennes récupèrent automatiquement les colonnes absentes,
+              notamment cash_sessions.offline_mobile_money_to_cash. Fonds et ventes
+              existants sont conservés ; aucune réouverture de caisse n'est nécessaire.
+            - Chaque ajout est validé indépendamment. Un index impossible est signalé
+              avec les identifiants en conflit et sa trace, sans supprimer de lignes
+              ni empêcher les autres étapes de réparation.
+            - Les mises à jour et téléchargements automatiques au démarrage sont
+              désactivés par défaut, même pour un installeur déjà préparé. La recherche
+              et l'installation manuelles restent disponibles dans Paramètres.
+
+            ### Exclusions mobiles corrigées 2.18.49
+            - La lecture d'une caisse historique tolère les moyens de paiement
+              absents et les règlements orphelins sans inventer leur sens : ces
+              données restent conservées et signalées, jamais ajoutées aux espèces.
+            - Une erreur interne donne son type et son étape ; la trace complète
+              est journalisée. Paramètres affiche les chemins et permet d'ouvrir
+              le dossier des journaux du PC concerné.
+            - Une vente déjà comptabilisée n'est jamais exclue du mobile par le
+              classement d'un rejeu du même UUID, même si le compte a disparu.
+            - Une exclusion est conservée séparément : elle ne crée aucun ticket
+              fictif. Elle s'applique aux ventes reçues avant ou après, aux listes
+              mobiles et à tous les chiffres des magasins dans la console.
+            - Cette version remplace la 2.18.48 ; mise à jour du service central
+              nécessaire pour les exclusions, sans suppression des originaux.
+
+            ### Reprise et diagnostic de caisse 2.18.48
+            - Une erreur de lecture de caisse affiche son détail et un réessai,
+              au lieu de demander une nouvelle ouverture. Les coordonnées société
+              historiques vides ne font plus échouer les états de caisse.
+            - Les opérations provisoires rejoignent la caisse serveur compatible,
+              sans créer de caisse superposée ; les sessions provisoires distinctes
+              restent séparées. Une clôture confirme l'identifiant compté et la
+              consolidation attend la récupération des opérations en attente.
+            - Tous les conflits non résolus sont accessibles dans Configuration,
+              même après plus de 200 opérations terminées. Le classement audité
+              d'un compte supprimé garde les originaux et propage l'exclusion par
+              UUID au miroir mobile (service central compatible nécessaire).
+            - Les anciens tickets rejetés ou archivés non ressaisis restent visibles
+              dans une liste à vérifier, séparée des opérations à synchroniser.
+            - Les paiements des ventes sont chargés en lot dans les totaux de caisse :
+              13 requêtes SQL constantes dans le test de 200 ventes, contre jusqu'à
+              214 avant. Aucun changement des calculs comptables.
+            - Sonde réseau portée de 0,8 à 2 secondes : les latences de 650–950 ms
+              du test ne font plus alterner connecté/hors ligne. Les refus de droits,
+              comptes ou signatures ne sont pas contournés.
+
+            ### Connexion et diagnostic de caisse 2.18.47
+            - Une reprise de journal en conflit ne bloque plus une connexion
+              valide. Un avertissement persistant garde les opérations visibles,
+              permet à l'administrateur d'accéder à Configuration / Réseau et
+              propose de réessayer après vérification, sans rouvrir la caisse.
+            - Une panne pendant l'ouverture de caisse affiche toujours l'erreur
+              d'origine et son statut HTTP, même si le rechargement échoue aussi.
+            - Conservation de la reprise automatique et idempotente des ventes
+              existantes, de la caisse et du fonds initial introduite en 2.18.46.
+
+            ### Reprise automatique des caisses et ventes 2.18.46
+            - Sur le PC serveur, les anciennes ventes du journal local sont
+              rapprochées avant d'afficher la caisse, sans recopier d'empreinte,
+              sans réouverture ni ressaisie du fonds initial.
+            - Sur les postes vendeurs, la connexion en ligne rapproche le journal
+              avant de rendre la main. Un changement d'adresse du même serveur
+              conserve la confiance existante après vérification cryptographique.
+            - Les UUID garantissent un seul enregistrement ; les tickets non
+              rapprochables restent conservés et signalés. Les erreurs de caisse
+              affichent le détail reçu et le statut HTTP au lieu d'un message vague.
+
+            ### Connexion du PC serveur 2.18.45
+            - Sur le PC serveur, la connexion normale ne demande plus de préparer
+              un poste hors ligne ni de recopier une empreinte SHA-256.
+            - L'API du poste lui-même est reconnue par son origine, ses adresses
+              loopback, son nom de machine et ses adresses LAN locales. Aucun
+              journal de poste vendeur n'est utilisé pour cette connexion locale.
+            - Les postes vendeurs configurés vers un serveur distant conservent
+              leur préparation sécurisée, leur autorisation et leurs ventes offline.
+
+            ### Correctif caisse adoptée 2.18.44
+            - Si le réseau coupe pendant qu'une caisse serveur est ouverte, le POS
+              peut continuer à vendre avec l'identifiant positif de cette caisse.
+              Le journal accepte sa caisse d'origine, conserve le ticket et le
+              fonds initial, puis rapproche les opérations sans doublon.
+            - Les identifiants d'autres caisses restent refusés. Scénario réel
+              serveur/poste vérifié : ouverture connectée, coupure, vente de
+              0,5 unité à 1 750 F, reconnexion sur la même caisse, stock 0,5.
+
+            ### Correctifs hors ligne 2.18.43
+            - Après déconnexion explicite, un rechargement ne reprend plus
+              l'ancien compte : nouveau mot de passe obligatoire, grant chiffré
+              conservé uniquement pour une future connexion authentifiée.
+            - Le checkout du POS accepte sa caisse provisoire locale sans envoyer
+              son identifiant négatif au validateur des caisses serveur. Le ticket
+              est réellement journalé et rejoué une seule fois après reconnexion.
+            - Préparation hors ligne ignorée ou désactivée : le catalogue continue
+              à se charger depuis le serveur. Un refus du broker local ne vide
+              plus la liste d'articles existante.
+            - Les reçus signés pendant la validité du grant sont acceptés après
+              une reconnexion tardive. Dates et bornes serveur contrôlées ; aucun
+              droit à créer de nouvelles ventes avec un grant expiré. Compte et
+              droits actuels toujours recontrôlés.
+
+            ### Nouveau mode hors ligne 2.18.42 — postes Windows
+            - Après préparation unique du poste par l'administrateur, une
+              autorisation signée est conservée après chaque connexion serveur.
+              Validité de 24 h par défaut, configurable jusqu'à 365 jours,
+              notamment 7 jours ; aucun mot de passe conservé en clair.
+            - Démarrage à froid possible serveur boutique éteint : connexion
+              locale, caisse provisoire, catalogue conservé, paiements habituels,
+              quantités fractionnaires, impression et opérations de caisse.
+            - Journal SQLite chiffré, clé protégée par Windows DPAPI, UUID par
+              opération ; conservation après redémarrage et jusqu'à accusé signé.
+            - Au retour réseau : envoi automatique sans doublon, adoption de la
+              caisse et du fonds initial sans demander au vendeur de rouvrir.
+              Conflits conservés et visibles pour résolution administrateur.
+            - Droits et compte immédiatement recontrôlés ; compte désactivé
+              déconnecté sans effacer les ventes déjà réalisées. Indicateurs
+              connecté/hors ligne/attente/synchronisé/erreur et stock possiblement
+              non actualisé. Aucune vente bloquée uniquement par la panne réseau.
+            - Si le central a été mis à jour et la délégation sécurisée préparée,
+              le poste connecté à Internet envoie directement ses ventes : Android
+              les voit comme provisoires, puis le serveur les confirme avec le
+              même UUID sans second comptage. Aucun secret serveur sur le poste.
+            - Migrations additives uniquement. Les anciens tickets non signés de
+              localStorage sont conservés dans le journal pour rapprochement
+              administrateur, sans rejeu aveugle ni suppression d'historique.
+            - Conserver le profil Windows et les données locales EasyGest : la
+              protection DPAPI est liée à ce profil. Sauvegarder avant mise à jour.
+
+            ### Correctif 2.18.41
+            - Suppression d'un approvisionnement reçue en fractions : les
+              mouvements 0,1 + 0,2 correspondent bien à 0,3 reçu, sans faux
+              blocage « historique incomplet ». Stock et historique contrôlés.
+            - Arrondi commun à six décimales pour les comparaisons de quantités
+              des achats, les retours et les restes/cumuls des livraisons.
+
+            ### Correctifs 2.18.40 inclus
+            - Les bons de livraison conservent et affichent les quantités
+              « déjà livrées » fractionnaires, y compris sur PostgreSQL.
+            - Une fiche article dont le stock est fractionnaire peut être
+              modifiée normalement, sans imposer un stock entier.
+            - Réceptions successives décimales fiabilisées : une commande de
+              0,3 peut être reçue en 0,1 puis 0,2 sans faux dépassement.
+
+            ### Nouveautés 2.18.39 incluses
+            - Au panier, « Fraction d’unité » propose 1/2, 1/4 ou une quantité
+              décimale libre, avec aperçu avant application. Exemple : 0,5 kg
+              à 3 500 F/kg coûte 1 750 F et laisse 0,5 en stock sur une unité.
+            - Arrondi FCFA par ligne fractionnée ; tarifs catalogue et division
+              des conditionnements existante conservés. Retour au prix vendu.
+            - Quantités décimales conservées dans les stocks, lots/FEFO,
+              mouvements, inventaires, valorisations et tickets ; caisse sans
+              double comptage. Jusqu’à six décimales pour les quantités.
+            - Migration non destructive PostgreSQL : élargissement des colonnes
+              de quantité INTEGER en NUMERIC(24,6), valeurs entières conservées.
+              SQLite conserve ses tables et accepte les valeurs fractionnaires.
+
+            ### Corrections 2.18.38 incluses
+            - Après suppression d'un achat annulé, la dette conservée pour ses
+              reçus annulés est désormais annulée explicitement : solde nul,
+              montant d'origine et reçus conservés, motif et audit lisibles.
+              Elle ne compte plus dans les soldes fournisseurs et la comptabilité.
+            - Annuler/rétablir une modification d'article actualise aussi les
+              prix et le stock sur les autres postes, via le journal existant.
+            - Migration additive : indicateur debts.cancelled, sans effacement
+              des montants et historiques ; paiements actifs toujours protégés.
+
+            ### Optimisations 2.18.37 incluses
+            - Chargement accéléré des produits, du POS et des alertes de lots,
+              sans changement des prix, stocks, variantes ou conditionnements.
+            - Les heartbeats des postes vendeurs ne provoquent plus de
+              rechargement du catalogue ; actualisation ciblée après édition.
+            - Affichage Stocks paginé et index de performance additifs.
+            - Suppression corrigée des achats annulés avec leur propre dette
+              impayée, même lorsque le fournisseur a été supprimé ; historique
+              des paiements conservé et paiements actifs toujours protégés.
+            - Mesure sur 1 807 produits : Produits 822 → 259 ms, POS 848 → 227 ms,
+              quatre POS simultanés 5 934 → 1 492 ms (base SQLite de test,
+              valeurs indicatives, pas de garantie de délai réseau).
+            - Mise à niveau additive, sans effacement des données métier.
+
             - `EasyGest_Setup.exe` : installateur Windows (recommandé).
               Raccourci Bureau et menu Démarrer, l'application s'ouvre dans sa
               propre fenêtre, sans navigateur ni fenêtre noire.
@@ -269,3 +449,30 @@ jobs:
           files: |
             dist/EasyGest_Setup_x86.exe
             dist/EasyGest_x86.exe
+
+  verify-release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build, build-x86]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify published release and all eight assets through GitHub API
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = context.ref.replace('refs/tags/', '');
+            const { owner, repo } = context.repo;
+            const { data: release } = await github.rest.repos.getReleaseByTag({ owner, repo, tag });
+            const expected = ['EasyGest.apk', 'EasyGest.exe', 'EasyGestAdmin.exe', 'EasyGestAdmin_Setup.exe', 'EasyGestRecuperation.exe', 'EasyGest_Setup.exe', 'EasyGest_Setup_x86.exe', 'EasyGest_x86.exe'].sort();
+            const assets = release.assets.map(({ name, size, state, browser_download_url }) => ({ name, size, state, browser_download_url })).sort((a, b) => a.name.localeCompare(b.name));
+            const names = assets.map(asset => asset.name).sort();
+            if (release.draft || release.prerelease || !release.published_at || JSON.stringify(names) !== JSON.stringify(expected) || assets.some(asset => asset.size <= 0 || asset.state !== 'uploaded')) {
+              throw new Error('Release non publiée ou liste des huit assets invalide : ' + JSON.stringify({ draft: release.draft, prerelease: release.prerelease, assets }));
+            }
+            let { data: ref } = await github.rest.git.getRef({ owner, repo, ref: 'tags/' + tag });
+            let commit = ref.object;
+            if (commit.type === 'tag') {
+              const { data: annotated } = await github.rest.git.getTag({ owner, repo, tag_sha: commit.sha });
+              commit = annotated.object;
+            }
+            if (commit.type !== 'commit' || commit.sha !== context.sha) throw new Error('Le tag ne correspond pas au commit construit');
+            console.log('GITHUB_API_RELEASE_VERIFIED ' + JSON.stringify({ tag_name: release.tag_name, draft: release.draft, prerelease: release.prerelease, published_at: release.published_at, html_url: release.html_url, commit_sha: commit.sha, asset_count: assets.length, assets }, null, 2));

@@ -14,6 +14,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from .models import CompanySettings, Delivery, Order, OrderItem, Product
+from .quantities import round_quantity
 from .catalogue import require_active
 from .printing import read_config
 from .sequences import next_reference
@@ -89,8 +90,8 @@ def refresh_order_status(order: Order) -> None:
     """Move the order between confirmed, partially delivered and delivered."""
     if order.status == "Annulée":
         return
-    delivered = sum((item.delivered_quantity or 0) for item in order.items)
-    ordered = sum(item.quantity for item in order.items)
+    delivered = round_quantity(sum((item.delivered_quantity or 0) for item in order.items))
+    ordered = round_quantity(sum(item.quantity for item in order.items))
     if delivered <= 0:
         if order.status in ("Partiellement livrée", "Livrée"):
             order.status = "Confirmée"

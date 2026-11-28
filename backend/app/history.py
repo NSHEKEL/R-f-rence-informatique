@@ -24,6 +24,7 @@ from . import stock
 from .models import (
     ActionLog,
     Category,
+    ChangeLog,
     Customer,
     Expense,
     Order,
@@ -212,10 +213,13 @@ def _apply(entries: list[dict[str, Any]], *, undo: bool) -> None:
     """Write the "before" (undo) or "after" (redo) side of each snapshot."""
     ordered = list(reversed(entries)) if undo else entries
     with engine.begin() as conn:
+        catalogue_tables = set()
         for entry in ordered:
             model = TRACKED_TABLES.get(entry["table"])
             if model is None:
                 continue
+            if model in (Product, Category, Supplier):
+                catalogue_tables.add(model.__tablename__)
             table = model.__table__
             target = entry["before"] if undo else entry["after"]
             other = entry["after"] if undo else entry["before"]
@@ -236,6 +240,8 @@ def _apply(entries: list[dict[str, Any]], *, undo: bool) -> None:
                 conn.execute(table.update().where(pk == key).values(**values))
             else:
                 conn.execute(table.insert().values(**values))
+        if catalogue_tables:
+            conn.execute(ChangeLog.__table__.insert().values(entities=",".join(sorted(catalogue_tables)), product_ids=None))
 
 
 def undo_last(db: Session) -> Optional[ActionLog]:

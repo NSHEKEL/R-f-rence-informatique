@@ -36,7 +36,7 @@ test("missing prices and thresholds, explicit zero and old products remain compa
   assert.equal(units.withPackaging(product, 999), product);
 });
 
-test("POS scanning adds one packaging and keeps packaging and tier identities separate", () => {
+test("POS scanning adds one packaging and keeps packaging and tier identities separate", async () => {
   const scan = {};
   vm.runInNewContext(ts.transpileModule(readFileSync(`${__dirname}/src/lib/scan.ts`, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports: scan });
   const source = readFileSync(`${__dirname}/src/pages/NouvelleVente.tsx`, "utf8");
@@ -58,15 +58,17 @@ test("POS scanning adds one packaging and keeps packaging and tier identities se
   state.lastAdded = { current: null };
   state.setSelectedLine = (index) => { state.selectedLine = index; };
   state.setQuery = (query) => { state.query = query; };
+  state.api = { get: async () => ({ data: product }) };
+  state.setProducts = () => {};
   const context = vm.createContext(state);
   vm.runInContext(ts.transpileModule(functions.join("\n"), {}).outputText, context);
   const run = (code) => vm.runInContext(code, context);
-  run("submitSearch()");
+  await run("submitSearch()");
   assert.equal(state.cart[0].packaging_id, 7);
   assert.equal(state.cart[0].quantity, 24);
   assert.equal(run('linePrice(cart[0], "auto") * 24'), 1800);
   state.query = "pack24";
-  run("submitSearch()");
+  await run("submitSearch()");
   assert.equal(state.cart.length, 1);
   assert.equal(state.cart[0].quantity, 48);
   assert.equal(run('linePrice(cart[0], "auto") * 48'), 3000);

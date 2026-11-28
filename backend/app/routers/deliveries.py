@@ -12,6 +12,7 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..quantities import round_quantity
 from ..catalogue import require_active
 from .. import stock
 from ..documents import delivery_reference, refresh_order_status
@@ -69,7 +70,7 @@ def _fill_lines(db: Session, delivery: Delivery, items) -> None:
                 status_code=404, detail=f"Produit {item.product_id} introuvable"
             )
         require_active(product)
-        if item.quantity <= 0:
+        if round_quantity(item.quantity) <= 0:
             raise HTTPException(status_code=400, detail="Quantité invalide")
         line = _order_line(order, product.id)
         if order is not None and line is None:
@@ -77,8 +78,8 @@ def _fill_lines(db: Session, delivery: Delivery, items) -> None:
                 status_code=400,
                 detail=f"« {product.name} » n'est pas dans la commande",
             )
-        already = line.delivered_quantity or 0 if line else 0
-        if line is not None and item.quantity > line.quantity - already:
+        already = round_quantity(line.delivered_quantity) if line else 0
+        if line is not None and round_quantity(item.quantity) > round_quantity(line.quantity - already):
             raise HTTPException(
                 status_code=400,
                 detail=(
@@ -285,9 +286,7 @@ def validate_note(
                 (i for i in order.items if i.product_id == product.id), None
             )
             if item is not None:
-                item.delivered_quantity = (
-                    item.delivered_quantity or 0
-                ) + line.quantity
+                item.delivered_quantity = round_quantity((item.delivered_quantity or 0) + line.quantity)
     db.add(sale)
     db.flush()
 

@@ -6,25 +6,34 @@ databases created by earlier versions keep working, on SQLite as well as on the
 shared PostgreSQL server.
 """
 
-from sqlalchemy import inspect, select, text
+import logging
+import re
+
+from sqlalchemy import inspect, literal, select, text
+from sqlalchemy.orm import Session
 
 from .accounting_ledger import seed_accounts
 
 from .database import engine
-from .models import AppMigration, CashMovement, Delivery, Depot, DepotStock, DepotTransfer, DepotTransferItem, Product, RolePermission, User, Workstation
+from .models import AppMigration, CashClosure, CashMovement, Delivery, Depot, DepotStock, DepotTransfer, DepotTransferItem, Product, RolePermission, User, Workstation
 from .stock import default_id, reconcile
 from .permissions import CONFIGURABLE_ROLES, DEFAULTS, PERMISSIONS
+from .paths import log_path
 
 TRUE_LITERAL = "1" if engine.dialect.name == "sqlite" else "TRUE"
 FALSE_LITERAL = "0" if engine.dialect.name == "sqlite" else "FALSE"
 
 # table -> column -> SQL type/default appended to "ALTER TABLE ... ADD COLUMN".
 COLUMNS: dict[str, dict[str, str]] = {
+    "offline_devices": {"workstation_ip": "VARCHAR NOT NULL DEFAULT ''", "last_seen": "TIMESTAMP"},
+    "offline_events": {"resolution": "TEXT NOT NULL DEFAULT ''"},
+    "change_log": {"product_ids": "TEXT"},
+    "cash_movements": {"return_id": "INTEGER", "client_id": "VARCHAR(64)"},
     "inventory_counts": {"counts_json": "TEXT NOT NULL DEFAULT '{}'", "client_updated_at": "TIMESTAMP", "client_id": "VARCHAR NOT NULL DEFAULT ''"},
     "stock_lots": {"depot_id": "INTEGER", "unit_cost": "FLOAT DEFAULT NULL"},
     "stock_movements": {"depot_id": "INTEGER"},
     "expenses": {"payment_method": "VARCHAR", "bank_account_id": "INTEGER"},
-    "debts": {"purchase_id": "INTEGER"},
+    "debts": {"purchase_id": "INTEGER", "cancelled": f"BOOLEAN DEFAULT {FALSE_LITERAL}"},
     "sale_returns": {"cash_session_id": "INTEGER", "refund_method": "VARCHAR DEFAULT 'Avoir'", "vat_rate_snapshot": "FLOAT"},
     "purchases": {"vat_rate_snapshot": "FLOAT", "payment_method": "VARCHAR", "bank_account_id": "INTEGER"},
     "users": {
@@ -65,10 +74,13 @@ COLUMNS: dict[str, dict[str, str]] = {
         "wholesale_price": "FLOAT DEFAULT 0",
     },
     "company_settings": {
+        "offline_enabled": f"BOOLEAN NOT NULL DEFAULT {TRUE_LITERAL}",
+        "offline_authorization_hours": "INTEGER NOT NULL DEFAULT 24",
         "receipt_format": "VARCHAR DEFAULT 'A4'",
         "logo": "TEXT DEFAULT ''",
         "printer_name": "VARCHAR DEFAULT ''",
         "auto_print_cash": f"BOOLEAN DEFAULT {TRUE_LITERAL}",
+        "mobile_money_to_cash": f"BOOLEAN NOT NULL DEFAULT {TRUE_LITERAL}",
         "expiry_critical_days": "INTEGER DEFAULT 7",
         "expiry_alert_days": "INTEGER DEFAULT 30",
         "expiry_watch_days": "INTEGER DEFAULT 60",
@@ -156,6 +168,7 @@ COLUMNS: dict[str, dict[str, str]] = {
         "validated_at": "TIMESTAMP",
     },
     "sale_items": {
+        "packaging_divisor": "INTEGER",
         "scanned_code": "VARCHAR", "scanned_label": "VARCHAR",
         # Per-line discount at the register (proforma/order lines had it).
         "discount": "FLOAT DEFAULT 0",
@@ -171,7 +184,12 @@ COLUMNS: dict[str, dict[str, str]] = {
         "cancelled_by_id": "INTEGER",
     },
     "cash_sessions": {
+        "offline_mobile_money_to_cash": "BOOLEAN",
+        "kept_balance": "FLOAT",
+        "remitted_amount": "FLOAT",
+        "global_closure_id": "INTEGER",
         "business_day": "VARCHAR DEFAULT ''",
+        "workstation": "VARCHAR",
         "z_report": "TEXT DEFAULT ''",
     },
     "license_state": {
@@ -234,12 +252,11 @@ def _columns(insp, table: str) -> set[str]:
     return {c["name"] for c in insp.get_columns(table)}
 
 
-def _relax_delivery_order(conn, insp) -> None:
+def _relax_delivery_order(conn, insp, columns=None) -> None:
     """Delivery notes may now stand alone, so ``order_id`` accepts NULL."""
-    column = next(
-        (c for c in insp.get_columns("deliveries") if c["name"] == "order_id"),
-        None,
-    )
+    if columns is None:
+        columns = {column["name"]: column for column in insp.get_columns("deliveries")}
+    column = columns.get("order_id")
     if column is None or column["nullable"]:
         return
     if engine.dialect.name != "sqlite":
@@ -247,7 +264,7 @@ def _relax_delivery_order(conn, insp) -> None:
             text("ALTER TABLE deliveries ALTER COLUMN order_id DROP NOT NULL")
         )
         return
-    names = [c["name"] for c in insp.get_columns("deliveries")]
+    names = list(columns)
     columns = ", ".join(names)
     # SQLite index names stay global and follow the renamed table, so they are
     # dropped before the new table recreates them.
@@ -321,55 +338,192 @@ def _inventory_permissions(conn) -> None:
     conn.execute(AppMigration.__table__.insert().values(name=marker))
 
 
-def migrate() -> None:
-    insp = inspect(engine)
-    tables = set(insp.get_table_names())
+def _packaging_retail_from_wholesale() -> None:
+    from . import backup
 
+    marker = "packaging_retail_from_wholesale_v1"
+    with engine.connect() as conn:
+        if "product_packagings" not in inspect(conn).get_table_names():
+            return
+        AppMigration.__table__.create(bind=conn, checkfirst=True)
+        conn.commit()
+        if conn.execute(select(AppMigration.name).where(AppMigration.name == marker)).first():
+            return
+        count = conn.execute(text("SELECT COUNT(*) FROM product_packagings WHERE price_gros > 0 AND (price_detail IS NULL OR price_detail <> price_gros)")).scalar_one()
+    if count:
+        try:
+            with Session(engine) as db:
+                backup.create(db, reason="migration-packaging-retail-v1", drive_background=False, mirror_required=False)
+        except Exception:
+            logging.getLogger(__name__).exception("%s: sauvegarde locale impossible, migration différée", marker)
+            return
     with engine.begin() as conn:
-        insp = inspect(conn)
-        Depot.__table__.create(bind=conn, checkfirst=True)
-        Workstation.__table__.create(bind=conn, checkfirst=True)
-        if "cash_sessions" in tables:
-            CashMovement.__table__.create(bind=conn, checkfirst=True)
-        for table, columns in COLUMNS.items():
-            if table not in tables:
-                continue
-            existing = _columns(insp, table)
-            for column, definition in columns.items():
+        if conn.execute(select(AppMigration.name).where(AppMigration.name == marker)).first():
+            return
+        result = conn.execute(text("UPDATE product_packagings SET price_detail = price_gros WHERE price_gros > 0 AND (price_detail IS NULL OR price_detail <> price_gros)"))
+        conn.execute(AppMigration.__table__.insert().values(name=marker))
+        logging.getLogger(__name__).warning("%s: %s conditionnements mis à jour", marker, result.rowcount)
+
+
+def _schema_columns(conn):
+    inspector = inspect(conn)
+    return {table: {column["name"]: column for column in inspector.get_columns(table)}
+            for table in inspector.get_table_names()}
+
+
+def _fractional_quantities(conn, columns=None):
+    if conn.dialect.name != "postgresql":
+        return
+    columns = _schema_columns(conn) if columns is None else columns
+    quote = conn.dialect.identifier_preparer.quote
+    for table in Product.metadata.tables.values():
+        if table.name not in columns:
+            continue
+        existing = {name: column["type"] for name, column in columns[table.name].items()}
+        for column in table.columns:
+            if getattr(column.type, "scale", None) == 6 and str(existing.get(column.name, "")).upper() in ("INTEGER", "BIGINT", "SMALLINT"):
+                name = quote(column.name)
+                conn.execute(text(f"ALTER TABLE {quote(table.name)} ALTER COLUMN {name} TYPE NUMERIC(24,6) USING {name}::NUMERIC(24,6)"))
+
+
+def configure_logging():
+    logger = logging.getLogger(__name__)
+    target = str(log_path().resolve())
+    if not any(getattr(handler, "baseFilename", None) == target for handler in logger.handlers):
+        handler = logging.FileHandler(target, encoding="utf-8")
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+        logger.addHandler(handler)
+    logger.setLevel(logging.WARNING)
+    logger.propagate = False
+
+
+def migrate() -> None:
+    tables = set(inspect(engine).get_table_names())
+    for table in Product.metadata.sorted_tables:
+        if table.name not in tables:
+            _migration_step(f"table {table.name}", lambda conn, table=table: table.create(conn, checkfirst=True))
+    with engine.connect() as conn:
+        columns = _schema_columns(conn)
+    for table, definitions in COLUMNS.items():
+        for column, definition in definitions.items():
+            _add_column(table, column, definition, columns)
+    _repair_model_columns(columns)
+    _migration_step("fractional quantities", lambda conn: _fractional_quantities(conn, columns))
+    for statement in INDEXES + [
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_cash_movements_client_id ON cash_movements (client_id)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_debts_purchase_id ON debts (purchase_id)",
+        "CREATE INDEX IF NOT EXISTS ix_stock_movements_date ON stock_movements (date)",
+        "CREATE INDEX IF NOT EXISTS ix_products_active_name ON products (active, name)",
+        "CREATE INDEX IF NOT EXISTS ix_stock_movements_product_date_id ON stock_movements (product_id, date, id)",
+        "CREATE INDEX IF NOT EXISTS ix_sale_items_product_id ON sale_items (product_id)",
+        "CREATE INDEX IF NOT EXISTS ix_sale_items_sale_id ON sale_items (sale_id)",
+    ]:
+        _migration_step(statement, lambda conn, statement=statement: _create_index(conn, statement))
+    for name, step in (
+        ("delivery order", lambda conn: _relax_delivery_order(conn, inspect(conn), columns.get("deliveries", {}))),
+        ("treasury permissions", _treasury_permissions),
+        ("inventory permissions", _inventory_permissions),
+        ("company name", lambda conn: conn.execute(text("UPDATE company_settings SET name=:new WHERE name=:old"), {"new": NEW_COMPANY_NAME, "old": OLD_COMPANY_NAME})),
+        ("accounting accounts", seed_accounts),
+        ("default depot", default_id),
+        ("lot costs", _lot_costs),
+        ("depot initialization", _initialize_depots),
+    ):
+        _migration_step(name, step)
+    try:
+        _packaging_retail_from_wholesale()
+    except Exception:
+        logging.getLogger(__name__).exception("Migration packaging retail failed; original data retained, retry at next startup")
+
+
+def _migration_step(name, action):
+    try:
+        with engine.begin() as conn:
+            action(conn)
+        return True
+    except Exception:
+        logging.getLogger(__name__).exception("Migration %s failed; original data retained, retry at next startup", name)
+        return False
+
+
+def _add_column(table, column, definition, columns=None):
+    logger = logging.getLogger(__name__)
+    if columns is not None and (table not in columns or column in columns[table]):
+        return
+    try:
+        with engine.begin() as conn:
+            if columns is None:
+                inspector = inspect(conn)
+                if table not in inspector.get_table_names() or column in _columns(inspector, table):
+                    return
+            quote = conn.dialect.identifier_preparer.quote
+            conn.execute(text(f"ALTER TABLE {quote(table)} ADD COLUMN {quote(column)} {definition}"))
+        if columns is not None:
+            columns[table][column] = {"name": column, "type": definition.split()[0], "nullable": "NOT NULL" not in definition.upper()}
+        logger.warning("Schema repaired: added %s.%s", table, column)
+    except Exception:
+        with engine.connect() as conn:
+            inspector = inspect(conn)
+            if table in inspector.get_table_names():
+                existing = {item["name"]: item for item in inspector.get_columns(table)}
                 if column in existing:
+                    if columns is not None:
+                        columns[table][column] = existing[column]
+                    return
+        logger.exception("Schema repair failed: %s.%s; retry at next startup", table, column)
+
+
+def _repair_model_columns(actual=None):
+    if actual is None:
+        with engine.connect() as conn:
+            actual = _schema_columns(conn)
+    for table in Product.metadata.sorted_tables:
+        for column in table.columns:
+            if column.name in actual.get(table.name, set()):
+                continue
+            if column.primary_key:
+                logging.getLogger(__name__).error("Schema repair requires manual recovery: %s.%s is a missing primary key", table.name, column.name)
+                continue
+            definition = str(column.type.compile(dialect=engine.dialect))
+            if not column.nullable:
+                if column.server_default is not None:
+                    default = engine.dialect.ddl_compiler(engine.dialect, None).get_column_default_string(column)
+                elif column.default is not None and column.default.is_scalar:
+                    default = str(literal(column.default.arg, type_=column.type).compile(dialect=engine.dialect, compile_kwargs={"literal_binds": True}))
+                else:
+                    default = None
+                if default is None or not re.fullmatch(r"(?:'([^']|'')*'|[-+]?\d+(?:\.\d+)?|TRUE|FALSE)", default, re.I):
+                    logging.getLogger(__name__).error("Schema repair requires manual recovery: %s.%s has no safe default", table.name, column.name)
                     continue
-                conn.execute(
-                    text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
-                )
-        if "sales" in tables:
-            for statement in INDEXES:
-                conn.execute(text(statement))
-        if "deliveries" in tables:
-            _relax_delivery_order(conn, inspect(conn))
-        if "role_permissions" in tables:
-            _treasury_permissions(conn)
-            _inventory_permissions(conn)
-        if "company_settings" in tables:
-            conn.execute(
-                text(
-                    "UPDATE company_settings SET name = :new "
-                    "WHERE name = :old"
-                ),
-                {"new": NEW_COMPANY_NAME, "old": OLD_COMPANY_NAME},
-            )
-        if "debts" in tables:
-            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ux_debts_purchase_id ON debts (purchase_id)"))
-        seed_accounts(conn)
-        Depot.metadata.create_all(bind=conn, tables=[Depot.__table__, DepotStock.__table__, DepotTransfer.__table__, DepotTransferItem.__table__])
-        default_id(conn)
-        cost_marker = "stock_lot_cost_snapshot_v1"
-        if "stock_movements" in tables and "date" in _columns(inspect(conn), "stock_movements"):
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_stock_movements_date ON stock_movements (date)"))
-        if {"products", "stock_lots"}.issubset(tables) and "purchase_price" in _columns(inspect(conn), "products") and not conn.execute(select(AppMigration.name).where(AppMigration.name == cost_marker)).first():
-            conn.execute(text("UPDATE stock_lots SET unit_cost = COALESCE((SELECT purchase_price FROM products WHERE products.id = stock_lots.product_id), 0) WHERE unit_cost IS NULL"))
-            conn.execute(AppMigration.__table__.insert().values(name=cost_marker))
-        marker = "depot_stock_initialization_v1"
-        if "products" in tables and not conn.execute(select(AppMigration.name).where(AppMigration.name == marker)).first():
-            for row in conn.execute(select(Product.id, Product.quantity)):
-                reconcile(conn, row.id, row.quantity or 0)
-            conn.execute(AppMigration.__table__.insert().values(name=marker))
+                definition += f" NOT NULL DEFAULT {default}"
+            _add_column(table.name, column.name, definition, actual)
+
+
+def _create_index(conn, statement):
+    match = re.search(r"CREATE UNIQUE INDEX IF NOT EXISTS (\w+) ON (\w+) \(([^)]+)\)", statement)
+    if match:
+        name, table, columns = match.groups()
+        if name not in {index["name"] for index in inspect(conn).get_indexes(table)}:
+            columns = [column.strip() for column in columns.split(",")]
+            groups = conn.execute(text(f"SELECT {', '.join(columns)} FROM {table} WHERE {' AND '.join(column + ' IS NOT NULL' for column in columns)} GROUP BY {', '.join(columns)} HAVING COUNT(*) > 1")).all()
+            for group in groups:
+                params = {f"key{i}": value for i, value in enumerate(group)}
+                where = " AND ".join(f"{column}=:key{i}" for i, column in enumerate(columns))
+                ids = list(conn.execute(text(f"SELECT id FROM {table} WHERE {where} ORDER BY id"), params).scalars())
+                logging.getLogger(__name__).error("Unique index %s conflicts: %s row ids=%s; rows retained", name, table, ids)
+    conn.execute(text(statement))
+
+
+def _lot_costs(conn):
+    marker = "stock_lot_cost_snapshot_v1"
+    if not conn.execute(select(AppMigration.name).where(AppMigration.name == marker)).first():
+        conn.execute(text("UPDATE stock_lots SET unit_cost = COALESCE((SELECT purchase_price FROM products WHERE products.id = stock_lots.product_id), 0) WHERE unit_cost IS NULL"))
+        conn.execute(AppMigration.__table__.insert().values(name=marker))
+
+
+def _initialize_depots(conn):
+    marker = "depot_stock_initialization_v1"
+    if not conn.execute(select(AppMigration.name).where(AppMigration.name == marker)).first():
+        for row in conn.execute(select(Product.id, Product.quantity)):
+            reconcile(conn, row.id, row.quantity or 0)
+        conn.execute(AppMigration.__table__.insert().values(name=marker))

@@ -19,6 +19,7 @@ import api, {
 import Modal from "../components/Modal";
 import { useAuth } from "../context/AuthContext";
 import { useNetwork } from "../context/NetworkContext";
+import { desktopOffline } from "../lib/desktopOffline";
 
 type ForgotStep = "email" | "code";
 
@@ -39,7 +40,11 @@ export default function Login() {
     () => localStorage.getItem(LAST_EMAIL_KEY) ?? ""
   );
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(() => {
+    const message = sessionStorage.getItem("ri_cash_print_error") || "";
+    sessionStorage.removeItem("ri_cash_print_error");
+    return message;
+  });
   const [loading, setLoading] = useState(false);
 
   const [serverOpen, setServerOpen] = useState(false);
@@ -92,7 +97,9 @@ export default function Login() {
       await login(email, password);
       localStorage.setItem(LAST_EMAIL_KEY, email);
       setPassword("");
-      navigate("/");
+      const afterTillClose = sessionStorage.getItem("ri_till_closed");
+      sessionStorage.removeItem("ri_till_closed");
+      navigate(afterTillClose ? "/caisse" : "/");
     } catch (err) {
       if (axios.isAxiosError(err)) {
         setError(
@@ -266,6 +273,7 @@ export default function Login() {
             </div>
           </div>
 
+          {desktopOffline.available() && <p className="mb-3 text-xs text-amber-800">Serveur arrêté ? Utilisez vos identifiants habituels sur ce poste déjà préparé. L'autorisation hors ligne doit encore être valide ; votre mot de passe n'est jamais conservé en clair.</p>}
           <button type="submit" className="btn-primary w-full" disabled={loading}>
             {loading ? "Connexion..." : "Se connecter"}
           </button>

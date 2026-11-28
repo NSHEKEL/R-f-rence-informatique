@@ -8,7 +8,10 @@ import {
   type ReactNode,
 } from "react";
 import axios from "axios";
-import { getServerUrl } from "../api/client";
+import api, { getServerUrl } from "../api/client";
+import { desktopOffline, type JournalState } from "../lib/desktopOffline";
+import { authDenied, clearAuthCache, writeAuthCache } from "../lib/authCache";
+import type { User } from "../types";
 import {
   dismissRejected,
   flushPendingSales,
@@ -31,6 +34,7 @@ interface NetworkContextValue {
   pendingCount: number;
   justReconnected: boolean;
   syncErrors: string[];
+  journal: JournalState | null;
   /** Tickets the server refused outright — kept until the cashier dismisses them. */
   rejected: RejectedSale[];
   dismissRejectedSale: (reference: string) => void;
@@ -49,6 +53,7 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
   const [pendingCount, setPendingCount] = useState(pendingSales().length + pendingProducts().length);
   const [justReconnected, setJustReconnected] = useState(false);
   const [syncErrors, setSyncErrors] = useState<string[]>([]);
+  const [journal, setJournal] = useState<JournalState | null>(null);
   const [rejected, setRejected] = useState<RejectedSale[]>(rejectedSales());
   const wasOnline = useRef(false);
 
@@ -57,13 +62,37 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
     const products = await flushPendingProducts();
     setPendingCount(pendingSales().length + pendingProducts().length);
     setRejected(rejectedSales());
-    setSyncErrors(pendingProducts().filter((entry) => entry.reason).map((entry) => `${entry.payload.sku} : ${entry.reason}`));
+    setSyncErrors([...pendingSales().filter((entry) => entry.reason).map((entry) => `${entry.snapshot.reference} : ${entry.reason}`), ...pendingProducts().filter((entry) => entry.reason).map((entry) => `${entry.payload.sku} : ${entry.reason}`)]);
     if (result.synced > 0 || products.synced > 0) {
       window.dispatchEvent(new Event("ri:synced"));
     }
   }, []);
 
   const refresh = useCallback(async () => {
+    if (desktopOffline.available()) {
+      try {
+        const current = await desktopOffline.refresh(true);
+        setJournal(current);
+        if (!current.locked || current.pending.length > 0 || current.revoked) {
+          setOnline(current.online);
+          setServerReachable(current.online);
+          setPendingCount(current.pending.length + pendingProducts().length);
+          setSyncErrors(current.pending.filter((row) => row.reason).map((row) => `${row.reference} : ${row.reason}`));
+          setJustReconnected(current.online && !wasOnline.current);
+          if (current.online) setLastContact(new Date().toISOString());
+          if (current.synced) window.dispatchEvent(new Event("ri:synced"));
+          if (current.online && !current.locked) {
+            const account = await desktopOffline.command<{ access_token: string }>("account");
+            localStorage.setItem("ri_token", account.access_token);
+            const products = await flushPendingProducts();
+            if (products.synced) window.dispatchEvent(new Event("ri:synced"));
+            setPendingCount(current.pending.length + pendingProducts().length);
+          }
+          wasOnline.current = current.online;
+          return current.online;
+        }
+      } catch { /* a local-store error is surfaced at checkout, never acknowledged as a sale */ }
+    }
     let reachable = false;
     try {
       const { data } = await axios.get(`${getServerUrl()}/api/health`, { timeout: 5000 });
@@ -80,7 +109,17 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
     if (reachable && !wasOnline.current) {
       setJustReconnected(true);
       window.setTimeout(() => setJustReconnected(false), RECONNECT_BANNER_MS);
-      await sync();
+    }
+    let authenticated = false;
+    try { authenticated = Boolean(localStorage.getItem("ri_token") && JSON.parse(localStorage.getItem("ri_auth_cache") || "{}").token === localStorage.getItem("ri_token")); } catch { /* no cached login */ }
+    if (reachable && authenticated) {
+      try {
+        const [account, permissions] = await Promise.all([api.get<User>("/auth/me"), api.get<{ allowed: string[] }>("/permissions/me")]);
+        const token = localStorage.getItem("ri_token");
+        if (token) { writeAuthCache(token, account.data, permissions.data.allowed); window.dispatchEvent(new Event("ri:account-validated")); await sync(); }
+      } catch (error) {
+        if (authDenied(error)) { localStorage.removeItem("ri_token"); clearAuthCache(); window.dispatchEvent(new Event("ri:account-denied")); }
+      }
     }
     wasOnline.current = reachable;
     return reachable;
@@ -90,9 +129,17 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
     refresh();
     const timer = window.setInterval(refresh, PING_INTERVAL_MS);
     const onQueueChange = () => {
+      if (desktopOffline.available()) {
+        const current = desktopOffline.state();
+        setJournal(current);
+        setPendingCount(current.pending.length + pendingProducts().length);
+        setSyncErrors(current.pending.filter((row) => row.reason).map((row) => `${row.reference} : ${row.reason}`));
+        setOnline(current.online);
+        return;
+      }
       setPendingCount(pendingSales().length + pendingProducts().length);
       setRejected(rejectedSales());
-      setSyncErrors(pendingProducts().filter((entry) => entry.reason).map((entry) => `${entry.payload.sku} : ${entry.reason}`));
+      setSyncErrors([...pendingSales().filter((entry) => entry.reason).map((entry) => `${entry.snapshot.reference} : ${entry.reason}`), ...pendingProducts().filter((entry) => entry.reason).map((entry) => `${entry.payload.sku} : ${entry.reason}`)]);
     };
     window.addEventListener("online", refresh);
     window.addEventListener("offline", refresh);
@@ -115,6 +162,7 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
         pendingCount,
         justReconnected,
         syncErrors,
+        journal,
         rejected,
         dismissRejectedSale: (reference: string) => {
           dismissRejected(reference);

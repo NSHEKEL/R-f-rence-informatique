@@ -88,7 +88,7 @@ export default function Returns() {
         lines,
       });
       setSuccess(
-        `${refundMethod === "Espèces" ? "Remboursement" : "Avoir"} ${res.data.reference} enregistré : ${formatXOF(res.data.total)}`
+        `${refundMethod !== "Avoir" ? "Remboursement" : "Avoir"} ${res.data.reference} enregistré : ${formatXOF(res.data.total)}`
       );
       setSale(null);
       setReturnUnits({});
@@ -208,6 +208,7 @@ export default function Returns() {
                           type="number"
                           min={0}
                           max={max}
+                          step={0.000001}
                           disabled={max === 0}
                           className="input w-20 text-center"
                           value={quantities[it.id] ?? 0}
@@ -233,8 +234,10 @@ export default function Returns() {
               <label className="label">Règlement du retour</label>
               <select className="input mb-3" value={refundMethod} onChange={(e) => setRefundMethod(e.target.value)}>
                 <option value="Avoir">Avoir (sans sortie d'espèces)</option>
-                {can("caisse_operations") && <option value="Espèces">Remboursement en espèces depuis ma caisse ouverte</option>}
+                {can("caisse_operations") && <option value="Espèces">Remboursement en espèces</option>}
+                {can("caisse_operations") && <option value="Mobile Money">Remboursement Mobile Money</option>}
               </select>
+              <p className="mb-3 text-xs text-slate-500">Le remboursement est imputé à la caisse de la vente si elle est ouverte ; sinon à votre caisse ouverte. Les clôtures historiques restent inchangées.</p>
               <label className="label">Motif du retour</label>
               <input
                 className="input"

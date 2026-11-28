@@ -7,6 +7,7 @@ from pydantic import AwareDatetime, BaseModel, Field, model_validator
 from sqlalchemy import or_, update
 from sqlalchemy.orm import Session
 
+from ..quantities import Quantity
 from ..database import get_db
 from ..models import Category, Depot, DepotStock, InventoryCount, InventorySession, Product, StockMovement, User
 from ..permissions import has_permission, require_permission
@@ -29,10 +30,10 @@ class SessionCreate(BaseModel):
 class CountInput(BaseModel):
     client_updated_at: AwareDatetime | None = None
     client_id: str = Field(default="", max_length=100)
-    counts: dict[str, Annotated[int, Field(strict=True, ge=0, le=2147483647)] | None] | None = Field(default=None, max_length=1000)
-    physical_qty: int | None = Field(default=None, ge=0, le=2147483647, strict=True)
+    counts: dict[str, Annotated[Quantity, Field(ge=0, le=2147483647)] | None] | None = Field(default=None, max_length=1000)
+    physical_qty: Quantity | None = Field(default=None, ge=0, le=2147483647, strict=True)
     packaging_quantity: int | None = Field(default=None, ge=0, le=1000000, strict=True)
-    piece_quantity: int = Field(default=0, ge=0, le=2147483647, strict=True)
+    piece_quantity: Quantity = Field(default=0, ge=0, le=2147483647, strict=True)
     packaging_id: int | None = None
     note: str = Field(default="", max_length=4000)
 
@@ -88,6 +89,10 @@ def _start(db, session):
     if session.status != "draft":
         return
     rows = _counts(db, session.id)
+    if any(row.physical_qty is not None for row in rows):
+        session.status = "in_progress"
+        db.flush()
+        return
     products = {product.id: product for product in db.query(Product).filter(Product.id.in_([row.product_id for row in rows])).order_by(Product.id).with_for_update().all()}
     for row in rows:
         product = products.get(row.product_id)
@@ -364,9 +369,9 @@ async def import_grid(session_id: int, file: UploadFile = File(...), db: Session
                 text = str(value or "").strip()
                 if not text:
                     return None
-                if not text.isdecimal() or int(text) > 2147483647:
+                if not text.replace(",", ".").replace(".", "", 1).isdecimal() or float(text.replace(",", ".")) > 2147483647:
                     raise ValueError("Quantité entière positive ou nulle requise")
-                return int(text)
+                return round(float(text.replace(',', '.')), 6)
             counts["base"] = quantity(cells.get("Unité"))
             used = set()
             for header in headers:
@@ -405,8 +410,7 @@ def cancel(session_id: int, db: Session = Depends(get_db), user: User = Depends(
 def validate(session_id: int, db: Session = Depends(get_db), user: User = Depends(require_permission("inventaire_valider"))):
     try:
         session = _editable(db, session_id)
-        if session.status != "in_progress":
-            raise HTTPException(409, "Démarrez le comptage avant validation")
+        _start(db, session)
         counts = [row for row in _counts(db, session_id) if row.physical_qty is not None]
         if not counts:
             raise HTTPException(400, "Aucun article compté")

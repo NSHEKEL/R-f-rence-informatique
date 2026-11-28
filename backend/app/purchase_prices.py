@@ -1,5 +1,5 @@
 from fastapi import HTTPException
-from sqlalchemy import null
+from sqlalchemy import null, or_
 
 from .models import PriceHistory, Product, ProductPackaging
 from .permissions import has_permission
@@ -9,6 +9,34 @@ PRODUCT_PRICES = ("purchase_price", "sale_price", "wholesale_price", "semi_whole
     "packaging_sale_price", "wholesale_packaging_price", "supplier_purchase_price")
 PACKAGING_PRICES = ("purchase_price", "price_detail", "price_semi_gros", "price_gros")
 REQUIRED_PRICES = {"purchase_price", "sale_price", "wholesale_price"}
+
+
+def remove_purchase_changes(db, purchase):
+    rows = db.query(PriceHistory).filter_by(purchase_reference=purchase.reference).order_by(PriceHistory.id.desc()).all()
+    result = {"restored": [], "successors": [],
+        "removed": [{col.name: getattr(row, col.name) for col in PriceHistory.__table__.columns} for row in rows]}
+    for row in rows:
+        db.flush()
+        parts = row.field.split(":")
+        field = parts[-1]
+        if len(parts) == 3 and parts[0] == "packaging" and parts[1].isdigit():
+            target = db.query(ProductPackaging).filter_by(id=int(parts[1])).populate_existing().with_for_update().first()
+            allowed = field in PACKAGING_PRICES
+        else:
+            target = db.query(Product).filter_by(id=row.product_id).populate_existing().with_for_update().first()
+            allowed = row.field in PRODUCT_PRICES
+        successor = db.query(PriceHistory).filter(PriceHistory.product_id == row.product_id,
+            PriceHistory.field == row.field, PriceHistory.id > row.id,
+            or_(PriceHistory.purchase_reference.is_(None), PriceHistory.purchase_reference != purchase.reference)
+        ).order_by(PriceHistory.id).with_for_update().first()
+        if successor is not None and successor.old_value == row.new_value:
+            result["successors"].append({"id": successor.id, "old_value_before": successor.old_value, "old_value_after": row.old_value})
+            successor.old_value = row.old_value
+        if target is not None and allowed and successor is None and getattr(target, field) == row.new_value:
+            setattr(target, field, row.old_value)
+            result["restored"].append({"product_id": row.product_id, "field": row.field, "old": row.old_value, "new": row.new_value})
+        db.delete(row)
+    return result
 
 
 def review(db, purchase):

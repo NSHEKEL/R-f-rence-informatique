@@ -1,12 +1,15 @@
 from types import SimpleNamespace
 import math
+import os
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from .. import drawer, printing
-from ..auth import get_current_user
+from .. import diagnostics, drawer, printing
+from ..auth import get_current_user, require_admin
+from ..local_peripherals import _local_source, local_peripheral_permission
+from ..paths import open_logs_directory
 from ..permissions import has_permission, require_permission, require_any_permission
 from ..settings_access import check_company_update
 from ..database import get_db
@@ -25,6 +28,28 @@ from ..schemas import (
 from .products import _product_out, _stock_allowed
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
+
+
+@router.get("/logs")
+def logs_info(request: Request, _: User = Depends(require_admin)):
+    path = diagnostics.log_path()
+    local = _local_source(request)
+    return {"folder": str(path.parent), "file": str(path), "local": local,
+            "can_open": local and hasattr(os, "startfile") and os.getenv("USERNAME", "").upper() != "SYSTEM"}
+
+
+@router.post("/logs/open")
+def open_logs(request: Request, _: User = Depends(require_admin)):
+    info = logs_info(request, _)
+    if not info["local"]:
+        raise HTTPException(403, "Ouverture du dossier réservée au PC serveur local")
+    if not info["can_open"]:
+        raise HTTPException(409, "Ouvrez ce chemin dans l'Explorateur du PC serveur ; le service ne peut pas ouvrir votre session Windows")
+    try:
+        open_logs_directory()
+    except OSError:
+        raise HTTPException(503, "Dossier des journaux indisponible : utilisez le chemin affiché") from None
+    return {"opened": True}
 
 CATALOG_PRICES = {"purchase_price", "sale_price", "wholesale_price", "packaging_sale_price", "wholesale_packaging_price", "semi_wholesale_price", "supplier_purchase_price", "semi_wholesale_min_qty", "wholesale_min_qty"}
 
@@ -163,7 +188,7 @@ def update_printing(
 
 
 @router.get("/printers", response_model=PrinterList)
-def list_printers(_: User = Depends(require_any_permission("poste_consulter", "imprimantes_consulter", "peripheriques_consulter", "vente_nouvelle"))):
+def list_printers(_: User = Depends(local_peripheral_permission("poste_consulter", "imprimantes_consulter", "peripheriques_consulter", "vente_nouvelle"))):
     """Printers installed on this computer, for the selection lists."""
     try:
         devices = printing.printer_devices()
@@ -185,7 +210,7 @@ def list_printers(_: User = Depends(require_any_permission("poste_consulter", "i
 
 
 @router.get("/printers/diagnose")
-def diagnose_printers(_: User = Depends(require_any_permission("poste_consulter", "imprimantes_consulter", "vente_nouvelle"))):
+def diagnose_printers(_: User = Depends(local_peripheral_permission("poste_consulter", "imprimantes_consulter", "vente_nouvelle"))):
     """Per-stage detection report (Windows calls, per-queue details)."""
     return printing.diagnose()
 

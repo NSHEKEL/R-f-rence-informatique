@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
+import { Link } from "react-router-dom";
 import { apiErrorMessage } from "../lib/apiErrors";
 import {
   AlertTriangle,
@@ -27,6 +28,7 @@ import {
 import api, { formatMoney } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import AccountingPayment from "../components/AccountingPayment";
+import Modal from "../components/Modal";
 import { useCompany } from "../context/CompanyContext";
 import { exportCsv, stampedName } from "../lib/exportCsv";
 import { printPaymentReceipt } from "../lib/paymentReceipt";
@@ -78,6 +80,19 @@ interface Debt {
   status: string;
   days_late: number;
   payments: Payment[];
+  purchase_id?: number | null;
+  purchase_reference?: string | null;
+}
+
+interface PurchaseCandidate {
+  id: number;
+  reference: string;
+  supplier: string;
+  balance: number;
+  date: string;
+  status: string;
+  received_at: string | null;
+  reliable: boolean;
 }
 
 interface Summary {
@@ -172,6 +187,11 @@ export default function Dettes() {
   const [payment, setPayment] = useState({ ...NO_PAYMENT });
   const [message, setMessage] = useState("");
   const [notice, setNotice] = useState("");
+  const [orphansOnly, setOrphansOnly] = useState(false);
+  const [matchingDebt, setMatchingDebt] = useState<Debt | null>(null);
+  const [candidates, setCandidates] = useState<PurchaseCandidate[]>([]);
+  const [purchaseId, setPurchaseId] = useState("");
+  const [linking, setLinking] = useState(false);
 
   const kind = tab === "dette" ? "dette" : "creance";
   const receivable = kind === "creance";
@@ -181,7 +201,7 @@ export default function Dettes() {
     try {
       const [list, totals, history, owing, notices, agingData] =
         await Promise.all([
-        api.get<Debt[]>("/debts", { params: { kind, status, search } }),
+        api.get<Debt[]>("/debts", { params: { kind, status, search, orphan: tab === "dette" && orphansOnly } }),
         api.get<Summary>("/debts/resume", { params: { start, end } }),
         api.get<Settlement[]>("/debts/reglements", {
           params: { start, end, method },
@@ -203,7 +223,7 @@ export default function Dettes() {
     } catch {
       setMessage("Chargement impossible.");
     }
-  }, [kind, status, search, start, end, method, alertDays, tab, reportKind]);
+  }, [kind, status, search, start, end, method, alertDays, tab, reportKind, orphansOnly]);
 
   useEffect(() => {
     void load();
@@ -299,6 +319,35 @@ export default function Dettes() {
       await load();
     } catch (error) {
       fail(error, "Suppression impossible.");
+    }
+  }
+
+  async function choosePurchase(debt: Debt) {
+    try {
+      const response = await api.get<PurchaseCandidate[]>(`/debts/${debt.id}/purchase-candidates`);
+      setCandidates(response.data);
+      setPurchaseId("");
+      setMatchingDebt(debt);
+    } catch (error) {
+      fail(error, "Chargement des achats compatibles impossible.");
+    }
+  }
+
+  async function reconcilePurchase() {
+    const purchase = candidates.find((row) => String(row.id) === purchaseId);
+    if (!matchingDebt || !purchase || linking) return;
+    if (!window.confirm(`Rapprocher la dette ${matchingDebt.reference || matchingDebt.id} de ${matchingDebt.party} (${formatMoney(matchingDebt.amount)}) avec ${purchase.reference} ? Ce lien sera sauvegardé et journalisé sans modifier les paiements.`)) return;
+    setLinking(true);
+    try {
+      await api.put(`/debts/${matchingDebt.id}/purchase`, { purchase_id: purchase.id, confirm: true });
+      setMatchingDebt(null);
+      setMessage("");
+      setNotice(`Dette rapprochée de ${purchase.reference}.`);
+      await load();
+    } catch (error) {
+      fail(error, "Rapprochement impossible.");
+    } finally {
+      setLinking(false);
     }
   }
 
@@ -580,6 +629,15 @@ export default function Dettes() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
+              {!receivable && (
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={orphansOnly} onChange={(event) => {
+                    setOrphansOnly(event.target.checked);
+                    if (event.target.checked) { setStatus(""); setSearch(""); }
+                  }} />
+                  Dettes sans achat lié (à examiner)
+                </label>
+              )}
               {can("dettes_gerer") && (
                 <button
                   className="btn-primary ml-auto flex items-center gap-2"
@@ -661,7 +719,18 @@ export default function Dettes() {
                       onClick={() => setOpened(opened === debt.id ? 0 : debt.id)}
                     >
                       <td className="p-3 font-medium">{debt.party || "—"}</td>
-                      <td className="p-3">{debt.reference || "—"}</td>
+                      <td className="p-3">
+                        {debt.reference || "—"}
+                        {debt.kind === "dette" && (
+                          <div className="mt-1 text-xs">
+                            {debt.purchase_id && debt.purchase_reference ? (
+                              <Link className="text-blue-600 underline" to={`/approvisionnements?purchase=${debt.purchase_id}`} onClick={(event) => event.stopPropagation()}>
+                                Origine : {debt.purchase_reference}
+                              </Link>
+                            ) : <span className="text-amber-700">{debt.purchase_id ? `Achat #${debt.purchase_id} introuvable` : "Sans achat lié"}</span>}
+                          </div>
+                        )}
+                      </td>
                       <td className="p-3">{formatMoney(debt.amount)}</td>
                       <td className="p-3 text-emerald-700">
                         {formatMoney(debt.paid)}
@@ -693,7 +762,10 @@ export default function Dettes() {
                         </span>
                       </td>
                       <td className="p-3 text-right">
-                        {can("dettes_gerer") && !debt.payments.length && (
+                        {debt.kind === "dette" && !debt.purchase_id && can("dettes_gerer") && (
+                          <button className="btn-secondary mr-2" onClick={(event) => { event.stopPropagation(); void choosePurchase(debt); }}>Rapprocher</button>
+                        )}
+                        {can("dettes_gerer") && !debt.payments.length && !debt.purchase_id && (
                           <button
                             title="Supprimer"
                             onClick={(event) => {
@@ -1021,6 +1093,17 @@ export default function Dettes() {
           </table>
         </div>
       )}
+      <Modal open={matchingDebt !== null} onClose={() => { if (!linking) setMatchingDebt(null); }} title="Rapprocher une dette fournisseur" size="compact"
+        footer={<button className="btn-primary" disabled={!purchaseId || linking} onClick={() => void reconcilePurchase()}>{linking ? "Sauvegarde et rapprochement…" : "Confirmer le rapprochement"}</button>}>
+        <p className="mb-3 text-sm">{matchingDebt?.party} — {matchingDebt?.reference} — {formatMoney(matchingDebt?.amount || 0)}</p>
+        <p className="mb-3 text-sm">Achats reçus ou à recevoir du même fournisseur, de même montant initial restant dû, sans autre dette liée. Vérifiez la référence, le statut et la date : aucun montant ni paiement ne sera modifié. Ce lien définitif est sauvegardé et audité ; un achat en attente devra ensuite être réceptionné dans Approvisionnements.</p>
+        <select className="input w-full" aria-label="Achat d'origine" value={purchaseId} onChange={(event) => setPurchaseId(event.target.value)} disabled={linking}>
+          <option value="">Choisir explicitement un achat</option>
+          {candidates.map((purchase) => <option key={purchase.id} value={purchase.id}>{purchase.reference} — {purchase.supplier} — {formatMoney(purchase.balance)} — {purchase.status} — {day(purchase.received_at || purchase.date)}</option>)}
+        </select>
+        {!candidates.length && <p className="mt-3 text-sm text-amber-700">Aucun achat compatible. Vérifiez fournisseur et montant avec un administrateur ; les cas ambigus ne sont jamais liés automatiquement.</p>}
+        {message && <p className="mt-3 text-sm text-red-600">{message}</p>}
+      </Modal>
     </div>
   );
 }

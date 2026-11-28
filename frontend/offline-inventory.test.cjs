@@ -31,6 +31,40 @@ function setup() {
 const row = { product_id: 1, sku: 'RIZ', name: 'Riz', base_unit: 'pièce', packaging_unit: 'Carton', units_per_packaging: 12, packagings: [{ id: 6, name: 'Colis', factor: 6 }], physical_qty: null, theoretical_qty: 150, unit_cost: 2, counts: { base: null }, note: '' };
 const report = { id: 7, status: 'in_progress', theoretical_visible: true, stats: { counted: 0, not_counted: 1 }, rows: [row] };
 
+test('stock pagination bounds visible rows without slicing the counted inventory', () => {
+  const source = readFileSync(`${__dirname}/src/pages/Inventaire.tsx`, 'utf8');
+  const calculations = source.slice(source.indexOf('  const stockPageSize ='), source.indexOf('  useEffect(() => { setStockPage(1); }'));
+  const filtered = Array.from({ length: 123 }, (_, id) => ({ id }));
+  const counted = { 1: { rayon: '2', stock: '3' }, 122: { rayon: '4', stock: '5' } };
+  const page = (stockPage, items = filtered) => vm.runInNewContext(`${calculations}\n({ pagedStock, visibleStockPage, stockPages })`, { filtered: items, stockPage, Math });
+  assert.equal(page(1).pagedStock.length, 50); assert.equal(page(3).pagedStock.length, 23);
+  assert.equal(page(3).pagedStock[22].id, 122);
+  assert.equal(page(999, []).visibleStockPage, 1); assert.equal(page(999, []).pagedStock.length, 0);
+  assert.equal(counted[122].stock, '5'); assert.equal(filtered.length, 123);
+  assert.match(source, /pagedStock\.map\(\(p\) =>/);
+  assert.match(source, /products\s*\.map\(/);
+});
+
+test('targeted catalogue cache patches preserve other products, variants, costs and filtered removals', async () => {
+  const env = setup(), lib = env.reload();
+  env.api.get = async () => ({ data: [{ id: 1, name: 'A', quantity: 12 }, { id: 2, name: 'B', quantity: 24 }] });
+  await lib.readOffline('/products', 'products:all:active');
+  await lib.patchCatalogue('products:all:active', [2, 3], [
+    { id: 2, name: 'B', quantity: 36, stock_value: 18000, packagings: [{ factor: 12 }], barcodes: [{ code: 'VAR', active: true }] },
+    { id: 3, name: 'C', quantity: 1 },
+  ]);
+  env.navigator.onLine = false;
+  let saved = await lib.readOffline('/products', 'products:all:active');
+  assert.equal(saved.data.length, 3); assert.equal(saved.data[0].quantity, 12);
+  assert.equal(saved.data[1].stock_value, 18000); assert.equal(saved.data[1].packagings[0].factor, 12);
+  assert.equal(saved.data[1].barcodes[0].code, 'VAR');
+  await lib.patchCatalogue('products:all:active', [2], []);
+  saved = await lib.readOffline('/products', 'products:all:active');
+  assert.equal(saved.data.map((p) => p.id).join(','), '1,3');
+  await assert.rejects(lib.patchCatalogue('missing-cache', [1], []), /absent/);
+  env.quota(); await assert.rejects(lib.patchCatalogue('products:all:active', [1], []), /quota/);
+});
+
 test('image-free catalogue cache survives reload offline and preserves its date', async () => {
   const env = setup();
   const products = Array.from({ length: 2000 }, (_, id) => ({ id, name: `Article ${id}`, image: 'binary-image'.repeat(200), packagings: [{ factor: 12 }] }));
@@ -77,8 +111,10 @@ test('sync retains network and closed-session failures; a newer edit during uplo
   env.api.put = async (_url, payload) => ({ data: { ...report, rows: [{ ...row, ...payload, physical_qty: 0 }] } });
   assert.equal((await lib.syncCounts(7)).pending, 0);
   await lib.queueCount(7, 1, { base: 2 }, 'closed');
-  env.api.put = async () => { throw { response: { status: 409 } }; };
-  assert.equal((await lib.syncCounts(7)).pending, 1);
+  env.api.put = async () => { throw { response: { status: 409, data: { detail: "Session déjà validée" } } }; };
+  const failed = await lib.syncCounts(7);
+  assert.equal(failed.pending, 1);
+  assert.match(failed.error, /Session déjà validée/);
   assert.equal(Object.keys(await lib.pendingCounts(7)).length, 1);
 });
 

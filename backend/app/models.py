@@ -12,6 +12,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    Numeric,
     Index,
     String,
     Text,
@@ -45,6 +46,11 @@ class User(Base):
 
 class CompanySettings(Base):
     __tablename__ = "company_settings"
+
+    offline_enabled = Column(Boolean, default=True, nullable=False, server_default=true())
+    offline_authorization_hours = Column(Integer, default=24, nullable=False, server_default="24")
+
+    mobile_money_to_cash = Column(Boolean, default=True, nullable=False, server_default=true())
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, default="EasyGest", nullable=False)
@@ -155,7 +161,7 @@ class DepotStock(Base):
     id = Column(Integer, primary_key=True)
     depot_id = Column(Integer, ForeignKey("depots.id"), nullable=False, index=True)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False, index=True)
-    quantity = Column(Integer, nullable=False, default=0)
+    quantity = Column(Numeric(24, 6, asdecimal=False), nullable=False, default=0)
 
 
 class DepotTransfer(Base):
@@ -178,7 +184,7 @@ class DepotTransferItem(Base):
     transfer_id = Column(Integer, ForeignKey("depot_transfers.id"), nullable=False)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
     product_name = Column(String, nullable=False)
-    quantity = Column(Integer, nullable=False)
+    quantity = Column(Numeric(24, 6, asdecimal=False), nullable=False)
     transfer = relationship("DepotTransfer", back_populates="items")
 
 
@@ -269,7 +275,7 @@ class Product(UnitSnapshot, Base):
     supplier_purchase_price = Column(Float, nullable=True)
     semi_wholesale_min_qty = Column(Integer, nullable=True)
     wholesale_min_qty = Column(Integer, nullable=True)
-    quantity = Column(Integer, default=0)
+    quantity = Column(Numeric(24, 6, asdecimal=False), default=0)
     min_stock = Column(Integer, default=5)
     qr_code = Column(String, default="")  # scan code, defaults to the SKU
     barcode = Column(String, default="", index=True)  # printed EAN-13 digits
@@ -288,6 +294,16 @@ class Product(UnitSnapshot, Base):
         return quantity_label(self.quantity, self.base_unit,
                               packaging.name if packaging else self.packaging_unit,
                               packaging.factor if packaging else self.units_per_packaging)
+
+
+class ProductUpdateOperation(Base):
+    __tablename__ = "product_update_operations"
+
+    id = Column(String(36), primary_key=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    payload = Column(Text, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
 
 
 class ProductBarcode(Base):
@@ -398,6 +414,7 @@ class SalePayment(Base):
 
 
 class SaleItem(UnitSnapshot, Base):
+    packaging_divisor = Column(Integer, nullable=True)
     __tablename__ = "sale_items"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -410,13 +427,13 @@ class SaleItem(UnitSnapshot, Base):
     unit_cost = Column(Float, nullable=True)
     sold_unit = Column(String, default="pièce", nullable=True)
     packaging_quantity = Column(Integer, default=0, nullable=True)
-    piece_quantity = Column(Integer, nullable=True)
-    base_quantity = Column(Integer, nullable=True)
+    piece_quantity = Column(Numeric(24, 6, asdecimal=False), nullable=True)
+    base_quantity = Column(Numeric(24, 6, asdecimal=False), nullable=True)
     base_unit_price = Column(Float, nullable=True)
     packaging_sale_price = Column(Float, nullable=True)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
     product_name = Column(String, default="")
-    quantity = Column(Integer, default=1)
+    quantity = Column(Numeric(24, 6, asdecimal=False), default=1)
     unit_price = Column(Float, default=0)
     # Discount granted on this line only, deducted from its subtotal.
     discount = Column(Float, default=0)
@@ -426,16 +443,16 @@ class SaleItem(UnitSnapshot, Base):
     product = relationship("Product")
 
     @property
-    def returned_quantity(self) -> int:
+    def returned_quantity(self) -> float:
         """Units of this line already given back through a credit note."""
         if not self.sale:
             return 0
-        return sum(
+        return round(sum(
             line.quantity
             for credit in self.sale.returns
             for line in credit.items
             if line.sale_item_id == self.id or (line.sale_item_id is None and line.product_id == self.product_id)
-        )
+        ), 6)
 
 
 class SaleReturn(Base):
@@ -474,7 +491,7 @@ class SaleReturnItem(UnitSnapshot, Base):
     unit_cost = Column(Float, nullable=True)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
     product_name = Column(String, default="")
-    quantity = Column(Integer, default=1)
+    quantity = Column(Numeric(24, 6, asdecimal=False), default=1)
     unit_price = Column(Float, default=0)
     subtotal = Column(Float, default=0)
 
@@ -487,10 +504,16 @@ class CashSession(Base):
 
     __tablename__ = "cash_sessions"
 
+    kept_balance = Column(Float, nullable=True)
+    offline_mobile_money_to_cash = Column(Boolean, nullable=True)
+    remitted_amount = Column(Float, nullable=True)
+
     id = Column(Integer, primary_key=True, index=True)
     opened_at = Column(DateTime, default=utcnow)
     # Business day (YYYY-MM-DD): one session per cashier and per day.
     business_day = Column(String, default="", index=True)
+    workstation = Column(String, nullable=True)
+    global_closure_id = Column(Integer, ForeignKey("cash_closures.id"), nullable=True, index=True)
     opened_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     opening_balance = Column(Float, default=0)
     closed_at = Column(DateTime, nullable=True)
@@ -505,6 +528,17 @@ class CashSession(Base):
     opened_by = relationship("User", foreign_keys=[opened_by_id])
     closed_by = relationship("User", foreign_keys=[closed_by_id])
     sales = relationship("Sale", backref="cash_session")
+
+
+class CashClosure(Base):
+    __tablename__ = "cash_closures"
+
+    id = Column(Integer, primary_key=True)
+    closed_at = Column(DateTime, nullable=False, default=utcnow)
+    closed_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    date_from = Column(String, nullable=False)
+    date_to = Column(String, nullable=False)
+    report = Column(Text, nullable=False)
 
 
 class BankAccount(Base):
@@ -605,12 +639,12 @@ class InventoryCount(Base):
     session_id = Column(Integer, ForeignKey("inventory_sessions.id"), nullable=False, index=True)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
     product_snapshot = Column(Text, nullable=False)
-    theoretical_qty = Column(Integer, nullable=False)
-    physical_qty = Column(Integer, nullable=True)
+    theoretical_qty = Column(Numeric(24, 6, asdecimal=False), nullable=False)
+    physical_qty = Column(Numeric(24, 6, asdecimal=False), nullable=True)
     counts_json = Column(Text, nullable=False, default="{}")
     client_updated_at = Column(DateTime(timezone=True), nullable=True)
     client_id = Column(String, nullable=False, default="")
-    stock_after = Column(Integer, nullable=True)
+    stock_after = Column(Numeric(24, 6, asdecimal=False), nullable=True)
     unit_cost = Column(Float, nullable=False)
     counted_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     counted_at = Column(DateTime, nullable=True)
@@ -627,9 +661,9 @@ class StockMovement(UnitSnapshot, Base):
     product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
     product_name = Column(String, default="")
     kind = Column(String, default="ajustement")  # vente, inventaire, ajustement
-    quantity = Column(Integer, default=0)  # signed delta
-    stock_before = Column(Integer, default=0)
-    stock_after = Column(Integer, default=0)
+    quantity = Column(Numeric(24, 6, asdecimal=False), default=0)  # signed delta
+    stock_before = Column(Numeric(24, 6, asdecimal=False), default=0)
+    stock_after = Column(Numeric(24, 6, asdecimal=False), default=0)
     reason = Column(String, default="")
     date = Column(DateTime, default=utcnow, index=True)
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
@@ -653,7 +687,7 @@ class StockLot(Base):
     product_id = Column(Integer, ForeignKey("products.id"), index=True)
     lot_number = Column(String, default="")
     expiry_date = Column(DateTime, nullable=True)
-    quantity = Column(Integer, default=0)
+    quantity = Column(Numeric(24, 6, asdecimal=False), default=0)
     unit_cost = Column(Float, nullable=True)
     created_at = Column(DateTime, default=utcnow)
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
@@ -694,7 +728,7 @@ class StockTransferItem(UnitSnapshot, Base):
     )
     product_id = Column(Integer, ForeignKey("products.id"))
     product_name = Column(String, default="")
-    quantity = Column(Integer, default=0)
+    quantity = Column(Numeric(24, 6, asdecimal=False), default=0)
 
     transfer = relationship("StockTransfer", back_populates="items")
 
@@ -738,7 +772,7 @@ class ProformaItem(UnitSnapshot, Base):
     product_name = Column(String, default="")
     reference = Column(String, default="")
     unit = Column(String, default="u")
-    quantity = Column(Integer, default=1)
+    quantity = Column(Numeric(24, 6, asdecimal=False), default=1)
     unit_price = Column(Float, default=0)
     discount = Column(Float, default=0)
     subtotal = Column(Float, default=0)
@@ -811,6 +845,7 @@ class ChangeLog(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     entities = Column(String, default="")
+    product_ids = Column(Text, nullable=True)
     at = Column(DateTime, default=utcnow)
 
 
@@ -900,9 +935,9 @@ class OrderItem(UnitSnapshot, Base):
     product_name = Column(String, default="")
     reference = Column(String, default="")
     unit = Column(String, default="u")
-    quantity = Column(Integer, default=1)
+    quantity = Column(Numeric(24, 6, asdecimal=False), default=1)
     # Quantity handed over by the validated delivery notes of this order.
-    delivered_quantity = Column(Integer, default=0, nullable=False)
+    delivered_quantity = Column(Numeric(24, 6, asdecimal=False), default=0, nullable=False)
     unit_price = Column(Float, default=0)
     discount = Column(Float, default=0)
     subtotal = Column(Float, default=0)
@@ -911,8 +946,8 @@ class OrderItem(UnitSnapshot, Base):
     product = relationship("Product")
 
     @property
-    def remaining_quantity(self) -> int:
-        return max(self.quantity - (self.delivered_quantity or 0), 0)
+    def remaining_quantity(self) -> float:
+        return max(round(self.quantity - (self.delivered_quantity or 0), 6), 0)
 
 
 class Delivery(Base):
@@ -961,9 +996,9 @@ class DeliveryItem(UnitSnapshot, Base):
     product_name = Column(String, default="")
     reference = Column(String, default="")
     unit = Column(String, default="u")
-    ordered_quantity = Column(Integer, default=0)
-    previously_delivered = Column(Integer, default=0)
-    quantity = Column(Integer, default=0)  # handed over by this note
+    ordered_quantity = Column(Numeric(24, 6, asdecimal=False), default=0)
+    previously_delivered = Column(Numeric(24, 6, asdecimal=False), default=0)
+    quantity = Column(Numeric(24, 6, asdecimal=False), default=0)  # handed over by this note
     unit_price = Column(Float, default=0)
     subtotal = Column(Float, default=0)
     observation = Column(String, default="")
@@ -1051,8 +1086,8 @@ class PurchaseItem(UnitSnapshot, Base):
     packaging_id = Column(Integer, ForeignKey("product_packagings.id"), nullable=True)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
     product_name = Column(String, default="")
-    quantity = Column(Integer, default=1)  # ordered
-    received_quantity = Column(Integer, default=0)  # already in stock
+    quantity = Column(Numeric(24, 6, asdecimal=False), default=1)  # ordered
+    received_quantity = Column(Numeric(24, 6, asdecimal=False), default=0)  # already in stock
     unit_cost = Column(Float, default=0)  # purchase price
     subtotal = Column(Float, default=0)
 
@@ -1118,6 +1153,7 @@ class Debt(Base):
     sale_id = Column(Integer, ForeignKey("sales.id"), nullable=True)
     reference = Column(String, default="")
     amount = Column(Float, default=0)
+    cancelled = Column(Boolean, default=False)
     due_date = Column(DateTime, nullable=True)
     note = Column(Text, default="")
     created_at = Column(DateTime, default=utcnow)
@@ -1126,10 +1162,15 @@ class Debt(Base):
     customer = relationship("Customer")
     supplier = relationship("Supplier")
     sale = relationship("Sale")
+    purchase = relationship("Purchase")
     created_by = relationship("User")
     payments = relationship(
         "DebtPayment", back_populates="debt", cascade="all, delete-orphan"
     )
+
+    @property
+    def purchase_reference(self) -> str | None:
+        return self.purchase.reference if self.purchase else None
 
     @property
     def paid(self) -> float:
@@ -1140,7 +1181,7 @@ class Debt(Base):
 
     @property
     def remaining(self) -> float:
-        return round(self.amount - self.paid, 2)
+        return 0.0 if self.cancelled else round(self.amount - self.paid, 2)
 
     @property
     def settled(self) -> bool:
@@ -1168,6 +1209,8 @@ class Debt(Base):
     @property
     def status(self) -> str:
         """Single source of truth for the four states shown everywhere."""
+        if self.cancelled:
+            return "Annulé"
         if self.settled:
             return "Payé"
         if self.overdue:
@@ -1183,6 +1226,8 @@ class CashMovement(Base):
     )
 
     id = Column(Integer, primary_key=True)
+    client_id = Column(String(64), nullable=True, unique=True)
+    return_id = Column(Integer, ForeignKey("sale_returns.id"), nullable=True)
     session_id = Column(Integer, ForeignKey("cash_sessions.id"), nullable=False, index=True)
     type = Column(String, nullable=False)
     amount = Column(Float, nullable=False)
@@ -1504,3 +1549,60 @@ def reconcile_product_stock(mapper, connection, target):
 def reconcile_legacy_stock_edit(mapper, connection, target):
     if inspect(target).attrs.quantity.history.has_changes():
         reconcile_product_stock(mapper, connection, target)
+
+
+class OfflineDevice(Base):
+    __tablename__ = "offline_devices"
+    id = Column(String(64), primary_key=True)
+    public_key = Column(Text, nullable=False)
+    auth_counter = Column(Integer, nullable=False, default=0)
+    workstation_ip = Column(String, nullable=False, default="")
+    last_seen = Column(DateTime, nullable=True)
+    active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=utcnow)
+
+
+class OfflineGrant(Base):
+    __tablename__ = "offline_grants"
+    id = Column(String(64), primary_key=True)
+    device_id = Column(String(64), nullable=False, index=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    token = Column(Text, nullable=False)
+    claims = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=utcnow)
+
+
+class OfflineCatalogue(Base):
+    __tablename__ = "offline_catalogue_snapshots"
+    id = Column(String(64), primary_key=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    payload = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=utcnow)
+
+
+class OfflineSession(Base):
+    __tablename__ = "offline_sessions"
+    id = Column(String(64), primary_key=True)
+    device_id = Column(String(64), nullable=False, index=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    cash_session_id = Column(Integer, nullable=True)
+    status = Column(String, nullable=False, default="pending")
+    opening_event_id = Column(String(64), nullable=False)
+
+
+class OfflineEvent(Base):
+    __tablename__ = "offline_events"
+    __table_args__ = (UniqueConstraint("device_id", "session_id", "sequence", name="uq_offline_event_sequence"),)
+    id = Column(String(64), primary_key=True)
+    device_id = Column(String(64), nullable=False, index=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    session_id = Column(String(64), nullable=False, index=True)
+    sequence = Column(Integer, nullable=False)
+    kind = Column(String, nullable=False)
+    occurred_at = Column(Float, nullable=False)
+    hash = Column(String(64), nullable=False)
+    envelope = Column(Text, nullable=False)
+    state = Column(String, nullable=False, default="received", index=True)
+    result = Column(Text, nullable=False, default="{}")
+    resolution = Column(Text, nullable=False, default="")
+    received_at = Column(DateTime, default=utcnow)
