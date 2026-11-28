@@ -1,8 +1,13 @@
 import unittest
+from urllib.parse import quote
+
+from fastapi import HTTPException
 
 import test_wholesale as wholesale
 from app import stock
-from app.models import ProductBarcode
+from app.models import Product, ProductBarcode
+from app.product_codes import catalogue_code_index, catalogue_scanned_product, scanned_product
+from app.routers.products import _product_out
 
 
 class ProductBarcodeTests(unittest.TestCase):
@@ -15,6 +20,33 @@ class ProductBarcodeTests(unittest.TestCase):
     def update(self, **values):
         product = self.call(f"/api/products/{self.product.id}")
         return self.call(f"/api/products/{self.product.id}", "PUT", {**product, **values})
+
+    def test_offline_scan_index_preserves_database_normalization_and_product_identity(self):
+        self.update(sku=" PADDED ", qr_code="ÉTÉ", barcodes=[{"code": "var/îante", "label": "Variante"}], packagings=[{"name": "Colis", "factor": 6, "barcode": "ÑPACK"}])
+        other = self.call("/api/products", "POST", {"name": "Autre", "sku": "PADDED", "qr_code": "été"}, 201)
+        with self.sessions() as db:
+            products = db.query(Product).all()
+            rows = [_product_out(row, True).model_dump(mode="json", exclude_none=True) for row in products]
+            index = catalogue_code_index(db, {row.id for row in products})
+            for code in ("PADDED", " PADDED ", "ÉTÉ", "été", "var/îante", "VAR/ÎANTE", "ÑPACK", "ñpack", "UNKNOWN"):
+                offline = catalogue_scanned_product(rows, code, index)
+                try:
+                    online, pack, alias = scanned_product(db, code)
+                except HTTPException as error:
+                    self.assertEqual(error.status_code, 404)
+                    self.assertIsNone(offline, code)
+                else:
+                    self.assertEqual(offline["id"], online.id, code)
+                    self.assertEqual(offline["packaging_id"], pack.id if pack else None)
+                    self.assertEqual(offline["scanned_label"], alias.label if alias else None)
+            self.assertEqual(catalogue_scanned_product(rows, "PADDED", index)["id"], other["id"])
+            self.assertEqual(catalogue_scanned_product(rows, "PADDED")["id"], other["id"])
+            with self.assertRaises(ValueError):
+                catalogue_scanned_product(rows, "ÉTÉ")
+            self.assertIsNone(catalogue_scanned_product([], "missing", {}))
+        lookup = self.call("/api/products/by-code/" + quote("VAR/ÎANTE", safe=""))
+        self.assertEqual(lookup["id"], self.product.id)
+        print("OFFLINE_SCAN_IDENTITY_OK padded_sku=True sqlite_accented_codes=True slash_alias=True same_product_id=True")
 
     def test_variant_lookup_stock_snapshots_and_deactivation(self):
         product = self.update(barcodes=[{"code": "NOVA-RED", "label": "NOVA Rouge"}, {"code": "NOVA-BLUE", "label": "NOVA Bleu"}])

@@ -210,7 +210,7 @@ def next_barcode(
     return {"barcode": _generate_barcode(db)}
 
 
-@router.get("/by-code/{code}", response_model=ProductOut)
+@router.get("/by-code/{code:path}", response_model=ProductOut)
 def get_product_by_code(
     code: str,
     db: Session = Depends(get_db),

@@ -19,6 +19,7 @@ from .offline_auth import AUDIENCE, TOKEN_TYPE
 from .offline_crypto import canonical, digest, fingerprint, sign
 from .offline_store import OfflineStore
 from .payment_totals import group_payments, physical_expected
+from .product_codes import catalogue_scanned_product
 from .schemas import CashMovementCreate, CashSessionClose, CashSessionOpen, ExpenseCreate, SaleCreate
 from .units import base_quantity, cached_packaging, quote_line
 
@@ -399,10 +400,10 @@ class OfflineBroker:
             if not {"produits", "inventaire"}.intersection(rights):
                 for field in ("quantity", "min_stock", "quantity_label"):
                     product.pop(field, None)
-        if self.online and not cached["payload"]["company"].get("allow_negative_stock_sale"):
+        if self.online and not cached_only and not cached["payload"]["company"].get("allow_negative_stock_sale"):
             visible = set(cached["payload"].get("visible_online_ids", [row["id"] for row in rows]))
             rows = [row for row in rows if row["id"] in visible]
-        return {"data": rows, "fromCache": not self.online, "cached_at": cached["at"]}
+        return {"data": rows, "fromCache": not self.online, "cached_at": cached["at"], "scan_index": cached["payload"].get("scan_index")}
 
     def _local_session(self, db, claims, adopt=False):
         session = self.store.get(db, self._session_key())
@@ -556,14 +557,13 @@ class OfflineBroker:
                 if self._local_session(db, claims, adopt=True) is None:
                     raise BrokerError(409, "Ouvrez votre caisse provisoire")
             value = urllib.parse.unquote(path.removeprefix("/products/by-code/")).strip()
-            code = value.lower()
-            for product in self.catalogue(cached_only=True)["data"]:
-                if product.get("active") is False:
-                    continue
-                alias = next((row for row in product.get("barcodes", []) if row.get("active", True) and row["code"].strip().lower() == code), None)
-                packaging = next((row for row in product.get("packagings", []) if row.get("active", True) and (row.get("barcode") or "").strip().lower() == code), None)
-                if code and (alias or packaging or any((product.get(field) or "").strip().lower() == code for field in ("barcode", "qr_code", "sku"))):
-                    return {**product, "scanned_code": value, "scanned_label": alias.get("label") if alias else None, "packaging_id": packaging["id"] if packaging else None}
+            catalogue = self.catalogue(cached_only=True)
+            try:
+                product = catalogue_scanned_product(catalogue["data"], value, catalogue["scan_index"])
+            except ValueError as error:
+                raise BrokerError(409, str(error)) from None
+            if product:
+                return product
             raise BrokerError(404, "Article introuvable")
         with self.store.connection() as db:
             auth, claims, rights = self._auth(db)

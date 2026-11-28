@@ -17,6 +17,7 @@ from ..offline_auth import current_account, read_grant, signing_key
 from ..offline_crypto import canonical, digest, fingerprint, public_key, verify
 from ..offline_ingest import ingest, retry_event
 from ..permissions import allowed_keys, has_permission
+from ..product_codes import catalogue_code_index
 from ..schemas import UserOut, CustomerOut
 from . import cash, products, settings, customers
 
@@ -122,6 +123,7 @@ def catalogue(images: bool = False, device_id: str = "", db: Session = Depends(g
     rows = [products._product_out(row, products._stock_allowed(db, user), include_images).model_dump(mode="json", exclude_none=True) for row in all_products]
     covered = [row.id for row in db.query(OfflineEvent).filter_by(device_id=device_id, user_id=user.id, state="applied").all()] if device_id else []
     body = {"user_id": user.id, "products": rows, "company": settings.get_company(db=db, _=user).model_dump(mode="json"), "display": config.model_dump(mode="json"), "covered_event_ids": covered}
+    body["scan_index"] = catalogue_code_index(db, {row.id for row in all_products})
     company = db.query(CompanySettings).first()
     body["printing"] = printing.read_config(company).model_dump(mode="json")
     body["categories"] = list({row["category"]["id"]: row["category"] for row in rows if row.get("category")}.values())
